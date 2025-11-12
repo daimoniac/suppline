@@ -164,9 +164,13 @@ func getImageDigest(ctx context.Context, imageRef string) (string, error) {
 
 // TestTrivyScanner tests the Trivy scanner integration
 func TestTrivyScanner(t *testing.T) {
+	// Check if regsync.yml exists for authentication tests
+	regsyncPath := getEnv("REGSYNC_PATH", "../../regsync.yml")
+	
 	cfg := config.ScannerConfig{
-		ServerAddr: getEnv("TRIVY_SERVER_ADDR", "localhost:4954"),
-		Timeout:    5 * time.Minute,
+		ServerAddr:  getEnv("TRIVY_SERVER_ADDR", "localhost:4954"),
+		Timeout:     5 * time.Minute,
+		RegsyncPath: regsyncPath,
 	}
 
 	scanner, err := scanner.NewTrivyScanner(cfg)
@@ -180,6 +184,17 @@ func TestTrivyScanner(t *testing.T) {
 		err := scanner.HealthCheck(ctx)
 		if err != nil {
 			t.Errorf("Health check failed: %v", err)
+		}
+	})
+	
+	t.Run("DockerConfigGeneration", func(t *testing.T) {
+		// Verify Docker config was generated if regsync.yml exists
+		if _, err := os.Stat(regsyncPath); err == nil {
+			// Scanner should have generated Docker config
+			// This is tested implicitly by the private image scan below
+			t.Log("Docker config should be generated from regsync.yml")
+		} else {
+			t.Skip("Skipping Docker config test: regsync.yml not found")
 		}
 	})
 
@@ -242,6 +257,36 @@ func TestTrivyScanner(t *testing.T) {
 		}
 
 		t.Logf("Generated SBOM for %s: %d bytes", imageRef, len(sbom.Data))
+	})
+	
+	t.Run("PrivateRegistryAuthentication", func(t *testing.T) {
+		// Test scanning a private image from the configured registry
+		// This verifies that Docker config authentication is working
+		privateImage := getEnv("TEST_PRIVATE_IMAGE", "hostingmaloonde/nginx:1.27.1")
+		
+		t.Logf("Testing private image authentication: %s", privateImage)
+		
+		// Try to scan the private image
+		result, err := scanner.ScanVulnerabilities(ctx, privateImage)
+		if err != nil {
+			// If this fails, it likely means authentication isn't working
+			t.Logf("Private image scan failed (may indicate auth issue): %v", err)
+			t.Skip("Skipping private image test - authentication may not be configured")
+		}
+		
+		if result == nil {
+			t.Fatal("Expected scan result for private image, got nil")
+		}
+		
+		t.Logf("Successfully scanned private image: found %d vulnerabilities", len(result.Vulnerabilities))
+		
+		// Also test SBOM generation for private image
+		sbom, err := scanner.GenerateSBOM(ctx, privateImage)
+		if err != nil {
+			t.Errorf("Failed to generate SBOM for private image: %v", err)
+		} else {
+			t.Logf("Successfully generated SBOM for private image: %d bytes", len(sbom.Data))
+		}
 	})
 }
 

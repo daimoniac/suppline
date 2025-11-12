@@ -176,7 +176,7 @@ func run() error {
 		}
 	}
 	
-	attestor, err := attestation.NewSigstoreAttestor(attestorConfig, authConfig, logger)
+	attestor, err := attestation.NewSigstoreAttestor(attestorConfig, authConfig, logger, cfg.RegsyncPath)
 	if err != nil {
 		return fmt.Errorf("failed to initialize attestor: %w", err)
 	}

@@ -24,7 +24,7 @@ RUN CGO_ENABLED=1 GOOS=linux go build -a -installsuffix cgo \
 FROM alpine:3.21
 
 # Install runtime dependencies including trivy client
-RUN apk add --no-cache ca-certificates sqlite-libs wget && \
+RUN apk add --no-cache ca-certificates sqlite-libs wget cosign && \
     wget https://github.com/aquasecurity/trivy/releases/download/v0.58.1/trivy_0.58.1_Linux-64bit.tar.gz && \
     tar zxvf trivy_0.58.1_Linux-64bit.tar.gz && \
     mv trivy /usr/local/bin/ && \
@@ -42,9 +42,6 @@ WORKDIR /app
 
 # Copy binary from builder
 COPY --from=builder /build/suppline /app/suppline
-
-# Copy example config (optional)
-COPY regsync.yml.example /config/regsync.yml.example
 
 # Switch to non-root user
 USER suppline

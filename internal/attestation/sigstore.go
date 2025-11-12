@@ -1,6 +1,7 @@
 package attestation
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -10,6 +11,7 @@ import (
 	"time"
 
 	"github.com/google/go-containerregistry/pkg/authn"
+	"github.com/suppline/suppline/internal/regsync"
 	"github.com/suppline/suppline/internal/scanner"
 )
 
@@ -21,7 +23,7 @@ type SigstoreAttestor struct {
 }
 
 // NewSigstoreAttestor creates a new Sigstore attestor
-func NewSigstoreAttestor(config AttestationConfig, authConfig map[string]authn.Authenticator, logger *slog.Logger) (*SigstoreAttestor, error) {
+func NewSigstoreAttestor(config AttestationConfig, authConfig map[string]authn.Authenticator, logger *slog.Logger, regsyncPath string) (*SigstoreAttestor, error) {
 	if logger == nil {
 		logger = slog.Default()
 	}
@@ -37,7 +39,51 @@ func NewSigstoreAttestor(config AttestationConfig, authConfig map[string]authn.A
 		return nil, fmt.Errorf("key path is required for key-based signing")
 	}
 
+	// Authenticate cosign with registry credentials from regsync.yml
+	if err := attestor.authenticateRegistries(regsyncPath); err != nil {
+		return nil, fmt.Errorf("failed to authenticate registries for cosign: %w", err)
+	}
+
 	return attestor, nil
+}
+
+// authenticateRegistries logs into registries using credentials from regsync.yml
+func (a *SigstoreAttestor) authenticateRegistries(regsyncPath string) error {
+	// Parse regsync config
+	regsyncCfg, err := regsync.Parse(regsyncPath)
+	if err != nil {
+		return fmt.Errorf("failed to parse regsync config: %w", err)
+	}
+
+	// Authenticate with each registry
+	for _, cred := range regsyncCfg.Creds {
+		if cred.Registry == "" || cred.User == "" || cred.Pass == "" {
+			a.logger.Warn("skipping incomplete registry credential", "registry", cred.Registry)
+			continue
+		}
+
+		a.logger.Info("authenticating cosign with registry", "registry", cred.Registry)
+
+		// Execute cosign login
+		cmd := exec.Command("cosign", "login", cred.Registry,
+			"--username", cred.User,
+			"--password", cred.Pass)
+
+		var stderr bytes.Buffer
+		cmd.Stderr = &stderr
+
+		if err := cmd.Run(); err != nil {
+			a.logger.Error("failed to authenticate cosign with registry",
+				"registry", cred.Registry,
+				"error", err,
+				"stderr", stderr.String())
+			return fmt.Errorf("failed to login cosign to registry %s: %w", cred.Registry, err)
+		}
+
+		a.logger.Info("successfully authenticated cosign with registry", "registry", cred.Registry)
+	}
+
+	return nil
 }
 
 // AttestSBOM creates and pushes SBOM attestation using cosign CLI

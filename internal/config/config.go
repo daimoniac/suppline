@@ -37,6 +37,7 @@ type ScannerConfig struct {
 	CustomHeaders map[string]string
 	Timeout       time.Duration
 	Insecure      bool
+	RegsyncPath   string // Path to regsync.yml for registry credentials
 }
 
 // AttestationConfig configures Sigstore attestation and signing
@@ -93,6 +94,7 @@ func Load() (*Config, error) {
 			CustomHeaders: make(map[string]string),
 			Timeout:       getEnvDuration("TRIVY_TIMEOUT", 5*time.Minute),
 			Insecure:      getEnvBool("TRIVY_INSECURE", false),
+			RegsyncPath:   getEnv("REGSYNC_PATH", "regsync.yml"),
 		},
 		Attestation: AttestationConfig{
 			KeyBased: struct {

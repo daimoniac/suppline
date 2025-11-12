@@ -1,4 +1,4 @@
-.PHONY: help test test-unit test-integration docker-up docker-down docker-logs clean build
+.PHONY: help test test-unit test-integration test-auth test-all docker-up docker-down docker-logs clean build
 
 help: ## Show this help message
 	@echo 'Usage: make [target]'
@@ -9,16 +9,19 @@ help: ## Show this help message
 build: ## Build the application
 	go build -o suppline ./cmd/suppline
 
-test: test-unit ## Run all tests
+test: test-unit ## Run unit tests (default)
 
 test-unit: ## Run unit tests
-	go test -v -race -coverprofile=coverage.txt -covermode=atomic ./internal/...
+	@./scripts/test.sh unit
 
-test-integration: docker-up ## Run integration tests
-	@echo "Waiting for services to be ready..."
-	@sleep 30
-	INTEGRATION_TEST=true TRIVY_SERVER_ADDR=localhost:4954 ATTESTATION_KEY_PATH=$(PWD)/keys/cosign.key go test -v -timeout 10m ./test/integration/...
-	@$(MAKE) docker-down
+test-integration: ## Run integration tests with Docker Compose
+	@./scripts/test.sh integration
+
+test-auth: ## Test Trivy and Cosign authentication
+	@./scripts/test.sh auth
+
+test-all: ## Run all tests (unit, auth, integration)
+	@./scripts/test.sh all
 
 docker-up: ## Start Docker Compose services for testing
 	docker compose -f docker-compose.test.yml up -d

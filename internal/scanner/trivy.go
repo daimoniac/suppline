@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"log/slog"
+	"os"
 	"os/exec"
 	"time"
 
@@ -14,12 +15,13 @@ import (
 
 // TrivyScanner implements Scanner using Trivy CLI in client-server mode
 type TrivyScanner struct {
-	serverAddr    string
-	token         string
-	customHeaders map[string]string
-	timeout       time.Duration
-	insecure      bool
-	logger        *slog.Logger
+	serverAddr       string
+	token            string
+	customHeaders    map[string]string
+	timeout          time.Duration
+	insecure         bool
+	dockerConfigPath string
+	logger           *slog.Logger
 }
 
 // NewTrivyScanner creates a new Trivy scanner client
@@ -31,6 +33,17 @@ func NewTrivyScanner(cfg config.ScannerConfig) (*TrivyScanner, error) {
 		timeout:       cfg.Timeout,
 		insecure:      cfg.Insecure,
 		logger:        slog.Default(),
+	}
+
+	// Generate Docker config from regsync.yml if registry credentials are needed
+	if cfg.RegsyncPath != "" {
+		dockerConfigPath, err := GenerateDockerConfigFromRegsync(cfg.RegsyncPath)
+		if err != nil {
+			scanner.logger.Warn("failed to generate docker config from regsync", "error", err)
+		} else {
+			scanner.dockerConfigPath = dockerConfigPath
+			scanner.logger.Info("generated docker config for registry authentication", "path", dockerConfigPath)
+		}
 	}
 
 	return scanner, nil
@@ -58,6 +71,7 @@ func (s *TrivyScanner) GenerateSBOM(ctx context.Context, imageRef string) (*SBOM
 	args := []string{
 		"image",
 		"--format", "cyclonedx",
+		"--image-src", "remote", // Force remote registry access instead of local Docker daemon
 	}
 
 	// Add server address if configured
@@ -77,6 +91,11 @@ func (s *TrivyScanner) GenerateSBOM(ctx context.Context, imageRef string) (*SBOM
 	var stdout, stderr bytes.Buffer
 	cmd.Stdout = &stdout
 	cmd.Stderr = &stderr
+
+	// Set DOCKER_CONFIG environment variable if we have a config path
+	if s.dockerConfigPath != "" {
+		cmd.Env = append(os.Environ(), fmt.Sprintf("DOCKER_CONFIG=%s", s.dockerConfigPath))
+	}
 
 	if err := cmd.Run(); err != nil {
 		duration := time.Since(startTime)
@@ -137,6 +156,7 @@ func (s *TrivyScanner) ScanVulnerabilities(ctx context.Context, imageRef string)
 		"--format", "json",
 		"--quiet",
 		"--scanners", "vuln",
+		"--image-src", "remote", // Force remote registry access instead of local Docker daemon
 	}
 
 	// Add server address if configured
@@ -156,6 +176,11 @@ func (s *TrivyScanner) ScanVulnerabilities(ctx context.Context, imageRef string)
 	var stdout, stderr bytes.Buffer
 	cmd.Stdout = &stdout
 	cmd.Stderr = &stderr
+
+	// Set DOCKER_CONFIG environment variable if we have a config path
+	if s.dockerConfigPath != "" {
+		cmd.Env = append(os.Environ(), fmt.Sprintf("DOCKER_CONFIG=%s", s.dockerConfigPath))
+	}
 
 	if err := cmd.Run(); err != nil {
 		duration := time.Since(startTime)

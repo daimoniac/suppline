@@ -21,7 +21,7 @@ services:
       - WORKER_POLL_INTERVAL=5m
       - WORKER_RETRY_ATTEMPTS=3
       - WORKER_RETRY_BACKOFF=10s
-      - SCANNER_SERVER_ADDR=trivy:4954
+      - TRIVY_SERVER_ADDR=trivy:4954
       - SCANNER_TIMEOUT=5m
       - STATE_STORE_TYPE=sqlite
       - SQLITE_PATH=/data/suppline.db
@@ -44,36 +44,36 @@ services:
       retries: 3
       start_period: 10s
 
-  # Web UI
-  ui:
-    image: nginx:alpine
-    container_name: suppline-ui
-    ports:
-      - "3000:80"
-    environment:
-      - API_BASE_URL=http://localhost:8080
-    volumes:
-      - ./cmd/suppline-ui/web:/usr/share/nginx/html-source:ro
-      - ./cmd/suppline-ui/nginx.conf:/etc/nginx/conf.d/default.conf:ro
-      - ui-html:/usr/share/nginx/html
-    entrypoint:
-      - sh
-      - -c
-      - |
-        cp -r /usr/share/nginx/html-source/* /usr/share/nginx/html/
-        echo "window.APP_CONFIG = {\"apiBaseURL\": \"$$API_BASE_URL\"};" > /usr/share/nginx/html/config.js
-        exec nginx -g 'daemon off;'
-    depends_on:
-      - suppline
-    networks:
-      - suppline
-    restart: unless-stopped
-    healthcheck:
-      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:80/"]
-      interval: 30s
-      timeout: 5s
-      retries: 3
-      start_period: 5s
+  # # Web UI
+  # ui:
+  #   image: nginx:alpine
+  #   container_name: suppline-ui
+  #   ports:
+  #     - "3000:80"
+  #   environment:
+  #     - API_BASE_URL=http://localhost:8080
+  #   volumes:
+  #     - ./cmd/suppline-ui/web:/usr/share/nginx/html-source:ro
+  #     - ./cmd/suppline-ui/nginx.conf:/etc/nginx/conf.d/default.conf:ro
+  #     - ui-html:/usr/share/nginx/html
+  #   entrypoint:
+  #     - sh
+  #     - -c
+  #     - |
+  #       cp -r /usr/share/nginx/html-source/* /usr/share/nginx/html/
+  #       echo "window.APP_CONFIG = {\"apiBaseURL\": \"$$API_BASE_URL\"};" > /usr/share/nginx/html/config.js
+  #       exec nginx -g 'daemon off;'
+  #   depends_on:
+  #     - suppline
+  #   networks:
+  #     - suppline
+  #   restart: unless-stopped
+  #   healthcheck:
+  #     test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:80/"]
+  #     interval: 30s
+  #     timeout: 5s
+  #     retries: 3
+  #     start_period: 5s
 
   # Trivy server
   trivy:
