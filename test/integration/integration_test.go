@@ -944,7 +944,7 @@ func TestAttestation(t *testing.T) {
 		},
 	}
 
-	attestor, err := attestation.NewSigstoreAttestor(cfg, nil)
+	attestor, err := attestation.NewSigstoreAttestor(cfg, nil, nil)
 	if err != nil {
 		t.Fatalf("Failed to create attestor: %v", err)
 	}
@@ -1117,7 +1117,7 @@ func TestOptimizedAttestationFlow(t *testing.T) {
 		},
 	}
 
-	attestor, err := attestation.NewSigstoreAttestor(attestorCfg, nil)
+	attestor, err := attestation.NewSigstoreAttestor(attestorCfg, nil, nil)
 	if err != nil {
 		t.Fatalf("Failed to create attestor: %v", err)
 	}

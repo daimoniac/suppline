@@ -58,7 +58,6 @@ func (s *TrivyScanner) GenerateSBOM(ctx context.Context, imageRef string) (*SBOM
 	args := []string{
 		"image",
 		"--format", "cyclonedx",
-		"--quiet",
 	}
 
 	// Add server address if configured

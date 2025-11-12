@@ -18,10 +18,14 @@ type SCAIGenerator struct {
 }
 
 // NewSCAIGenerator creates a new SCAI generator
-func NewSCAIGenerator(config *regsync.Config) *SCAIGenerator {
+func NewSCAIGenerator(config *regsync.Config, logger *slog.Logger) *SCAIGenerator {
+	if logger == nil {
+		logger = slog.Default()
+	}
+	
 	return &SCAIGenerator{
 		config: config,
-		logger: slog.Default(),
+		logger: logger,
 	}
 }
 

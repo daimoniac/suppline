@@ -74,7 +74,7 @@ func NewImageWorker(
 
 	var scaiGenerator *attestation.SCAIGenerator
 	if regsyncCfg != nil {
-		scaiGenerator = attestation.NewSCAIGenerator(regsyncCfg)
+		scaiGenerator = attestation.NewSCAIGenerator(regsyncCfg, logger)
 	}
 
 	return &ImageWorker{

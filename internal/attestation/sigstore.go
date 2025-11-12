@@ -21,11 +21,15 @@ type SigstoreAttestor struct {
 }
 
 // NewSigstoreAttestor creates a new Sigstore attestor
-func NewSigstoreAttestor(config AttestationConfig, authConfig map[string]authn.Authenticator) (*SigstoreAttestor, error) {
+func NewSigstoreAttestor(config AttestationConfig, authConfig map[string]authn.Authenticator, logger *slog.Logger) (*SigstoreAttestor, error) {
+	if logger == nil {
+		logger = slog.Default()
+	}
+	
 	attestor := &SigstoreAttestor{
 		config:     config,
 		authConfig: authConfig,
-		logger:     slog.Default(),
+		logger:     logger,
 	}
 
 	// Validate configuration

@@ -5,6 +5,7 @@ import (
 	"errors"
 	"net/http"
 	"net/http/httptest"
+	"sync/atomic"
 	"testing"
 	"time"
 )
@@ -112,10 +113,10 @@ func TestPeriodicChecks(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 100*time.Millisecond)
 	defer cancel()
 
-	checkCount := 0
+	var checkCount atomic.Int32
 	checks := map[string]HealthCheckFunc{
 		"test": func(ctx context.Context) error {
-			checkCount++
+			checkCount.Add(1)
 			return nil
 		},
 	}
@@ -124,7 +125,7 @@ func TestPeriodicChecks(t *testing.T) {
 
 	<-ctx.Done()
 
-	if checkCount < 2 {
-		t.Errorf("expected at least 2 checks, got %d", checkCount)
+	if checkCount.Load() < 2 {
+		t.Errorf("expected at least 2 checks, got %d", checkCount.Load())
 	}
 }
