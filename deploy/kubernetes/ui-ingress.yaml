@@ -1,0 +1,29 @@
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: suppline-ui
+  namespace: suppline
+  labels:
+    app: suppline-ui
+    app.kubernetes.io/component: web-ui
+  annotations:
+    # Uncomment and configure based on your ingress controller
+    # nginx.ingress.kubernetes.io/rewrite-target: /
+    # cert-manager.io/cluster-issuer: letsencrypt-prod
+spec:
+  # Uncomment to enable TLS
+  # tls:
+  # - hosts:
+  #   - suppline.example.com
+  #   secretName: suppline-ui-tls
+  rules:
+  - host: suppline.example.com  # Replace with your domain
+    http:
+      paths:
+      - path: /
+        pathType: Prefix
+        backend:
+          service:
+            name: suppline-ui
+            port:
+              name: http

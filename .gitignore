@@ -1,0 +1,45 @@
+# Binaries
+/suppline
+/suppline-ui
+
+# Test binary
+*.test
+
+# Output of the go coverage tool
+*.out
+
+# Dependency directories
+vendor/
+
+# Go workspace file
+go.work
+
+# IDE
+.kiro/
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# Configuration files with secrets
+/regsync.yml
+/keys/*
+.env
+
+# State store
+*.db
+*.db-shm
+*.db-wal
+
+# Logs
+*.log
+
+# Test artifacts
+coverage.txt
+test_*.db
+test/*.db
+
+# Generated API documentation (regenerate with 'make swagger')
+docs/swagger/
+docs/

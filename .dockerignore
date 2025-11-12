@@ -1,0 +1,52 @@
+# Git
+.git
+.gitignore
+.github
+
+# Documentation
+*.md
+!README.md
+docs/
+!docs/swagger/
+
+# Build artifacts
+suppline
+dist/
+*.db
+coverage.txt
+
+# Test files
+*_test.go
+test/
+testdata/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# CI/CD
+.github/
+
+# Kubernetes
+deploy/
+
+# Docker
+docker-compose*.yml
+Dockerfile*
+.dockerignore
+
+# Data
+data/
+keys/
+*.key
+*.pem
+
+# Logs
+*.log
+
+# OS
+.DS_Store
+Thumbs.db

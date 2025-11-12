@@ -1,0 +1,96 @@
+name: API Documentation
+
+on:
+  pull_request:
+    paths:
+      - 'internal/api/**'
+      - 'internal/statestore/**'
+      - 'docs/swagger/**'
+  push:
+    branches:
+      - main
+
+jobs:
+  verify-docs:
+    name: Verify API docs are up-to-date
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+      
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.25'
+      
+      - name: Install swag
+        run: go install github.com/swaggo/swag/cmd/swag@latest
+      
+      - name: Generate Swagger docs
+        run: make swagger
+      
+      - name: Check for uncommitted changes
+        run: |
+          if [[ -n $(git status -s docs/swagger/) ]]; then
+            echo "❌ API documentation is out of sync!"
+            echo "Please run 'make swagger' and commit the changes."
+            echo ""
+            echo "Changed files:"
+            git status -s docs/swagger/
+            echo ""
+            echo "Diff:"
+            git diff docs/swagger/
+            exit 1
+          fi
+          echo "✅ API documentation is up-to-date"
+      
+      - name: Upload Swagger spec as artifact
+        if: github.event_name == 'pull_request'
+        uses: actions/upload-artifact@v4
+        with:
+          name: swagger-spec
+          path: docs/swagger/swagger.json
+          retention-days: 7
+
+  # Optional: Deploy docs to GitHub Pages
+  deploy-docs:
+    name: Deploy API docs to GitHub Pages
+    runs-on: ubuntu-latest
+    if: github.ref == 'refs/heads/main'
+    needs: verify-docs
+    
+    permissions:
+      contents: read
+      pages: write
+      id-token: write
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+      
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.25'
+      
+      - name: Install swag
+        run: go install github.com/swaggo/swag/cmd/swag@latest
+      
+      - name: Generate Swagger docs
+        run: make swagger
+      
+      - name: Create docs site
+        run: |
+          mkdir -p _site
+          cp docs/swagger/* _site/
+          cp docs/api-docs.html _site/index.html
+          cp docs/*.md _site/
+      
+      - name: Upload to GitHub Pages
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: _site
+      
+      - name: Deploy to GitHub Pages
+        uses: actions/deploy-pages@v4

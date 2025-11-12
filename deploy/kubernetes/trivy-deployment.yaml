@@ -1,0 +1,97 @@
+# Alternative: Deploy Trivy as a separate deployment instead of sidecar
+# Use this if you want to scale Trivy independently or share it across multiple instances
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: trivy-server
+  namespace: suppline
+  labels:
+    app: trivy-server
+    component: scanner
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: trivy-server
+  template:
+    metadata:
+      labels:
+        app: trivy-server
+        component: scanner
+    spec:
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 100
+        runAsGroup: 100
+        fsGroup: 100
+      
+      containers:
+      - name: trivy
+        image: aquasec/trivy:0.58.2
+        args:
+        - server
+        - --listen
+        - 0.0.0.0:4954
+        
+        ports:
+        - name: trivy
+          containerPort: 4954
+          protocol: TCP
+        
+        env:
+        - name: TRIVY_CACHE_DIR
+          value: /trivy-cache
+        
+        volumeMounts:
+        - name: trivy-cache
+          mountPath: /trivy-cache
+        
+        resources:
+          requests:
+            memory: "1Gi"
+            cpu: "500m"
+          limits:
+            memory: "2Gi"
+            cpu: "1000m"
+        
+        livenessProbe:
+          tcpSocket:
+            port: trivy
+          initialDelaySeconds: 30
+          periodSeconds: 30
+        
+        readinessProbe:
+          tcpSocket:
+            port: trivy
+          initialDelaySeconds: 10
+          periodSeconds: 10
+        
+        securityContext:
+          allowPrivilegeEscalation: false
+          readOnlyRootFilesystem: true
+          capabilities:
+            drop:
+            - ALL
+      
+      volumes:
+      - name: trivy-cache
+        persistentVolumeClaim:
+          claimName: trivy-cache
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: trivy-server
+  namespace: suppline
+  labels:
+    app: trivy-server
+    component: scanner
+spec:
+  type: ClusterIP
+  ports:
+  - name: trivy
+    port: 4954
+    targetPort: trivy
+    protocol: TCP
+  selector:
+    app: trivy-server

@@ -1,0 +1,20 @@
+version: 1
+
+# Test regsync configuration for integration tests
+creds:
+  - registry: localhost:5000
+    user: testuser
+    pass: testpass
+
+sync:
+  - source: docker.io/library/alpine:3.7
+    target: localhost:5000/test/alpine:3.7
+    type: image
+    x-tolerate:
+      - cve: CVE-2024-99999
+        expires: 2025-12-31
+        reason: "Test toleration for integration tests"
+
+  - source: docker.io/library/nginx:alpine
+    target: localhost:5000/test/nginx:alpine
+    type: image

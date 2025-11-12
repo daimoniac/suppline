@@ -1,0 +1,164 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: suppline
+  namespace: suppline
+  labels:
+    app: suppline
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate  # Use Recreate to avoid multiple instances with SQLite
+  selector:
+    matchLabels:
+      app: suppline
+  template:
+    metadata:
+      labels:
+        app: suppline
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "9090"
+        prometheus.io/path: "/metrics"
+    spec:
+      serviceAccountName: suppline
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        runAsGroup: 1000
+        fsGroup: 1000
+      
+      containers:
+      # Main application container
+      - name: suppline
+        image: suppline:latest
+        imagePullPolicy: IfNotPresent
+        
+        ports:
+        - name: api
+          containerPort: 8080
+          protocol: TCP
+        - name: metrics
+          containerPort: 9090
+          protocol: TCP
+        - name: health
+          containerPort: 8081
+          protocol: TCP
+        
+        envFrom:
+        - configMapRef:
+            name: suppline-config
+        - secretRef:
+            name: suppline-secrets
+        
+        volumeMounts:
+        - name: data
+          mountPath: /data
+        - name: config
+          mountPath: /config
+          readOnly: true
+        - name: signing-key
+          mountPath: /keys
+          readOnly: true
+        
+        resources:
+          requests:
+            memory: "512Mi"
+            cpu: "500m"
+          limits:
+            memory: "1Gi"
+            cpu: "1000m"
+        
+        livenessProbe:
+          httpGet:
+            path: /health
+            port: health
+          initialDelaySeconds: 30
+          periodSeconds: 30
+          timeoutSeconds: 10
+          failureThreshold: 3
+        
+        readinessProbe:
+          httpGet:
+            path: /health
+            port: health
+          initialDelaySeconds: 10
+          periodSeconds: 10
+          timeoutSeconds: 5
+          failureThreshold: 3
+        
+        securityContext:
+          allowPrivilegeEscalation: false
+          readOnlyRootFilesystem: true
+          capabilities:
+            drop:
+            - ALL
+      
+      # Trivy server sidecar
+      - name: trivy
+        image: aquasec/trivy:0.58.2
+        args:
+        - server
+        - --listen
+        - 0.0.0.0:4954
+        
+        ports:
+        - name: trivy
+          containerPort: 4954
+          protocol: TCP
+        
+        env:
+        - name: TRIVY_CACHE_DIR
+          value: /trivy-cache
+        
+        volumeMounts:
+        - name: trivy-cache
+          mountPath: /trivy-cache
+        
+        resources:
+          requests:
+            memory: "1Gi"
+            cpu: "500m"
+          limits:
+            memory: "2Gi"
+            cpu: "1000m"
+        
+        livenessProbe:
+          tcpSocket:
+            port: trivy
+          initialDelaySeconds: 30
+          periodSeconds: 30
+        
+        readinessProbe:
+          tcpSocket:
+            port: trivy
+          initialDelaySeconds: 10
+          periodSeconds: 10
+        
+        securityContext:
+          allowPrivilegeEscalation: false
+          readOnlyRootFilesystem: true
+          capabilities:
+            drop:
+            - ALL
+      
+      volumes:
+      - name: data
+        persistentVolumeClaim:
+          claimName: suppline-data
+      - name: trivy-cache
+        persistentVolumeClaim:
+          claimName: trivy-cache
+      - name: config
+        secret:
+          secretName: suppline-secrets
+          items:
+          - key: regsync.yml
+            path: regsync.yml
+      - name: signing-key
+        secret:
+          secretName: suppline-signing-key
+          optional: true
+          items:
+          - key: cosign.key
+            path: cosign.key

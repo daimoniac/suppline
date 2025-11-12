@@ -1,0 +1,45 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: suppline
+  namespace: suppline
+  labels:
+    app: suppline
+spec:
+  type: ClusterIP
+  ports:
+  - name: api
+    port: 8080
+    targetPort: api
+    protocol: TCP
+  - name: metrics
+    port: 9090
+    targetPort: metrics
+    protocol: TCP
+  - name: health
+    port: 8081
+    targetPort: health
+    protocol: TCP
+  selector:
+    app: suppline
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: suppline-metrics
+  namespace: suppline
+  labels:
+    app: suppline
+  annotations:
+    prometheus.io/scrape: "true"
+    prometheus.io/port: "9090"
+    prometheus.io/path: "/metrics"
+spec:
+  type: ClusterIP
+  ports:
+  - name: metrics
+    port: 9090
+    targetPort: metrics
+    protocol: TCP
+  selector:
+    app: suppline

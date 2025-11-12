@@ -1,0 +1,119 @@
+# Standalone deployment without Trivy sidecar
+# Use this with trivy-deployment.yaml for separate Trivy server
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: suppline
+  namespace: suppline
+  labels:
+    app: suppline
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate  # Use Recreate to avoid multiple instances with SQLite
+  selector:
+    matchLabels:
+      app: suppline
+  template:
+    metadata:
+      labels:
+        app: suppline
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "9090"
+        prometheus.io/path: "/metrics"
+    spec:
+      serviceAccountName: suppline
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        runAsGroup: 1000
+        fsGroup: 1000
+      
+      containers:
+      - name: suppline
+        image: suppline:latest
+        imagePullPolicy: IfNotPresent
+        
+        ports:
+        - name: api
+          containerPort: 8080
+          protocol: TCP
+        - name: metrics
+          containerPort: 9090
+          protocol: TCP
+        - name: health
+          containerPort: 8081
+          protocol: TCP
+        
+        env:
+        # Override scanner address to use separate Trivy service
+        - name: SCANNER_SERVER_ADDR
+          value: "trivy-server:4954"
+        
+        envFrom:
+        - configMapRef:
+            name: suppline-config
+        - secretRef:
+            name: suppline-secrets
+        
+        volumeMounts:
+        - name: data
+          mountPath: /data
+        - name: config
+          mountPath: /config
+          readOnly: true
+        - name: signing-key
+          mountPath: /keys
+          readOnly: true
+        
+        resources:
+          requests:
+            memory: "512Mi"
+            cpu: "500m"
+          limits:
+            memory: "1Gi"
+            cpu: "1000m"
+        
+        livenessProbe:
+          httpGet:
+            path: /health
+            port: health
+          initialDelaySeconds: 30
+          periodSeconds: 30
+          timeoutSeconds: 10
+          failureThreshold: 3
+        
+        readinessProbe:
+          httpGet:
+            path: /health
+            port: health
+          initialDelaySeconds: 10
+          periodSeconds: 10
+          timeoutSeconds: 5
+          failureThreshold: 3
+        
+        securityContext:
+          allowPrivilegeEscalation: false
+          readOnlyRootFilesystem: true
+          capabilities:
+            drop:
+            - ALL
+      
+      volumes:
+      - name: data
+        persistentVolumeClaim:
+          claimName: suppline-data
+      - name: config
+        secret:
+          secretName: suppline-secrets
+          items:
+          - key: regsync.yml
+            path: regsync.yml
+      - name: signing-key
+        secret:
+          secretName: suppline-signing-key
+          optional: true
+          items:
+          - key: cosign.key
+            path: cosign.key

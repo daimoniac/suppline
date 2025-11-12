@@ -1,0 +1,39 @@
+version: 1
+
+creds:
+  - registry: docker.io
+    user: myuser
+    pass: mypassword
+    repoAuth: true
+    reqPerSec: 100
+    reqConcurrent: 5
+
+defaults:
+  parallel: 2
+  x-rescanInterval: 7d        # Default rescan interval for all sync entries (optional)
+
+sync:
+  - source: nginx
+    target: hostingmaloonde/nginx
+    type: repository
+    schedule: "0 */6 * * *"
+    x-rescanInterval: 3d      # Override default rescan interval for this entry (optional)
+    x-tolerate:
+      - id: CVE-2024-56171
+        statement: initial toleration when introducing supplychain
+        expires_at: 2025-12-31T23:59:59Z
+      - id: CVE-2025-0838
+        statement: no fix available, accepted risk
+
+  - source: alpine
+    target: hostingmaloonde/alpine
+    type: repository
+    tags:
+      semverRange:
+        - ">=3.18.0"
+      deny:
+        - "latest"
+    x-tolerate:
+      - id: CVE-2024-12345
+        statement: false positive, not applicable to our use case
+        expires_at: 2025-06-30T23:59:59Z
