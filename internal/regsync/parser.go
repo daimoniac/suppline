@@ -3,6 +3,7 @@ package regsync
 import (
 	"fmt"
 	"os"
+	"strings"
 	"time"
 
 	"gopkg.in/yaml.v3"
@@ -85,21 +86,52 @@ func (c *Config) GetCredentialForRegistry(registry string) *RegistryCredential {
 }
 
 // GetTolerationsForTarget returns CVE tolerations for a specific target repository
+// Handles both type=repository (exact match) and type=image (strips tag for matching)
 func (c *Config) GetTolerationsForTarget(target string) []CVEToleration {
+	var allTolerations []CVEToleration
+	
 	for _, sync := range c.Sync {
-		if sync.Target == target {
-			return sync.Tolerate
+		syncTarget := sync.Target
+		
+		// For type=image, strip the tag for comparison
+		if sync.Type == "image" {
+			if idx := strings.LastIndex(syncTarget, ":"); idx != -1 {
+				syncTarget = syncTarget[:idx]
+			}
+		}
+		
+		if syncTarget == target {
+			allTolerations = append(allTolerations, sync.Tolerate...)
 		}
 	}
-	return nil
+	
+	return allTolerations
 }
 
 // GetTargetRepositories returns all target repositories from sync entries
+// For type=image entries, strips the tag to return just the repository name
 func (c *Config) GetTargetRepositories() []string {
+	seen := make(map[string]bool)
 	targets := make([]string, 0, len(c.Sync))
+	
 	for _, sync := range c.Sync {
-		targets = append(targets, sync.Target)
+		target := sync.Target
+		
+		// For type=image, strip the tag from the target
+		if sync.Type == "image" {
+			// Split on last colon to separate repo from tag
+			if idx := strings.LastIndex(target, ":"); idx != -1 {
+				target = target[:idx]
+			}
+		}
+		
+		// Deduplicate repositories
+		if !seen[target] {
+			seen[target] = true
+			targets = append(targets, target)
+		}
 	}
+	
 	return targets
 }
 
@@ -175,10 +207,20 @@ func parseInterval(interval string) (time.Duration, error) {
 
 // GetRescanInterval returns the rescan interval for a specific target repository
 // Returns the sync entry's interval if specified, otherwise the default, otherwise 7d
+// Handles both type=repository (exact match) and type=image (strips tag for matching)
 func (c *Config) GetRescanInterval(target string) (time.Duration, error) {
 	// Check sync entry first
 	for _, sync := range c.Sync {
-		if sync.Target == target && sync.RescanInterval != "" {
+		syncTarget := sync.Target
+		
+		// For type=image, strip the tag for comparison
+		if sync.Type == "image" {
+			if idx := strings.LastIndex(syncTarget, ":"); idx != -1 {
+				syncTarget = syncTarget[:idx]
+			}
+		}
+		
+		if syncTarget == target && sync.RescanInterval != "" {
 			return parseInterval(sync.RescanInterval)
 		}
 	}
@@ -195,10 +237,20 @@ func (c *Config) GetRescanInterval(target string) (time.Duration, error) {
 // GetSCAIValidityExtension returns the SCAI validity extension for a specific target repository
 // This is the additional time beyond the next scheduled scan that the SCAI attestation remains valid
 // Returns the sync entry's extension if specified, otherwise the default, otherwise 1d
+// Handles both type=repository (exact match) and type=image (strips tag for matching)
 func (c *Config) GetSCAIValidityExtension(target string) (time.Duration, error) {
 	// Check sync entry first
 	for _, sync := range c.Sync {
-		if sync.Target == target && sync.SCAIValidityExtension != "" {
+		syncTarget := sync.Target
+		
+		// For type=image, strip the tag for comparison
+		if sync.Type == "image" {
+			if idx := strings.LastIndex(syncTarget, ":"); idx != -1 {
+				syncTarget = syncTarget[:idx]
+			}
+		}
+		
+		if syncTarget == target && sync.SCAIValidityExtension != "" {
 			return parseInterval(sync.SCAIValidityExtension)
 		}
 	}
@@ -210,4 +262,28 @@ func (c *Config) GetSCAIValidityExtension(target string) (time.Duration, error) 
 
 	// Fall back to hardcoded default (1 day)
 	return 24 * time.Hour, nil
+}
+
+// GetTagsForRepository returns the tags that should be processed for a repository
+// For type=repository entries, returns nil (meaning all tags should be listed)
+// For type=image entries, returns the specific tag from the target
+func (c *Config) GetTagsForRepository(repo string) []string {
+	var tags []string
+	
+	for _, sync := range c.Sync {
+		if sync.Type == "image" {
+			// Extract repository from target (strip tag)
+			targetRepo := sync.Target
+			if idx := strings.LastIndex(targetRepo, ":"); idx != -1 {
+				repoWithoutTag := targetRepo[:idx]
+				tag := targetRepo[idx+1:]
+				
+				if repoWithoutTag == repo {
+					tags = append(tags, tag)
+				}
+			}
+		}
+	}
+	
+	return tags
 }

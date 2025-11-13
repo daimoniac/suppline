@@ -133,15 +133,29 @@ func (w *watcherImpl) processRepository(ctx context.Context, repo string) error 
 	// Check for expiring tolerations and log warnings
 	w.checkExpiringTolerations(repo, tolerations)
 
-	// List all tags for the repository
-	tags, err := w.registryClient.ListTags(ctx, repo)
-	if err != nil {
-		return fmt.Errorf("failed to list tags: %w", err)
+	// Check if this repository has specific tags defined (type=image entries)
+	specificTags := w.regsyncConfig.GetTagsForRepository(repo)
+	
+	var tags []string
+	var err error
+	
+	if len(specificTags) > 0 {
+		// For type=image entries, use the specific tags
+		tags = specificTags
+		w.logger.Debug("using specific tags for repository",
+			"repo", repo,
+			"tags", tags)
+	} else {
+		// For type=repository entries, list all tags
+		tags, err = w.registryClient.ListTags(ctx, repo)
+		if err != nil {
+			return fmt.Errorf("failed to list tags: %w", err)
+		}
+		
+		w.logger.Debug("repository tags discovered",
+			"repo", repo,
+			"tag_count", len(tags))
 	}
-
-	w.logger.Debug("repository tags discovered",
-		"repo", repo,
-		"tag_count", len(tags))
 
 	// Process each tag
 	for _, tag := range tags {
