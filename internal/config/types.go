@@ -125,10 +125,6 @@ type TagFilter struct {
 	Deny        []string `yaml:"deny,omitempty"`
 }
 
-// CVEToleration is an alias to the canonical toleration type for backward compatibility.
-// Deprecated: Use types.CVEToleration directly.
-type CVEToleration = types.CVEToleration
-
 // PolicyConfig represents a CEL-based security policy
 type PolicyConfig struct {
 	Expression     string `yaml:"expression"`

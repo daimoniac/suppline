@@ -11,6 +11,7 @@ import (
 	"github.com/suppline/suppline/internal/config"
 	"github.com/suppline/suppline/internal/queue"
 	"github.com/suppline/suppline/internal/statestore"
+	"github.com/suppline/suppline/internal/types"
 )
 
 // handleGetScan retrieves a scan record with vulnerabilities for a specific digest
@@ -298,9 +299,9 @@ func (s *APIServer) handleTriggerScan(w http.ResponseWriter, r *http.Request) {
 
 		// Get tolerations for this repository
 		tolerations := regsyncConfig.GetTolerationsForTarget(lastScan.Repository)
-		queueTolerations := make([]queue.CVEToleration, len(tolerations))
+		queueTolerations := make([]types.CVEToleration, len(tolerations))
 		for i, t := range tolerations {
-			queueTolerations[i] = queue.CVEToleration{
+			queueTolerations[i] = types.CVEToleration{
 				ID:        t.ID,
 				Statement: t.Statement,
 				ExpiresAt: t.ExpiresAt,
@@ -358,9 +359,9 @@ func (s *APIServer) handleTriggerScan(w http.ResponseWriter, r *http.Request) {
 
 		// Get tolerations for this repository
 		tolerations := regsyncConfig.GetTolerationsForTarget(req.Repository)
-		queueTolerations := make([]queue.CVEToleration, len(tolerations))
+		queueTolerations := make([]types.CVEToleration, len(tolerations))
 		for i, t := range tolerations {
-			queueTolerations[i] = queue.CVEToleration{
+			queueTolerations[i] = types.CVEToleration{
 				ID:        t.ID,
 				Statement: t.Statement,
 				ExpiresAt: t.ExpiresAt,
@@ -484,9 +485,9 @@ func (s *APIServer) handleReevaluatePolicy(w http.ResponseWriter, r *http.Reques
 	for _, scan := range scans {
 		// Get updated tolerations for this repository
 		tolerations := regsyncConfig.GetTolerationsForTarget(scan.Repository)
-		queueTolerations := make([]queue.CVEToleration, len(tolerations))
+		queueTolerations := make([]types.CVEToleration, len(tolerations))
 		for i, t := range tolerations {
-			queueTolerations[i] = queue.CVEToleration{
+			queueTolerations[i] = types.CVEToleration{
 				ID:        t.ID,
 				Statement: t.Statement,
 				ExpiresAt: t.ExpiresAt,

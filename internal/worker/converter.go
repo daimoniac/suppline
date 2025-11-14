@@ -40,7 +40,7 @@ func (b *ScanRecordBuilder) Build(
 
 	// Count vulnerabilities by severity and convert to records
 	var criticalCount, highCount, mediumCount, lowCount int
-	vulnerabilityRecords := make([]statestore.VulnerabilityRecord, 0, len(canonicalVulns))
+	vulnerabilityRecords := make([]types.VulnerabilityRecord, 0, len(canonicalVulns))
 
 	for _, vuln := range canonicalVulns {
 		// Count by severity

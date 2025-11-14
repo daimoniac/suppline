@@ -17,6 +17,7 @@ import (
 	"github.com/suppline/suppline/internal/registry"
 	"github.com/suppline/suppline/internal/scanner"
 	"github.com/suppline/suppline/internal/statestore"
+	"github.com/suppline/suppline/internal/types"
 )
 
 // TestMain sets up and tears down the test environment
@@ -323,7 +324,7 @@ func TestStateStore(t *testing.T) {
 			Signed:            true,
 			SBOMAttested:      true,
 			VulnAttested:      true,
-			Vulnerabilities: []statestore.VulnerabilityRecord{
+			Vulnerabilities: []types.VulnerabilityRecord{
 				{
 					CVEID:            "CVE-2024-12345",
 					Severity:         "HIGH",
@@ -333,7 +334,7 @@ func TestStateStore(t *testing.T) {
 					Description:      "Test vulnerability",
 				},
 			},
-			ToleratedCVEs: []statestore.ToleratedCVE{
+			ToleratedCVEs: []types.ToleratedCVE{
 				{
 					CVEID:       "CVE-2024-99999",
 					Statement:   "Test toleration",
@@ -622,14 +623,14 @@ func TestEndToEndWorkflow(t *testing.T) {
 		}
 
 		// 5. Record scan results
-		vulnRecords := make([]statestore.VulnerabilityRecord, 0, len(scanResult.Vulnerabilities))
+		vulnRecords := make([]types.VulnerabilityRecord, 0, len(scanResult.Vulnerabilities))
 		criticalCount := 0
 		highCount := 0
 		mediumCount := 0
 		lowCount := 0
 		
 		for _, vuln := range scanResult.Vulnerabilities {
-			vulnRecords = append(vulnRecords, statestore.VulnerabilityRecord{
+			vulnRecords = append(vulnRecords, types.VulnerabilityRecord{
 				CVEID:            vuln.ID,
 				Severity:         vuln.Severity,
 				PackageName:      vuln.PackageName,
@@ -705,7 +706,7 @@ func TestPolicyEngine(t *testing.T) {
 	expiresAt := time.Now().Add(30 * 24 * time.Hour)
 	expiredAt := time.Now().Add(-1 * time.Hour)
 
-	tolerations := []config.CVEToleration{
+	tolerations := []types.CVEToleration{
 		{
 			ID:        "CVE-2024-TOLERATED",
 			Statement: "Accepted risk for testing",
@@ -729,7 +730,7 @@ func TestPolicyEngine(t *testing.T) {
 	t.Run("PassWithNoVulnerabilities", func(t *testing.T) {
 		result := &scanner.ScanResult{
 			ImageRef:        "myregistry.com/nginx:latest",
-			Vulnerabilities: []scanner.Vulnerability{},
+			Vulnerabilities: []types.Vulnerability{},
 		}
 
 		decision, err := engine.Evaluate(ctx, "myregistry.com/nginx:latest", result, tolerations)
@@ -749,7 +750,7 @@ func TestPolicyEngine(t *testing.T) {
 	t.Run("FailWithCriticalVulnerabilities", func(t *testing.T) {
 		result := &scanner.ScanResult{
 			ImageRef: "myregistry.com/nginx:latest",
-			Vulnerabilities: []scanner.Vulnerability{
+			Vulnerabilities: []types.Vulnerability{
 				{
 					ID:       "CVE-2024-CRITICAL",
 					Severity: "CRITICAL",
@@ -778,7 +779,7 @@ func TestPolicyEngine(t *testing.T) {
 	t.Run("PassWithToleratedCVE", func(t *testing.T) {
 		result := &scanner.ScanResult{
 			ImageRef: "myregistry.com/nginx:latest",
-			Vulnerabilities: []scanner.Vulnerability{
+			Vulnerabilities: []types.Vulnerability{
 				{
 					ID:       "CVE-2024-TOLERATED",
 					Severity: "CRITICAL",
@@ -807,7 +808,7 @@ func TestPolicyEngine(t *testing.T) {
 	t.Run("FailWithExpiredToleration", func(t *testing.T) {
 		result := &scanner.ScanResult{
 			ImageRef: "myregistry.com/nginx:latest",
-			Vulnerabilities: []scanner.Vulnerability{
+			Vulnerabilities: []types.Vulnerability{
 				{
 					ID:       "CVE-2024-EXPIRED",
 					Severity: "CRITICAL",
@@ -831,7 +832,7 @@ func TestPolicyEngine(t *testing.T) {
 
 	t.Run("ExpiringTolerationsWarning", func(t *testing.T) {
 		expiringSoon := time.Now().Add(5 * 24 * time.Hour)
-		expiringTolerations := []config.CVEToleration{
+		expiringTolerations := []types.CVEToleration{
 			{
 				ID:        "CVE-2024-EXPIRING",
 				Statement: "Expiring soon",
@@ -841,7 +842,7 @@ func TestPolicyEngine(t *testing.T) {
 
 		result := &scanner.ScanResult{
 			ImageRef: "myregistry.com/nginx:latest",
-			Vulnerabilities: []scanner.Vulnerability{
+			Vulnerabilities: []types.Vulnerability{
 				{
 					ID:       "CVE-2024-EXPIRING",
 					Severity: "CRITICAL",
@@ -1029,7 +1030,7 @@ func TestAttestation(t *testing.T) {
 	t.Run("AttestVulnerabilities", func(t *testing.T) {
 		scanResult := &scanner.ScanResult{
 			ImageRef: "test.registry.io/test/image@sha256:test123",
-			Vulnerabilities: []scanner.Vulnerability{
+			Vulnerabilities: []types.Vulnerability{
 				{
 					ID:          "CVE-2024-TEST",
 					Severity:    "HIGH",
@@ -1066,7 +1067,7 @@ func TestAttestation(t *testing.T) {
 func TestPolicyAndAttestationWorkflow(t *testing.T) {
 	// Setup policy engine
 	expiresAt := time.Now().Add(30 * 24 * time.Hour)
-	tolerations := []config.CVEToleration{
+	tolerations := []types.CVEToleration{
 		{
 			ID:        "CVE-2024-TOLERATED",
 			Statement: "Accepted risk",
@@ -1086,7 +1087,7 @@ func TestPolicyAndAttestationWorkflow(t *testing.T) {
 		// Scan result with tolerated CVE
 		scanResult := &scanner.ScanResult{
 			ImageRef: "myregistry.com/nginx:latest",
-			Vulnerabilities: []scanner.Vulnerability{
+			Vulnerabilities: []types.Vulnerability{
 				{
 					ID:       "CVE-2024-TOLERATED",
 					Severity: "CRITICAL",
@@ -1123,7 +1124,7 @@ func TestPolicyAndAttestationWorkflow(t *testing.T) {
 		// Scan result with non-tolerated critical CVE
 		scanResult := &scanner.ScanResult{
 			ImageRef: "myregistry.com/nginx:latest",
-			Vulnerabilities: []scanner.Vulnerability{
+			Vulnerabilities: []types.Vulnerability{
 				{
 					ID:       "CVE-2024-CRITICAL",
 					Severity: "CRITICAL",
@@ -1513,7 +1514,7 @@ func TestCompleteWorkerWorkflow(t *testing.T) {
 
 		// Step 3: Evaluate policy (no tolerations)
 		t.Log("Step 3: Evaluating policy...")
-		decision, err := policyEngine.Evaluate(ctx, imageRef, scanResult, []config.CVEToleration{})
+		decision, err := policyEngine.Evaluate(ctx, imageRef, scanResult, []types.CVEToleration{})
 		if err != nil {
 			t.Fatalf("Failed to evaluate policy: %v", err)
 		}
@@ -1522,14 +1523,14 @@ func TestCompleteWorkerWorkflow(t *testing.T) {
 
 		// Step 4: Record scan results
 		t.Log("Step 4: Recording scan results...")
-		vulnRecords := make([]statestore.VulnerabilityRecord, 0, len(scanResult.Vulnerabilities))
+		vulnRecords := make([]types.VulnerabilityRecord, 0, len(scanResult.Vulnerabilities))
 		criticalCount := 0
 		highCount := 0
 		mediumCount := 0
 		lowCount := 0
 
 		for _, vuln := range scanResult.Vulnerabilities {
-			vulnRecords = append(vulnRecords, statestore.VulnerabilityRecord{
+			vulnRecords = append(vulnRecords, types.VulnerabilityRecord{
 				CVEID:            vuln.ID,
 				Severity:         vuln.Severity,
 				PackageName:      vuln.PackageName,
@@ -1623,7 +1624,7 @@ func TestCompleteWorkerWorkflow(t *testing.T) {
 
 		// Step 3: Evaluate policy (no tolerations - should fail if critical vulns exist)
 		t.Log("Step 3: Evaluating policy...")
-		decision, err := policyEngine.Evaluate(ctx, imageRef, scanResult, []config.CVEToleration{})
+		decision, err := policyEngine.Evaluate(ctx, imageRef, scanResult, []types.CVEToleration{})
 		if err != nil {
 			t.Fatalf("Failed to evaluate policy: %v", err)
 		}
@@ -1631,14 +1632,14 @@ func TestCompleteWorkerWorkflow(t *testing.T) {
 
 		// Step 4: Record scan results
 		t.Log("Step 4: Recording scan results...")
-		vulnRecords := make([]statestore.VulnerabilityRecord, 0, len(scanResult.Vulnerabilities))
+		vulnRecords := make([]types.VulnerabilityRecord, 0, len(scanResult.Vulnerabilities))
 		criticalCount := 0
 		highCount := 0
 		mediumCount := 0
 		lowCount := 0
 
 		for _, vuln := range scanResult.Vulnerabilities {
-			vulnRecords = append(vulnRecords, statestore.VulnerabilityRecord{
+			vulnRecords = append(vulnRecords, types.VulnerabilityRecord{
 				CVEID:            vuln.ID,
 				Severity:         vuln.Severity,
 				PackageName:      vuln.PackageName,
@@ -1752,7 +1753,7 @@ func TestCompleteWorkerWorkflow(t *testing.T) {
 		// Step 3: Evaluate policy WITH toleration
 		t.Log("Step 3: Evaluating policy with toleration...")
 		expiresAt := time.Now().Add(30 * 24 * time.Hour)
-		tolerations := []config.CVEToleration{
+		tolerations := []types.CVEToleration{
 			{
 				ID:        criticalCVE,
 				Statement: "Accepted risk for integration testing",
@@ -1787,14 +1788,14 @@ func TestCompleteWorkerWorkflow(t *testing.T) {
 
 		// Step 4: Record scan results with tolerations
 		t.Log("Step 4: Recording scan results with tolerations...")
-		vulnRecords := make([]statestore.VulnerabilityRecord, 0, len(scanResult.Vulnerabilities))
+		vulnRecords := make([]types.VulnerabilityRecord, 0, len(scanResult.Vulnerabilities))
 		criticalCount := 0
 		highCount := 0
 		mediumCount := 0
 		lowCount := 0
 
 		for _, vuln := range scanResult.Vulnerabilities {
-			vulnRecords = append(vulnRecords, statestore.VulnerabilityRecord{
+			vulnRecords = append(vulnRecords, types.VulnerabilityRecord{
 				CVEID:            vuln.ID,
 				Severity:         vuln.Severity,
 				PackageName:      vuln.PackageName,
@@ -1817,7 +1818,7 @@ func TestCompleteWorkerWorkflow(t *testing.T) {
 			}
 		}
 
-		toleratedCVEs := []statestore.ToleratedCVE{
+		toleratedCVEs := []types.ToleratedCVE{
 			{
 				CVEID:       criticalCVE,
 				Statement:   "Accepted risk for integration testing",
@@ -1898,7 +1899,7 @@ func TestCompleteWorkerWorkflow(t *testing.T) {
 		}
 
 		expiresAt := time.Now().Add(30 * 24 * time.Hour)
-		tolerations := []config.CVEToleration{
+		tolerations := []types.CVEToleration{
 			{
 				ID:        criticalCVE,
 				Statement: "Temporary acceptance",
@@ -1931,7 +1932,7 @@ func TestCompleteWorkerWorkflow(t *testing.T) {
 
 		// Second scan: without toleration (should fail)
 		t.Log("Second scan: without toleration (rescan)...")
-		decision2, err := policyEngine.Evaluate(ctx, imageRef, scanResult, []config.CVEToleration{})
+		decision2, err := policyEngine.Evaluate(ctx, imageRef, scanResult, []types.CVEToleration{})
 		if err != nil {
 			t.Fatalf("Failed to evaluate policy on rescan: %v", err)
 		}

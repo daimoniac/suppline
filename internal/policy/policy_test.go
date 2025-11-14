@@ -6,8 +6,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/suppline/suppline/internal/config"
 	"github.com/suppline/suppline/internal/scanner"
+	"github.com/suppline/suppline/internal/types"
 )
 
 func TestEngine_Evaluate_NoCriticalVulnerabilities(t *testing.T) {
@@ -21,7 +21,7 @@ func TestEngine_Evaluate_NoCriticalVulnerabilities(t *testing.T) {
 
 	result := &scanner.ScanResult{
 		ImageRef: "test/image:v1",
-		Vulnerabilities: []scanner.Vulnerability{
+		Vulnerabilities: []types.Vulnerability{
 			{ID: "CVE-2024-0001", Severity: "HIGH", PackageName: "pkg1"},
 			{ID: "CVE-2024-0002", Severity: "MEDIUM", PackageName: "pkg2"},
 			{ID: "CVE-2024-0003", Severity: "LOW", PackageName: "pkg3"},
@@ -61,7 +61,7 @@ func TestEngine_Evaluate_CriticalVulnerabilitiesPresent(t *testing.T) {
 
 	result := &scanner.ScanResult{
 		ImageRef: "test/image:v1",
-		Vulnerabilities: []scanner.Vulnerability{
+		Vulnerabilities: []types.Vulnerability{
 			{ID: "CVE-2024-0001", Severity: "CRITICAL", PackageName: "pkg1"},
 			{ID: "CVE-2024-0002", Severity: "CRITICAL", PackageName: "pkg2"},
 			{ID: "CVE-2024-0003", Severity: "HIGH", PackageName: "pkg3"},
@@ -101,14 +101,14 @@ func TestEngine_Evaluate_ToleratedCVEs(t *testing.T) {
 
 	result := &scanner.ScanResult{
 		ImageRef: "test/image:v1",
-		Vulnerabilities: []scanner.Vulnerability{
+		Vulnerabilities: []types.Vulnerability{
 			{ID: "CVE-2024-0001", Severity: "CRITICAL", PackageName: "pkg1"},
 			{ID: "CVE-2024-0002", Severity: "CRITICAL", PackageName: "pkg2"},
 			{ID: "CVE-2024-0003", Severity: "CRITICAL", PackageName: "pkg3"},
 		},
 	}
 
-	tolerations := []config.CVEToleration{
+	tolerations := []types.CVEToleration{
 		{
 			ID:        "CVE-2024-0001",
 			Statement: "accepted risk, no fix available",
@@ -152,13 +152,13 @@ func TestEngine_Evaluate_AllCriticalVulnerabilitiesTolerated(t *testing.T) {
 
 	result := &scanner.ScanResult{
 		ImageRef: "test/image:v1",
-		Vulnerabilities: []scanner.Vulnerability{
+		Vulnerabilities: []types.Vulnerability{
 			{ID: "CVE-2024-0001", Severity: "CRITICAL", PackageName: "pkg1"},
 			{ID: "CVE-2024-0002", Severity: "CRITICAL", PackageName: "pkg2"},
 		},
 	}
 
-	tolerations := []config.CVEToleration{
+	tolerations := []types.CVEToleration{
 		{
 			ID:        "CVE-2024-0001",
 			Statement: "accepted risk",
@@ -202,13 +202,13 @@ func TestEngine_Evaluate_ExpiredToleration(t *testing.T) {
 
 	result := &scanner.ScanResult{
 		ImageRef: "test/image:v1",
-		Vulnerabilities: []scanner.Vulnerability{
+		Vulnerabilities: []types.Vulnerability{
 			{ID: "CVE-2024-0001", Severity: "CRITICAL", PackageName: "pkg1"},
 		},
 	}
 
 	expiredTime := time.Now().Add(-24 * time.Hour)
-	tolerations := []config.CVEToleration{
+	tolerations := []types.CVEToleration{
 		{
 			ID:        "CVE-2024-0001",
 			Statement: "temporary toleration",
@@ -245,13 +245,13 @@ func TestEngine_Evaluate_ActiveToleration(t *testing.T) {
 
 	result := &scanner.ScanResult{
 		ImageRef: "test/image:v1",
-		Vulnerabilities: []scanner.Vulnerability{
+		Vulnerabilities: []types.Vulnerability{
 			{ID: "CVE-2024-0001", Severity: "CRITICAL", PackageName: "pkg1"},
 		},
 	}
 
 	futureTime := time.Now().Add(30 * 24 * time.Hour)
-	tolerations := []config.CVEToleration{
+	tolerations := []types.CVEToleration{
 		{
 			ID:        "CVE-2024-0001",
 			Statement: "temporary toleration",
@@ -288,14 +288,14 @@ func TestEngine_Evaluate_ExpiringTolerationWarning(t *testing.T) {
 
 	result := &scanner.ScanResult{
 		ImageRef: "test/image:v1",
-		Vulnerabilities: []scanner.Vulnerability{
+		Vulnerabilities: []types.Vulnerability{
 			{ID: "CVE-2024-0001", Severity: "CRITICAL", PackageName: "pkg1"},
 		},
 	}
 
 	// Toleration expires in 3 days (within 7-day warning window)
 	expiringTime := time.Now().Add(3 * 24 * time.Hour)
-	tolerations := []config.CVEToleration{
+	tolerations := []types.CVEToleration{
 		{
 			ID:        "CVE-2024-0001",
 			Statement: "expiring soon",
@@ -338,14 +338,14 @@ func TestEngine_Evaluate_NoExpiringTolerationWarning(t *testing.T) {
 
 	result := &scanner.ScanResult{
 		ImageRef: "test/image:v1",
-		Vulnerabilities: []scanner.Vulnerability{
+		Vulnerabilities: []types.Vulnerability{
 			{ID: "CVE-2024-0001", Severity: "CRITICAL", PackageName: "pkg1"},
 		},
 	}
 
 	// Toleration expires in 30 days (outside 7-day warning window)
 	futureTime := time.Now().Add(30 * 24 * time.Hour)
-	tolerations := []config.CVEToleration{
+	tolerations := []types.CVEToleration{
 		{
 			ID:        "CVE-2024-0001",
 			Statement: "not expiring soon",
@@ -374,13 +374,13 @@ func TestEngine_Evaluate_PermanentToleration(t *testing.T) {
 
 	result := &scanner.ScanResult{
 		ImageRef: "test/image:v1",
-		Vulnerabilities: []scanner.Vulnerability{
+		Vulnerabilities: []types.Vulnerability{
 			{ID: "CVE-2024-0001", Severity: "CRITICAL", PackageName: "pkg1"},
 		},
 	}
 
 	// Toleration with no expiry date (permanent)
-	tolerations := []config.CVEToleration{
+	tolerations := []types.CVEToleration{
 		{
 			ID:        "CVE-2024-0001",
 			Statement: "permanent toleration",
@@ -428,7 +428,7 @@ func TestEngine_Evaluate_EmptyVulnerabilities(t *testing.T) {
 
 	result := &scanner.ScanResult{
 		ImageRef:        "test/image:v1",
-		Vulnerabilities: []scanner.Vulnerability{},
+		Vulnerabilities: []types.Vulnerability{},
 	}
 
 	decision, err := engine.Evaluate(ctx, "test/image:v1", result, nil)
@@ -459,14 +459,14 @@ func TestEngine_SetExpiryWarningWindow(t *testing.T) {
 	ctx := context.Background()
 	result := &scanner.ScanResult{
 		ImageRef: "test/image:v1",
-		Vulnerabilities: []scanner.Vulnerability{
+		Vulnerabilities: []types.Vulnerability{
 			{ID: "CVE-2024-0001", Severity: "CRITICAL", PackageName: "pkg1"},
 		},
 	}
 
 	// Toleration expires in 10 days (within 14-day window)
 	expiringTime := time.Now().Add(10 * 24 * time.Hour)
-	tolerations := []config.CVEToleration{
+	tolerations := []types.CVEToleration{
 		{
 			ID:        "CVE-2024-0001",
 			Statement: "expiring within custom window",
@@ -498,7 +498,7 @@ func TestEngine_CEL_BlockHighAndCritical(t *testing.T) {
 
 	result := &scanner.ScanResult{
 		ImageRef: "test/image:v1",
-		Vulnerabilities: []scanner.Vulnerability{
+		Vulnerabilities: []types.Vulnerability{
 			{ID: "CVE-2024-0001", Severity: "HIGH", PackageName: "pkg1"},
 			{ID: "CVE-2024-0002", Severity: "MEDIUM", PackageName: "pkg2"},
 		},
@@ -529,7 +529,7 @@ func TestEngine_CEL_BlockMediumAndAbove(t *testing.T) {
 
 	result := &scanner.ScanResult{
 		ImageRef: "test/image:v1",
-		Vulnerabilities: []scanner.Vulnerability{
+		Vulnerabilities: []types.Vulnerability{
 			{ID: "CVE-2024-0001", Severity: "MEDIUM", PackageName: "pkg1"},
 			{ID: "CVE-2024-0002", Severity: "LOW", PackageName: "pkg2"},
 		},
@@ -556,7 +556,7 @@ func TestEngine_CEL_AllowVulnsWithoutFix(t *testing.T) {
 
 	result := &scanner.ScanResult{
 		ImageRef: "test/image:v1",
-		Vulnerabilities: []scanner.Vulnerability{
+		Vulnerabilities: []types.Vulnerability{
 			{ID: "CVE-2024-0001", Severity: "CRITICAL", PackageName: "pkg1", FixedVersion: ""},     // No fix - should pass
 			{ID: "CVE-2024-0002", Severity: "CRITICAL", PackageName: "pkg2", FixedVersion: "1.2.3"}, // Has fix - should fail
 		},
@@ -583,7 +583,7 @@ func TestEngine_CEL_ComplexExpression(t *testing.T) {
 
 	result := &scanner.ScanResult{
 		ImageRef: "test/image:v1",
-		Vulnerabilities: []scanner.Vulnerability{
+		Vulnerabilities: []types.Vulnerability{
 			{ID: "CVE-2024-0001", Severity: "HIGH", PackageName: "pkg1"},
 			{ID: "CVE-2024-0002", Severity: "HIGH", PackageName: "pkg2"},
 		},
@@ -627,7 +627,7 @@ func TestEngine_CEL_DefaultPolicy(t *testing.T) {
 	ctx := context.Background()
 	result := &scanner.ScanResult{
 		ImageRef: "test/image:v1",
-		Vulnerabilities: []scanner.Vulnerability{
+		Vulnerabilities: []types.Vulnerability{
 			{ID: "CVE-2024-0001", Severity: "HIGH", PackageName: "pkg1"},
 		},
 	}
@@ -654,7 +654,7 @@ func TestEngine_Evaluate_MixedExpiredAndActiveTolerations(t *testing.T) {
 
 	result := &scanner.ScanResult{
 		ImageRef: "test/image:v1",
-		Vulnerabilities: []scanner.Vulnerability{
+		Vulnerabilities: []types.Vulnerability{
 			{ID: "CVE-2024-0001", Severity: "CRITICAL", PackageName: "pkg1"},
 			{ID: "CVE-2024-0002", Severity: "CRITICAL", PackageName: "pkg2"},
 			{ID: "CVE-2024-0003", Severity: "CRITICAL", PackageName: "pkg3"},
@@ -665,7 +665,7 @@ func TestEngine_Evaluate_MixedExpiredAndActiveTolerations(t *testing.T) {
 	expiredTime := time.Now().Add(-24 * time.Hour)
 	futureTime := time.Now().Add(30 * 24 * time.Hour)
 	
-	tolerations := []config.CVEToleration{
+	tolerations := []types.CVEToleration{
 		{
 			ID:        "CVE-2024-0001",
 			Statement: "expired toleration",
@@ -727,7 +727,7 @@ func TestEngine_Evaluate_AllTolerationsExpired(t *testing.T) {
 
 	result := &scanner.ScanResult{
 		ImageRef: "test/image:v1",
-		Vulnerabilities: []scanner.Vulnerability{
+		Vulnerabilities: []types.Vulnerability{
 			{ID: "CVE-2024-0001", Severity: "CRITICAL", PackageName: "pkg1"},
 			{ID: "CVE-2024-0002", Severity: "HIGH", PackageName: "pkg2"},
 		},
@@ -736,7 +736,7 @@ func TestEngine_Evaluate_AllTolerationsExpired(t *testing.T) {
 	expiredTime1 := time.Now().Add(-48 * time.Hour)
 	expiredTime2 := time.Now().Add(-1 * time.Hour)
 	
-	tolerations := []config.CVEToleration{
+	tolerations := []types.CVEToleration{
 		{
 			ID:        "CVE-2024-0001",
 			Statement: "expired 2 days ago",
@@ -786,7 +786,7 @@ func TestEngine_Evaluate_ExpiredTolerationWithCELFilter(t *testing.T) {
 
 	result := &scanner.ScanResult{
 		ImageRef: "test/image:v1",
-		Vulnerabilities: []scanner.Vulnerability{
+		Vulnerabilities: []types.Vulnerability{
 			{ID: "CVE-2024-0001", Severity: "CRITICAL", PackageName: "pkg1"},
 			{ID: "CVE-2024-0002", Severity: "CRITICAL", PackageName: "pkg2"},
 		},
@@ -795,7 +795,7 @@ func TestEngine_Evaluate_ExpiredTolerationWithCELFilter(t *testing.T) {
 	expiredTime := time.Now().Add(-24 * time.Hour)
 	futureTime := time.Now().Add(30 * 24 * time.Hour)
 	
-	tolerations := []config.CVEToleration{
+	tolerations := []types.CVEToleration{
 		{
 			ID:        "CVE-2024-0001",
 			Statement: "expired toleration",

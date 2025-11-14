@@ -12,6 +12,7 @@ import (
 	"github.com/suppline/suppline/internal/observability"
 	"github.com/suppline/suppline/internal/queue"
 	"github.com/suppline/suppline/internal/statestore"
+	"github.com/suppline/suppline/internal/types"
 )
 
 // mockStateStore is a minimal mock for testing
@@ -33,7 +34,7 @@ func (m *mockStateStore) GetScanHistory(ctx context.Context, digest string, limi
 	return nil, nil
 }
 
-func (m *mockStateStore) QueryVulnerabilities(ctx context.Context, filter statestore.VulnFilter) ([]*statestore.VulnerabilityRecord, error) {
+func (m *mockStateStore) QueryVulnerabilities(ctx context.Context, filter statestore.VulnFilter) ([]*types.VulnerabilityRecord, error) {
 	return nil, nil
 }
 
@@ -45,7 +46,7 @@ func (m *mockStateStore) ListScans(ctx context.Context, filter statestore.ScanFi
 	return nil, nil
 }
 
-func (m *mockStateStore) ListTolerations(ctx context.Context, filter statestore.TolerationFilter) ([]*statestore.TolerationInfo, error) {
+func (m *mockStateStore) ListTolerations(ctx context.Context, filter statestore.TolerationFilter) ([]*types.TolerationInfo, error) {
 	return nil, nil
 }
 

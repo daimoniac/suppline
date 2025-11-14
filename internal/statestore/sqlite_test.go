@@ -2,6 +2,7 @@ package statestore
 
 import (
 	"context"
+	"github.com/suppline/suppline/internal/types"
 	"os"
 	"testing"
 	"time"
@@ -36,7 +37,7 @@ func TestSQLiteStore(t *testing.T) {
 			Signed:            false,
 			SBOMAttested:      true,
 			VulnAttested:      true,
-			Vulnerabilities: []VulnerabilityRecord{
+			Vulnerabilities: []types.VulnerabilityRecord{
 				{
 					CVEID:            "CVE-2024-1234",
 					Severity:         "CRITICAL",
@@ -58,7 +59,7 @@ func TestSQLiteStore(t *testing.T) {
 					PrimaryURL:       "https://cve.mitre.org/cgi-bin/cvename.cgi?name=CVE-2024-5678",
 				},
 			},
-			ToleratedCVEs: []ToleratedCVE{
+			ToleratedCVEs: []types.ToleratedCVE{
 				{
 					CVEID:       "CVE-2024-1234",
 					Statement:   "Accepted risk for legacy system",
@@ -110,8 +111,8 @@ func TestSQLiteStore(t *testing.T) {
 			Signed:            true,
 			SBOMAttested:      true,
 			VulnAttested:      true,
-			Vulnerabilities:   []VulnerabilityRecord{},
-			ToleratedCVEs:     []ToleratedCVE{},
+			Vulnerabilities:   []types.VulnerabilityRecord{},
+			ToleratedCVEs:     []types.ToleratedCVE{},
 		}
 		err := store.RecordScan(ctx, record)
 		if err != nil {
@@ -143,8 +144,8 @@ func TestSQLiteStore(t *testing.T) {
 			Signed:            true,
 			SBOMAttested:      true,
 			VulnAttested:      true,
-			Vulnerabilities:   []VulnerabilityRecord{},
-			ToleratedCVEs:     []ToleratedCVE{},
+			Vulnerabilities:   []types.VulnerabilityRecord{},
+			ToleratedCVEs:     []types.ToleratedCVE{},
 		}
 		err := store.RecordScan(ctx, oldRecord)
 		if err != nil {

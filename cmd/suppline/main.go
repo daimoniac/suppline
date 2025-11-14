@@ -263,7 +263,6 @@ func run() error {
 	wg.Add(1)
 	go func() {
 		defer wg.Done()
-		logger.Info("starting registry watcher")
 		if err := registryWatcher.Start(ctx); err != nil && err != context.Canceled {
 			logger.Error("registry watcher error",
 				"error", err.Error())
@@ -290,8 +289,6 @@ func run() error {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			logger.Info("starting API server",
-				"port", cfg.API.Port)
 			if err := apiServer.Start(ctx); err != nil && err != context.Canceled {
 				logger.Error("API server error",
 					"error", err.Error())

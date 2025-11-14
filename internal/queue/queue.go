@@ -42,10 +42,6 @@ type ScanTask struct {
 	Tolerations []types.CVEToleration // Using canonical type from internal/types
 }
 
-// CVEToleration is an alias to the canonical toleration type for backward compatibility.
-// Deprecated: Use types.CVEToleration directly.
-type CVEToleration = types.CVEToleration
-
 // InMemoryQueue implements TaskQueue using Go channels
 type InMemoryQueue struct {
 	tasks       chan *ScanTask

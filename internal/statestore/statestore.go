@@ -34,7 +34,7 @@ type StateStoreQuery interface {
 	GetScanHistory(ctx context.Context, digest string, limit int) ([]*ScanRecord, error)
 
 	// QueryVulnerabilities searches vulnerabilities across all scans
-	QueryVulnerabilities(ctx context.Context, filter VulnFilter) ([]*VulnerabilityRecord, error)
+	QueryVulnerabilities(ctx context.Context, filter VulnFilter) ([]*types.VulnerabilityRecord, error)
 
 	// GetImagesByCVE returns all images affected by a specific CVE
 	GetImagesByCVE(ctx context.Context, cveID string) ([]*ScanRecord, error)
@@ -43,7 +43,7 @@ type StateStoreQuery interface {
 	ListScans(ctx context.Context, filter ScanFilter) ([]*ScanRecord, error)
 
 	// ListTolerations returns tolerated CVEs with optional filters
-	ListTolerations(ctx context.Context, filter TolerationFilter) ([]*TolerationInfo, error)
+	ListTolerations(ctx context.Context, filter TolerationFilter) ([]*types.TolerationInfo, error)
 }
 
 // ScanRecord represents a complete scan result for an image digest
@@ -64,14 +64,6 @@ type ScanRecord struct {
 	ToleratedCVEs     []types.ToleratedCVE        // Using canonical type
 	ErrorMessage      string
 }
-
-// VulnerabilityRecord is an alias to the canonical vulnerability record type for backward compatibility.
-// Deprecated: Use types.VulnerabilityRecord directly.
-type VulnerabilityRecord = types.VulnerabilityRecord
-
-// ToleratedCVE is an alias to the canonical tolerated CVE type for backward compatibility.
-// Deprecated: Use types.ToleratedCVE directly.
-type ToleratedCVE = types.ToleratedCVE
 
 // VulnFilter defines criteria for querying vulnerabilities
 type VulnFilter struct {
@@ -99,6 +91,4 @@ type TolerationFilter struct {
 	Limit        int
 }
 
-// TolerationInfo is an alias to the canonical toleration info type for backward compatibility.
-// Deprecated: Use types.TolerationInfo directly.
-type TolerationInfo = types.TolerationInfo
+

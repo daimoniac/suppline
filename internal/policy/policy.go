@@ -7,15 +7,15 @@ import (
 	"time"
 
 	"github.com/google/cel-go/cel"
-	"github.com/suppline/suppline/internal/config"
 	"github.com/suppline/suppline/internal/scanner"
+	"github.com/suppline/suppline/internal/types"
 )
 
 // PolicyEngine defines the interface for policy evaluation
 type PolicyEngine interface {
 	// Evaluate determines if an image passes security policy
 	// Applies CVE tolerations from regsync config for the target repository
-	Evaluate(ctx context.Context, imageRef string, result *scanner.ScanResult, tolerations []config.CVEToleration) (*PolicyDecision, error)
+	Evaluate(ctx context.Context, imageRef string, result *scanner.ScanResult, tolerations []types.CVEToleration) (*PolicyDecision, error)
 }
 
 // PolicyConfig defines a CEL-based policy configuration
@@ -118,7 +118,7 @@ func NewEngine(logger *slog.Logger, config PolicyConfig) (*Engine, error) {
 }
 
 // Evaluate determines if an image passes security policy using CEL expression
-func (e *Engine) Evaluate(ctx context.Context, imageRef string, result *scanner.ScanResult, tolerations []config.CVEToleration) (*PolicyDecision, error) {
+func (e *Engine) Evaluate(ctx context.Context, imageRef string, result *scanner.ScanResult, tolerations []types.CVEToleration) (*PolicyDecision, error) {
 	if result == nil {
 		return nil, fmt.Errorf("scan result is nil")
 	}
@@ -131,7 +131,7 @@ func (e *Engine) Evaluate(ctx context.Context, imageRef string, result *scanner.
 
 	// Build a map of active tolerations (not expired)
 	now := time.Now()
-	activeTolerations := make(map[string]config.CVEToleration)
+	activeTolerations := make(map[string]types.CVEToleration)
 	
 	for _, toleration := range tolerations {
 		// Check if toleration has expired
@@ -175,7 +175,7 @@ func (e *Engine) Evaluate(ctx context.Context, imageRef string, result *scanner.
 	lowCount := 0
 	toleratedCount := 0
 	unfixedCriticalCount := 0
-	failingVulns := make([]scanner.Vulnerability, 0)
+	failingVulns := make([]types.Vulnerability, 0)
 	
 	for _, vuln := range result.Vulnerabilities {
 		toleration, isTolerated := activeTolerations[vuln.ID]

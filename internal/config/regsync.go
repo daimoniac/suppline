@@ -6,6 +6,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/suppline/suppline/internal/types"
 	"gopkg.in/yaml.v3"
 )
 
@@ -36,8 +37,8 @@ func (c *RegsyncConfig) GetCredentialForRegistry(registry string) *RegistryCrede
 
 // GetTolerationsForTarget returns CVE tolerations for a specific target repository
 // Handles both type=repository (exact match) and type=image (strips tag for matching)
-func (c *RegsyncConfig) GetTolerationsForTarget(target string) []CVEToleration {
-	var allTolerations []CVEToleration
+func (c *RegsyncConfig) GetTolerationsForTarget(target string) []types.CVEToleration {
+	var allTolerations []types.CVEToleration
 	
 	for _, sync := range c.Sync {
 		syncTarget := sync.Target
@@ -86,7 +87,7 @@ func (c *RegsyncConfig) GetTargetRepositories() []string {
 
 // IsToleratedCVE checks if a CVE is tolerated for a specific target repository
 // Returns true if the CVE is tolerated and not expired
-func (c *RegsyncConfig) IsToleratedCVE(target, cveID string) (bool, *CVEToleration) {
+func (c *RegsyncConfig) IsToleratedCVE(target, cveID string) (bool, *types.CVEToleration) {
 	tolerations := c.GetTolerationsForTarget(target)
 	now := time.Now()
 
@@ -105,8 +106,8 @@ func (c *RegsyncConfig) IsToleratedCVE(target, cveID string) (bool, *CVETolerati
 }
 
 // GetExpiringTolerations returns tolerations that will expire within the specified duration
-func (c *RegsyncConfig) GetExpiringTolerations(within time.Duration) []CVEToleration {
-	var expiring []CVEToleration
+func (c *RegsyncConfig) GetExpiringTolerations(within time.Duration) []types.CVEToleration {
+	var expiring []types.CVEToleration
 	now := time.Now()
 	threshold := now.Add(within)
 

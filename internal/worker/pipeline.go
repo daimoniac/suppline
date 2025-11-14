@@ -6,10 +6,10 @@ import (
 	"log/slog"
 	"time"
 
-	"github.com/suppline/suppline/internal/config"
 	"github.com/suppline/suppline/internal/policy"
 	"github.com/suppline/suppline/internal/queue"
 	"github.com/suppline/suppline/internal/scanner"
+	"github.com/suppline/suppline/internal/types"
 )
 
 // Pipeline orchestrates the complete scan workflow
@@ -331,12 +331,12 @@ func (p *Pipeline) getPolicyEngineForRepository(repository string) (policy.Polic
 	return policy.NewEngine(p.logger, policyConfig)
 }
 
-// convertQueueTolerationsToConfig converts queue.CVEToleration to config.CVEToleration
+// convertQueueTolerationsToConfig converts types.CVEToleration to types.CVEToleration
 // This is a simple pass-through conversion since the types have identical fields.
-func convertQueueTolerationsToConfig(queueTolerations []queue.CVEToleration) []config.CVEToleration {
-	tolerations := make([]config.CVEToleration, len(queueTolerations))
+func convertQueueTolerationsToConfig(queueTolerations []types.CVEToleration) []types.CVEToleration {
+	tolerations := make([]types.CVEToleration, len(queueTolerations))
 	for i, qt := range queueTolerations {
-		tolerations[i] = config.CVEToleration{
+		tolerations[i] = types.CVEToleration{
 			ID:        qt.ID,
 			Statement: qt.Statement,
 			ExpiresAt: qt.ExpiresAt,

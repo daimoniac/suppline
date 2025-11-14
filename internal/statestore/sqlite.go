@@ -7,6 +7,7 @@ import (
 	"time"
 
 	_ "github.com/mattn/go-sqlite3"
+	"github.com/suppline/suppline/internal/types"
 )
 
 // SQLiteStore implements StateStore using SQLite
@@ -320,7 +321,7 @@ func (s *SQLiteStore) GetScanHistory(ctx context.Context, digest string, limit i
 }
 
 // QueryVulnerabilities searches vulnerabilities across all scans
-func (s *SQLiteStore) QueryVulnerabilities(ctx context.Context, filter VulnFilter) ([]*VulnerabilityRecord, error) {
+func (s *SQLiteStore) QueryVulnerabilities(ctx context.Context, filter VulnFilter) ([]*types.VulnerabilityRecord, error) {
 	query := `
 		SELECT v.cve_id, v.severity, v.package_name,
 			v.installed_version, v.fixed_version, v.title, v.description, v.primary_url,
@@ -364,9 +365,9 @@ func (s *SQLiteStore) QueryVulnerabilities(ctx context.Context, filter VulnFilte
 	}
 	defer rows.Close()
 
-	var vulnerabilities []*VulnerabilityRecord
+	var vulnerabilities []*types.VulnerabilityRecord
 	for rows.Next() {
-		var vuln VulnerabilityRecord
+		var vuln types.VulnerabilityRecord
 		err := rows.Scan(
 			&vuln.CVEID, &vuln.Severity, &vuln.PackageName,
 			&vuln.InstalledVersion, &vuln.FixedVersion, &vuln.Title, &vuln.Description, &vuln.PrimaryURL,
@@ -442,7 +443,7 @@ func (s *SQLiteStore) GetImagesByCVE(ctx context.Context, cveID string) ([]*Scan
 }
 
 // loadVulnerabilities loads all vulnerabilities for a scan record
-func (s *SQLiteStore) loadVulnerabilities(ctx context.Context, scanRecordID int64) ([]VulnerabilityRecord, error) {
+func (s *SQLiteStore) loadVulnerabilities(ctx context.Context, scanRecordID int64) ([]types.VulnerabilityRecord, error) {
 	rows, err := s.db.QueryContext(ctx, `
 		SELECT cve_id, severity, package_name, installed_version, fixed_version,
 			title, description, primary_url
@@ -455,9 +456,9 @@ func (s *SQLiteStore) loadVulnerabilities(ctx context.Context, scanRecordID int6
 	}
 	defer rows.Close()
 
-	var vulnerabilities []VulnerabilityRecord
+	var vulnerabilities []types.VulnerabilityRecord
 	for rows.Next() {
-		var vuln VulnerabilityRecord
+		var vuln types.VulnerabilityRecord
 		err := rows.Scan(
 			&vuln.CVEID, &vuln.Severity, &vuln.PackageName, &vuln.InstalledVersion, &vuln.FixedVersion,
 			&vuln.Title, &vuln.Description, &vuln.PrimaryURL,
@@ -476,7 +477,7 @@ func (s *SQLiteStore) loadVulnerabilities(ctx context.Context, scanRecordID int6
 }
 
 // loadToleratedCVEs loads all tolerated CVEs for a scan record
-func (s *SQLiteStore) loadToleratedCVEs(ctx context.Context, scanRecordID int64) ([]ToleratedCVE, error) {
+func (s *SQLiteStore) loadToleratedCVEs(ctx context.Context, scanRecordID int64) ([]types.ToleratedCVE, error) {
 	rows, err := s.db.QueryContext(ctx, `
 		SELECT cve_id, statement, tolerated_at, expires_at
 		FROM tolerated_cves
@@ -488,9 +489,9 @@ func (s *SQLiteStore) loadToleratedCVEs(ctx context.Context, scanRecordID int64)
 	}
 	defer rows.Close()
 
-	var tolerated []ToleratedCVE
+	var tolerated []types.ToleratedCVE
 	for rows.Next() {
-		var cve ToleratedCVE
+		var cve types.ToleratedCVE
 		var expiresAt sql.NullTime
 		err := rows.Scan(&cve.CVEID, &cve.Statement, &cve.ToleratedAt, &expiresAt)
 		if err != nil {
@@ -588,7 +589,7 @@ func (s *SQLiteStore) ListScans(ctx context.Context, filter ScanFilter) ([]*Scan
 
 // ListTolerations returns tolerated CVEs with optional filters
 // Returns one entry per unique repository + CVE ID combination
-func (s *SQLiteStore) ListTolerations(ctx context.Context, filter TolerationFilter) ([]*TolerationInfo, error) {
+func (s *SQLiteStore) ListTolerations(ctx context.Context, filter TolerationFilter) ([]*types.TolerationInfo, error) {
 	query := `
 		SELECT 
 			tc.cve_id, 
@@ -648,9 +649,9 @@ func (s *SQLiteStore) ListTolerations(ctx context.Context, filter TolerationFilt
 	}
 	defer rows.Close()
 
-	var tolerations []*TolerationInfo
+	var tolerations []*types.TolerationInfo
 	for rows.Next() {
-		var info TolerationInfo
+		var info types.TolerationInfo
 		var toleratedAtStr string
 		var expiresAt sql.NullTime
 

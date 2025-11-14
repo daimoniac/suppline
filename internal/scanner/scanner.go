@@ -35,7 +35,3 @@ type ScanResult struct {
 	CosignVulnData  []byte // Pre-generated cosign-vuln format for attestation (avoids redundant Trivy call)
 	SBOM            *SBOM  // Optional: SBOM generated during the same scan (avoids separate SBOM call)
 }
-
-// Vulnerability is an alias to the canonical vulnerability type for backward compatibility.
-// Deprecated: Use types.Vulnerability directly.
-type Vulnerability = types.Vulnerability

@@ -3,11 +3,12 @@ package watcher
 import (
 	"context"
 	"fmt"
+	"github.com/suppline/suppline/internal/types"
 	"testing"
 	"time"
 
-	"github.com/suppline/suppline/internal/observability"
 	"github.com/suppline/suppline/internal/config"
+	"github.com/suppline/suppline/internal/observability"
 	"github.com/suppline/suppline/internal/queue"
 	"github.com/suppline/suppline/internal/registry"
 	"github.com/suppline/suppline/internal/statestore"
@@ -55,9 +56,9 @@ func (m *mockRegistryClient) GetManifest(ctx context.Context, repo, digest strin
 }
 
 type mockStateStore struct {
-	scans       map[string]*statestore.ScanRecord
+	scans        map[string]*statestore.ScanRecord
 	dueForRescan []string
-	err         error
+	err          error
 }
 
 func (m *mockStateStore) RecordScan(ctx context.Context, record *statestore.ScanRecord) error {
@@ -95,8 +96,8 @@ func TestWatcher_Discover_NewImages(t *testing.T) {
 			"myorg/app2": {"latest"},
 		},
 		digests: map[string]string{
-			"myorg/app1:v1.0":  "sha256:digest1",
-			"myorg/app1:v1.1":  "sha256:digest2",
+			"myorg/app1:v1.0":   "sha256:digest1",
+			"myorg/app1:v1.1":   "sha256:digest2",
 			"myorg/app2:latest": "sha256:digest3",
 		},
 	}
@@ -115,7 +116,7 @@ func TestWatcher_Discover_NewImages(t *testing.T) {
 		Sync: []config.SyncEntry{
 			{
 				Target: "myorg/app1",
-				Tolerate: []config.CVEToleration{
+				Tolerate: []types.CVEToleration{
 					{ID: "CVE-2024-1234", Statement: "test toleration", ExpiresAt: &expiresAt},
 				},
 			},
@@ -305,7 +306,7 @@ func TestWatcher_Discover_Deduplication(t *testing.T) {
 			"myorg/app1": {"v1.0", "latest"},
 		},
 		digests: map[string]string{
-			"myorg/app1:v1.0":  "sha256:samedigest",
+			"myorg/app1:v1.0":   "sha256:samedigest",
 			"myorg/app1:latest": "sha256:samedigest",
 		},
 	}

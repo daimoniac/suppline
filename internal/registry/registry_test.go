@@ -2,6 +2,7 @@ package registry
 
 import (
 	"context"
+	"github.com/suppline/suppline/internal/types"
 	"testing"
 	"time"
 
@@ -220,7 +221,7 @@ func TestClientWithTolerations(t *testing.T) {
 				Source: "nginx",
 				Target: "myregistry.com/nginx",
 				Type:   "repository",
-				Tolerate: []config.CVEToleration{
+				Tolerate: []types.CVEToleration{
 					{
 						ID:        "CVE-2024-12345",
 						Statement: "Accepted risk for testing",
@@ -254,7 +255,7 @@ func TestClientWithTolerations(t *testing.T) {
 func TestFilterSigstoreArtifacts(t *testing.T) {
 	// Test that .sig and .att suffixed tags are filtered out
 	// This is a unit test for the filtering logic in ListTags
-	
+
 	tests := []struct {
 		name          string
 		inputTags     []string

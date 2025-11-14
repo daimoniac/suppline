@@ -4,6 +4,8 @@ import (
 	"context"
 	"testing"
 	"time"
+
+	"github.com/suppline/suppline/internal/types"
 )
 
 func TestNewInMemoryQueue(t *testing.T) {
@@ -378,7 +380,7 @@ func TestCVETolerations(t *testing.T) {
 		Digest:     "sha256:test",
 		Tag:        "v1.0.0",
 		EnqueuedAt: time.Now(),
-		Tolerations: []CVEToleration{
+		Tolerations: []types.CVEToleration{
 			{
 				ID:        "CVE-2024-12345",
 				Statement: "Accepted risk",

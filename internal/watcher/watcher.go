@@ -7,11 +7,12 @@ import (
 	"log/slog"
 	"time"
 
-	"github.com/suppline/suppline/internal/observability"
 	"github.com/suppline/suppline/internal/config"
+	"github.com/suppline/suppline/internal/observability"
 	"github.com/suppline/suppline/internal/queue"
 	"github.com/suppline/suppline/internal/registry"
 	"github.com/suppline/suppline/internal/statestore"
+	"github.com/suppline/suppline/internal/types"
 )
 
 // Watcher continuously monitors the container registry for new and updated images
@@ -121,9 +122,9 @@ func (w *watcherImpl) processRepository(ctx context.Context, repo string) error 
 	tolerations := w.regsyncConfig.GetTolerationsForTarget(repo)
 
 	// Convert regsync tolerations to queue tolerations
-	queueTolerations := make([]queue.CVEToleration, len(tolerations))
+	queueTolerations := make([]types.CVEToleration, len(tolerations))
 	for i, t := range tolerations {
-		queueTolerations[i] = queue.CVEToleration{
+		queueTolerations[i] = types.CVEToleration{
 			ID:        t.ID,
 			Statement: t.Statement,
 			ExpiresAt: t.ExpiresAt,
@@ -204,7 +205,7 @@ func (w *watcherImpl) shouldScanImage(
 }
 
 // processTag processes a single image tag
-func (w *watcherImpl) processTag(ctx context.Context, repo, tag string, tolerations []queue.CVEToleration) error {
+func (w *watcherImpl) processTag(ctx context.Context, repo, tag string, tolerations []types.CVEToleration) error {
 	// Get current digest from registry
 	currentDigest, err := w.registryClient.GetDigest(ctx, repo, tag)
 	if err != nil {
@@ -323,7 +324,7 @@ func (w *watcherImpl) processTag(ctx context.Context, repo, tag string, tolerati
 }
 
 // checkExpiringTolerations logs warnings for tolerations expiring soon
-func (w *watcherImpl) checkExpiringTolerations(repo string, tolerations []config.CVEToleration) {
+func (w *watcherImpl) checkExpiringTolerations(repo string, tolerations []types.CVEToleration) {
 	now := time.Now()
 	warningThreshold := 7 * 24 * time.Hour // 7 days
 

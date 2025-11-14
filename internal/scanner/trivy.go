@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/suppline/suppline/internal/config"
+	"github.com/suppline/suppline/internal/types"
 )
 
 // TrivyScanner implements Scanner using Trivy CLI in client-server mode
@@ -212,7 +213,7 @@ func (s *TrivyScanner) ScanVulnerabilities(ctx context.Context, imageRef string)
 	}
 
 	// Extract vulnerabilities
-	var vulnerabilities []Vulnerability
+	var vulnerabilities []types.Vulnerability
 	for _, result := range response.Results {
 		for _, vuln := range result.Vulnerabilities {
 			primaryURL := vuln.PrimaryURL
@@ -220,7 +221,7 @@ func (s *TrivyScanner) ScanVulnerabilities(ctx context.Context, imageRef string)
 				primaryURL = vuln.References[0]
 			}
 
-			vulnerabilities = append(vulnerabilities, Vulnerability{
+			vulnerabilities = append(vulnerabilities, types.Vulnerability{
 				ID:           vuln.VulnerabilityID,
 				Severity:     vuln.Severity,
 				PackageName:  vuln.PkgName,
