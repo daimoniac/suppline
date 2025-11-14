@@ -7,9 +7,7 @@ import (
 
 // Example tests demonstrating how to test the types package
 
-func TestVulnerabilityConverter_ToVulnerabilityRecord(t *testing.T) {
-	converter := NewVulnerabilityConverter()
-
+func TestToVulnerabilityRecord(t *testing.T) {
 	vuln := Vulnerability{
 		ID:           "CVE-2024-1234",
 		Severity:     "HIGH",
@@ -22,7 +20,7 @@ func TestVulnerabilityConverter_ToVulnerabilityRecord(t *testing.T) {
 	}
 
 	scannedAt := time.Now()
-	record := converter.ToVulnerabilityRecord(
+	record := ToVulnerabilityRecord(
 		vuln,
 		"myrepo/myimage",
 		"v1.0.0",
@@ -53,15 +51,13 @@ func TestVulnerabilityConverter_ToVulnerabilityRecord(t *testing.T) {
 	}
 }
 
-func TestVulnerabilityConverter_ToVulnerabilityRecords(t *testing.T) {
-	converter := NewVulnerabilityConverter()
-
+func TestToVulnerabilityRecords(t *testing.T) {
 	vulns := []Vulnerability{
 		{ID: "CVE-2024-1234", Severity: "HIGH"},
 		{ID: "CVE-2024-5678", Severity: "MEDIUM"},
 	}
 
-	records := converter.ToVulnerabilityRecords(
+	records := ToVulnerabilityRecords(
 		vulns,
 		"repo",
 		"tag",
@@ -81,9 +77,7 @@ func TestVulnerabilityConverter_ToVulnerabilityRecords(t *testing.T) {
 	}
 }
 
-func TestTolerationConverter_ToToleratedCVE(t *testing.T) {
-	converter := NewTolerationConverter()
-
+func TestToToleratedCVE(t *testing.T) {
 	expiresAt := time.Now().Add(30 * 24 * time.Hour)
 	toleration := CVEToleration{
 		ID:        "CVE-2024-1234",
@@ -92,7 +86,7 @@ func TestTolerationConverter_ToToleratedCVE(t *testing.T) {
 	}
 
 	toleratedAt := time.Now()
-	tolerated := converter.ToToleratedCVE(toleration, toleratedAt)
+	tolerated := ToToleratedCVE(toleration, toleratedAt)
 
 	if tolerated.CVEID != "CVE-2024-1234" {
 		t.Errorf("Expected CVEID CVE-2024-1234, got %s", tolerated.CVEID)
@@ -108,9 +102,7 @@ func TestTolerationConverter_ToToleratedCVE(t *testing.T) {
 	}
 }
 
-func TestTolerationConverter_FilterToleratedCVEs(t *testing.T) {
-	converter := NewTolerationConverter()
-
+func TestFilterToleratedCVEs(t *testing.T) {
 	tolerations := []CVEToleration{
 		{ID: "CVE-2024-1234", Statement: "Tolerated 1"},
 		{ID: "CVE-2024-5678", Statement: "Tolerated 2"},
@@ -122,7 +114,7 @@ func TestTolerationConverter_FilterToleratedCVEs(t *testing.T) {
 		"CVE-2024-5678": true,
 	}
 
-	filtered := converter.FilterToleratedCVEs(tolerations, toleratedSet, time.Now())
+	filtered := FilterToleratedCVEs(tolerations, toleratedSet, time.Now())
 
 	if len(filtered) != 2 {
 		t.Errorf("Expected 2 filtered tolerations, got %d", len(filtered))
@@ -143,9 +135,7 @@ func TestTolerationConverter_FilterToleratedCVEs(t *testing.T) {
 	}
 }
 
-func TestTolerationConverter_ToTolerationInfo(t *testing.T) {
-	converter := NewTolerationConverter()
-
+func TestToTolerationInfo(t *testing.T) {
 	tolerated := ToleratedCVE{
 		CVEID:       "CVE-2024-1234",
 		Statement:   "Accepted risk",
@@ -153,7 +143,7 @@ func TestTolerationConverter_ToTolerationInfo(t *testing.T) {
 		ExpiresAt:   nil,
 	}
 
-	info := converter.ToTolerationInfo(tolerated, "myrepo/myimage")
+	info := ToTolerationInfo(tolerated, "myrepo/myimage")
 
 	if info.CVEID != "CVE-2024-1234" {
 		t.Errorf("Expected CVEID CVE-2024-1234, got %s", info.CVEID)

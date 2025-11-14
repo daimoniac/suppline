@@ -245,8 +245,8 @@ func (p *Pipeline) signingPhase(ctx context.Context, imageRef string, policyDeci
 
 // persistencePhase records scan results to state store
 func (p *Pipeline) persistencePhase(ctx context.Context, task *queue.ScanTask, scanResult *scanner.ScanResult, policyDecision *policy.PolicyDecision, signed bool, scannedAt time.Time) error {
-	// Use the new ScanRecordBuilder for clean, centralized conversion
-	scanRecord := p.worker.scanRecordBuilder.Build(task, scanResult, policyDecision, signed, scannedAt)
+	// Build scan record from workflow results
+	scanRecord := buildScanRecord(task, scanResult, policyDecision, signed, scannedAt)
 
 	p.logger.Debug("recording scan results", "image_ref", fmt.Sprintf("%s@%s", task.Repository, task.Digest))
 	if err := p.worker.stateStore.RecordScan(ctx, scanRecord); err != nil {

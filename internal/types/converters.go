@@ -4,16 +4,8 @@ import (
 	"time"
 )
 
-// VulnerabilityConverter provides conversion methods for Vulnerability types.
-type VulnerabilityConverter struct{}
-
-// NewVulnerabilityConverter creates a new VulnerabilityConverter instance.
-func NewVulnerabilityConverter() *VulnerabilityConverter {
-	return &VulnerabilityConverter{}
-}
-
 // ToVulnerabilityRecord converts a Vulnerability to a VulnerabilityRecord with image context.
-func (c *VulnerabilityConverter) ToVulnerabilityRecord(
+func ToVulnerabilityRecord(
 	vuln Vulnerability,
 	repository, tag, digest string,
 	scannedAt time.Time,
@@ -35,28 +27,20 @@ func (c *VulnerabilityConverter) ToVulnerabilityRecord(
 }
 
 // ToVulnerabilityRecords converts a slice of Vulnerabilities to VulnerabilityRecords.
-func (c *VulnerabilityConverter) ToVulnerabilityRecords(
+func ToVulnerabilityRecords(
 	vulns []Vulnerability,
 	repository, tag, digest string,
 	scannedAt time.Time,
 ) []VulnerabilityRecord {
 	records := make([]VulnerabilityRecord, len(vulns))
 	for i, vuln := range vulns {
-		records[i] = c.ToVulnerabilityRecord(vuln, repository, tag, digest, scannedAt)
+		records[i] = ToVulnerabilityRecord(vuln, repository, tag, digest, scannedAt)
 	}
 	return records
 }
 
-// TolerationConverter provides conversion methods for CVEToleration types.
-type TolerationConverter struct{}
-
-// NewTolerationConverter creates a new TolerationConverter instance.
-func NewTolerationConverter() *TolerationConverter {
-	return &TolerationConverter{}
-}
-
 // ToToleratedCVE converts a CVEToleration to a ToleratedCVE with timestamp.
-func (c *TolerationConverter) ToToleratedCVE(
+func ToToleratedCVE(
 	toleration CVEToleration,
 	toleratedAt time.Time,
 ) ToleratedCVE {
@@ -69,20 +53,20 @@ func (c *TolerationConverter) ToToleratedCVE(
 }
 
 // ToToleratedCVEs converts a slice of CVETolerations to ToleratedCVEs.
-func (c *TolerationConverter) ToToleratedCVEs(
+func ToToleratedCVEs(
 	tolerations []CVEToleration,
 	toleratedAt time.Time,
 ) []ToleratedCVE {
 	records := make([]ToleratedCVE, len(tolerations))
 	for i, toleration := range tolerations {
-		records[i] = c.ToToleratedCVE(toleration, toleratedAt)
+		records[i] = ToToleratedCVE(toleration, toleratedAt)
 	}
 	return records
 }
 
 // FilterToleratedCVEs filters tolerations based on a set of tolerated IDs.
 // Only tolerations whose IDs are in the toleratedSet will be included.
-func (c *TolerationConverter) FilterToleratedCVEs(
+func FilterToleratedCVEs(
 	tolerations []CVEToleration,
 	toleratedSet map[string]bool,
 	toleratedAt time.Time,
@@ -90,14 +74,14 @@ func (c *TolerationConverter) FilterToleratedCVEs(
 	filtered := make([]ToleratedCVE, 0, len(tolerations))
 	for _, toleration := range tolerations {
 		if toleratedSet[toleration.ID] {
-			filtered = append(filtered, c.ToToleratedCVE(toleration, toleratedAt))
+			filtered = append(filtered, ToToleratedCVE(toleration, toleratedAt))
 		}
 	}
 	return filtered
 }
 
 // ToTolerationInfo converts a ToleratedCVE to TolerationInfo with repository context.
-func (c *TolerationConverter) ToTolerationInfo(
+func ToTolerationInfo(
 	tolerated ToleratedCVE,
 	repository string,
 ) TolerationInfo {

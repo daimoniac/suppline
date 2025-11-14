@@ -11,38 +11,19 @@ import (
 	"github.com/suppline/suppline/internal/types"
 )
 
-// ScanRecordBuilder constructs StateStore ScanRecords from workflow results.
-// This replaces the scattered buildScanRecord logic with a centralized builder.
-type ScanRecordBuilder struct {
-	vulnConverter       *types.VulnerabilityConverter
-	tolerationConverter *types.TolerationConverter
-}
-
-// NewScanRecordBuilder creates a new ScanRecordBuilder instance.
-func NewScanRecordBuilder() *ScanRecordBuilder {
-	return &ScanRecordBuilder{
-		vulnConverter:       types.NewVulnerabilityConverter(),
-		tolerationConverter: types.NewTolerationConverter(),
-	}
-}
-
-// Build constructs a ScanRecord from workflow results using canonical types.
-func (b *ScanRecordBuilder) Build(
+// buildScanRecord constructs a ScanRecord from workflow results using canonical types.
+func buildScanRecord(
 	task *queue.ScanTask,
 	scanResult *scanner.ScanResult,
 	policyDecision *policy.PolicyDecision,
 	signed bool,
 	scannedAt time.Time,
 ) *statestore.ScanRecord {
-	// Scanner vulnerabilities are already canonical types (via type alias)
-	// No conversion needed!
-	canonicalVulns := scanResult.Vulnerabilities
-
 	// Count vulnerabilities by severity and convert to records
 	var criticalCount, highCount, mediumCount, lowCount int
-	vulnerabilityRecords := make([]types.VulnerabilityRecord, 0, len(canonicalVulns))
+	vulnerabilityRecords := make([]types.VulnerabilityRecord, 0, len(scanResult.Vulnerabilities))
 
-	for _, vuln := range canonicalVulns {
+	for _, vuln := range scanResult.Vulnerabilities {
 		// Count by severity
 		switch vuln.Severity {
 		case "CRITICAL":
@@ -56,8 +37,7 @@ func (b *ScanRecordBuilder) Build(
 		}
 
 		// Convert to VulnerabilityRecord with image context
-		// Since statestore now uses canonical types, we can use it directly
-		vulnerabilityRecords = append(vulnerabilityRecords, b.vulnConverter.ToVulnerabilityRecord(
+		vulnerabilityRecords = append(vulnerabilityRecords, types.ToVulnerabilityRecord(
 			vuln,
 			task.Repository,
 			task.Tag,
@@ -66,10 +46,6 @@ func (b *ScanRecordBuilder) Build(
 		))
 	}
 
-	// Queue tolerations are already canonical types (via type alias)
-	// No conversion needed!
-	canonicalTolerations := task.Tolerations
-
 	// Build tolerated set from policy decision
 	toleratedSet := make(map[string]bool)
 	for _, toleratedID := range policyDecision.ToleratedCVEs {
@@ -77,9 +53,8 @@ func (b *ScanRecordBuilder) Build(
 	}
 
 	// Filter and convert tolerations
-	// Since statestore now uses canonical types, we can use them directly
-	toleratedCVEs := b.tolerationConverter.FilterToleratedCVEs(
-		canonicalTolerations,
+	toleratedCVEs := types.FilterToleratedCVEs(
+		task.Tolerations,
 		toleratedSet,
 		scannedAt,
 	)
@@ -102,11 +77,6 @@ func (b *ScanRecordBuilder) Build(
 		ErrorMessage:      "",
 	}
 }
-
-// Note: No conversion functions needed anymore!
-// Since scanner.Vulnerability = types.Vulnerability (type alias)
-// and queue.CVEToleration = types.CVEToleration (type alias),
-// we can use them directly without any conversion.
 
 // extractRepository extracts the repository from an image reference
 func extractRepository(imageRef string) string {
