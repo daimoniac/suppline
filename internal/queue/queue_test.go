@@ -152,8 +152,8 @@ func TestDeduplicationAfterDequeue(t *testing.T) {
 	}
 
 	// Enqueue and dequeue
-	q.Enqueue(ctx, task1)
-	q.Dequeue(ctx)
+	_ = q.Enqueue(ctx, task1)
+	_, _ = q.Dequeue(ctx)
 
 	// Should be able to enqueue again after dequeue
 	task2 := &ScanTask{
@@ -201,7 +201,7 @@ func TestGetQueueDepth(t *testing.T) {
 			Digest:     string(rune(i)),
 			EnqueuedAt: time.Now(),
 		}
-		q.Enqueue(ctx, task)
+		_ = q.Enqueue(ctx, task)
 	}
 
 	depth, err = q.GetQueueDepth(ctx)
@@ -254,7 +254,7 @@ func TestContextCancellation(t *testing.T) {
 		Digest:     "sha256:first",
 		EnqueuedAt: time.Now(),
 	}
-	q.Enqueue(ctx, task1)
+	_ = q.Enqueue(ctx, task1)
 
 	// Try to enqueue with cancelled context
 	cancelCtx, cancel := context.WithCancel(context.Background())
@@ -429,7 +429,7 @@ func TestMetricsAccuracy(t *testing.T) {
 			Digest:     string(rune(i)),
 			EnqueuedAt: time.Now(),
 		}
-		q.Enqueue(ctx, task)
+		_ = q.Enqueue(ctx, task)
 	}
 
 	// Try to enqueue 5 duplicates
@@ -440,20 +440,20 @@ func TestMetricsAccuracy(t *testing.T) {
 			Digest:     string(rune(i)),
 			EnqueuedAt: time.Now(),
 		}
-		q.Enqueue(ctx, task)
+		_ = q.Enqueue(ctx, task)
 	}
 
 	// Dequeue 7 tasks
 	for i := 0; i < 7; i++ {
-		q.Dequeue(ctx)
+		_, _ = q.Dequeue(ctx)
 	}
 
 	// Complete 3, fail 2
 	for i := 0; i < 3; i++ {
-		q.Complete(ctx, "task")
+		_ = q.Complete(ctx, "task")
 	}
 	for i := 0; i < 2; i++ {
-		q.Fail(ctx, "task", nil)
+		_ = q.Fail(ctx, "task", nil)
 	}
 
 	metrics := q.GetMetrics()

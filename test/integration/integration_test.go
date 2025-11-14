@@ -1240,7 +1240,7 @@ func TestOptimizedAttestationFlow(t *testing.T) {
 		if err == nil {
 			t.Log("Step 3: Verifying attestation...")
 			// Construct public key path - replace .key with .pub
-			pubKeyPath := keyPath
+			var pubKeyPath string
 			if len(keyPath) > 4 && keyPath[len(keyPath)-4:] == ".key" {
 				pubKeyPath = keyPath[:len(keyPath)-4] + ".pub"
 			} else {

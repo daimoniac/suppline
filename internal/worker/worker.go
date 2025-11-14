@@ -51,7 +51,6 @@ type ImageWorker struct {
 	config       Config
 	logger       *slog.Logger
 	wg           sync.WaitGroup
-	stopOnce     sync.Once
 	regsyncCfg   *regsync.Config
 	scaiGenerator *attestation.SCAIGenerator
 }

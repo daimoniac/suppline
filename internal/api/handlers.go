@@ -565,5 +565,5 @@ func (s *APIServer) handleMetrics(w http.ResponseWriter, r *http.Request) {
 	// For now, return empty metrics
 	w.Header().Set("Content-Type", "text/plain")
 	w.WriteHeader(http.StatusOK)
-	w.Write([]byte("# Metrics endpoint - to be implemented\n"))
+	_, _ = w.Write([]byte("# Metrics endpoint - to be implemented\n"))
 }

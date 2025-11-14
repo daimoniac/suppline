@@ -262,8 +262,8 @@ func TestValidate(t *testing.T) {
 					t.Fatal(err)
 				}
 				defer os.Remove(tmpfile.Name())
-				tmpfile.Write([]byte("version: 1\n"))
-				tmpfile.Close()
+				_, _ = tmpfile.Write([]byte("version: 1\n"))
+				_ = tmpfile.Close()
 				tt.config.RegsyncPath = tmpfile.Name()
 			}
 
