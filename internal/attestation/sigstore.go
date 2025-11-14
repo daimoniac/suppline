@@ -317,9 +317,6 @@ func (a *SigstoreAttestor) AttestSCAI(ctx context.Context, imageRef string, scai
 
 // SignImage signs the image if policy passes using cosign CLI
 func (a *SigstoreAttestor) SignImage(ctx context.Context, imageRef string) error {
-	// Delete any existing signature to avoid conflicts
-	a.deleteExistingSignature(ctx, imageRef)
-
 	cmd := exec.CommandContext(ctx, "cosign", "sign",
 		"--key", a.config.KeyBased.KeyPath,
 		"--yes",
@@ -339,62 +336,4 @@ func (a *SigstoreAttestor) SignImage(ctx context.Context, imageRef string) error
 	return nil
 }
 
-// deleteExistingSignature removes any existing signature for the image
-func (a *SigstoreAttestor) deleteExistingSignature(ctx context.Context, imageRef string) {
-	// Extract digest from imageRef
-	digest := extractDigest(imageRef)
-	if digest == "" {
-		return
-	}
 
-	// Extract registry and repository from imageRef
-	repo := extractRepository(imageRef)
-	if repo == "" {
-		return
-	}
-
-	// Construct signature tag
-	sigTag := repo + ":sha256-" + digest[7:] + ".sig" // Remove "sha256:" prefix
-
-	a.logger.Debug("deleting existing signature", "signature_tag", sigTag)
-
-	cmd := exec.CommandContext(ctx, "crane", "delete", sigTag)
-	if output, err := cmd.CombinedOutput(); err != nil {
-		a.logger.Debug("failed to delete existing signature (may not exist)", 
-			"signature_tag", sigTag,
-			"error", err,
-			"output", string(output))
-	}
-}
-
-// extractDigest extracts the digest from an image reference
-func extractDigest(imageRef string) string {
-	// imageRef format: registry/repo@sha256:digest
-	parts := splitOnLast(imageRef, "@")
-	if len(parts) == 2 {
-		return parts[1]
-	}
-	return ""
-}
-
-// extractRepository extracts the repository from an image reference
-func extractRepository(imageRef string) string {
-	// imageRef format: registry/repo@sha256:digest
-	parts := splitOnLast(imageRef, "@")
-	if len(parts) == 2 {
-		return parts[0]
-	}
-	return ""
-}
-
-// splitOnLast splits a string on the last occurrence of sep
-func splitOnLast(s, sep string) []string {
-	idx := len(s) - 1 - len(sep)
-	for idx >= 0 {
-		if s[idx:idx+len(sep)] == sep {
-			return []string{s[:idx], s[idx+len(sep):]}
-		}
-		idx--
-	}
-	return []string{s}
-}

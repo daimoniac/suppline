@@ -139,6 +139,7 @@ func run() error {
 	// Initialize scanner
 	logger.Info("initializing trivy scanner",
 		"server_addr", cfg.Scanner.ServerAddr)
+	cfg.Scanner.Logger = logger
 	trivyScanner, err := scanner.NewTrivyScanner(cfg.Scanner)
 	if err != nil {
 		healthChecker.UpdateComponentHealth("trivy", observability.StatusUnhealthy, err.Error())
@@ -184,7 +185,12 @@ func run() error {
 
 	// Initialize policy engine
 	logger.Info("initializing policy engine")
-	policyEngine := policy.NewEngine(logger)
+	policyEngine, err := policy.NewEngine(logger, policy.PolicyConfig{
+		Expression: "criticalCount == 0", // Default: block only critical vulnerabilities
+	})
+	if err != nil {
+		return fmt.Errorf("failed to initialize policy engine: %w", err)
+	}
 	logger.Info("policy engine initialized")
 
 	// Initialize registry client

@@ -309,8 +309,14 @@ func (w *ImageWorker) executeWorkflow(ctx context.Context, task *queue.ScanTask)
 	// Convert queue.CVEToleration to regsync.CVEToleration
 	tolerations := convertTolerationsToRegsync(task.Tolerations)
 	
+	// Get policy engine for this repository (may be custom per-repo policy)
+	policyEngine, err := w.getPolicyEngineForRepository(task.Repository)
+	if err != nil {
+		return fmt.Errorf("failed to create policy engine: %w", err)
+	}
+	
 	w.logger.Debug("evaluating policy", "image_ref", imageRef, "tolerations", len(tolerations))
-	policyDecision, err := w.policy.Evaluate(ctx, imageRef, scanResult, tolerations)
+	policyDecision, err := policyEngine.Evaluate(ctx, imageRef, scanResult, tolerations)
 	if err != nil {
 		return fmt.Errorf("failed to evaluate policy: %w", err)
 	}
@@ -593,4 +599,32 @@ func convertTolerationsToRegsync(queueTolerations []queue.CVEToleration) []regsy
 		}
 	}
 	return tolerations
+}
+
+// getPolicyEngineForRepository returns a policy engine for the given repository
+// Uses repository-specific policy from regsync config if available, otherwise uses default
+func (w *ImageWorker) getPolicyEngineForRepository(repository string) (policy.PolicyEngine, error) {
+	var policyConfig policy.PolicyConfig
+	
+	// Try to get policy from regsync config
+	if w.regsyncCfg != nil {
+		if regsyncPolicy := w.regsyncCfg.GetPolicyForTarget(repository); regsyncPolicy != nil {
+			policyConfig = policy.PolicyConfig{
+				Expression:     regsyncPolicy.Expression,
+				FailureMessage: regsyncPolicy.FailureMessage,
+			}
+			w.logger.Debug("using repository-specific policy",
+				"repository", repository,
+				"expression", policyConfig.Expression)
+		}
+	}
+	
+	// If no policy configured, use default from worker
+	if policyConfig.Expression == "" {
+		// Use the default policy engine that was passed to the worker
+		return w.policy, nil
+	}
+	
+	// Create a new policy engine with the repository-specific config
+	return policy.NewEngine(w.logger, policyConfig)
 }

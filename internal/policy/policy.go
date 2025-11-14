@@ -6,6 +6,7 @@ import (
 	"log/slog"
 	"time"
 
+	"github.com/google/cel-go/cel"
 	"github.com/suppline/suppline/internal/regsync"
 	"github.com/suppline/suppline/internal/scanner"
 )
@@ -15,6 +16,23 @@ type PolicyEngine interface {
 	// Evaluate determines if an image passes security policy
 	// Applies CVE tolerations from regsync config for the target repository
 	Evaluate(ctx context.Context, imageRef string, result *scanner.ScanResult, tolerations []regsync.CVEToleration) (*PolicyDecision, error)
+}
+
+// PolicyConfig defines a CEL-based policy configuration
+type PolicyConfig struct {
+	// Expression is the CEL expression that must evaluate to true for the policy to pass
+	// Available variables:
+	//   - vulnerabilities: list of enriched vulnerabilities with fields:
+	//       id, severity, packageName, version, fixedVersion, description, tolerated, tolerationStatement, tolerationExpiry
+	//   - imageRef: string reference to the image
+	//   - criticalCount: number of critical vulnerabilities (not tolerated)
+	//   - highCount: number of high vulnerabilities (not tolerated)
+	//   - mediumCount: number of medium vulnerabilities (not tolerated)
+	//   - toleratedCount: number of tolerated vulnerabilities
+	Expression string `yaml:"expression" json:"expression"`
+	
+	// FailureMessage is the message to return when the policy fails (optional)
+	FailureMessage string `yaml:"failureMessage" json:"failureMessage"`
 }
 
 // PolicyDecision represents the result of policy evaluation
@@ -37,24 +55,68 @@ type ExpiringToleration struct {
 	DaysUntil int
 }
 
-// Engine implements the PolicyEngine interface
+// Engine implements the PolicyEngine interface using CEL expressions
 type Engine struct {
 	logger              *slog.Logger
 	expiryWarningWindow time.Duration
+	config              PolicyConfig
+	celEnv              *cel.Env
+	celProgram          cel.Program
 }
 
-// NewEngine creates a new policy engine
-func NewEngine(logger *slog.Logger) *Engine {
+// NewEngine creates a new policy engine with a CEL-based policy
+func NewEngine(logger *slog.Logger, config PolicyConfig) (*Engine, error) {
 	if logger == nil {
 		logger = slog.Default()
 	}
+	
+	// Default policy: no critical vulnerabilities
+	if config.Expression == "" {
+		config.Expression = `criticalCount == 0`
+		config.FailureMessage = "critical vulnerabilities found"
+	}
+	
+	// Create CEL environment with custom types
+	env, err := cel.NewEnv(
+		cel.Variable("vulnerabilities", cel.ListType(cel.MapType(cel.StringType, cel.AnyType))),
+		cel.Variable("imageRef", cel.StringType),
+		cel.Variable("criticalCount", cel.IntType),
+		cel.Variable("highCount", cel.IntType),
+		cel.Variable("mediumCount", cel.IntType),
+		cel.Variable("lowCount", cel.IntType),
+		cel.Variable("toleratedCount", cel.IntType),
+	)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create CEL environment: %w", err)
+	}
+	
+	// Compile the policy expression
+	ast, issues := env.Compile(config.Expression)
+	if issues != nil && issues.Err() != nil {
+		return nil, fmt.Errorf("failed to compile policy expression: %w", issues.Err())
+	}
+	
+	// Check that the expression returns a boolean
+	if ast.OutputType() != cel.BoolType {
+		return nil, fmt.Errorf("policy expression must return a boolean, got %v", ast.OutputType())
+	}
+	
+	// Create the program
+	program, err := env.Program(ast)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create CEL program: %w", err)
+	}
+	
 	return &Engine{
 		logger:              logger,
-		expiryWarningWindow: 7 * 24 * time.Hour, // 7 days
-	}
+		expiryWarningWindow: 7 * 24 * time.Hour,
+		config:              config,
+		celEnv:              env,
+		celProgram:          program,
+	}, nil
 }
 
-// Evaluate determines if an image passes security policy
+// Evaluate determines if an image passes security policy using CEL expression
 func (e *Engine) Evaluate(ctx context.Context, imageRef string, result *scanner.ScanResult, tolerations []regsync.CVEToleration) (*PolicyDecision, error) {
 	if result == nil {
 		return nil, fmt.Errorf("scan result is nil")
@@ -104,56 +166,122 @@ func (e *Engine) Evaluate(ctx context.Context, imageRef string, result *scanner.
 		}
 	}
 
-	// Count critical vulnerabilities, excluding tolerated ones
+	// Enrich vulnerabilities with toleration info and count by severity
+	enrichedVulns := make([]map[string]interface{}, 0, len(result.Vulnerabilities))
 	criticalCount := 0
+	highCount := 0
+	mediumCount := 0
+	lowCount := 0
 	toleratedCount := 0
-	criticalVulns := make([]scanner.Vulnerability, 0)
+	failingVulns := make([]scanner.Vulnerability, 0)
 	
 	for _, vuln := range result.Vulnerabilities {
-		if vuln.Severity == "CRITICAL" {
-			if toleration, isTolerated := activeTolerations[vuln.ID]; isTolerated {
-				toleratedCount++
-				decision.ToleratedCVEs = append(decision.ToleratedCVEs, vuln.ID)
-				
-				e.logger.Info("critical vulnerability tolerated",
-					"cve_id", vuln.ID,
-					"statement", toleration.Statement,
-					"package", vuln.PackageName,
-					"image", imageRef)
-			} else {
+		toleration, isTolerated := activeTolerations[vuln.ID]
+		
+		enriched := map[string]interface{}{
+			"id":          vuln.ID,
+			"severity":    vuln.Severity,
+			"packageName": vuln.PackageName,
+			"version":     vuln.Version,
+			"fixedVersion": vuln.FixedVersion,
+			"description": vuln.Description,
+			"tolerated":   isTolerated,
+		}
+		
+		if isTolerated {
+			enriched["tolerationStatement"] = toleration.Statement
+			if toleration.ExpiresAt != nil {
+				enriched["tolerationExpiry"] = toleration.ExpiresAt.Format(time.RFC3339)
+			}
+			toleratedCount++
+			decision.ToleratedCVEs = append(decision.ToleratedCVEs, vuln.ID)
+			
+			e.logger.Info("vulnerability tolerated",
+				"cve_id", vuln.ID,
+				"severity", vuln.Severity,
+				"statement", toleration.Statement,
+				"package", vuln.PackageName,
+				"image", imageRef)
+		} else {
+			// Count non-tolerated vulnerabilities by severity
+			switch vuln.Severity {
+			case "CRITICAL":
 				criticalCount++
-				criticalVulns = append(criticalVulns, vuln)
+				failingVulns = append(failingVulns, vuln)
+			case "HIGH":
+				highCount++
+			case "MEDIUM":
+				mediumCount++
+			case "LOW":
+				lowCount++
 			}
 		}
+		
+		enrichedVulns = append(enrichedVulns, enriched)
 	}
 
 	decision.CriticalVulnCount = criticalCount
 	decision.ToleratedVulnCount = toleratedCount
 
-	// Determine if policy passes
-	if criticalCount == 0 {
-		decision.Passed = true
-		decision.ShouldSign = true
-		decision.Reason = fmt.Sprintf("no critical vulnerabilities (%d tolerated)", toleratedCount)
+	// Evaluate CEL policy expression
+	celInput := map[string]interface{}{
+		"vulnerabilities": enrichedVulns,
+		"imageRef":        imageRef,
+		"criticalCount":   criticalCount,
+		"highCount":       highCount,
+		"mediumCount":     mediumCount,
+		"lowCount":        lowCount,
+		"toleratedCount":  toleratedCount,
+	}
+	
+	out, _, err := e.celProgram.Eval(celInput)
+	if err != nil {
+		return nil, fmt.Errorf("failed to evaluate policy: %w", err)
+	}
+	
+	// Check if the result is a boolean
+	passed, ok := out.Value().(bool)
+	if !ok {
+		return nil, fmt.Errorf("policy expression did not return a boolean: %v", out.Value())
+	}
+	
+	decision.Passed = passed
+	decision.ShouldSign = passed
+	
+	// Build reason message
+	if passed {
+		decision.Reason = fmt.Sprintf("policy passed: critical=%d, high=%d, medium=%d, low=%d (tolerated=%d)",
+			criticalCount, highCount, mediumCount, lowCount, toleratedCount)
 		
 		e.logger.Info("policy evaluation passed",
 			"image", imageRef,
-			"critical_vulns", criticalCount,
-			"tolerated_vulns", toleratedCount)
+			"critical", criticalCount,
+			"high", highCount,
+			"medium", mediumCount,
+			"low", lowCount,
+			"tolerated", toleratedCount)
 	} else {
-		decision.Passed = false
-		decision.ShouldSign = false
-		decision.Reason = fmt.Sprintf("%d critical vulnerabilities found (%d tolerated)", criticalCount, toleratedCount)
+		if e.config.FailureMessage != "" {
+			decision.Reason = e.config.FailureMessage
+		} else {
+			decision.Reason = fmt.Sprintf("policy failed: critical=%d, high=%d, medium=%d, low=%d (tolerated=%d)",
+				criticalCount, highCount, mediumCount, lowCount, toleratedCount)
+		}
 		
 		e.logger.Warn("policy evaluation failed",
 			"image", imageRef,
-			"critical_vulns", criticalCount,
-			"tolerated_vulns", toleratedCount)
+			"critical", criticalCount,
+			"high", highCount,
+			"medium", mediumCount,
+			"low", lowCount,
+			"tolerated", toleratedCount,
+			"expression", e.config.Expression)
 		
-		// Log details about each critical vulnerability that caused the failure
-		for _, vuln := range criticalVulns {
-			e.logger.Warn("critical vulnerability details",
+		// Log details about vulnerabilities that caused the failure
+		for _, vuln := range failingVulns {
+			e.logger.Warn("vulnerability details",
 				"cve_id", vuln.ID,
+				"severity", vuln.Severity,
 				"description", vuln.Description,
 				"package", vuln.PackageName,
 				"installed_version", vuln.Version,

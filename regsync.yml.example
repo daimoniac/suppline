@@ -11,6 +11,9 @@ creds:
 defaults:
   parallel: 2
   x-rescanInterval: 7d        # Default rescan interval for all sync entries (optional)
+  x-policy:                   # Default policy for all sync entries (optional)
+    expression: "criticalCount == 0"
+    failureMessage: "critical vulnerabilities found"
 
 sync:
   - source: nginx
@@ -33,6 +36,9 @@ sync:
         - ">=3.18.0"
       deny:
         - "latest"
+    x-policy:                 # Override default policy for this entry (optional)
+      expression: "criticalCount == 0 && highCount == 0"
+      failureMessage: "critical or high vulnerabilities found"
     x-tolerate:
       - id: CVE-2024-12345
         statement: false positive, not applicable to our use case

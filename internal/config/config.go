@@ -2,6 +2,7 @@ package config
 
 import (
 	"fmt"
+	"log/slog"
 	"os"
 	"time"
 )
@@ -38,6 +39,7 @@ type ScannerConfig struct {
 	Timeout       time.Duration
 	Insecure      bool
 	RegsyncPath   string // Path to regsync.yml for registry credentials
+	Logger        *slog.Logger // Logger instance for structured logging
 }
 
 // AttestationConfig configures Sigstore attestation and signing

@@ -713,7 +713,12 @@ func TestPolicyEngine(t *testing.T) {
 		},
 	}
 
-	engine := policy.NewEngine(nil)
+	engine, err := policy.NewEngine(nil, policy.PolicyConfig{
+		Expression: "criticalCount == 0",
+	})
+	if err != nil {
+		t.Fatalf("failed to create policy engine: %v", err)
+	}
 	ctx := context.Background()
 
 	t.Run("PassWithNoVulnerabilities", func(t *testing.T) {
@@ -1061,7 +1066,12 @@ func TestPolicyAndAttestationWorkflow(t *testing.T) {
 		},
 	}
 
-	engine := policy.NewEngine(nil)
+	engine, err := policy.NewEngine(nil, policy.PolicyConfig{
+		Expression: "criticalCount == 0",
+	})
+	if err != nil {
+		t.Fatalf("failed to create policy engine: %v", err)
+	}
 	ctx := context.Background()
 
 	t.Run("WorkflowWithPolicyPass", func(t *testing.T) {
@@ -1446,7 +1456,12 @@ func TestCompleteWorkerWorkflow(t *testing.T) {
 	}
 	defer store.Close()
 
-	policyEngine := policy.NewEngine(nil)
+	policyEngine, err := policy.NewEngine(nil, policy.PolicyConfig{
+		Expression: "criticalCount == 0",
+	})
+	if err != nil {
+		t.Fatalf("failed to create policy engine: %v", err)
+	}
 
 	// Create mock registry client (since we don't have a real registry in test)
 	regsyncCfg := &regsync.Config{

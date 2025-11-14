@@ -26,13 +26,18 @@ type TrivyScanner struct {
 
 // NewTrivyScanner creates a new Trivy scanner client
 func NewTrivyScanner(cfg config.ScannerConfig) (*TrivyScanner, error) {
+	logger := cfg.Logger
+	if logger == nil {
+		logger = slog.Default()
+	}
+	
 	scanner := &TrivyScanner{
 		serverAddr:    cfg.ServerAddr,
 		token:         cfg.Token,
 		customHeaders: cfg.CustomHeaders,
 		timeout:       cfg.Timeout,
 		insecure:      cfg.Insecure,
-		logger:        slog.Default(),
+		logger:        logger,
 	}
 
 	// Generate Docker config from regsync.yml if registry credentials are needed

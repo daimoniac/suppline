@@ -29,9 +29,10 @@ type RegistryCredential struct {
 
 // Defaults contains default configuration values
 type Defaults struct {
-	Parallel              int    `yaml:"parallel"`
-	RescanInterval        string `yaml:"x-rescanInterval,omitempty"`
-	SCAIValidityExtension string `yaml:"x-scaiValidityExtension,omitempty"`
+	Parallel              int           `yaml:"parallel"`
+	RescanInterval        string        `yaml:"x-rescanInterval,omitempty"`
+	SCAIValidityExtension string        `yaml:"x-scaiValidityExtension,omitempty"`
+	Policy                *PolicyConfig `yaml:"x-policy,omitempty"`
 }
 
 // SyncEntry represents a single sync configuration
@@ -45,6 +46,7 @@ type SyncEntry struct {
 	Tolerate              []CVEToleration `yaml:"x-tolerate,omitempty"`
 	RescanInterval        string          `yaml:"x-rescanInterval,omitempty"`
 	SCAIValidityExtension string          `yaml:"x-scaiValidityExtension,omitempty"`
+	Policy                *PolicyConfig   `yaml:"x-policy,omitempty"`
 }
 
 // TagFilter defines tag filtering rules
@@ -58,6 +60,12 @@ type CVEToleration struct {
 	ID        string     `yaml:"id"`
 	Statement string     `yaml:"statement"`
 	ExpiresAt *time.Time `yaml:"expires_at,omitempty"`
+}
+
+// PolicyConfig represents a CEL-based security policy
+type PolicyConfig struct {
+	Expression     string `yaml:"expression"`
+	FailureMessage string `yaml:"failureMessage,omitempty"`
 }
 
 // Parse reads and parses a regsync.yml configuration file
@@ -286,4 +294,33 @@ func (c *Config) GetTagsForRepository(repo string) []string {
 	}
 	
 	return tags
+}
+
+// GetPolicyForTarget returns the policy configuration for a specific target repository
+// Returns the sync entry's policy if specified, otherwise the default, otherwise nil
+// Handles both type=repository (exact match) and type=image (strips tag for matching)
+func (c *Config) GetPolicyForTarget(target string) *PolicyConfig {
+	// Check sync entry first
+	for _, sync := range c.Sync {
+		syncTarget := sync.Target
+		
+		// For type=image, strip the tag for comparison
+		if sync.Type == "image" {
+			if idx := strings.LastIndex(syncTarget, ":"); idx != -1 {
+				syncTarget = syncTarget[:idx]
+			}
+		}
+		
+		if syncTarget == target && sync.Policy != nil {
+			return sync.Policy
+		}
+	}
+
+	// Fall back to default
+	if c.Defaults.Policy != nil {
+		return c.Defaults.Policy
+	}
+
+	// No policy configured, caller should use hardcoded default
+	return nil
 }
