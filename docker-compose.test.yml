@@ -12,7 +12,7 @@ services:
       # Skip Java DB download for faster startup in CI
       TRIVY_SKIP_JAVA_DB_UPDATE: "true"
     healthcheck:
-      test: ["CMD", "wget", "--spider", "-q", "http://localhost:4954/healthz"]
+      test: ["CMD-SHELL", "trivy version || exit 1"]
       interval: 10s
       timeout: 5s
       retries: 12
