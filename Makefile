@@ -39,6 +39,7 @@ clean: ## Clean build artifacts and test databases
 	rm -f *.db
 	rm -f coverage.txt
 	rm -rf test/*.db
+	rm -rf build/
 
 lint: ## Run linters
 	golangci-lint run ./...
@@ -115,8 +116,9 @@ release-build: ## Build release binaries for multiple platforms
 # API Documentation targets
 swagger: ## Generate Swagger/OpenAPI documentation
 	@echo "Generating Swagger documentation..."
-	@swag init -g internal/api/api.go -o docs/swagger --parseDependency --parseInternal
-	@echo "✅ Swagger docs generated at docs/swagger/"
+	@mkdir -p build/swagger
+	@swag init -g internal/api/api.go -o build/swagger --parseDependency --parseInternal
+	@echo "✅ Swagger docs generated at build/swagger/"
 	@echo "📖 View at http://localhost:8080/swagger/ (when server is running)"
 
 swagger-install: ## Install swag CLI tool
@@ -124,13 +126,3 @@ swagger-install: ## Install swag CLI tool
 	@go install github.com/swaggo/swag/cmd/swag@latest
 	@echo "✅ Swag installed. Run 'make swagger' to generate docs"
 
-swagger-verify: ## Verify docs are up-to-date (for CI)
-	@echo "Verifying Swagger docs are up-to-date..."
-	@swag init -g internal/api/api.go -o docs/swagger --parseDependency --parseInternal
-	@if [ -n "$$(git status --porcelain docs/swagger/)" ]; then \
-		echo "❌ Swagger docs are out of sync! Run 'make swagger' and commit changes."; \
-		git diff docs/swagger/; \
-		exit 1; \
-	else \
-		echo "✅ Swagger docs are up-to-date"; \
-	fi

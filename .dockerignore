@@ -7,9 +7,9 @@
 *.md
 !README.md
 docs/
-!docs/swagger/
 
 # Build artifacts
+build/
 suppline
 dist/
 *.db

@@ -14,7 +14,7 @@ import (
 	"github.com/suppline/suppline/internal/statestore"
 	httpSwagger "github.com/swaggo/http-swagger"
 	
-	_ "github.com/suppline/suppline/docs/swagger" // Import generated docs
+	_ "github.com/suppline/suppline/build/swagger" // Import generated docs
 )
 
 // @title suppline API

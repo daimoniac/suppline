@@ -18,7 +18,8 @@ RUN go install github.com/swaggo/swag/cmd/swag@latest
 COPY . .
 
 # Generate Swagger documentation
-RUN swag init -g internal/api/api.go -o docs/swagger --parseDependency --parseInternal
+RUN mkdir -p build/swagger && \
+    swag init -g internal/api/api.go -o build/swagger --parseDependency --parseInternal
 
 # Build the binary with CGO enabled for SQLite
 RUN CGO_ENABLED=1 GOOS=linux go build -a -installsuffix cgo \

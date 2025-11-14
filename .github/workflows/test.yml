@@ -34,7 +34,9 @@ jobs:
         run: go install github.com/swaggo/swag/cmd/swag@latest
 
       - name: Generate Swagger docs
-        run: swag init -g internal/api/api.go -o docs/swagger --parseDependency --parseInternal
+        run: |
+          mkdir -p build/swagger
+          swag init -g internal/api/api.go -o build/swagger --parseDependency --parseInternal
 
       - name: Install cosign
         uses: sigstore/cosign-installer@v3.7.0
@@ -75,7 +77,9 @@ jobs:
         run: go install github.com/swaggo/swag/cmd/swag@latest
 
       - name: Generate Swagger docs
-        run: swag init -g internal/api/api.go -o docs/swagger --parseDependency --parseInternal
+        run: |
+          mkdir -p build/swagger
+          swag init -g internal/api/api.go -o build/swagger --parseDependency --parseInternal
 
       - name: Install golangci-lint from source
         run: |
