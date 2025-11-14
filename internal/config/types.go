@@ -3,6 +3,8 @@ package config
 import (
 	"log/slog"
 	"time"
+
+	"github.com/suppline/suppline/internal/types"
 )
 
 // Config represents the complete application configuration
@@ -105,16 +107,16 @@ type Defaults struct {
 
 // SyncEntry represents a single sync configuration
 type SyncEntry struct {
-	Source                string          `yaml:"source"`
-	Target                string          `yaml:"target"`
-	Type                  string          `yaml:"type"`
-	Schedule              string          `yaml:"schedule,omitempty"`
-	Platform              string          `yaml:"platform,omitempty"`
-	Tags                  *TagFilter      `yaml:"tags,omitempty"`
-	Tolerate              []CVEToleration `yaml:"x-tolerate,omitempty"`
-	RescanInterval        string          `yaml:"x-rescanInterval,omitempty"`
-	SCAIValidityExtension string          `yaml:"x-scaiValidityExtension,omitempty"`
-	Policy                *PolicyConfig   `yaml:"x-policy,omitempty"`
+	Source                string                `yaml:"source"`
+	Target                string                `yaml:"target"`
+	Type                  string                `yaml:"type"`
+	Schedule              string                `yaml:"schedule,omitempty"`
+	Platform              string                `yaml:"platform,omitempty"`
+	Tags                  *TagFilter            `yaml:"tags,omitempty"`
+	Tolerate              []types.CVEToleration `yaml:"x-tolerate,omitempty"` // Using canonical type
+	RescanInterval        string                `yaml:"x-rescanInterval,omitempty"`
+	SCAIValidityExtension string                `yaml:"x-scaiValidityExtension,omitempty"`
+	Policy                *PolicyConfig         `yaml:"x-policy,omitempty"`
 }
 
 // TagFilter defines tag filtering rules
@@ -123,12 +125,9 @@ type TagFilter struct {
 	Deny        []string `yaml:"deny,omitempty"`
 }
 
-// CVEToleration represents a tolerated CVE with optional expiry
-type CVEToleration struct {
-	ID        string     `yaml:"id"`
-	Statement string     `yaml:"statement"`
-	ExpiresAt *time.Time `yaml:"expires_at,omitempty"`
-}
+// CVEToleration is an alias to the canonical toleration type for backward compatibility.
+// Deprecated: Use types.CVEToleration directly.
+type CVEToleration = types.CVEToleration
 
 // PolicyConfig represents a CEL-based security policy
 type PolicyConfig struct {

@@ -41,18 +41,19 @@ func DefaultConfig() Config {
 
 // ImageWorker implements the Worker interface
 type ImageWorker struct {
-	queue         queue.TaskQueue
-	scanner       scanner.Scanner
-	policy        policy.PolicyEngine
-	attestor      attestation.Attestor
-	registry      registry.Client
-	stateStore    statestore.StateStore
-	config        Config
-	logger        *slog.Logger
-	wg            sync.WaitGroup
-	regsyncCfg    *config.RegsyncConfig
-	scaiGenerator *attestation.SCAIGenerator
-	pipeline      *Pipeline
+	queue             queue.TaskQueue
+	scanner           scanner.Scanner
+	policy            policy.PolicyEngine
+	attestor          attestation.Attestor
+	registry          registry.Client
+	stateStore        statestore.StateStore
+	config            Config
+	logger            *slog.Logger
+	wg                sync.WaitGroup
+	regsyncCfg        *config.RegsyncConfig
+	scaiGenerator     *attestation.SCAIGenerator
+	pipeline          *Pipeline
+	scanRecordBuilder *ScanRecordBuilder
 }
 
 // NewImageWorker creates a new worker instance
@@ -77,16 +78,17 @@ func NewImageWorker(
 	}
 
 	worker := &ImageWorker{
-		queue:         queue,
-		scanner:       scanner,
-		policy:        policy,
-		attestor:      attestor,
-		registry:      registry,
-		stateStore:    stateStore,
-		config:        config,
-		logger:        logger,
-		regsyncCfg:    regsyncCfg,
-		scaiGenerator: scaiGenerator,
+		queue:             queue,
+		scanner:           scanner,
+		policy:            policy,
+		attestor:          attestor,
+		registry:          registry,
+		stateStore:        stateStore,
+		config:            config,
+		logger:            logger,
+		regsyncCfg:        regsyncCfg,
+		scaiGenerator:     scaiGenerator,
+		scanRecordBuilder: NewScanRecordBuilder(),
 	}
 
 	// Initialize pipeline

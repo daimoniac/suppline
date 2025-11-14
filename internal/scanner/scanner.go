@@ -3,6 +3,8 @@ package scanner
 import (
 	"context"
 	"time"
+
+	"github.com/suppline/suppline/internal/types"
 )
 
 // Scanner defines the interface for vulnerability scanning and SBOM generation
@@ -28,20 +30,12 @@ type SBOM struct {
 // ScanResult contains vulnerability scan results
 type ScanResult struct {
 	ImageRef        string
-	Vulnerabilities []Vulnerability
+	Vulnerabilities []types.Vulnerability // Using canonical type from internal/types
 	ScannedAt       time.Time
 	CosignVulnData  []byte // Pre-generated cosign-vuln format for attestation (avoids redundant Trivy call)
 	SBOM            *SBOM  // Optional: SBOM generated during the same scan (avoids separate SBOM call)
 }
 
-// Vulnerability represents a single security vulnerability
-type Vulnerability struct {
-	ID           string // CVE ID
-	Severity     string // CRITICAL, HIGH, MEDIUM, LOW
-	PackageName  string
-	Version      string // Installed version
-	FixedVersion string // Version with fix (empty if no fix available)
-	Title        string
-	Description  string
-	PrimaryURL   string // Reference URL
-}
+// Vulnerability is an alias to the canonical vulnerability type for backward compatibility.
+// Deprecated: Use types.Vulnerability directly.
+type Vulnerability = types.Vulnerability

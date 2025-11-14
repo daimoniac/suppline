@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"sync"
 	"time"
+
+	"github.com/suppline/suppline/internal/types"
 )
 
 // TaskQueue manages a queue of scan tasks for container images
@@ -37,15 +39,12 @@ type ScanTask struct {
 	EnqueuedAt  time.Time
 	Attempts    int
 	IsRescan    bool
-	Tolerations []CVEToleration
+	Tolerations []types.CVEToleration // Using canonical type from internal/types
 }
 
-// CVEToleration represents a tolerated CVE from regsync config
-type CVEToleration struct {
-	ID        string
-	Statement string
-	ExpiresAt *time.Time
-}
+// CVEToleration is an alias to the canonical toleration type for backward compatibility.
+// Deprecated: Use types.CVEToleration directly.
+type CVEToleration = types.CVEToleration
 
 // InMemoryQueue implements TaskQueue using Go channels
 type InMemoryQueue struct {

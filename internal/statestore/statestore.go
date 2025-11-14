@@ -4,6 +4,8 @@ import (
 	"context"
 	"errors"
 	"time"
+
+	"github.com/suppline/suppline/internal/types"
 )
 
 // ErrScanNotFound is returned by GetLastScan when no scan record exists for the given digest.
@@ -58,35 +60,18 @@ type ScanRecord struct {
 	Signed            bool
 	SBOMAttested      bool
 	VulnAttested      bool
-	Vulnerabilities   []VulnerabilityRecord
-	ToleratedCVEs     []ToleratedCVE
+	Vulnerabilities   []types.VulnerabilityRecord // Using canonical type
+	ToleratedCVEs     []types.ToleratedCVE        // Using canonical type
 	ErrorMessage      string
 }
 
-// VulnerabilityRecord represents a single vulnerability found in an image
-type VulnerabilityRecord struct {
-	CVEID            string
-	Severity         string
-	PackageName      string
-	InstalledVersion string
-	FixedVersion     string
-	Title            string
-	Description      string
-	PrimaryURL       string
-	// Image information
-	Repository string
-	Tag        string
-	Digest     string
-	ScannedAt  time.Time
-}
+// VulnerabilityRecord is an alias to the canonical vulnerability record type for backward compatibility.
+// Deprecated: Use types.VulnerabilityRecord directly.
+type VulnerabilityRecord = types.VulnerabilityRecord
 
-// ToleratedCVE represents a CVE that has been explicitly tolerated
-type ToleratedCVE struct {
-	CVEID       string
-	Statement   string
-	ToleratedAt time.Time
-	ExpiresAt   *time.Time // Nil means no expiry
-}
+// ToleratedCVE is an alias to the canonical tolerated CVE type for backward compatibility.
+// Deprecated: Use types.ToleratedCVE directly.
+type ToleratedCVE = types.ToleratedCVE
 
 // VulnFilter defines criteria for querying vulnerabilities
 type VulnFilter struct {
@@ -114,9 +99,6 @@ type TolerationFilter struct {
 	Limit        int
 }
 
-// TolerationInfo represents toleration information per repository
-// Each toleration appears once per repository, regardless of how many tags/digests it applies to
-type TolerationInfo struct {
-	ToleratedCVE
-	Repository string
-}
+// TolerationInfo is an alias to the canonical toleration info type for backward compatibility.
+// Deprecated: Use types.TolerationInfo directly.
+type TolerationInfo = types.TolerationInfo

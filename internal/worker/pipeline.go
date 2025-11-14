@@ -6,10 +6,10 @@ import (
 	"log/slog"
 	"time"
 
+	"github.com/suppline/suppline/internal/config"
 	"github.com/suppline/suppline/internal/policy"
 	"github.com/suppline/suppline/internal/queue"
 	"github.com/suppline/suppline/internal/scanner"
-	"github.com/suppline/suppline/internal/statestore"
 )
 
 // Pipeline orchestrates the complete scan workflow
@@ -145,8 +145,8 @@ func (p *Pipeline) scanPhase(ctx context.Context, imageRef string) (*scanner.SBO
 
 // policyPhase evaluates policy with CVE tolerations
 func (p *Pipeline) policyPhase(ctx context.Context, task *queue.ScanTask, imageRef string, scanResult *scanner.ScanResult) (*policy.PolicyDecision, error) {
-	// Convert tolerations
-	tolerations := convertTolerationsToRegsync(task.Tolerations)
+	// Convert queue tolerations to config format using canonical types
+	tolerations := convertQueueTolerationsToConfig(task.Tolerations)
 
 	// Get policy engine for this repository
 	policyEngine, err := p.getPolicyEngineForRepository(task.Repository)
@@ -245,7 +245,8 @@ func (p *Pipeline) signingPhase(ctx context.Context, imageRef string, policyDeci
 
 // persistencePhase records scan results to state store
 func (p *Pipeline) persistencePhase(ctx context.Context, task *queue.ScanTask, scanResult *scanner.ScanResult, policyDecision *policy.PolicyDecision, signed bool, scannedAt time.Time) error {
-	scanRecord := buildScanRecord(task, scanResult, policyDecision, signed, scannedAt)
+	// Use the new ScanRecordBuilder for clean, centralized conversion
+	scanRecord := p.worker.scanRecordBuilder.Build(task, scanResult, policyDecision, signed, scannedAt)
 
 	p.logger.Debug("recording scan results", "image_ref", fmt.Sprintf("%s@%s", task.Repository, task.Digest))
 	if err := p.worker.stateStore.RecordScan(ctx, scanRecord); err != nil {
@@ -330,77 +331,16 @@ func (p *Pipeline) getPolicyEngineForRepository(repository string) (policy.Polic
 	return policy.NewEngine(p.logger, policyConfig)
 }
 
-// buildScanRecord constructs a ScanRecord from the workflow results
-func buildScanRecord(
-	task *queue.ScanTask,
-	scanResult *scanner.ScanResult,
-	policyDecision *policy.PolicyDecision,
-	signed bool,
-	scannedAt time.Time,
-) *statestore.ScanRecord {
-	// Count vulnerabilities by severity
-	var criticalCount, highCount, mediumCount, lowCount int
-	vulnerabilities := make([]statestore.VulnerabilityRecord, 0, len(scanResult.Vulnerabilities))
-
-	for _, vuln := range scanResult.Vulnerabilities {
-		// Count by severity
-		switch vuln.Severity {
-		case "CRITICAL":
-			criticalCount++
-		case "HIGH":
-			highCount++
-		case "MEDIUM":
-			mediumCount++
-		case "LOW":
-			lowCount++
-		}
-
-		// Convert to VulnerabilityRecord
-		vulnerabilities = append(vulnerabilities, statestore.VulnerabilityRecord{
-			CVEID:            vuln.ID,
-			Severity:         vuln.Severity,
-			PackageName:      vuln.PackageName,
-			InstalledVersion: vuln.Version,
-			FixedVersion:     vuln.FixedVersion,
-			Title:            vuln.Title,
-			Description:      vuln.Description,
-			PrimaryURL:       vuln.PrimaryURL,
-		})
-	}
-
-	// Build tolerated CVEs list
-	toleratedSet := make(map[string]bool)
-	for _, toleratedID := range policyDecision.ToleratedCVEs {
-		toleratedSet[toleratedID] = true
-	}
-
-	toleratedCVEs := make([]statestore.ToleratedCVE, 0, len(task.Tolerations))
-	for _, toleration := range task.Tolerations {
-		if toleratedSet[toleration.ID] {
-			toleratedCVEs = append(toleratedCVEs, statestore.ToleratedCVE{
-				CVEID:       toleration.ID,
-				Statement:   toleration.Statement,
-				ToleratedAt: scannedAt,
-				ExpiresAt:   toleration.ExpiresAt,
-			})
+// convertQueueTolerationsToConfig converts queue.CVEToleration to config.CVEToleration
+// This is a simple pass-through conversion since the types have identical fields.
+func convertQueueTolerationsToConfig(queueTolerations []queue.CVEToleration) []config.CVEToleration {
+	tolerations := make([]config.CVEToleration, len(queueTolerations))
+	for i, qt := range queueTolerations {
+		tolerations[i] = config.CVEToleration{
+			ID:        qt.ID,
+			Statement: qt.Statement,
+			ExpiresAt: qt.ExpiresAt,
 		}
 	}
-
-	return &statestore.ScanRecord{
-		Digest:            task.Digest,
-		Repository:        task.Repository,
-		Tag:               task.Tag,
-		ScannedAt:         scannedAt,
-		CriticalVulnCount: criticalCount,
-		HighVulnCount:     highCount,
-		MediumVulnCount:   mediumCount,
-		LowVulnCount:      lowCount,
-		PolicyPassed:      policyDecision.Passed,
-		Signed:            signed,
-		SBOMAttested:      true,
-		VulnAttested:      true,
-		Vulnerabilities:   vulnerabilities,
-		ToleratedCVEs:     toleratedCVEs,
-		ErrorMessage:      "",
-	}
+	return tolerations
 }
