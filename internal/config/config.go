@@ -5,6 +5,8 @@ import (
 	"log/slog"
 	"os"
 	"time"
+
+	"gopkg.in/yaml.v3"
 )
 
 // Config represents the complete application configuration
@@ -80,13 +82,52 @@ type ObservabilityConfig struct {
 
 // Load loads configuration from environment variables and files
 func Load() (*Config, error) {
+	regsyncPath := getEnv("SUPPLINE_CONFIG", "suppline.yml")
+	
+	// Parse regsync config to get defaults
+	var workerPollInterval time.Duration
+	var rescanInterval time.Duration
+	
+	// Try to load regsync config for defaults
+	if data, err := os.ReadFile(regsyncPath); err == nil {
+		// Simple YAML parsing to extract defaults without full regsync package dependency
+		// We'll use a minimal struct just for the defaults we need
+		var regsyncDefaults struct {
+			Defaults struct {
+				WorkerPollInterval string `yaml:"x-worker-poll-interval"`
+				RescanInterval     string `yaml:"x-rescanInterval"`
+			} `yaml:"defaults"`
+		}
+		
+		if err := yaml.Unmarshal(data, &regsyncDefaults); err == nil {
+			if regsyncDefaults.Defaults.WorkerPollInterval != "" {
+				if d, err := parseInterval(regsyncDefaults.Defaults.WorkerPollInterval); err == nil {
+					workerPollInterval = d
+				}
+			}
+			if regsyncDefaults.Defaults.RescanInterval != "" {
+				if d, err := parseInterval(regsyncDefaults.Defaults.RescanInterval); err == nil {
+					rescanInterval = d
+				}
+			}
+		}
+	}
+	
+	// Use defaults from suppline.yml, or fall back to hardcoded defaults
+	if workerPollInterval == 0 {
+		workerPollInterval = 5 * time.Second
+	}
+	if rescanInterval == 0 {
+		rescanInterval = 24 * time.Hour
+	}
+	
 	cfg := &Config{
-		RegsyncPath: getEnv("SUPPLINE_CONFIG", "suppline.yml"),
+		RegsyncPath: regsyncPath,
 		Queue: QueueConfig{
 			BufferSize: getEnvInt("QUEUE_BUFFER_SIZE", 1000),
 		},
 		Worker: WorkerConfig{
-			PollInterval:  getEnvDuration("WORKER_POLL_INTERVAL", 5*time.Second),
+			PollInterval:  workerPollInterval,
 			RetryAttempts: getEnvInt("WORKER_RETRY_ATTEMPTS", 3),
 			RetryBackoff:  getEnvDuration("WORKER_RETRY_BACKOFF", 10*time.Second),
 		},
@@ -116,7 +157,7 @@ func Load() (*Config, error) {
 			Type:           getEnv("STATE_STORE_TYPE", "sqlite"),
 			PostgresURL:    getEnv("POSTGRES_URL", ""),
 			SQLitePath:     getEnv("SQLITE_PATH", "suppline.db"),
-			RescanInterval: getEnvDuration("RESCAN_INTERVAL", 24*time.Hour),
+			RescanInterval: rescanInterval,
 		},
 		API: APIConfig{
 			Enabled:  getEnvBool("API_ENABLED", true),
@@ -203,4 +244,35 @@ func getEnvDuration(key string, defaultValue time.Duration) time.Duration {
 		}
 	}
 	return defaultValue
+}
+
+// parseInterval parses interval notation (e.g., "2m", "3h", "7d") into time.Duration
+func parseInterval(interval string) (time.Duration, error) {
+	if len(interval) < 2 {
+		return 0, fmt.Errorf("invalid interval format: %s", interval)
+	}
+
+	unit := interval[len(interval)-1]
+	valueStr := interval[:len(interval)-1]
+
+	// Parse the numeric value
+	var value int
+	if _, err := fmt.Sscanf(valueStr, "%d", &value); err != nil {
+		return 0, fmt.Errorf("invalid interval value: %s", interval)
+	}
+
+	if value <= 0 {
+		return 0, fmt.Errorf("interval value must be positive: %s", interval)
+	}
+
+	switch unit {
+	case 'm':
+		return time.Duration(value) * time.Minute, nil
+	case 'h':
+		return time.Duration(value) * time.Hour, nil
+	case 'd':
+		return time.Duration(value) * 24 * time.Hour, nil
+	default:
+		return 0, fmt.Errorf("invalid interval unit (must be m, h, or d): %s", interval)
+	}
 }

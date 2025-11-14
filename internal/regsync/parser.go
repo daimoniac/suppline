@@ -31,6 +31,7 @@ type RegistryCredential struct {
 type Defaults struct {
 	Parallel              int           `yaml:"parallel"`
 	RescanInterval        string        `yaml:"x-rescanInterval,omitempty"`
+	WorkerPollInterval    string        `yaml:"x-worker-poll-interval,omitempty"`
 	SCAIValidityExtension string        `yaml:"x-scaiValidityExtension,omitempty"`
 	Policy                *PolicyConfig `yaml:"x-policy,omitempty"`
 }
@@ -323,4 +324,15 @@ func (c *Config) GetPolicyForTarget(target string) *PolicyConfig {
 
 	// No policy configured, caller should use hardcoded default
 	return nil
+}
+
+// GetWorkerPollInterval returns the worker poll interval from defaults
+// Returns the default if specified, otherwise 5 seconds
+func (c *Config) GetWorkerPollInterval() (time.Duration, error) {
+	if c.Defaults.WorkerPollInterval != "" {
+		return parseInterval(c.Defaults.WorkerPollInterval)
+	}
+
+	// Fall back to hardcoded default
+	return 5 * time.Second, nil
 }
