@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"log/slog"
 	"os"
 	"os/exec"
 	"testing"
@@ -994,7 +995,7 @@ func TestAttestation(t *testing.T) {
 		},
 	}
 
-	attestor, err := attestation.NewSigstoreAttestor(cfg, nil, nil)
+	attestor, err := attestation.NewSigstoreAttestor(cfg, nil, slog.Default(), "../../regsync.yml.example")
 	if err != nil {
 		t.Fatalf("Failed to create attestor: %v", err)
 	}
@@ -1172,7 +1173,7 @@ func TestOptimizedAttestationFlow(t *testing.T) {
 		},
 	}
 
-	attestor, err := attestation.NewSigstoreAttestor(attestorCfg, nil, nil)
+	attestor, err := attestation.NewSigstoreAttestor(attestorCfg, nil, slog.Default(), "../../regsync.yml.example")
 	if err != nil {
 		t.Fatalf("Failed to create attestor: %v", err)
 	}

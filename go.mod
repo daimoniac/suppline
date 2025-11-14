@@ -3,6 +3,7 @@ module github.com/suppline/suppline
 go 1.25.4
 
 require (
+	github.com/google/cel-go v0.26.1
 	github.com/google/go-containerregistry v0.20.6
 	github.com/joho/godotenv v1.5.1
 	github.com/mattn/go-sqlite3 v1.14.28
@@ -33,7 +34,6 @@ require (
 	github.com/go-openapi/swag/stringutils v0.25.1 // indirect
 	github.com/go-openapi/swag/typeutils v0.25.1 // indirect
 	github.com/go-openapi/swag/yamlutils v0.25.1 // indirect
-	github.com/google/cel-go v0.26.1 // indirect
 	github.com/klauspost/compress v1.18.1 // indirect
 	github.com/kylelemons/godebug v1.1.0 // indirect
 	github.com/mitchellh/go-homedir v1.1.0 // indirect
