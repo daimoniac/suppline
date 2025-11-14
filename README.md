@@ -1,8 +1,6 @@
 <p align="center">
-  <img src="docs/suppline-fullsize.png" alt="suppline logo" width="400"/>
+  <img src="docs/suppline-fullsize.png" alt="suppline logo" width="300"/>
 </p>
-
-# suppline
 
 A cloud-native container security pipeline that continuously monitors container registries, scans images for vulnerabilities, generates attestations, and signs compliant images using Sigstore.
 
