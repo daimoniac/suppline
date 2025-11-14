@@ -3,20 +3,20 @@ services:
   trivy-server:
     image: aquasec/trivy:latest
     container_name: trivy-server
-    command: server --listen 0.0.0.0:4954 --skip-db-update
+    command: server --listen 0.0.0.0:4954
     ports:
       - "4954:4954"
     volumes:
-      - trivy-cache:/root/.cache/trivy
+      - ${TRIVY_CACHE_DIR:-.trivy-cache}:/root/.cache/trivy
     environment:
       # Skip Java DB download for faster startup in CI
       TRIVY_SKIP_JAVA_DB_UPDATE: "true"
     healthcheck:
-      test: ["CMD", "trivy", "version"]
+      test: ["CMD", "wget", "--spider", "-q", "http://localhost:4954/healthz"]
       interval: 10s
       timeout: 5s
-      retries: 5
-      start_period: 30s
+      retries: 12
+      start_period: 60s
 
   # Local Docker registry for testing
   test-registry:
