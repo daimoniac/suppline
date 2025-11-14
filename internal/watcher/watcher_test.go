@@ -81,32 +81,8 @@ func (m *mockStateStore) GetLastScan(ctx context.Context, digest string) (*state
 	return nil, statestore.ErrScanNotFound
 }
 
-func (m *mockStateStore) ListDueForRescan(ctx context.Context, interval time.Duration) ([]string, error) {
-	if m.err != nil {
-		return nil, m.err
-	}
-	return m.dueForRescan, nil
-}
-
-func (m *mockStateStore) GetScanHistory(ctx context.Context, digest string, limit int) ([]*statestore.ScanRecord, error) {
-	return nil, fmt.Errorf("not implemented")
-}
-
-func (m *mockStateStore) QueryVulnerabilities(ctx context.Context, filter statestore.VulnFilter) ([]*statestore.VulnerabilityRecord, error) {
-	return nil, fmt.Errorf("not implemented")
-}
-
-func (m *mockStateStore) GetImagesByCVE(ctx context.Context, cveID string) ([]*statestore.ScanRecord, error) {
-	return nil, fmt.Errorf("not implemented")
-}
-
-func (m *mockStateStore) ListScans(ctx context.Context, filter statestore.ScanFilter) ([]*statestore.ScanRecord, error) {
-	return nil, fmt.Errorf("not implemented")
-}
-
-func (m *mockStateStore) ListTolerations(ctx context.Context, filter statestore.TolerationFilter) ([]*statestore.TolerationInfo, error) {
-	return nil, fmt.Errorf("not implemented")
-}
+// mockStateStore only implements the core StateStore interface
+// since the watcher doesn't need query methods
 
 func TestWatcher_Discover_NewImages(t *testing.T) {
 	ctx := context.Background()

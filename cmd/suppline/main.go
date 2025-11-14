@@ -112,7 +112,7 @@ func run() error {
 	// Initialize state store
 	logger.Info("initializing state store",
 		"type", cfg.StateStore.Type)
-	var store statestore.StateStore
+	var store statestore.StateStoreQuery
 	switch cfg.StateStore.Type {
 	case "sqlite":
 		store, err = statestore.NewSQLiteStore(cfg.StateStore.SQLitePath)

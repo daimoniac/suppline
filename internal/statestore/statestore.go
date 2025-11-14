@@ -11,16 +11,22 @@ import (
 // Callers should use errors.Is() to check for this specific error.
 var ErrScanNotFound = errors.New("scan not found")
 
-// StateStore defines the interface for persisting and querying scan results
+// StateStore defines the core interface for persisting scan results.
+// This interface contains only the methods used by the worker for recording
+// and checking scan state. For querying and reporting, use StateStoreQuery.
 type StateStore interface {
 	// RecordScan saves scan results with full vulnerability details
 	RecordScan(ctx context.Context, record *ScanRecord) error
 
 	// GetLastScan retrieves the most recent scan for a digest with vulnerabilities
 	GetLastScan(ctx context.Context, digest string) (*ScanRecord, error)
+}
 
-	// ListDueForRescan returns digests that need rescanning
-	ListDueForRescan(ctx context.Context, interval time.Duration) ([]string, error)
+// StateStoreQuery defines the extended interface for querying scan data.
+// This interface is primarily used by the API layer for reporting and analysis.
+// Implementations should also implement StateStore for core functionality.
+type StateStoreQuery interface {
+	StateStore
 
 	// GetScanHistory returns scan history for a digest with full details
 	GetScanHistory(ctx context.Context, digest string, limit int) ([]*ScanRecord, error)

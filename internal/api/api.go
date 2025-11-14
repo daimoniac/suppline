@@ -43,7 +43,7 @@ import (
 // APIServer provides HTTP API for querying scan results and triggering operations
 type APIServer struct {
 	config        *config.APIConfig
-	stateStore    statestore.StateStore
+	stateStore    statestore.StateStoreQuery
 	taskQueue     queue.TaskQueue
 	regsyncPath   string
 	router        *http.ServeMux
@@ -52,7 +52,7 @@ type APIServer struct {
 }
 
 // NewAPIServer creates a new API server instance
-func NewAPIServer(cfg *config.APIConfig, store statestore.StateStore, queue queue.TaskQueue, regsyncPath string, logger *slog.Logger) *APIServer {
+func NewAPIServer(cfg *config.APIConfig, store statestore.StateStoreQuery, queue queue.TaskQueue, regsyncPath string, logger *slog.Logger) *APIServer {
 	api := &APIServer{
 		config:      cfg,
 		stateStore:  store,
