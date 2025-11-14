@@ -157,7 +157,7 @@ func (a *SigstoreAttestor) AttestSBOM(ctx context.Context, imageRef string, sbom
 }
 
 // AttestVulnerabilities creates and pushes vulnerability attestation using cosign CLI
-// Uses Trivy's native cosign-vuln format for proper attestation structure
+// Uses pre-generated cosign-vuln format from ScanResult to avoid redundant Trivy call
 func (a *SigstoreAttestor) AttestVulnerabilities(ctx context.Context, imageRef string, result *scanner.ScanResult) error {
 	startTime := time.Now()
 	a.logger.Debug("starting vulnerability attestation", "image_ref", imageRef, "start_time", startTime)
@@ -166,42 +166,29 @@ func (a *SigstoreAttestor) AttestVulnerabilities(ctx context.Context, imageRef s
 		return fmt.Errorf("scan result is nil")
 	}
 
-	// Generate vulnerability report in cosign-vuln format using Trivy
-	// This ensures proper format with all required fields populated
-	trivyStartTime := time.Now()
-	a.logger.Debug("invoking Trivy for cosign-vuln format", "image_ref", imageRef, "trivy_start_time", trivyStartTime)
-	
+	// Require pre-generated cosign-vuln data
+	if len(result.CosignVulnData) == 0 {
+		return fmt.Errorf("cosign-vuln data is missing from scan result")
+	}
+
+	// Write pre-generated cosign-vuln data to temp file
 	tmpFile, err := os.CreateTemp("", "vuln-*.json")
 	if err != nil {
 		return fmt.Errorf("failed to create temp file: %w", err)
 	}
 	defer os.Remove(tmpFile.Name())
+
+	if _, err := tmpFile.Write(result.CosignVulnData); err != nil {
+		tmpFile.Close()
+		return fmt.Errorf("failed to write cosign-vuln data to temp file: %w", err)
+	}
 	tmpFile.Close()
 
-	// Run trivy with cosign-vuln format
-	trivyCmd := exec.CommandContext(ctx, "trivy", "image",
-		"--format", "cosign-vuln",
-		"--output", tmpFile.Name(),
-		"--quiet",
-		imageRef,
-	)
-
-	trivyOutput, err := trivyCmd.CombinedOutput()
-	trivyDuration := time.Since(trivyStartTime)
-	
-	if err != nil {
-		a.logger.Error("Trivy cosign-vuln generation failed", 
-			"image_ref", imageRef, 
-			"trivy_duration", trivyDuration,
-			"error", err)
-		return fmt.Errorf("failed to generate cosign-vuln format: %w (output: %s)", err, string(trivyOutput))
-	}
-
-	a.logger.Debug("Trivy cosign-vuln generation completed", 
+	a.logger.Debug("using pre-generated cosign-vuln data", 
 		"image_ref", imageRef, 
-		"trivy_duration", trivyDuration)
+		"size_bytes", len(result.CosignVulnData))
 
-	// Use cosign CLI to attest with Trivy-generated predicate
+	// Use cosign CLI to attest with pre-generated predicate
 	cosignStartTime := time.Now()
 	a.logger.Debug("invoking cosign for vulnerability attestation", "image_ref", imageRef, "cosign_start_time", cosignStartTime)
 	
@@ -233,7 +220,6 @@ func (a *SigstoreAttestor) AttestVulnerabilities(ctx context.Context, imageRef s
 	a.logger.Debug("vulnerability attestation completed", 
 		"image_ref", imageRef, 
 		"total_duration", totalDuration,
-		"trivy_duration", trivyDuration,
 		"cosign_duration", cosignDuration)
 
 	return nil

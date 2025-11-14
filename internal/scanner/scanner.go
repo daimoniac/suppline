@@ -30,6 +30,8 @@ type ScanResult struct {
 	ImageRef        string
 	Vulnerabilities []Vulnerability
 	ScannedAt       time.Time
+	CosignVulnData  []byte // Pre-generated cosign-vuln format for attestation (avoids redundant Trivy call)
+	SBOM            *SBOM  // Optional: SBOM generated during the same scan (avoids separate SBOM call)
 }
 
 // Vulnerability represents a single security vulnerability

@@ -148,14 +148,23 @@ type trivyVulnerability struct {
 }
 
 // ScanVulnerabilities performs vulnerability analysis via Trivy
+// This method now generates BOTH JSON and cosign-vuln formats in a single scan to avoid redundant calls
 func (s *TrivyScanner) ScanVulnerabilities(ctx context.Context, imageRef string) (*ScanResult, error) {
 	startTime := time.Now()
-	s.logger.Debug("invoking Trivy for vulnerability scan", "image_ref", imageRef, "start_time", startTime)
+	s.logger.Debug("invoking Trivy for vulnerability scan (JSON + cosign-vuln)", "image_ref", imageRef, "start_time", startTime)
 	
 	ctx, cancel := context.WithTimeout(ctx, s.timeout)
 	defer cancel()
 
-	// Build trivy command for vulnerability scanning
+	// Create temp file for cosign-vuln format output
+	tmpFile, err := os.CreateTemp("", "trivy-cosign-vuln-*.json")
+	if err != nil {
+		return nil, fmt.Errorf("failed to create temp file for cosign-vuln: %w", err)
+	}
+	defer os.Remove(tmpFile.Name())
+	tmpFile.Close()
+
+	// Build trivy command for vulnerability scanning (JSON format for parsing)
 	args := []string{
 		"image",
 		"--format", "json",
@@ -176,7 +185,7 @@ func (s *TrivyScanner) ScanVulnerabilities(ctx context.Context, imageRef string)
 
 	args = append(args, imageRef)
 
-	// Execute trivy command
+	// Execute trivy command for JSON output
 	cmd := exec.CommandContext(ctx, "trivy", args...)
 	var stdout, stderr bytes.Buffer
 	cmd.Stdout = &stdout
@@ -224,16 +233,63 @@ func (s *TrivyScanner) ScanVulnerabilities(ctx context.Context, imageRef string)
 		}
 	}
 
+	// Now generate cosign-vuln format (reuses cached scan data from Trivy)
+	cosignArgs := []string{
+		"image",
+		"--format", "cosign-vuln",
+		"--output", tmpFile.Name(),
+		"--quiet",
+		"--scanners", "vuln",
+		"--image-src", "remote",
+	}
+
+	if s.serverAddr != "" {
+		cosignArgs = append(cosignArgs, "--server", fmt.Sprintf("http://%s", s.serverAddr))
+	}
+
+	if s.token != "" {
+		cosignArgs = append(cosignArgs, "--token", s.token)
+	}
+
+	cosignArgs = append(cosignArgs, imageRef)
+
+	cosignCmd := exec.CommandContext(ctx, "trivy", cosignArgs...)
+	var cosignStderr bytes.Buffer
+	cosignCmd.Stderr = &cosignStderr
+
+	if s.dockerConfigPath != "" {
+		cosignCmd.Env = append(os.Environ(), fmt.Sprintf("DOCKER_CONFIG=%s", s.dockerConfigPath))
+	}
+
+	if err := cosignCmd.Run(); err != nil {
+		s.logger.Warn("failed to generate cosign-vuln format (continuing without it)", 
+			"image_ref", imageRef, 
+			"error", err,
+			"stderr", cosignStderr.String())
+		// Don't fail the entire scan if cosign-vuln generation fails
+	}
+
+	// Read cosign-vuln data
+	var cosignVulnData []byte
+	if data, err := os.ReadFile(tmpFile.Name()); err == nil {
+		cosignVulnData = data
+		s.logger.Debug("cosign-vuln format generated", 
+			"image_ref", imageRef, 
+			"size_bytes", len(cosignVulnData))
+	}
+
 	duration := time.Since(startTime)
 	s.logger.Debug("Trivy vulnerability scan completed", 
 		"image_ref", imageRef, 
 		"duration", duration,
-		"vulnerability_count", len(vulnerabilities))
+		"vulnerability_count", len(vulnerabilities),
+		"cosign_vuln_generated", len(cosignVulnData) > 0)
 
 	return &ScanResult{
 		ImageRef:        imageRef,
 		Vulnerabilities: vulnerabilities,
 		ScannedAt:       time.Now(),
+		CosignVulnData:  cosignVulnData,
 	}, nil
 }
 
