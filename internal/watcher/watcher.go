@@ -268,7 +268,7 @@ func (w *watcherImpl) processTag(ctx context.Context, repo, tag string, tolerati
 			}
 		}
 		
-		w.logger.Info("enqueuing scan task", attrs...)
+		w.logger.Debug("enqueuing scan task", attrs...)
 
 		// Record metrics for enqueue decision
 		metrics.ConditionalScanDecisionsTotal.WithLabelValues("enqueue", reason).Inc()

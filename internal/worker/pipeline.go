@@ -31,7 +31,7 @@ func (p *Pipeline) Execute(ctx context.Context, task *queue.ScanTask) error {
 	startTime := time.Now()
 	imageRef := fmt.Sprintf("%s@%s", task.Repository, task.Digest)
 
-	p.logger.Info("starting scan workflow",
+	p.logger.Debug("starting scan workflow",
 		"task_id", task.ID,
 		"image_ref", imageRef,
 		"is_rescan", task.IsRescan)
