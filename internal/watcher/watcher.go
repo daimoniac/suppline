@@ -95,6 +95,7 @@ func (w *watcherImpl) Discover(ctx context.Context) error {
 	// Get target repositories from regsync config (already filtered)
 	repositories, err := w.registryClient.ListRepositories(ctx)
 	if err != nil {
+		// Error already classified in registry package
 		return fmt.Errorf("failed to list repositories: %w", err)
 	}
 
@@ -150,6 +151,7 @@ func (w *watcherImpl) processRepository(ctx context.Context, repo string) error 
 		// For type=repository entries, list all tags
 		tags, err = w.registryClient.ListTags(ctx, repo)
 		if err != nil {
+			// Error already classified in registry package
 			return fmt.Errorf("failed to list tags: %w", err)
 		}
 		
@@ -186,6 +188,7 @@ func (w *watcherImpl) shouldScanImage(
 		if errors.Is(err, statestore.ErrScanNotFound) {
 			return true, "never scanned before", false, nil
 		}
+		// Error already classified in statestore package
 		return false, "", false, fmt.Errorf("failed to check scan history: %w", err)
 	}
 
@@ -209,6 +212,7 @@ func (w *watcherImpl) processTag(ctx context.Context, repo, tag string, tolerati
 	// Get current digest from registry
 	currentDigest, err := w.registryClient.GetDigest(ctx, repo, tag)
 	if err != nil {
+		// Error already classified in registry package
 		return fmt.Errorf("failed to get current digest: %w", err)
 	}
 
@@ -317,6 +321,7 @@ func (w *watcherImpl) processTag(ctx context.Context, repo, tag string, tolerati
 	}
 
 	if err := w.taskQueue.Enqueue(ctx, task); err != nil {
+		// Error already classified in queue package
 		return fmt.Errorf("failed to enqueue task: %w", err)
 	}
 

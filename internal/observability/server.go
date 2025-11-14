@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/prometheus/client_golang/prometheus/promhttp"
+	"github.com/suppline/suppline/internal/errors"
 )
 
 // Server provides HTTP endpoints for metrics and health checks
@@ -102,11 +103,11 @@ func (s *Server) Shutdown(ctx context.Context) error {
 	s.logger.Info("shutting down observability servers")
 
 	if err := s.metricsServer.Shutdown(ctx); err != nil {
-		return fmt.Errorf("metrics server shutdown: %w", err)
+		return errors.NewTransientf("metrics server shutdown: %w", err)
 	}
 
 	if err := s.healthServer.Shutdown(ctx); err != nil {
-		return fmt.Errorf("health server shutdown: %w", err)
+		return errors.NewTransientf("health server shutdown: %w", err)
 	}
 
 	return nil

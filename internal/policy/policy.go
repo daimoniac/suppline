@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/google/cel-go/cel"
+	"github.com/suppline/suppline/internal/errors"
 	"github.com/suppline/suppline/internal/scanner"
 	"github.com/suppline/suppline/internal/types"
 )
@@ -88,24 +89,24 @@ func NewEngine(logger *slog.Logger, config PolicyConfig) (*Engine, error) {
 		cel.Variable("toleratedCount", cel.IntType),
 	)
 	if err != nil {
-		return nil, fmt.Errorf("failed to create CEL environment: %w", err)
+		return nil, errors.NewPermanentf("failed to create CEL environment: %w", err)
 	}
 	
 	// Compile the policy expression
 	ast, issues := env.Compile(config.Expression)
 	if issues != nil && issues.Err() != nil {
-		return nil, fmt.Errorf("failed to compile policy expression: %w", issues.Err())
+		return nil, errors.NewPermanentf("failed to compile policy expression: %w", issues.Err())
 	}
 	
 	// Check that the expression returns a boolean
 	if ast.OutputType() != cel.BoolType {
-		return nil, fmt.Errorf("policy expression must return a boolean, got %v", ast.OutputType())
+		return nil, errors.NewPermanentf("policy expression must return a boolean, got %v", ast.OutputType())
 	}
 	
 	// Create the program
 	program, err := env.Program(ast)
 	if err != nil {
-		return nil, fmt.Errorf("failed to create CEL program: %w", err)
+		return nil, errors.NewPermanentf("failed to create CEL program: %w", err)
 	}
 	
 	return &Engine{
@@ -120,7 +121,7 @@ func NewEngine(logger *slog.Logger, config PolicyConfig) (*Engine, error) {
 // Evaluate determines if an image passes security policy using CEL expression
 func (e *Engine) Evaluate(ctx context.Context, imageRef string, result *scanner.ScanResult, tolerations []types.CVEToleration) (*PolicyDecision, error) {
 	if result == nil {
-		return nil, fmt.Errorf("scan result is nil")
+		return nil, errors.NewPermanentf("scan result is nil")
 	}
 
 	decision := &PolicyDecision{
@@ -243,13 +244,14 @@ func (e *Engine) Evaluate(ctx context.Context, imageRef string, result *scanner.
 	
 	out, _, err := e.celProgram.Eval(celInput)
 	if err != nil {
-		return nil, fmt.Errorf("failed to evaluate policy: %w", err)
+		// Policy evaluation errors are permanent (bad policy or data)
+		return nil, errors.NewPermanentf("failed to evaluate policy: %w", err)
 	}
 	
 	// Check if the result is a boolean
 	passed, ok := out.Value().(bool)
 	if !ok {
-		return nil, fmt.Errorf("policy expression did not return a boolean: %v", out.Value())
+		return nil, errors.NewPermanentf("policy expression did not return a boolean: %v", out.Value())
 	}
 	
 	decision.Passed = passed

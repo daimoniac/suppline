@@ -1,11 +1,11 @@
 package config
 
 import (
-	"fmt"
 	"os"
 	"strings"
 	"time"
 
+	"github.com/suppline/suppline/internal/errors"
 	"github.com/suppline/suppline/internal/types"
 	"gopkg.in/yaml.v3"
 )
@@ -14,12 +14,12 @@ import (
 func ParseRegsync(path string) (*RegsyncConfig, error) {
 	data, err := os.ReadFile(path)
 	if err != nil {
-		return nil, fmt.Errorf("failed to read regsync file: %w", err)
+		return nil, errors.NewTransientf("failed to read regsync file: %w", err)
 	}
 
 	var config RegsyncConfig
 	if err := yaml.Unmarshal(data, &config); err != nil {
-		return nil, fmt.Errorf("failed to parse regsync YAML: %w", err)
+		return nil, errors.NewPermanentf("failed to parse regsync YAML: %w", err)
 	}
 
 	return &config, nil

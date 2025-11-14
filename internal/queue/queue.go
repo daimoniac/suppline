@@ -2,10 +2,10 @@ package queue
 
 import (
 	"context"
-	"fmt"
 	"sync"
 	"time"
 
+	"github.com/suppline/suppline/internal/errors"
 	"github.com/suppline/suppline/internal/types"
 )
 
@@ -78,16 +78,16 @@ func (q *InMemoryQueue) Enqueue(ctx context.Context, task *ScanTask) error {
 	q.closedMu.RLock()
 	if q.closed {
 		q.closedMu.RUnlock()
-		return fmt.Errorf("queue is closed")
+		return errors.NewPermanentf("queue is closed")
 	}
 	q.closedMu.RUnlock()
 
 	if task == nil {
-		return fmt.Errorf("task cannot be nil")
+		return errors.NewPermanentf("task cannot be nil")
 	}
 
 	if task.Digest == "" {
-		return fmt.Errorf("task digest cannot be empty")
+		return errors.NewPermanentf("task digest cannot be empty")
 	}
 
 	// Check for duplicate
@@ -119,14 +119,14 @@ func (q *InMemoryQueue) Dequeue(ctx context.Context) (*ScanTask, error) {
 	q.closedMu.RLock()
 	if q.closed {
 		q.closedMu.RUnlock()
-		return nil, fmt.Errorf("queue is closed")
+		return nil, errors.NewPermanentf("queue is closed")
 	}
 	q.closedMu.RUnlock()
 
 	select {
 	case task, ok := <-q.tasks:
 		if !ok {
-			return nil, fmt.Errorf("queue is closed")
+			return nil, errors.NewPermanentf("queue is closed")
 		}
 
 		// Remove from pending map when dequeued
@@ -164,7 +164,7 @@ func (q *InMemoryQueue) Close() error {
 	defer q.closedMu.Unlock()
 
 	if q.closed {
-		return fmt.Errorf("queue already closed")
+		return errors.NewPermanentf("queue already closed")
 	}
 
 	q.closed = true

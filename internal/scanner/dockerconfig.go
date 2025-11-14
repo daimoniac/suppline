@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 
+	"github.com/suppline/suppline/internal/errors"
 	"gopkg.in/yaml.v3"
 )
 
@@ -35,13 +36,13 @@ func GenerateDockerConfigFromRegsync(regsyncPath string) (string, error) {
 	// Read suppline.yml
 	data, err := os.ReadFile(regsyncPath)
 	if err != nil {
-		return "", fmt.Errorf("failed to read regsync config: %w", err)
+		return "", errors.NewTransientf("failed to read regsync config: %w", err)
 	}
 
 	// Parse regsync config
 	var regsync RegsyncConfig
 	if err := yaml.Unmarshal(data, &regsync); err != nil {
-		return "", fmt.Errorf("failed to parse regsync config: %w", err)
+		return "", errors.NewPermanentf("failed to parse regsync config: %w", err)
 	}
 
 	// Build Docker config
@@ -68,18 +69,18 @@ func GenerateDockerConfigFromRegsync(regsyncPath string) (string, error) {
 	// Create temp directory for Docker config
 	configDir := filepath.Join(os.TempDir(), "trivy-docker-config")
 	if err := os.MkdirAll(configDir, 0700); err != nil {
-		return "", fmt.Errorf("failed to create config directory: %w", err)
+		return "", errors.NewTransientf("failed to create config directory: %w", err)
 	}
 
 	// Write config.json
 	configPath := filepath.Join(configDir, "config.json")
 	configJSON, err := json.MarshalIndent(dockerConfig, "", "  ")
 	if err != nil {
-		return "", fmt.Errorf("failed to marshal docker config: %w", err)
+		return "", errors.NewPermanentf("failed to marshal docker config: %w", err)
 	}
 
 	if err := os.WriteFile(configPath, configJSON, 0600); err != nil {
-		return "", fmt.Errorf("failed to write docker config: %w", err)
+		return "", errors.NewTransientf("failed to write docker config: %w", err)
 	}
 
 	return configDir, nil

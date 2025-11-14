@@ -4,6 +4,8 @@ import (
 	"fmt"
 	"os"
 	"time"
+
+	"github.com/suppline/suppline/internal/errors"
 )
 
 // Load loads configuration from environment variables and suppline.yml defaults
@@ -89,35 +91,35 @@ func Load() (*Config, error) {
 // Validate validates the configuration
 func (c *Config) Validate() error {
 	if c.RegsyncPath == "" {
-		return fmt.Errorf("regsync path is required")
+		return errors.NewPermanentf("regsync path is required")
 	}
 
 	if _, err := os.Stat(c.RegsyncPath); os.IsNotExist(err) {
-		return fmt.Errorf("regsync file not found: %s", c.RegsyncPath)
+		return errors.NewPermanentf("regsync file not found: %s", c.RegsyncPath)
 	}
 
 	if c.Scanner.ServerAddr == "" {
-		return fmt.Errorf("trivy server address is required")
+		return errors.NewPermanentf("trivy server address is required")
 	}
 
 	if c.StateStore.Type != "sqlite" && c.StateStore.Type != "postgres" && c.StateStore.Type != "memory" {
-		return fmt.Errorf("invalid state store type: %s (must be sqlite, postgres, or memory)", c.StateStore.Type)
+		return errors.NewPermanentf("invalid state store type: %s (must be sqlite, postgres, or memory)", c.StateStore.Type)
 	}
 
 	if c.StateStore.Type == "postgres" && c.StateStore.PostgresURL == "" {
-		return fmt.Errorf("postgres URL is required when using postgres state store")
+		return errors.NewPermanentf("postgres URL is required when using postgres state store")
 	}
 
 	if c.StateStore.Type == "sqlite" && c.StateStore.SQLitePath == "" {
-		return fmt.Errorf("sqlite path is required when using sqlite state store")
+		return errors.NewPermanentf("sqlite path is required when using sqlite state store")
 	}
 
 	if !c.Attestation.UseKeyless && c.Attestation.KeyBased.KeyPath == "" {
-		return fmt.Errorf("attestation key path is required when not using keyless mode")
+		return errors.NewPermanentf("attestation key path is required when not using keyless mode")
 	}
 
 	if c.Attestation.UseKeyless && (c.Attestation.OIDCIssuer == "" || c.Attestation.OIDCClientID == "") {
-		return fmt.Errorf("OIDC issuer and client ID are required when using keyless mode")
+		return errors.NewPermanentf("OIDC issuer and client ID are required when using keyless mode")
 	}
 
 	return nil

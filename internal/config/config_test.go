@@ -2,6 +2,7 @@ package config
 
 import (
 	"os"
+	"strings"
 	"testing"
 	"time"
 )
@@ -273,7 +274,8 @@ func TestValidate(t *testing.T) {
 				return
 			}
 			if tt.wantErr && err != nil && tt.errMsg != "" {
-				if err.Error()[:len(tt.errMsg)] != tt.errMsg {
+				// Check that error contains the expected message (may be wrapped)
+				if !strings.Contains(err.Error(), tt.errMsg) {
 					t.Errorf("Validate() error = %v, want error containing %v", err, tt.errMsg)
 				}
 			}

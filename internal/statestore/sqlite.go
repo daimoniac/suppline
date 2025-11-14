@@ -7,6 +7,7 @@ import (
 	"time"
 
 	_ "github.com/mattn/go-sqlite3"
+	"github.com/suppline/suppline/internal/errors"
 	"github.com/suppline/suppline/internal/types"
 )
 
@@ -19,13 +20,13 @@ type SQLiteStore struct {
 func NewSQLiteStore(dbPath string) (*SQLiteStore, error) {
 	db, err := sql.Open("sqlite3", dbPath)
 	if err != nil {
-		return nil, fmt.Errorf("failed to open sqlite database: %w", err)
+		return nil, errors.NewTransientf("failed to open sqlite database: %w", err)
 	}
 
 	// Enable foreign keys
 	if _, err := db.Exec("PRAGMA foreign_keys = ON"); err != nil {
 		db.Close()
-		return nil, fmt.Errorf("failed to enable foreign keys: %w", err)
+		return nil, errors.NewTransientf("failed to enable foreign keys: %w", err)
 	}
 
 	store := &SQLiteStore{db: db}
@@ -33,7 +34,7 @@ func NewSQLiteStore(dbPath string) (*SQLiteStore, error) {
 	// Initialize schema
 	if err := store.initSchema(); err != nil {
 		db.Close()
-		return nil, fmt.Errorf("failed to initialize schema: %w", err)
+		return nil, errors.NewPermanentf("failed to initialize schema: %w", err)
 	}
 
 	return store, nil
@@ -111,7 +112,7 @@ func (s *SQLiteStore) initSchema() error {
 func (s *SQLiteStore) RecordScan(ctx context.Context, record *ScanRecord) error {
 	tx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {
-		return fmt.Errorf("failed to begin transaction: %w", err)
+		return errors.NewTransientf("failed to begin transaction: %w", err)
 	}
 	defer func() { _ = tx.Rollback() }()
 
@@ -128,12 +129,12 @@ func (s *SQLiteStore) RecordScan(ctx context.Context, record *ScanRecord) error 
 		record.PolicyPassed, record.Signed, record.SBOMAttested, record.VulnAttested, record.ErrorMessage,
 	)
 	if err != nil {
-		return fmt.Errorf("failed to insert scan record: %w", err)
+		return errors.NewTransientf("failed to insert scan record: %w", err)
 	}
 
 	scanRecordID, err := result.LastInsertId()
 	if err != nil {
-		return fmt.Errorf("failed to get scan record ID: %w", err)
+		return errors.NewTransientf("failed to get scan record ID: %w", err)
 	}
 
 	// Insert vulnerabilities
@@ -145,7 +146,7 @@ func (s *SQLiteStore) RecordScan(ctx context.Context, record *ScanRecord) error 
 			) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
 		`)
 		if err != nil {
-			return fmt.Errorf("failed to prepare vulnerability statement: %w", err)
+			return errors.NewTransientf("failed to prepare vulnerability statement: %w", err)
 		}
 		defer vulnStmt.Close()
 
@@ -155,7 +156,7 @@ func (s *SQLiteStore) RecordScan(ctx context.Context, record *ScanRecord) error 
 				vuln.InstalledVersion, vuln.FixedVersion, vuln.Title, vuln.Description, vuln.PrimaryURL,
 			)
 			if err != nil {
-				return fmt.Errorf("failed to insert vulnerability: %w", err)
+				return errors.NewTransientf("failed to insert vulnerability: %w", err)
 			}
 		}
 	}
@@ -168,7 +169,7 @@ func (s *SQLiteStore) RecordScan(ctx context.Context, record *ScanRecord) error 
 			) VALUES (?, ?, ?, ?, ?)
 		`)
 		if err != nil {
-			return fmt.Errorf("failed to prepare tolerated CVE statement: %w", err)
+			return errors.NewTransientf("failed to prepare tolerated CVE statement: %w", err)
 		}
 		defer toleratedStmt.Close()
 
@@ -177,13 +178,13 @@ func (s *SQLiteStore) RecordScan(ctx context.Context, record *ScanRecord) error 
 				scanRecordID, tolerated.CVEID, tolerated.Statement, tolerated.ToleratedAt, tolerated.ExpiresAt,
 			)
 			if err != nil {
-				return fmt.Errorf("failed to insert tolerated CVE: %w", err)
+				return errors.NewTransientf("failed to insert tolerated CVE: %w", err)
 			}
 		}
 	}
 
 	if err := tx.Commit(); err != nil {
-		return fmt.Errorf("failed to commit transaction: %w", err)
+		return errors.NewTransientf("failed to commit transaction: %w", err)
 	}
 
 	return nil
@@ -211,7 +212,7 @@ func (s *SQLiteStore) GetLastScan(ctx context.Context, digest string) (*ScanReco
 		return nil, ErrScanNotFound
 	}
 	if err != nil {
-		return nil, fmt.Errorf("failed to query scan record: %w", err)
+		return nil, errors.NewTransientf("failed to query scan record: %w", err)
 	}
 
 	// Load vulnerabilities
@@ -242,7 +243,7 @@ func (s *SQLiteStore) ListDueForRescan(ctx context.Context, interval time.Durati
 		ORDER BY scanned_at ASC
 	`, cutoffTime)
 	if err != nil {
-		return nil, fmt.Errorf("failed to query due for rescan: %w", err)
+		return nil, errors.NewTransientf("failed to query due for rescan: %w", err)
 	}
 	defer rows.Close()
 
@@ -250,13 +251,13 @@ func (s *SQLiteStore) ListDueForRescan(ctx context.Context, interval time.Durati
 	for rows.Next() {
 		var digest string
 		if err := rows.Scan(&digest); err != nil {
-			return nil, fmt.Errorf("failed to scan digest: %w", err)
+			return nil, errors.NewTransientf("failed to scan digest: %w", err)
 		}
 		digests = append(digests, digest)
 	}
 
 	if err := rows.Err(); err != nil {
-		return nil, fmt.Errorf("error iterating rows: %w", err)
+		return nil, errors.NewTransientf("error iterating rows: %w", err)
 	}
 
 	return digests, nil
@@ -278,7 +279,7 @@ func (s *SQLiteStore) GetScanHistory(ctx context.Context, digest string, limit i
 
 	rows, err := s.db.QueryContext(ctx, query, digest)
 	if err != nil {
-		return nil, fmt.Errorf("failed to query scan history: %w", err)
+		return nil, errors.NewTransientf("failed to query scan history: %w", err)
 	}
 	defer rows.Close()
 
@@ -293,7 +294,7 @@ func (s *SQLiteStore) GetScanHistory(ctx context.Context, digest string, limit i
 			&record.PolicyPassed, &record.Signed, &record.SBOMAttested, &record.VulnAttested, &record.ErrorMessage,
 		)
 		if err != nil {
-			return nil, fmt.Errorf("failed to scan row: %w", err)
+			return nil, errors.NewTransientf("failed to scan row: %w", err)
 		}
 
 		// Load vulnerabilities
@@ -314,7 +315,7 @@ func (s *SQLiteStore) GetScanHistory(ctx context.Context, digest string, limit i
 	}
 
 	if err := rows.Err(); err != nil {
-		return nil, fmt.Errorf("error iterating rows: %w", err)
+		return nil, errors.NewTransientf("error iterating rows: %w", err)
 	}
 
 	return records, nil
@@ -361,7 +362,7 @@ func (s *SQLiteStore) QueryVulnerabilities(ctx context.Context, filter VulnFilte
 
 	rows, err := s.db.QueryContext(ctx, query, args...)
 	if err != nil {
-		return nil, fmt.Errorf("failed to query vulnerabilities: %w", err)
+		return nil, errors.NewTransientf("failed to query vulnerabilities: %w", err)
 	}
 	defer rows.Close()
 
@@ -374,13 +375,13 @@ func (s *SQLiteStore) QueryVulnerabilities(ctx context.Context, filter VulnFilte
 			&vuln.Repository, &vuln.Tag, &vuln.Digest, &vuln.ScannedAt,
 		)
 		if err != nil {
-			return nil, fmt.Errorf("failed to scan vulnerability: %w", err)
+			return nil, errors.NewTransientf("failed to scan vulnerability: %w", err)
 		}
 		vulnerabilities = append(vulnerabilities, &vuln)
 	}
 
 	if err := rows.Err(); err != nil {
-		return nil, fmt.Errorf("error iterating rows: %w", err)
+		return nil, errors.NewTransientf("error iterating rows: %w", err)
 	}
 
 	return vulnerabilities, nil
@@ -400,7 +401,7 @@ func (s *SQLiteStore) GetImagesByCVE(ctx context.Context, cveID string) ([]*Scan
 
 	rows, err := s.db.QueryContext(ctx, query, cveID)
 	if err != nil {
-		return nil, fmt.Errorf("failed to query images by CVE: %w", err)
+		return nil, errors.NewTransientf("failed to query images by CVE: %w", err)
 	}
 	defer rows.Close()
 
@@ -415,7 +416,7 @@ func (s *SQLiteStore) GetImagesByCVE(ctx context.Context, cveID string) ([]*Scan
 			&record.PolicyPassed, &record.Signed, &record.SBOMAttested, &record.VulnAttested, &record.ErrorMessage,
 		)
 		if err != nil {
-			return nil, fmt.Errorf("failed to scan row: %w", err)
+			return nil, errors.NewTransientf("failed to scan row: %w", err)
 		}
 
 		// Load vulnerabilities
@@ -436,7 +437,7 @@ func (s *SQLiteStore) GetImagesByCVE(ctx context.Context, cveID string) ([]*Scan
 	}
 
 	if err := rows.Err(); err != nil {
-		return nil, fmt.Errorf("error iterating rows: %w", err)
+		return nil, errors.NewTransientf("error iterating rows: %w", err)
 	}
 
 	return records, nil
@@ -452,7 +453,7 @@ func (s *SQLiteStore) loadVulnerabilities(ctx context.Context, scanRecordID int6
 		ORDER BY severity, cve_id
 	`, scanRecordID)
 	if err != nil {
-		return nil, fmt.Errorf("failed to query vulnerabilities: %w", err)
+		return nil, errors.NewTransientf("failed to query vulnerabilities: %w", err)
 	}
 	defer rows.Close()
 
@@ -464,13 +465,13 @@ func (s *SQLiteStore) loadVulnerabilities(ctx context.Context, scanRecordID int6
 			&vuln.Title, &vuln.Description, &vuln.PrimaryURL,
 		)
 		if err != nil {
-			return nil, fmt.Errorf("failed to scan vulnerability: %w", err)
+			return nil, errors.NewTransientf("failed to scan vulnerability: %w", err)
 		}
 		vulnerabilities = append(vulnerabilities, vuln)
 	}
 
 	if err := rows.Err(); err != nil {
-		return nil, fmt.Errorf("error iterating vulnerability rows: %w", err)
+		return nil, errors.NewTransientf("error iterating vulnerability rows: %w", err)
 	}
 
 	return vulnerabilities, nil
@@ -485,7 +486,7 @@ func (s *SQLiteStore) loadToleratedCVEs(ctx context.Context, scanRecordID int64)
 		ORDER BY cve_id
 	`, scanRecordID)
 	if err != nil {
-		return nil, fmt.Errorf("failed to query tolerated CVEs: %w", err)
+		return nil, errors.NewTransientf("failed to query tolerated CVEs: %w", err)
 	}
 	defer rows.Close()
 
@@ -495,7 +496,7 @@ func (s *SQLiteStore) loadToleratedCVEs(ctx context.Context, scanRecordID int64)
 		var expiresAt sql.NullTime
 		err := rows.Scan(&cve.CVEID, &cve.Statement, &cve.ToleratedAt, &expiresAt)
 		if err != nil {
-			return nil, fmt.Errorf("failed to scan tolerated CVE: %w", err)
+			return nil, errors.NewTransientf("failed to scan tolerated CVE: %w", err)
 		}
 		if expiresAt.Valid {
 			cve.ExpiresAt = &expiresAt.Time
@@ -504,7 +505,7 @@ func (s *SQLiteStore) loadToleratedCVEs(ctx context.Context, scanRecordID int64)
 	}
 
 	if err := rows.Err(); err != nil {
-		return nil, fmt.Errorf("error iterating tolerated CVE rows: %w", err)
+		return nil, errors.NewTransientf("error iterating tolerated CVE rows: %w", err)
 	}
 
 	return tolerated, nil
@@ -545,7 +546,7 @@ func (s *SQLiteStore) ListScans(ctx context.Context, filter ScanFilter) ([]*Scan
 
 	rows, err := s.db.QueryContext(ctx, query, args...)
 	if err != nil {
-		return nil, fmt.Errorf("failed to list scans: %w", err)
+		return nil, errors.NewTransientf("failed to list scans: %w", err)
 	}
 	defer rows.Close()
 
@@ -560,7 +561,7 @@ func (s *SQLiteStore) ListScans(ctx context.Context, filter ScanFilter) ([]*Scan
 			&record.PolicyPassed, &record.Signed, &record.SBOMAttested, &record.VulnAttested, &record.ErrorMessage,
 		)
 		if err != nil {
-			return nil, fmt.Errorf("failed to scan row: %w", err)
+			return nil, errors.NewTransientf("failed to scan row: %w", err)
 		}
 
 		// Load vulnerabilities
@@ -581,7 +582,7 @@ func (s *SQLiteStore) ListScans(ctx context.Context, filter ScanFilter) ([]*Scan
 	}
 
 	if err := rows.Err(); err != nil {
-		return nil, fmt.Errorf("error iterating rows: %w", err)
+		return nil, errors.NewTransientf("error iterating rows: %w", err)
 	}
 
 	return records, nil
@@ -645,7 +646,7 @@ func (s *SQLiteStore) ListTolerations(ctx context.Context, filter TolerationFilt
 
 	rows, err := s.db.QueryContext(ctx, query, args...)
 	if err != nil {
-		return nil, fmt.Errorf("failed to list tolerations: %w", err)
+		return nil, errors.NewTransientf("failed to list tolerations: %w", err)
 	}
 	defer rows.Close()
 
@@ -663,7 +664,7 @@ func (s *SQLiteStore) ListTolerations(ctx context.Context, filter TolerationFilt
 			&info.Repository,
 		)
 		if err != nil {
-			return nil, fmt.Errorf("failed to scan toleration: %w", err)
+			return nil, errors.NewTransientf("failed to scan toleration: %w", err)
 		}
 
 		// Parse tolerated_at from string (MIN() returns string in SQLite)
@@ -673,7 +674,7 @@ func (s *SQLiteStore) ListTolerations(ctx context.Context, filter TolerationFilt
 			// Try RFC3339 format as fallback
 			toleratedAt, err = time.Parse(time.RFC3339Nano, toleratedAtStr)
 			if err != nil {
-				return nil, fmt.Errorf("failed to parse tolerated_at: %w", err)
+				return nil, errors.NewTransientf("failed to parse tolerated_at: %w", err)
 			}
 		}
 		info.ToleratedAt = toleratedAt
@@ -686,7 +687,7 @@ func (s *SQLiteStore) ListTolerations(ctx context.Context, filter TolerationFilt
 	}
 
 	if err := rows.Err(); err != nil {
-		return nil, fmt.Errorf("error iterating rows: %w", err)
+		return nil, errors.NewTransientf("error iterating rows: %w", err)
 	}
 
 	return tolerations, nil
