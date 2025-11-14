@@ -5,8 +5,6 @@ import (
 	"time"
 )
 
-// Example tests demonstrating how to test the types package
-
 func TestToVulnerabilityRecord(t *testing.T) {
 	vuln := Vulnerability{
 		ID:           "CVE-2024-1234",
@@ -28,7 +26,6 @@ func TestToVulnerabilityRecord(t *testing.T) {
 		scannedAt,
 	)
 
-	// Verify vulnerability fields
 	if record.CVEID != "CVE-2024-1234" {
 		t.Errorf("Expected CVEID CVE-2024-1234, got %s", record.CVEID)
 	}
@@ -36,7 +33,6 @@ func TestToVulnerabilityRecord(t *testing.T) {
 		t.Errorf("Expected Severity HIGH, got %s", record.Severity)
 	}
 
-	// Verify image context
 	if record.Repository != "myrepo/myimage" {
 		t.Errorf("Expected Repository myrepo/myimage, got %s", record.Repository)
 	}
@@ -69,22 +65,15 @@ func TestFilterToleratedCVEs(t *testing.T) {
 		t.Errorf("Expected 2 filtered tolerations, got %d", len(filtered))
 	}
 
-	// Verify only tolerated CVEs are included
 	for _, tc := range filtered {
 		if !toleratedSet[tc.CVEID] {
 			t.Errorf("Unexpected CVE in filtered results: %s", tc.CVEID)
 		}
 	}
 
-	// Verify excluded CVE is not present
 	for _, tc := range filtered {
 		if tc.CVEID == "CVE-2024-9999" {
 			t.Errorf("CVE-2024-9999 should not be in filtered results")
 		}
 	}
 }
-
-// Note: Adapter tests removed in Phase 4
-// Since scanner.Vulnerability = types.Vulnerability (type alias)
-// and queue.CVEToleration = types.CVEToleration (type alias),
-// no adapter functions or tests are needed anymore.

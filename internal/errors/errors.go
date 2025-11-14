@@ -96,19 +96,16 @@ func IsTransient(err error) bool {
 		return false
 	}
 
-	// Check if explicitly marked as transient
 	var transientErr *TransientError
 	if errors.As(err, &transientErr) {
 		return true
 	}
 
-	// Check if explicitly marked as permanent
 	var permanentErr *PermanentError
 	if errors.As(err, &permanentErr) {
 		return false
 	}
 
-	// Check for known sentinel errors
 	if errors.Is(err, ErrNotFound) ||
 		errors.Is(err, ErrUnauthorized) ||
 		errors.Is(err, ErrForbidden) ||
@@ -121,7 +118,6 @@ func IsTransient(err error) bool {
 		return true
 	}
 
-	// Default to non-transient for safety (don't retry unknown errors)
 	return false
 }
 

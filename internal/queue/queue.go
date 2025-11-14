@@ -90,23 +90,20 @@ func (q *InMemoryQueue) Enqueue(ctx context.Context, task *ScanTask) error {
 		return errors.NewPermanentf("task digest cannot be empty")
 	}
 
-	// Check for duplicate
 	q.pendingMu.Lock()
 	if q.pending[task.Digest] {
 		q.pendingMu.Unlock()
 		q.incrementMetric("dropped")
-		return nil // Silently drop duplicate
+		return nil
 	}
 	q.pending[task.Digest] = true
 	q.pendingMu.Unlock()
 
-	// Try to enqueue with context cancellation support
 	select {
 	case q.tasks <- task:
 		q.incrementMetric("enqueued")
 		return nil
 	case <-ctx.Done():
-		// Remove from pending if we couldn't enqueue
 		q.pendingMu.Lock()
 		delete(q.pending, task.Digest)
 		q.pendingMu.Unlock()
@@ -129,7 +126,6 @@ func (q *InMemoryQueue) Dequeue(ctx context.Context) (*ScanTask, error) {
 			return nil, errors.NewPermanentf("queue is closed")
 		}
 
-		// Remove from pending map when dequeued
 		q.pendingMu.Lock()
 		delete(q.pending, task.Digest)
 		q.pendingMu.Unlock()

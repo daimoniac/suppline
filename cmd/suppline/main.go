@@ -37,35 +37,28 @@ func run() error {
 	ctx, cancel := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer cancel()
 
-	// Load .env file if it exists (ignore error if file doesn't exist)
 	_ = godotenv.Load()
 
-	// Load configuration
 	cfg, err := config.Load()
 	if err != nil {
 		return fmt.Errorf("failed to load configuration: %w", err)
 	}
 
-	// Validate configuration
 	if err := cfg.Validate(); err != nil {
 		return fmt.Errorf("invalid configuration: %w", err)
 	}
 
-	// Initialize logger with UTC timestamps
 	logger := observability.NewLogger(cfg.Observability.LogLevel)
 	logger.Info("starting suppline",
 		"regsync_path", cfg.RegsyncPath,
 		"log_level", cfg.Observability.LogLevel)
 
-	// Initialize metrics
 	_ = observability.GetMetrics()
 	logger.Debug("metrics initialized",
 		"metrics_port", cfg.Observability.MetricsPort)
 
-	// Initialize health checker
 	healthChecker := observability.NewHealthChecker(logger)
 
-	// Register components for health checking
 	healthChecker.RegisterComponent("config")
 	healthChecker.RegisterComponent("queue")
 	healthChecker.RegisterComponent("worker")
@@ -73,13 +66,11 @@ func run() error {
 	healthChecker.RegisterComponent("database")
 	healthChecker.RegisterComponent("watcher")
 
-	// Mark config as healthy since we loaded it successfully
 	healthChecker.UpdateComponentHealth("config", observability.StatusHealthy, "")
 
 	logger.Debug("health checker initialized",
 		"health_port", cfg.Observability.HealthCheckPort)
 
-	// Start observability server (metrics and health endpoints)
 	obsServer := observability.NewServer(
 		cfg.Observability.MetricsPort,
 		cfg.Observability.HealthCheckPort,
@@ -98,7 +89,6 @@ func run() error {
 		"metrics_port", cfg.Observability.MetricsPort,
 		"health_port", cfg.Observability.HealthCheckPort)
 
-	// Parse regsync configuration
 	logger.Debug("parsing regsync configuration",
 		"path", cfg.RegsyncPath)
 	regsyncCfg, err := config.ParseRegsync(cfg.RegsyncPath)
@@ -109,7 +99,6 @@ func run() error {
 		"sync_entries", len(regsyncCfg.Sync),
 		"credentials", len(regsyncCfg.Creds))
 
-	// Initialize state store
 	logger.Debug("initializing state store",
 		"type", cfg.StateStore.Type)
 	var store statestore.StateStoreQuery
@@ -130,14 +119,12 @@ func run() error {
 	healthChecker.UpdateComponentHealth("database", observability.StatusHealthy, "")
 	logger.Debug("state store initialized")
 
-	// Initialize task queue
 	logger.Debug("initializing task queue",
 		"buffer_size", cfg.Queue.BufferSize)
 	taskQueue := queue.NewInMemoryQueue(cfg.Queue.BufferSize)
 	healthChecker.UpdateComponentHealth("queue", observability.StatusHealthy, "")
 	logger.Debug("task queue initialized")
 
-	// Initialize scanner
 	logger.Debug("initializing trivy scanner",
 		"server_addr", cfg.Scanner.ServerAddr)
 	cfg.Scanner.Logger = logger
@@ -147,7 +134,6 @@ func run() error {
 		return fmt.Errorf("failed to initialize trivy scanner: %w", err)
 	}
 
-	// Check Trivy connectivity
 	if err := trivyScanner.HealthCheck(ctx); err != nil {
 		healthChecker.UpdateComponentHealth("trivy", observability.StatusUnhealthy, err.Error())
 		logger.Warn("trivy server not reachable",
@@ -157,7 +143,6 @@ func run() error {
 		logger.Debug("trivy scanner initialized and connected")
 	}
 
-	// Initialize attestor
 	logger.Debug("initializing attestor",
 		"key_path", cfg.Attestation.KeyBased.KeyPath)
 	attestorConfig := attestation.AttestationConfig{
@@ -173,24 +158,21 @@ func run() error {
 	}
 	logger.Debug("attestor initialized")
 
-	// Authenticate cosign with registries during initialization
 	logger.Debug("authenticating cosign with registries")
 	if err := authenticateCosignRegistries(ctx, regsyncCfg, logger); err != nil {
 		return fmt.Errorf("failed to authenticate cosign with registries: %w", err)
 	}
 	logger.Debug("cosign authenticated with all registries")
 
-	// Initialize policy engine
 	logger.Debug("initializing policy engine")
 	policyEngine, err := policy.NewEngine(logger, policy.PolicyConfig{
-		Expression: "criticalCount == 0", // Default: block only critical vulnerabilities
+		Expression: "criticalCount == 0",
 	})
 	if err != nil {
 		return fmt.Errorf("failed to initialize policy engine: %w", err)
 	}
 	logger.Debug("policy engine initialized")
 
-	// Initialize registry client
 	logger.Debug("initializing registry client")
 	registryClient, err := registry.NewClient(regsyncCfg)
 	if err != nil {
@@ -198,7 +180,6 @@ func run() error {
 	}
 	logger.Debug("registry client initialized")
 
-	// Initialize registry watcher
 	logger.Debug("initializing registry watcher",
 		"poll_interval", cfg.Worker.PollInterval,
 		"rescan_interval", cfg.StateStore.RescanInterval)
@@ -217,7 +198,6 @@ func run() error {
 	healthChecker.UpdateComponentHealth("watcher", observability.StatusHealthy, "")
 	logger.Debug("registry watcher initialized")
 
-	// Initialize worker
 	logger.Debug("initializing worker",
 		"retry_attempts", cfg.Worker.RetryAttempts,
 		"retry_backoff", cfg.Worker.RetryBackoff)
@@ -239,7 +219,6 @@ func run() error {
 	healthChecker.UpdateComponentHealth("worker", observability.StatusHealthy, "")
 	logger.Debug("worker initialized")
 
-	// Initialize API server if enabled
 	var apiServer *api.APIServer
 	if cfg.API.Enabled {
 		logger.Debug("initializing API server",
@@ -255,11 +234,9 @@ func run() error {
 		logger.Debug("API server initialized")
 	}
 
-	// Start all components
 	var wg sync.WaitGroup
 	errChan := make(chan error, 3)
 
-	// Start registry watcher
 	wg.Add(1)
 	go func() {
 		defer wg.Done()
@@ -272,7 +249,6 @@ func run() error {
 		logger.Debug("registry watcher stopped")
 	}()
 
-	// Start worker
 	wg.Add(1)
 	go func() {
 		defer wg.Done()
@@ -285,7 +261,6 @@ func run() error {
 		logger.Debug("worker stopped")
 	}()
 
-	// Start API server if enabled
 	if apiServer != nil {
 		wg.Add(1)
 		go func() {
@@ -303,7 +278,6 @@ func run() error {
 
 	logger.Info("all components started successfully")
 
-	// Wait for shutdown signal or error
 	select {
 	case <-ctx.Done():
 		logger.Info("received shutdown signal")
@@ -313,17 +287,13 @@ func run() error {
 		cancel()
 	}
 
-	// Graceful shutdown
 	logger.Info("shutting down gracefully")
 
-	// Create shutdown context with timeout
 	shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer shutdownCancel()
 
-	// Stop accepting new work (context already cancelled)
 	logger.Debug("waiting for components to stop")
 
-	// Wait for all goroutines to finish with timeout
 	done := make(chan struct{})
 	go func() {
 		wg.Wait()
@@ -337,7 +307,6 @@ func run() error {
 		logger.Warn("shutdown timeout exceeded, forcing exit")
 	}
 
-	// Drain remaining tasks from queue
 	queueDepth, _ := taskQueue.GetQueueDepth(shutdownCtx)
 	if queueDepth > 0 {
 		logger.Warn("queue not empty at shutdown",
@@ -346,7 +315,6 @@ func run() error {
 		logger.Debug("queue drained successfully")
 	}
 
-	// Shutdown API server if enabled
 	if apiServer != nil {
 		if err := apiServer.Shutdown(shutdownCtx); err != nil {
 			logger.Error("error shutting down API server",
@@ -354,13 +322,11 @@ func run() error {
 		}
 	}
 
-	// Shutdown observability server
 	if err := obsServer.Shutdown(shutdownCtx); err != nil {
 		logger.Error("error shutting down observability server",
 			"error", err.Error())
 	}
 
-	// Close state store
 	if closer, ok := store.(interface{ Close() error }); ok {
 		if err := closer.Close(); err != nil {
 			logger.Error("error closing state store",
@@ -372,8 +338,6 @@ func run() error {
 	return nil
 }
 
-// authenticateCosignRegistries logs cosign into all registries from regsync config
-// This is called once during initialization, not per-attestation
 func authenticateCosignRegistries(ctx context.Context, regsyncCfg *config.RegsyncConfig, logger *slog.Logger) error {
 	for _, cred := range regsyncCfg.Creds {
 		if cred.Registry == "" || cred.User == "" || cred.Pass == "" {

@@ -72,13 +72,11 @@ func NewEngine(logger *slog.Logger, config PolicyConfig) (*Engine, error) {
 		logger = slog.Default()
 	}
 	
-	// Default policy: no critical vulnerabilities
 	if config.Expression == "" {
 		config.Expression = `criticalCount == 0`
 		config.FailureMessage = "critical vulnerabilities found"
 	}
 	
-	// Create CEL environment with custom types
 	env, err := cel.NewEnv(
 		cel.Variable("vulnerabilities", cel.ListType(cel.MapType(cel.StringType, cel.AnyType))),
 		cel.Variable("imageRef", cel.StringType),
@@ -92,18 +90,15 @@ func NewEngine(logger *slog.Logger, config PolicyConfig) (*Engine, error) {
 		return nil, errors.NewPermanentf("failed to create CEL environment: %w", err)
 	}
 	
-	// Compile the policy expression
 	ast, issues := env.Compile(config.Expression)
 	if issues != nil && issues.Err() != nil {
 		return nil, errors.NewPermanentf("failed to compile policy expression: %w", issues.Err())
 	}
 	
-	// Check that the expression returns a boolean
 	if ast.OutputType() != cel.BoolType {
 		return nil, errors.NewPermanentf("policy expression must return a boolean, got %v", ast.OutputType())
 	}
 	
-	// Create the program
 	program, err := env.Program(ast)
 	if err != nil {
 		return nil, errors.NewPermanentf("failed to create CEL program: %w", err)
@@ -130,12 +125,10 @@ func (e *Engine) Evaluate(ctx context.Context, imageRef string, result *scanner.
 		ExpiringTolerations: make([]ExpiringToleration, 0),
 	}
 
-	// Build a map of active tolerations (not expired)
 	now := time.Now()
 	activeTolerations := make(map[string]types.CVEToleration)
 	
 	for _, toleration := range tolerations {
-		// Check if toleration has expired
 		if toleration.ExpiresAt != nil && toleration.ExpiresAt.Before(now) {
 			e.logger.Debug("toleration expired",
 				"cve_id", toleration.ID,
@@ -146,7 +139,6 @@ func (e *Engine) Evaluate(ctx context.Context, imageRef string, result *scanner.
 		
 		activeTolerations[toleration.ID] = toleration
 		
-		// Check if toleration is expiring soon
 		if toleration.ExpiresAt != nil {
 			timeUntilExpiry := toleration.ExpiresAt.Sub(now)
 			if timeUntilExpiry > 0 && timeUntilExpiry <= e.expiryWarningWindow {
@@ -168,7 +160,6 @@ func (e *Engine) Evaluate(ctx context.Context, imageRef string, result *scanner.
 		}
 	}
 
-	// Enrich vulnerabilities with toleration info and count by severity
 	enrichedVulns := make([]map[string]interface{}, 0, len(result.Vulnerabilities))
 	criticalCount := 0
 	highCount := 0
@@ -206,12 +197,10 @@ func (e *Engine) Evaluate(ctx context.Context, imageRef string, result *scanner.
 				"package", vuln.PackageName,
 				"image", imageRef)
 		} else {
-			// Count non-tolerated vulnerabilities by severity
 			switch vuln.Severity {
 			case "CRITICAL":
 				criticalCount++
 				failingVulns = append(failingVulns, vuln)
-				// Count unfixed critical vulnerabilities (no fix available)
 				if vuln.FixedVersion == "" {
 					unfixedCriticalCount++
 				}
@@ -231,7 +220,6 @@ func (e *Engine) Evaluate(ctx context.Context, imageRef string, result *scanner.
 	decision.ToleratedVulnCount = toleratedCount
 	decision.UnfixedVulnCount = unfixedCriticalCount
 
-	// Evaluate CEL policy expression
 	celInput := map[string]interface{}{
 		"vulnerabilities": enrichedVulns,
 		"imageRef":        imageRef,
@@ -244,11 +232,9 @@ func (e *Engine) Evaluate(ctx context.Context, imageRef string, result *scanner.
 	
 	out, _, err := e.celProgram.Eval(celInput)
 	if err != nil {
-		// Policy evaluation errors are permanent (bad policy or data)
 		return nil, errors.NewPermanentf("failed to evaluate policy: %w", err)
 	}
 	
-	// Check if the result is a boolean
 	passed, ok := out.Value().(bool)
 	if !ok {
 		return nil, errors.NewPermanentf("policy expression did not return a boolean: %v", out.Value())
@@ -257,7 +243,6 @@ func (e *Engine) Evaluate(ctx context.Context, imageRef string, result *scanner.
 	decision.Passed = passed
 	decision.ShouldSign = passed
 	
-	// Build reason message
 	if passed {
 		if unfixedCriticalCount > 0 {
 			decision.Reason = fmt.Sprintf("policy passed: critical=%d, high=%d, medium=%d, low=%d (tolerated=%d, unfixed=%d)",
@@ -296,7 +281,6 @@ func (e *Engine) Evaluate(ctx context.Context, imageRef string, result *scanner.
 			"tolerated", toleratedCount,
 			"expression", e.config.Expression)
 		
-		// Log details about vulnerabilities that caused the failure
 		for _, vuln := range failingVulns {
 			e.logger.Warn("vulnerability details",
 				"cve_id", vuln.ID,

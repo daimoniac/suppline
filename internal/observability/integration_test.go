@@ -17,11 +17,8 @@ func TestObservabilityServerIntegration(t *testing.T) {
 	logger := NewLogger("info")
 	healthChecker := NewHealthChecker(logger)
 
-	// Register and update components
 	healthChecker.RegisterComponent("test")
 	healthChecker.UpdateComponentHealth("test", StatusHealthy, "")
-
-	// Start server on random ports
 	metricsPort := 19090
 	healthPort := 18081
 
