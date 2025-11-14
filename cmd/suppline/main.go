@@ -1,9 +1,12 @@
 package main
 
 import (
+	"bytes"
 	"context"
 	"fmt"
+	"log/slog"
 	"os"
+	"os/exec"
 	"os/signal"
 	"sync"
 	"syscall"
@@ -172,7 +175,7 @@ func run() error {
 
 	// Authenticate cosign with registries during initialization
 	logger.Info("authenticating cosign with registries")
-	if err := attestation.AuthenticateCosignRegistries(ctx, attestor, regsyncCfg, logger); err != nil {
+	if err := authenticateCosignRegistries(ctx, regsyncCfg, logger); err != nil {
 		return fmt.Errorf("failed to authenticate cosign with registries: %w", err)
 	}
 	logger.Info("cosign authenticated with all registries")
@@ -366,5 +369,35 @@ func run() error {
 	}
 
 	logger.Info("shutdown complete")
+	return nil
+}
+
+// authenticateCosignRegistries logs cosign into all registries from regsync config
+// This is called once during initialization, not per-attestation
+func authenticateCosignRegistries(ctx context.Context, regsyncCfg *config.RegsyncConfig, logger *slog.Logger) error {
+	for _, cred := range regsyncCfg.Creds {
+		if cred.Registry == "" || cred.User == "" || cred.Pass == "" {
+			logger.Warn("skipping incomplete registry credential", "registry", cred.Registry)
+			continue
+		}
+
+		logger.Info("authenticating cosign with registry", "registry", cred.Registry)
+
+		cmd := exec.CommandContext(ctx, "cosign", "login", cred.Registry,
+			"--username", cred.User,
+			"--password", cred.Pass)
+
+		var stderr bytes.Buffer
+		cmd.Stderr = &stderr
+
+		if err := cmd.Run(); err != nil {
+			logger.Error("cosign login failed",
+				"registry", cred.Registry,
+				"error", err,
+				"stderr", stderr.String())
+			return fmt.Errorf("cosign login to %s failed: %w", cred.Registry, err)
+		}
+	}
+
 	return nil
 }

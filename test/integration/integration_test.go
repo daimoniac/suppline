@@ -1004,15 +1004,8 @@ func TestAttestation(t *testing.T) {
 		t.Fatalf("Failed to create attestor: %v", err)
 	}
 	
-	// Authenticate cosign with registries
-	regsyncCfg, err := config.ParseRegsync("../../suppline.yml.example")
-	if err != nil {
-		t.Fatalf("Failed to parse regsync config: %v", err)
-	}
-	
-	if err := attestation.AuthenticateCosignRegistries(context.Background(), attestor, regsyncCfg, slog.Default()); err != nil {
-		t.Fatalf("Failed to authenticate cosign: %v", err)
-	}
+	// Note: Registry authentication should be done separately in production
+	// For tests, we assume cosign is already authenticated or using local registry
 
 	ctx := context.Background()
 
@@ -1190,16 +1183,6 @@ func TestOptimizedAttestationFlow(t *testing.T) {
 	attestor, err := attestation.NewSigstoreAttestor(attestorCfg, slog.Default())
 	if err != nil {
 		t.Fatalf("Failed to create attestor: %v", err)
-	}
-	
-	// Authenticate cosign with registries
-	regsyncCfg, err := config.ParseRegsync("../../suppline.yml.example")
-	if err != nil {
-		t.Fatalf("Failed to parse regsync config: %v", err)
-	}
-	
-	if err := attestation.AuthenticateCosignRegistries(context.Background(), attestor, regsyncCfg, slog.Default()); err != nil {
-		t.Fatalf("Failed to authenticate cosign: %v", err)
 	}
 
 	ctx := context.Background()
