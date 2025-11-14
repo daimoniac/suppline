@@ -8,9 +8,9 @@ import (
 	"time"
 
 	"github.com/suppline/suppline/internal/observability"
+	"github.com/suppline/suppline/internal/config"
 	"github.com/suppline/suppline/internal/queue"
 	"github.com/suppline/suppline/internal/registry"
-	"github.com/suppline/suppline/internal/regsync"
 	"github.com/suppline/suppline/internal/statestore"
 )
 
@@ -26,7 +26,7 @@ type Watcher interface {
 // watcherImpl implements the Watcher interface
 type watcherImpl struct {
 	registryClient registry.Client
-	regsyncConfig  *regsync.Config
+	regsyncConfig  *config.RegsyncConfig
 	stateStore     statestore.StateStore
 	taskQueue      queue.TaskQueue
 	pollInterval   time.Duration
@@ -43,7 +43,7 @@ type Config struct {
 // NewWatcher creates a new registry watcher
 func NewWatcher(
 	registryClient registry.Client,
-	regsyncConfig  *regsync.Config,
+	regsyncConfig  *config.RegsyncConfig,
 	stateStore     statestore.StateStore,
 	taskQueue      queue.TaskQueue,
 	config Config,
@@ -323,7 +323,7 @@ func (w *watcherImpl) processTag(ctx context.Context, repo, tag string, tolerati
 }
 
 // checkExpiringTolerations logs warnings for tolerations expiring soon
-func (w *watcherImpl) checkExpiringTolerations(repo string, tolerations []regsync.CVEToleration) {
+func (w *watcherImpl) checkExpiringTolerations(repo string, tolerations []config.CVEToleration) {
 	now := time.Now()
 	warningThreshold := 7 * 24 * time.Hour // 7 days
 

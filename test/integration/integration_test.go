@@ -15,7 +15,6 @@ import (
 	"github.com/suppline/suppline/internal/policy"
 	"github.com/suppline/suppline/internal/queue"
 	"github.com/suppline/suppline/internal/registry"
-	"github.com/suppline/suppline/internal/regsync"
 	"github.com/suppline/suppline/internal/scanner"
 	"github.com/suppline/suppline/internal/statestore"
 )
@@ -706,7 +705,7 @@ func TestPolicyEngine(t *testing.T) {
 	expiresAt := time.Now().Add(30 * 24 * time.Hour)
 	expiredAt := time.Now().Add(-1 * time.Hour)
 
-	tolerations := []regsync.CVEToleration{
+	tolerations := []config.CVEToleration{
 		{
 			ID:        "CVE-2024-TOLERATED",
 			Statement: "Accepted risk for testing",
@@ -832,7 +831,7 @@ func TestPolicyEngine(t *testing.T) {
 
 	t.Run("ExpiringTolerationsWarning", func(t *testing.T) {
 		expiringSoon := time.Now().Add(5 * 24 * time.Hour)
-		expiringTolerations := []regsync.CVEToleration{
+		expiringTolerations := []config.CVEToleration{
 			{
 				ID:        "CVE-2024-EXPIRING",
 				Statement: "Expiring soon",
@@ -872,16 +871,16 @@ func TestRegistryClient(t *testing.T) {
 		t.Skip("Skipping registry client test: REGISTRY_USER not set")
 	}
 
-	regsyncCfg := &regsync.Config{
+	regsyncCfg := &config.RegsyncConfig{
 		Version: 1,
-		Creds: []regsync.RegistryCredential{
+		Creds: []config.RegistryCredential{
 			{
 				Registry: os.Getenv("REGISTRY_HOST"),
 				User:     os.Getenv("REGISTRY_USER"),
 				Pass:     os.Getenv("REGISTRY_PASS"),
 			},
 		},
-		Sync: []regsync.SyncEntry{
+		Sync: []config.SyncEntry{
 			{
 				Source: "nginx",
 				Target: fmt.Sprintf("%s/nginx", os.Getenv("REGISTRY_HOST")),
@@ -1064,7 +1063,7 @@ func TestAttestation(t *testing.T) {
 func TestPolicyAndAttestationWorkflow(t *testing.T) {
 	// Setup policy engine
 	expiresAt := time.Now().Add(30 * 24 * time.Hour)
-	tolerations := []regsync.CVEToleration{
+	tolerations := []config.CVEToleration{
 		{
 			ID:        "CVE-2024-TOLERATED",
 			Statement: "Accepted risk",
@@ -1470,9 +1469,9 @@ func TestCompleteWorkerWorkflow(t *testing.T) {
 	}
 
 	// Create mock registry client (since we don't have a real registry in test)
-	regsyncCfg := &regsync.Config{
+	regsyncCfg := &config.RegsyncConfig{
 		Version: 1,
-		Sync: []regsync.SyncEntry{
+		Sync: []config.SyncEntry{
 			{
 				Source: "alpine",
 				Target: "test.registry.io/alpine",
@@ -1511,7 +1510,7 @@ func TestCompleteWorkerWorkflow(t *testing.T) {
 
 		// Step 3: Evaluate policy (no tolerations)
 		t.Log("Step 3: Evaluating policy...")
-		decision, err := policyEngine.Evaluate(ctx, imageRef, scanResult, []regsync.CVEToleration{})
+		decision, err := policyEngine.Evaluate(ctx, imageRef, scanResult, []config.CVEToleration{})
 		if err != nil {
 			t.Fatalf("Failed to evaluate policy: %v", err)
 		}
@@ -1621,7 +1620,7 @@ func TestCompleteWorkerWorkflow(t *testing.T) {
 
 		// Step 3: Evaluate policy (no tolerations - should fail if critical vulns exist)
 		t.Log("Step 3: Evaluating policy...")
-		decision, err := policyEngine.Evaluate(ctx, imageRef, scanResult, []regsync.CVEToleration{})
+		decision, err := policyEngine.Evaluate(ctx, imageRef, scanResult, []config.CVEToleration{})
 		if err != nil {
 			t.Fatalf("Failed to evaluate policy: %v", err)
 		}
@@ -1750,7 +1749,7 @@ func TestCompleteWorkerWorkflow(t *testing.T) {
 		// Step 3: Evaluate policy WITH toleration
 		t.Log("Step 3: Evaluating policy with toleration...")
 		expiresAt := time.Now().Add(30 * 24 * time.Hour)
-		tolerations := []regsync.CVEToleration{
+		tolerations := []config.CVEToleration{
 			{
 				ID:        criticalCVE,
 				Statement: "Accepted risk for integration testing",
@@ -1896,7 +1895,7 @@ func TestCompleteWorkerWorkflow(t *testing.T) {
 		}
 
 		expiresAt := time.Now().Add(30 * 24 * time.Hour)
-		tolerations := []regsync.CVEToleration{
+		tolerations := []config.CVEToleration{
 			{
 				ID:        criticalCVE,
 				Statement: "Temporary acceptance",
@@ -1929,7 +1928,7 @@ func TestCompleteWorkerWorkflow(t *testing.T) {
 
 		// Second scan: without toleration (should fail)
 		t.Log("Second scan: without toleration (rescan)...")
-		decision2, err := policyEngine.Evaluate(ctx, imageRef, scanResult, []regsync.CVEToleration{})
+		decision2, err := policyEngine.Evaluate(ctx, imageRef, scanResult, []config.CVEToleration{})
 		if err != nil {
 			t.Fatalf("Failed to evaluate policy on rescan: %v", err)
 		}

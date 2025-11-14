@@ -11,7 +11,7 @@ import (
 	"time"
 
 	"github.com/google/go-containerregistry/pkg/authn"
-	"github.com/suppline/suppline/internal/regsync"
+	"github.com/suppline/suppline/internal/config"
 	"github.com/suppline/suppline/internal/scanner"
 )
 
@@ -50,7 +50,7 @@ func NewSigstoreAttestor(config AttestationConfig, authConfig map[string]authn.A
 // authenticateRegistries logs into registries using credentials from suppline.yml
 func (a *SigstoreAttestor) authenticateRegistries(regsyncPath string) error {
 	// Parse regsync config
-	regsyncCfg, err := regsync.Parse(regsyncPath)
+	regsyncCfg, err := config.ParseRegsync(regsyncPath)
 	if err != nil {
 		return fmt.Errorf("failed to parse regsync config: %w", err)
 	}

@@ -10,9 +10,9 @@ import (
 
 	"github.com/suppline/suppline/internal/attestation"
 	"github.com/suppline/suppline/internal/policy"
+	"github.com/suppline/suppline/internal/config"
 	"github.com/suppline/suppline/internal/queue"
 	"github.com/suppline/suppline/internal/registry"
-	"github.com/suppline/suppline/internal/regsync"
 	"github.com/suppline/suppline/internal/scanner"
 	"github.com/suppline/suppline/internal/statestore"
 )
@@ -51,7 +51,7 @@ type ImageWorker struct {
 	config       Config
 	logger       *slog.Logger
 	wg           sync.WaitGroup
-	regsyncCfg   *regsync.Config
+	regsyncCfg   *config.RegsyncConfig
 	scaiGenerator *attestation.SCAIGenerator
 }
 
@@ -65,7 +65,7 @@ func NewImageWorker(
 	stateStore statestore.StateStore,
 	config Config,
 	logger *slog.Logger,
-	regsyncCfg *regsync.Config,
+	regsyncCfg *config.RegsyncConfig,
 ) *ImageWorker {
 	if logger == nil {
 		logger = slog.Default()
@@ -586,10 +586,10 @@ func isTransientError(err error) bool {
 }
 
 // convertTolerationsToRegsync converts queue.CVEToleration to regsync.CVEToleration
-func convertTolerationsToRegsync(queueTolerations []queue.CVEToleration) []regsync.CVEToleration {
-	tolerations := make([]regsync.CVEToleration, len(queueTolerations))
+func convertTolerationsToRegsync(queueTolerations []queue.CVEToleration) []config.CVEToleration {
+	tolerations := make([]config.CVEToleration, len(queueTolerations))
 	for i, qt := range queueTolerations {
-		tolerations[i] = regsync.CVEToleration{
+		tolerations[i] = config.CVEToleration{
 			ID:        qt.ID,
 			Statement: qt.Statement,
 			ExpiresAt: qt.ExpiresAt,

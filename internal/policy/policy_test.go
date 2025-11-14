@@ -6,7 +6,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/suppline/suppline/internal/regsync"
+	"github.com/suppline/suppline/internal/config"
 	"github.com/suppline/suppline/internal/scanner"
 )
 
@@ -108,7 +108,7 @@ func TestEngine_Evaluate_ToleratedCVEs(t *testing.T) {
 		},
 	}
 
-	tolerations := []regsync.CVEToleration{
+	tolerations := []config.CVEToleration{
 		{
 			ID:        "CVE-2024-0001",
 			Statement: "accepted risk, no fix available",
@@ -158,7 +158,7 @@ func TestEngine_Evaluate_AllCriticalVulnerabilitiesTolerated(t *testing.T) {
 		},
 	}
 
-	tolerations := []regsync.CVEToleration{
+	tolerations := []config.CVEToleration{
 		{
 			ID:        "CVE-2024-0001",
 			Statement: "accepted risk",
@@ -208,7 +208,7 @@ func TestEngine_Evaluate_ExpiredToleration(t *testing.T) {
 	}
 
 	expiredTime := time.Now().Add(-24 * time.Hour)
-	tolerations := []regsync.CVEToleration{
+	tolerations := []config.CVEToleration{
 		{
 			ID:        "CVE-2024-0001",
 			Statement: "temporary toleration",
@@ -251,7 +251,7 @@ func TestEngine_Evaluate_ActiveToleration(t *testing.T) {
 	}
 
 	futureTime := time.Now().Add(30 * 24 * time.Hour)
-	tolerations := []regsync.CVEToleration{
+	tolerations := []config.CVEToleration{
 		{
 			ID:        "CVE-2024-0001",
 			Statement: "temporary toleration",
@@ -295,7 +295,7 @@ func TestEngine_Evaluate_ExpiringTolerationWarning(t *testing.T) {
 
 	// Toleration expires in 3 days (within 7-day warning window)
 	expiringTime := time.Now().Add(3 * 24 * time.Hour)
-	tolerations := []regsync.CVEToleration{
+	tolerations := []config.CVEToleration{
 		{
 			ID:        "CVE-2024-0001",
 			Statement: "expiring soon",
@@ -345,7 +345,7 @@ func TestEngine_Evaluate_NoExpiringTolerationWarning(t *testing.T) {
 
 	// Toleration expires in 30 days (outside 7-day warning window)
 	futureTime := time.Now().Add(30 * 24 * time.Hour)
-	tolerations := []regsync.CVEToleration{
+	tolerations := []config.CVEToleration{
 		{
 			ID:        "CVE-2024-0001",
 			Statement: "not expiring soon",
@@ -380,7 +380,7 @@ func TestEngine_Evaluate_PermanentToleration(t *testing.T) {
 	}
 
 	// Toleration with no expiry date (permanent)
-	tolerations := []regsync.CVEToleration{
+	tolerations := []config.CVEToleration{
 		{
 			ID:        "CVE-2024-0001",
 			Statement: "permanent toleration",
@@ -466,7 +466,7 @@ func TestEngine_SetExpiryWarningWindow(t *testing.T) {
 
 	// Toleration expires in 10 days (within 14-day window)
 	expiringTime := time.Now().Add(10 * 24 * time.Hour)
-	tolerations := []regsync.CVEToleration{
+	tolerations := []config.CVEToleration{
 		{
 			ID:        "CVE-2024-0001",
 			Statement: "expiring within custom window",
@@ -665,7 +665,7 @@ func TestEngine_Evaluate_MixedExpiredAndActiveTolerations(t *testing.T) {
 	expiredTime := time.Now().Add(-24 * time.Hour)
 	futureTime := time.Now().Add(30 * 24 * time.Hour)
 	
-	tolerations := []regsync.CVEToleration{
+	tolerations := []config.CVEToleration{
 		{
 			ID:        "CVE-2024-0001",
 			Statement: "expired toleration",
@@ -736,7 +736,7 @@ func TestEngine_Evaluate_AllTolerationsExpired(t *testing.T) {
 	expiredTime1 := time.Now().Add(-48 * time.Hour)
 	expiredTime2 := time.Now().Add(-1 * time.Hour)
 	
-	tolerations := []regsync.CVEToleration{
+	tolerations := []config.CVEToleration{
 		{
 			ID:        "CVE-2024-0001",
 			Statement: "expired 2 days ago",
@@ -795,7 +795,7 @@ func TestEngine_Evaluate_ExpiredTolerationWithCELFilter(t *testing.T) {
 	expiredTime := time.Now().Add(-24 * time.Hour)
 	futureTime := time.Now().Add(30 * 24 * time.Hour)
 	
-	tolerations := []regsync.CVEToleration{
+	tolerations := []config.CVEToleration{
 		{
 			ID:        "CVE-2024-0001",
 			Statement: "expired toleration",

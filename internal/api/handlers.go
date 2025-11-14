@@ -8,8 +8,8 @@ import (
 	"strings"
 	"time"
 
+	"github.com/suppline/suppline/internal/config"
 	"github.com/suppline/suppline/internal/queue"
-	"github.com/suppline/suppline/internal/regsync"
 	"github.com/suppline/suppline/internal/statestore"
 )
 
@@ -290,7 +290,7 @@ func (s *APIServer) handleTriggerScan(w http.ResponseWriter, r *http.Request) {
 		}
 
 		// Load regsync config to get tolerations
-		regsyncConfig, err := regsync.Parse(s.regsyncPath)
+		regsyncConfig, err := config.ParseRegsync(s.regsyncPath)
 		if err != nil {
 			s.respondError(w, http.StatusInternalServerError, fmt.Sprintf("Failed to load regsync config: %v", err))
 			return
@@ -350,7 +350,7 @@ func (s *APIServer) handleTriggerScan(w http.ResponseWriter, r *http.Request) {
 		}
 
 		// Load regsync config to get tolerations
-		regsyncConfig, err := regsync.Parse(s.regsyncPath)
+		regsyncConfig, err := config.ParseRegsync(s.regsyncPath)
 		if err != nil {
 			s.respondError(w, http.StatusInternalServerError, fmt.Sprintf("Failed to load regsync config: %v", err))
 			return
@@ -451,7 +451,7 @@ func (s *APIServer) handleReevaluatePolicy(w http.ResponseWriter, r *http.Reques
 	ctx := r.Context()
 
 	// Reload regsync configuration
-	regsyncConfig, err := regsync.Parse(s.regsyncPath)
+	regsyncConfig, err := config.ParseRegsync(s.regsyncPath)
 	if err != nil {
 		s.respondError(w, http.StatusInternalServerError, fmt.Sprintf("Failed to reload regsync config: %v", err))
 		return

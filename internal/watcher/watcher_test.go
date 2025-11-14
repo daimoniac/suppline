@@ -7,9 +7,9 @@ import (
 	"time"
 
 	"github.com/suppline/suppline/internal/observability"
+	"github.com/suppline/suppline/internal/config"
 	"github.com/suppline/suppline/internal/queue"
 	"github.com/suppline/suppline/internal/registry"
-	"github.com/suppline/suppline/internal/regsync"
 	"github.com/suppline/suppline/internal/statestore"
 )
 
@@ -135,11 +135,11 @@ func TestWatcher_Discover_NewImages(t *testing.T) {
 
 	// Setup regsync config with tolerations
 	expiresAt := time.Now().Add(30 * 24 * time.Hour)
-	regsyncCfg := &regsync.Config{
-		Sync: []regsync.SyncEntry{
+	regsyncCfg := &config.RegsyncConfig{
+		Sync: []config.SyncEntry{
 			{
 				Target: "myorg/app1",
-				Tolerate: []regsync.CVEToleration{
+				Tolerate: []config.CVEToleration{
 					{ID: "CVE-2024-1234", Statement: "test toleration", ExpiresAt: &expiresAt},
 				},
 			},
@@ -225,11 +225,11 @@ func TestWatcher_Discover_RescanDue(t *testing.T) {
 	mockQueue := queue.NewInMemoryQueue(100)
 
 	// Setup regsync config with 24 hour rescan interval
-	regsyncCfg := &regsync.Config{
-		Defaults: regsync.Defaults{
+	regsyncCfg := &config.RegsyncConfig{
+		Defaults: config.Defaults{
 			RescanInterval: "24h",
 		},
-		Sync: []regsync.SyncEntry{
+		Sync: []config.SyncEntry{
 			{Target: "myorg/app1"},
 		},
 	}
@@ -293,8 +293,8 @@ func TestWatcher_Discover_SkipRecentScan(t *testing.T) {
 	mockQueue := queue.NewInMemoryQueue(100)
 
 	// Setup regsync config
-	regsyncCfg := &regsync.Config{
-		Sync: []regsync.SyncEntry{
+	regsyncCfg := &config.RegsyncConfig{
+		Sync: []config.SyncEntry{
 			{Target: "myorg/app1"},
 		},
 	}
@@ -343,8 +343,8 @@ func TestWatcher_Discover_Deduplication(t *testing.T) {
 	mockQueue := queue.NewInMemoryQueue(100)
 
 	// Setup regsync config
-	regsyncCfg := &regsync.Config{
-		Sync: []regsync.SyncEntry{
+	regsyncCfg := &config.RegsyncConfig{
+		Sync: []config.SyncEntry{
 			{Target: "myorg/app1"},
 		},
 	}
@@ -392,8 +392,8 @@ func TestWatcher_Discover_ErrorHandling(t *testing.T) {
 	mockQueue := queue.NewInMemoryQueue(100)
 
 	// Setup regsync config
-	regsyncCfg := &regsync.Config{
-		Sync: []regsync.SyncEntry{
+	regsyncCfg := &config.RegsyncConfig{
+		Sync: []config.SyncEntry{
 			{Target: "myorg/app1"},
 		},
 	}
@@ -430,7 +430,7 @@ func TestShouldScanImage_NeverScanned(t *testing.T) {
 	// Setup mock registry and queue (not used in this test)
 	mockRegistry := &mockRegistryClient{}
 	mockQueue := queue.NewInMemoryQueue(100)
-	regsyncCfg := &regsync.Config{}
+	regsyncCfg := &config.RegsyncConfig{}
 
 	// Create watcher
 	logger := observability.NewLogger("error")
@@ -487,7 +487,7 @@ func TestShouldScanImage_DigestChanged(t *testing.T) {
 	// Setup mock registry and queue (not used in this test)
 	mockRegistry := &mockRegistryClient{}
 	mockQueue := queue.NewInMemoryQueue(100)
-	regsyncCfg := &regsync.Config{}
+	regsyncCfg := &config.RegsyncConfig{}
 
 	// Create watcher
 	logger := observability.NewLogger("error")
@@ -542,7 +542,7 @@ func TestShouldScanImage_IntervalElapsed(t *testing.T) {
 	// Setup mock registry and queue (not used in this test)
 	mockRegistry := &mockRegistryClient{}
 	mockQueue := queue.NewInMemoryQueue(100)
-	regsyncCfg := &regsync.Config{}
+	regsyncCfg := &config.RegsyncConfig{}
 
 	// Create watcher
 	logger := observability.NewLogger("error")
@@ -597,7 +597,7 @@ func TestShouldScanImage_Skip(t *testing.T) {
 	// Setup mock registry and queue (not used in this test)
 	mockRegistry := &mockRegistryClient{}
 	mockQueue := queue.NewInMemoryQueue(100)
-	regsyncCfg := &regsync.Config{}
+	regsyncCfg := &config.RegsyncConfig{}
 
 	// Create watcher
 	logger := observability.NewLogger("error")
@@ -644,7 +644,7 @@ func TestShouldScanImage_ErrorHandling(t *testing.T) {
 	// Setup mock registry and queue (not used in this test)
 	mockRegistry := &mockRegistryClient{}
 	mockQueue := queue.NewInMemoryQueue(100)
-	regsyncCfg := &regsync.Config{}
+	regsyncCfg := &config.RegsyncConfig{}
 
 	// Create watcher
 	logger := observability.NewLogger("error")
@@ -699,8 +699,8 @@ func TestProcessTag_FailSafeBehavior(t *testing.T) {
 	mockQueue := queue.NewInMemoryQueue(100)
 
 	// Setup regsync config
-	regsyncCfg := &regsync.Config{
-		Sync: []regsync.SyncEntry{
+	regsyncCfg := &config.RegsyncConfig{
+		Sync: []config.SyncEntry{
 			{Target: "myorg/app1"},
 		},
 	}

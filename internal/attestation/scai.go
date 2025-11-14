@@ -7,18 +7,18 @@ import (
 	"strings"
 	"time"
 
-	"github.com/suppline/suppline/internal/regsync"
+	"github.com/suppline/suppline/internal/config"
 	"github.com/suppline/suppline/internal/scanner"
 )
 
 // SCAIGenerator creates SCAI attestation predicates
 type SCAIGenerator struct {
-	config *regsync.Config
+	config *config.RegsyncConfig
 	logger *slog.Logger
 }
 
 // NewSCAIGenerator creates a new SCAI generator
-func NewSCAIGenerator(config *regsync.Config, logger *slog.Logger) *SCAIGenerator {
+func NewSCAIGenerator(config *config.RegsyncConfig, logger *slog.Logger) *SCAIGenerator {
 	if logger == nil {
 		logger = slog.Default()
 	}

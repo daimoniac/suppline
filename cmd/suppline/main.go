@@ -18,7 +18,6 @@ import (
 	"github.com/suppline/suppline/internal/policy"
 	"github.com/suppline/suppline/internal/queue"
 	"github.com/suppline/suppline/internal/registry"
-	"github.com/suppline/suppline/internal/regsync"
 	"github.com/suppline/suppline/internal/scanner"
 	"github.com/suppline/suppline/internal/statestore"
 	"github.com/suppline/suppline/internal/watcher"
@@ -100,7 +99,7 @@ func run() error {
 	// Parse regsync configuration
 	logger.Info("parsing regsync configuration",
 		"path", cfg.RegsyncPath)
-	regsyncCfg, err := regsync.Parse(cfg.RegsyncPath)
+	regsyncCfg, err := config.ParseRegsync(cfg.RegsyncPath)
 	if err != nil {
 		return fmt.Errorf("failed to parse regsync config: %w", err)
 	}

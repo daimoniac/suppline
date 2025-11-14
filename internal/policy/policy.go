@@ -7,7 +7,7 @@ import (
 	"time"
 
 	"github.com/google/cel-go/cel"
-	"github.com/suppline/suppline/internal/regsync"
+	"github.com/suppline/suppline/internal/config"
 	"github.com/suppline/suppline/internal/scanner"
 )
 
@@ -15,7 +15,7 @@ import (
 type PolicyEngine interface {
 	// Evaluate determines if an image passes security policy
 	// Applies CVE tolerations from regsync config for the target repository
-	Evaluate(ctx context.Context, imageRef string, result *scanner.ScanResult, tolerations []regsync.CVEToleration) (*PolicyDecision, error)
+	Evaluate(ctx context.Context, imageRef string, result *scanner.ScanResult, tolerations []config.CVEToleration) (*PolicyDecision, error)
 }
 
 // PolicyConfig defines a CEL-based policy configuration
@@ -117,7 +117,7 @@ func NewEngine(logger *slog.Logger, config PolicyConfig) (*Engine, error) {
 }
 
 // Evaluate determines if an image passes security policy using CEL expression
-func (e *Engine) Evaluate(ctx context.Context, imageRef string, result *scanner.ScanResult, tolerations []regsync.CVEToleration) (*PolicyDecision, error) {
+func (e *Engine) Evaluate(ctx context.Context, imageRef string, result *scanner.ScanResult, tolerations []config.CVEToleration) (*PolicyDecision, error) {
 	if result == nil {
 		return nil, fmt.Errorf("scan result is nil")
 	}
@@ -130,7 +130,7 @@ func (e *Engine) Evaluate(ctx context.Context, imageRef string, result *scanner.
 
 	// Build a map of active tolerations (not expired)
 	now := time.Now()
-	activeTolerations := make(map[string]regsync.CVEToleration)
+	activeTolerations := make(map[string]config.CVEToleration)
 	
 	for _, toleration := range tolerations {
 		// Check if toleration has expired

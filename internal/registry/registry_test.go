@@ -5,13 +5,13 @@ import (
 	"testing"
 	"time"
 
-	"github.com/suppline/suppline/internal/regsync"
+	"github.com/suppline/suppline/internal/config"
 )
 
 func TestNewClient(t *testing.T) {
 	tests := []struct {
 		name        string
-		config      *regsync.Config
+		config      *config.RegsyncConfig
 		expectError bool
 	}{
 		{
@@ -21,16 +21,16 @@ func TestNewClient(t *testing.T) {
 		},
 		{
 			name: "valid config with credentials",
-			config: &regsync.Config{
+			config: &config.RegsyncConfig{
 				Version: 1,
-				Creds: []regsync.RegistryCredential{
+				Creds: []config.RegistryCredential{
 					{
 						Registry: "docker.io",
 						User:     "testuser",
 						Pass:     "testpass",
 					},
 				},
-				Sync: []regsync.SyncEntry{
+				Sync: []config.SyncEntry{
 					{
 						Source: "nginx",
 						Target: "myregistry.com/nginx",
@@ -42,9 +42,9 @@ func TestNewClient(t *testing.T) {
 		},
 		{
 			name: "valid config without credentials",
-			config: &regsync.Config{
+			config: &config.RegsyncConfig{
 				Version: 1,
-				Sync: []regsync.SyncEntry{
+				Sync: []config.SyncEntry{
 					{
 						Source: "nginx",
 						Target: "myregistry.com/nginx",
@@ -143,9 +143,9 @@ func TestParseImageRef(t *testing.T) {
 }
 
 func TestListRepositories(t *testing.T) {
-	config := &regsync.Config{
+	config := &config.RegsyncConfig{
 		Version: 1,
-		Sync: []regsync.SyncEntry{
+		Sync: []config.SyncEntry{
 			{
 				Source: "nginx",
 				Target: "myregistry.com/nginx",
@@ -187,9 +187,9 @@ func TestListRepositories(t *testing.T) {
 }
 
 func TestListRepositoriesEmpty(t *testing.T) {
-	config := &regsync.Config{
+	config := &config.RegsyncConfig{
 		Version: 1,
-		Sync:    []regsync.SyncEntry{},
+		Sync:    []config.SyncEntry{},
 	}
 
 	client, err := NewClient(config)
@@ -206,21 +206,21 @@ func TestListRepositoriesEmpty(t *testing.T) {
 
 func TestClientWithTolerations(t *testing.T) {
 	expiresAt := time.Now().Add(30 * 24 * time.Hour)
-	config := &regsync.Config{
+	config := &config.RegsyncConfig{
 		Version: 1,
-		Creds: []regsync.RegistryCredential{
+		Creds: []config.RegistryCredential{
 			{
 				Registry: "myregistry.com",
 				User:     "testuser",
 				Pass:     "testpass",
 			},
 		},
-		Sync: []regsync.SyncEntry{
+		Sync: []config.SyncEntry{
 			{
 				Source: "nginx",
 				Target: "myregistry.com/nginx",
 				Type:   "repository",
-				Tolerate: []regsync.CVEToleration{
+				Tolerate: []config.CVEToleration{
 					{
 						ID:        "CVE-2024-12345",
 						Statement: "Accepted risk for testing",

@@ -8,7 +8,7 @@ import (
 	"github.com/google/go-containerregistry/pkg/authn"
 	"github.com/google/go-containerregistry/pkg/name"
 	"github.com/google/go-containerregistry/pkg/v1/remote"
-	"github.com/suppline/suppline/internal/regsync"
+	"github.com/suppline/suppline/internal/config"
 )
 
 // Client defines the interface for interacting with container registries
@@ -53,13 +53,13 @@ type LayerDescriptor struct {
 
 // clientImpl implements the Client interface using go-containerregistry
 type clientImpl struct {
-	regsyncConfig *regsync.Config
+	regsyncConfig *config.RegsyncConfig
 	authConfig    map[string]authn.Authenticator
 	remoteOpts    []remote.Option
 }
 
 // NewClient creates a new registry client configured with credentials from regsync config
-func NewClient(regsyncConfig *regsync.Config) (Client, error) {
+func NewClient(regsyncConfig *config.RegsyncConfig) (Client, error) {
 	if regsyncConfig == nil {
 		return nil, fmt.Errorf("regsync config is required")
 	}
