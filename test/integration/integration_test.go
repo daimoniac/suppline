@@ -42,7 +42,8 @@ func TestMain(m *testing.M) {
 }
 
 func waitForServices() error {
-	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+	// 90 second timeout should be sufficient with --skip-db-update
+	ctx, cancel := context.WithTimeout(context.Background(), 90*time.Second)
 	defer cancel()
 
 	// Wait for Trivy server
@@ -51,18 +52,22 @@ func waitForServices() error {
 		Timeout:    30 * time.Second,
 	}
 
+	fmt.Println("Waiting for Trivy server to be ready...")
+	startTime := time.Now()
+	
 	for {
 		select {
 		case <-ctx.Done():
-			return ctx.Err()
+			return fmt.Errorf("timeout after %v: %w", time.Since(startTime), ctx.Err())
 		default:
 			scanner, err := scanner.NewTrivyScanner(trivyCfg)
 			if err == nil {
 				if err := scanner.HealthCheck(context.Background()); err == nil {
+					fmt.Printf("Trivy server ready after %v\n", time.Since(startTime))
 					return nil
 				}
 			}
-			time.Sleep(2 * time.Second)
+			time.Sleep(3 * time.Second)
 		}
 	}
 }
