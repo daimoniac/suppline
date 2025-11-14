@@ -92,7 +92,9 @@ jobs:
       - name: Wait for services
         run: |
           echo "Waiting for services to be ready..."
-          timeout 120 bash -c 'until docker exec trivy-server trivy version 2>/dev/null; do echo "Waiting for Trivy..."; sleep 5; done'
+          # Wait for Trivy server to be healthy (uses docker health check)
+          timeout 120 bash -c 'until [ "$(docker inspect --format="{{.State.Health.Status}}" trivy-server 2>/dev/null)" == "healthy" ]; do echo "Waiting for Trivy..."; sleep 5; done'
+          # Wait for registry to respond
           timeout 60 bash -c 'until curl -sf http://localhost:5000/v2/ >/dev/null; do echo "Waiting for registry..."; sleep 2; done'
           echo "All services are ready"
           docker compose -f docker-compose.test.yml ps
