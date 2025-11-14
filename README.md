@@ -1,3 +1,7 @@
+<p align="center">
+  <img src="docs/suppline-fullsize.png" alt="suppline logo" width="400"/>
+</p>
+
 # suppline
 
 A cloud-native container security pipeline that continuously monitors container registries, scans images for vulnerabilities, generates attestations, and signs compliant images using Sigstore.
@@ -32,45 +36,50 @@ Built as a single Go binary, suppline runs as a continuous service that watches 
 
 suppline consists of several components running in a single process:
 
-```
-┌─────────────────────────────────────────────────────────────┐
-│                         suppline                             │
-├─────────────────────────────────────────────────────────────┤
-│                                                              │
-│  ┌──────────┐    ┌──────────┐    ┌──────────┐             │
-│  │ Watcher  │───▶│  Queue   │───▶│  Worker  │             │
-│  └──────────┘    └──────────┘    └──────────┘             │
-│       │                                │                    │
-│       │                                ▼                    │
-│       │                          ┌──────────┐              │
-│       │                          │ Pipeline │              │
-│       │                          └──────────┘              │
-│       │                                │                    │
-│       │          ┌─────────────────────┼────────────┐      │
-│       │          ▼                     ▼            ▼      │
-│       │    ┌─────────┐          ┌──────────┐  ┌────────┐  │
-│       │    │ Scanner │          │  Policy  │  │Attestor│  │
-│       │    └─────────┘          └──────────┘  └────────┘  │
-│       │          │                     │            │      │
-│       ▼          ▼                     ▼            ▼      │
-│  ┌──────────────────────────────────────────────────────┐ │
-│  │              State Store (SQLite)                    │ │
-│  └──────────────────────────────────────────────────────┘ │
-│                                                              │
-│  ┌──────────────────────────────────────────────────────┐ │
-│  │              HTTP API Server                         │ │
-│  └──────────────────────────────────────────────────────┘ │
-│                                                              │
-│  ┌──────────────────────────────────────────────────────┐ │
-│  │         Observability (Metrics, Health, Logs)        │ │
-│  └──────────────────────────────────────────────────────┘ │
-└─────────────────────────────────────────────────────────────┘
-         │                    │                    │
-         ▼                    ▼                    ▼
-   ┌─────────┐          ┌─────────┐         ┌─────────┐
-   │Registry │          │  Trivy  │         │ Rekor   │
-   │ (OCI)   │          │ Server  │         │(Sigstore)│
-   └─────────┘          └─────────┘         └─────────┘
+```mermaid
+graph TB
+    subgraph suppline["suppline"]
+        Watcher[Watcher]
+        Queue[Queue]
+        Worker[Worker]
+        Pipeline[Pipeline]
+        Scanner[Scanner]
+        Policy[Policy Engine]
+        Attestor[Attestor]
+        StateStore[(State Store<br/>SQLite)]
+        API[HTTP API Server]
+        Observability[Observability<br/>Metrics, Health, Logs]
+        
+        Watcher -->|enqueue tasks| Queue
+        Queue -->|process| Worker
+        Worker -->|execute| Pipeline
+        Pipeline -->|scan| Scanner
+        Pipeline -->|evaluate| Policy
+        Pipeline -->|sign| Attestor
+        
+        Watcher -->|read/write| StateStore
+        Scanner -->|persist results| StateStore
+        Policy -->|persist decisions| StateStore
+        Attestor -->|record attestations| StateStore
+        
+        API -.->|query| StateStore
+        Observability -.->|monitor| Queue
+        Observability -.->|monitor| Worker
+    end
+    
+    Registry[(Registry<br/>OCI)]
+    Trivy[Trivy Server]
+    Rekor[Rekor<br/>Sigstore]
+    
+    Watcher <-->|discover images| Registry
+    Scanner <-->|scan requests| Trivy
+    Attestor -->|transparency log| Rekor
+    
+    style suppline fill:#f9f9f9,stroke:#333,stroke-width:2px
+    style StateStore fill:#e1f5ff,stroke:#0288d1
+    style Registry fill:#fff3e0,stroke:#f57c00
+    style Trivy fill:#fff3e0,stroke:#f57c00
+    style Rekor fill:#fff3e0,stroke:#f57c00
 ```
 
 ### Component Responsibilities
@@ -697,10 +706,9 @@ See LICENSE file for details.
 
 ## Documentation
 
-- **[API Reference](docs/API.md)** - Complete REST API documentation with examples
+- **API Reference** - live swagger doc, simply browse directly to http://localhost:8080/swagger
 - **[Configuration Guide](docs/CONFIGURATION.md)** - All environment variables and regsync format
 - **[Policy Guide](docs/POLICY.md)** - CEL-based policy configuration and examples
-- **[State Store Rebuild](docs/STATE_STORE_REBUILD.md)** - Database rebuild and recovery procedures
 
 ## Support
 
