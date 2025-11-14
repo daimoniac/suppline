@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/suppline/suppline/internal/config"
+	"github.com/suppline/suppline/internal/errors"
 	"github.com/suppline/suppline/internal/types"
 )
 
@@ -60,7 +61,7 @@ func (s *TrivyScanner) HealthCheck(ctx context.Context) error {
 	// Check if trivy command is available
 	cmd := exec.CommandContext(ctx, "trivy", "version")
 	if err := cmd.Run(); err != nil {
-		return fmt.Errorf("trivy command not available: %w", err)
+		return errors.NewPermanentf("trivy command not available: %w", err)
 	}
 	return nil
 }
@@ -109,7 +110,8 @@ func (s *TrivyScanner) GenerateSBOM(ctx context.Context, imageRef string) (*SBOM
 			"image_ref", imageRef, 
 			"duration", duration,
 			"error", err)
-		return nil, fmt.Errorf("failed to generate SBOM for %s: %w, stderr: %s", imageRef, err, stderr.String())
+		// SBOM generation failures are typically transient (network, timeout, registry issues)
+		return nil, errors.NewTransientf("failed to generate SBOM for %s: %w, stderr: %s", imageRef, err, stderr.String())
 	}
 
 	duration := time.Since(startTime)
@@ -160,7 +162,8 @@ func (s *TrivyScanner) ScanVulnerabilities(ctx context.Context, imageRef string)
 	// Create temp file for cosign-vuln format output
 	tmpFile, err := os.CreateTemp("", "trivy-cosign-vuln-*.json")
 	if err != nil {
-		return nil, fmt.Errorf("failed to create temp file for cosign-vuln: %w", err)
+		// Temp file creation failure is typically transient (disk space, permissions)
+		return nil, errors.NewTransientf("failed to create temp file for cosign-vuln: %w", err)
 	}
 	defer os.Remove(tmpFile.Name())
 	tmpFile.Close()
@@ -203,13 +206,15 @@ func (s *TrivyScanner) ScanVulnerabilities(ctx context.Context, imageRef string)
 			"image_ref", imageRef, 
 			"duration", duration,
 			"error", err)
-		return nil, fmt.Errorf("failed to scan vulnerabilities for %s: %w, stderr: %s", imageRef, err, stderr.String())
+		// Vulnerability scan failures are typically transient (network, timeout, registry issues)
+		return nil, errors.NewTransientf("failed to scan vulnerabilities for %s: %w, stderr: %s", imageRef, err, stderr.String())
 	}
 
 	// Parse JSON response
 	var response trivyScanResponse
 	if err := json.Unmarshal(stdout.Bytes(), &response); err != nil {
-		return nil, fmt.Errorf("failed to parse trivy output: %w", err)
+		// JSON parsing failure is permanent (bad trivy output format)
+		return nil, errors.NewPermanentf("failed to parse trivy output: %w", err)
 	}
 
 	// Extract vulnerabilities

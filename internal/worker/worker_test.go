@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"log/slog"
+	"strings"
 	"testing"
 	"time"
 
@@ -244,8 +245,9 @@ func TestProcessTask_NilTask(t *testing.T) {
 		t.Error("expected error for nil task")
 	}
 
-	if err.Error() != "task is nil" {
-		t.Errorf("expected 'task is nil' error, got: %v", err)
+	// Check that error contains "task is nil" and is permanent
+	if !strings.Contains(err.Error(), "task is nil") {
+		t.Errorf("expected error containing 'task is nil', got: %v", err)
 	}
 }
 

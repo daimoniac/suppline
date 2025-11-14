@@ -9,6 +9,7 @@ import (
 
 	"github.com/suppline/suppline/internal/attestation"
 	"github.com/suppline/suppline/internal/config"
+	"github.com/suppline/suppline/internal/errors"
 	"github.com/suppline/suppline/internal/policy"
 	"github.com/suppline/suppline/internal/queue"
 	"github.com/suppline/suppline/internal/registry"
@@ -165,6 +166,7 @@ func (w *ImageWorker) processLoop(ctx context.Context) {
 				"is_rescan", task.IsRescan)
 
 			if err := w.ProcessTask(ctx, task); err != nil {
+				// Log once here with full context
 				w.logger.Error("task processing failed",
 					"task_id", task.ID,
 					"digest", task.Digest,
@@ -185,7 +187,7 @@ func (w *ImageWorker) processLoop(ctx context.Context) {
 // ProcessTask executes the complete workflow for one image with retry logic
 func (w *ImageWorker) ProcessTask(ctx context.Context, task *queue.ScanTask) error {
 	if task == nil {
-		return fmt.Errorf("task is nil")
+		return errors.NewPermanentf("task is nil")
 	}
 
 	// Execute the workflow with retry logic
@@ -200,11 +202,8 @@ func (w *ImageWorker) ProcessTask(ctx context.Context, task *queue.ScanTask) err
 		lastErr = err
 
 		// Check if error is transient and should be retried
-		if !isTransientError(err) {
-			w.logger.Error("permanent error, not retrying",
-				"task_id", task.ID,
-				"digest", task.Digest,
-				"error", err)
+		if !errors.IsTransient(err) {
+			// Permanent error - don't log here, already logged in processLoop
 			return err
 		}
 
@@ -232,11 +231,6 @@ func (w *ImageWorker) ProcessTask(ctx context.Context, task *queue.ScanTask) err
 		}
 	}
 
-	// All retries exhausted
-	w.logger.Error("all retry attempts exhausted",
-		"task_id", task.ID,
-		"digest", task.Digest,
-		"attempts", w.config.RetryAttempts,
-		"error", lastErr)
-	return fmt.Errorf("max retries exceeded: %w", lastErr)
+	// All retries exhausted - return as permanent error
+	return errors.NewPermanentf("max retries exceeded: %w", lastErr)
 }

@@ -9,6 +9,7 @@ import (
 	"os/exec"
 	"time"
 
+	"github.com/suppline/suppline/internal/errors"
 	"github.com/suppline/suppline/internal/scanner"
 )
 
@@ -28,7 +29,7 @@ func NewSigstoreAttestor(config AttestationConfig, logger *slog.Logger) (*Sigsto
 
 	// Validate configuration
 	if config.KeyBased.KeyPath == "" {
-		return nil, fmt.Errorf("key path is required for key-based signing")
+		return nil, errors.NewPermanentf("key path is required for key-based signing")
 	}
 
 	return &SigstoreAttestor{
@@ -44,28 +45,28 @@ func (a *SigstoreAttestor) AttestSBOM(ctx context.Context, imageRef string, sbom
 	a.logger.Debug("starting SBOM attestation", "image_ref", imageRef)
 
 	if sbom == nil {
-		return fmt.Errorf("SBOM is nil")
+		return errors.NewPermanentf("SBOM is nil")
 	}
 
 	if len(sbom.Data) == 0 {
-		return fmt.Errorf("SBOM data is empty")
+		return errors.NewPermanentf("SBOM data is empty")
 	}
 
 	var jsonCheck interface{}
 	if err := json.Unmarshal(sbom.Data, &jsonCheck); err != nil {
-		return fmt.Errorf("SBOM data is not valid JSON: %w", err)
+		return errors.NewPermanentf("SBOM data is not valid JSON: %w", err)
 	}
 
 	// Write SBOM data to temporary file
 	tmpFile, err := os.CreateTemp("", "sbom-*.json")
 	if err != nil {
-		return fmt.Errorf("failed to create temp file: %w", err)
+		return errors.NewTransientf("failed to create temp file: %w", err)
 	}
 	defer os.Remove(tmpFile.Name())
 	defer tmpFile.Close()
 
 	if _, err := tmpFile.Write(sbom.Data); err != nil {
-		return fmt.Errorf("failed to write SBOM to temp file: %w", err)
+		return errors.NewTransientf("failed to write SBOM to temp file: %w", err)
 	}
 	tmpFile.Close()
 
@@ -86,7 +87,8 @@ func (a *SigstoreAttestor) AttestSBOM(ctx context.Context, imageRef string, sbom
 		a.logger.Error("cosign SBOM attestation failed",
 			"image_ref", imageRef,
 			"error", err)
-		return fmt.Errorf("failed to attest SBOM: %w (output: %s)", err, string(output))
+		// Cosign failures are typically transient (network, registry issues)
+		return errors.NewTransientf("failed to attest SBOM: %w (output: %s)", err, string(output))
 	}
 
 	a.logger.Debug("SBOM attestation completed",
@@ -102,23 +104,23 @@ func (a *SigstoreAttestor) AttestVulnerabilities(ctx context.Context, imageRef s
 	a.logger.Debug("starting vulnerability attestation", "image_ref", imageRef)
 
 	if result == nil {
-		return fmt.Errorf("scan result is nil")
+		return errors.NewPermanentf("scan result is nil")
 	}
 
 	if len(result.CosignVulnData) == 0 {
-		return fmt.Errorf("cosign-vuln data is missing from scan result")
+		return errors.NewPermanentf("cosign-vuln data is missing from scan result")
 	}
 
 	// Write cosign-vuln data to temp file
 	tmpFile, err := os.CreateTemp("", "vuln-*.json")
 	if err != nil {
-		return fmt.Errorf("failed to create temp file: %w", err)
+		return errors.NewTransientf("failed to create temp file: %w", err)
 	}
 	defer os.Remove(tmpFile.Name())
 
 	if _, err := tmpFile.Write(result.CosignVulnData); err != nil {
 		tmpFile.Close()
-		return fmt.Errorf("failed to write cosign-vuln data: %w", err)
+		return errors.NewTransientf("failed to write cosign-vuln data: %w", err)
 	}
 	tmpFile.Close()
 
@@ -139,7 +141,8 @@ func (a *SigstoreAttestor) AttestVulnerabilities(ctx context.Context, imageRef s
 		a.logger.Error("cosign vulnerability attestation failed",
 			"image_ref", imageRef,
 			"error", err)
-		return fmt.Errorf("failed to attest vulnerabilities: %w (output: %s)", err, string(output))
+		// Cosign failures are typically transient (network, registry issues)
+		return errors.NewTransientf("failed to attest vulnerabilities: %w (output: %s)", err, string(output))
 	}
 
 	a.logger.Debug("vulnerability attestation completed",
@@ -155,25 +158,25 @@ func (a *SigstoreAttestor) AttestSCAI(ctx context.Context, imageRef string, scai
 	a.logger.Debug("starting SCAI attestation", "image_ref", imageRef)
 
 	if scai == nil {
-		return fmt.Errorf("SCAI attestation is nil")
+		return errors.NewPermanentf("SCAI attestation is nil")
 	}
 
 	// Serialize SCAI to JSON
 	scaiJSON, err := json.MarshalIndent(scai, "", "  ")
 	if err != nil {
-		return fmt.Errorf("failed to serialize SCAI: %w", err)
+		return errors.NewPermanentf("failed to serialize SCAI: %w", err)
 	}
 
 	// Write to temp file
 	tmpFile, err := os.CreateTemp("", "scai-*.json")
 	if err != nil {
-		return fmt.Errorf("failed to create temp file: %w", err)
+		return errors.NewTransientf("failed to create temp file: %w", err)
 	}
 	defer os.Remove(tmpFile.Name())
 	defer tmpFile.Close()
 
 	if _, err := tmpFile.Write(scaiJSON); err != nil {
-		return fmt.Errorf("failed to write SCAI to temp file: %w", err)
+		return errors.NewTransientf("failed to write SCAI to temp file: %w", err)
 	}
 	tmpFile.Close()
 
@@ -194,7 +197,8 @@ func (a *SigstoreAttestor) AttestSCAI(ctx context.Context, imageRef string, scai
 		a.logger.Error("cosign SCAI attestation failed",
 			"image_ref", imageRef,
 			"error", err)
-		return fmt.Errorf("failed to attest SCAI: %w (output: %s)", err, string(output))
+		// Cosign failures are typically transient (network, registry issues)
+		return errors.NewTransientf("failed to attest SCAI: %w (output: %s)", err, string(output))
 	}
 
 	a.logger.Info("SCAI attestation completed",
@@ -217,7 +221,8 @@ func (a *SigstoreAttestor) SignImage(ctx context.Context, imageRef string) error
 
 	output, err := cmd.CombinedOutput()
 	if err != nil {
-		return fmt.Errorf("failed to sign image: %w (output: %s)", err, string(output))
+		// Cosign signing failures are typically transient (network, registry issues)
+		return errors.NewTransientf("failed to sign image: %w (output: %s)", err, string(output))
 	}
 
 	return nil

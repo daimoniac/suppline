@@ -3,6 +3,7 @@ package attestation
 import (
 	"context"
 	"encoding/json"
+	"strings"
 	"testing"
 	"time"
 
@@ -141,7 +142,8 @@ func TestAttestSBOM_MalformedSBOMData(t *testing.T) {
 				return
 			}
 
-			if err.Error()[:len(tt.expectedErr)] != tt.expectedErr {
+			// Check that error contains the expected message (may be wrapped)
+			if !strings.Contains(err.Error(), tt.expectedErr) {
 				t.Errorf("expected error containing '%s', got '%s'", tt.expectedErr, err.Error())
 			}
 		})

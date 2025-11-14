@@ -6,6 +6,7 @@ import (
 	"log/slog"
 	"time"
 
+	"github.com/suppline/suppline/internal/errors"
 	"github.com/suppline/suppline/internal/policy"
 	"github.com/suppline/suppline/internal/queue"
 	"github.com/suppline/suppline/internal/scanner"
@@ -79,19 +80,19 @@ func (p *Pipeline) Execute(ctx context.Context, task *queue.ScanTask) error {
 // validateDependencies ensures all required components are configured
 func (p *Pipeline) validateDependencies() error {
 	if p.worker.registry == nil {
-		return fmt.Errorf("registry client is not configured")
+		return errors.NewPermanentf("registry client is not configured")
 	}
 	if p.worker.scanner == nil {
-		return fmt.Errorf("scanner is not configured")
+		return errors.NewPermanentf("scanner is not configured")
 	}
 	if p.worker.policy == nil {
-		return fmt.Errorf("policy engine is not configured")
+		return errors.NewPermanentf("policy engine is not configured")
 	}
 	if p.worker.attestor == nil {
-		return fmt.Errorf("attestor is not configured")
+		return errors.NewPermanentf("attestor is not configured")
 	}
 	if p.worker.stateStore == nil {
-		return fmt.Errorf("state store is not configured")
+		return errors.NewPermanentf("state store is not configured")
 	}
 	return nil
 }
@@ -104,6 +105,7 @@ func (p *Pipeline) scanPhase(ctx context.Context, imageRef string) (*scanner.SBO
 	p.logger.Debug("fetching image metadata", "image_ref", imageRef)
 	manifest, err := p.worker.registry.GetManifest(ctx, extractRepository(imageRef), extractDigest(imageRef))
 	if err != nil {
+		// Error already classified in registry package
 		return nil, nil, nil, fmt.Errorf("failed to fetch image metadata: %w", err)
 	}
 	p.logger.Debug("image metadata fetched",
@@ -116,6 +118,7 @@ func (p *Pipeline) scanPhase(ctx context.Context, imageRef string) (*scanner.SBO
 	p.logger.Debug("generating SBOM", "image_ref", imageRef)
 	sbom, err := p.worker.scanner.GenerateSBOM(ctx, imageRef)
 	if err != nil {
+		// Error already classified in scanner package
 		return nil, nil, nil, fmt.Errorf("failed to generate SBOM: %w", err)
 	}
 	durations["sbom"] = time.Since(sbomStart)
@@ -131,6 +134,7 @@ func (p *Pipeline) scanPhase(ctx context.Context, imageRef string) (*scanner.SBO
 	p.logger.Debug("scanning vulnerabilities", "image_ref", imageRef)
 	scanResult, err := p.worker.scanner.ScanVulnerabilities(ctx, imageRef)
 	if err != nil {
+		// Error already classified in scanner package
 		return nil, nil, nil, fmt.Errorf("failed to scan vulnerabilities: %w", err)
 	}
 	durations["vuln_scan"] = time.Since(vulnStart)
@@ -147,14 +151,14 @@ func (p *Pipeline) policyPhase(ctx context.Context, task *queue.ScanTask, imageR
 	// Get policy engine for this repository
 	policyEngine, err := p.getPolicyEngineForRepository(task.Repository)
 	if err != nil {
-		return nil, fmt.Errorf("failed to create policy engine: %w", err)
+		return nil, errors.NewPermanentf("failed to create policy engine: %w", err)
 	}
 
 	// Evaluate policy
 	p.logger.Debug("evaluating policy", "image_ref", imageRef, "tolerations", len(task.Tolerations))
 	policyDecision, err := policyEngine.Evaluate(ctx, imageRef, scanResult, task.Tolerations)
 	if err != nil {
-		return nil, fmt.Errorf("failed to evaluate policy: %w", err)
+		return nil, errors.NewPermanentf("failed to evaluate policy: %w", err)
 	}
 
 	p.logger.Info("policy evaluation completed",
@@ -183,6 +187,7 @@ func (p *Pipeline) attestationPhase(ctx context.Context, task *queue.ScanTask, i
 	sbomStart := time.Now()
 	p.logger.Debug("creating SBOM attestation", "image_ref", imageRef)
 	if err := p.worker.attestor.AttestSBOM(ctx, imageRef, sbom); err != nil {
+		// Error already classified in attestation package
 		return nil, false, fmt.Errorf("failed to create SBOM attestation: %w", err)
 	}
 	durations["sbom_attest"] = time.Since(sbomStart)
@@ -192,6 +197,7 @@ func (p *Pipeline) attestationPhase(ctx context.Context, task *queue.ScanTask, i
 	vulnStart := time.Now()
 	p.logger.Debug("creating vulnerability attestation", "image_ref", imageRef)
 	if err := p.worker.attestor.AttestVulnerabilities(ctx, imageRef, scanResult); err != nil {
+		// Error already classified in attestation package
 		return nil, false, fmt.Errorf("failed to create vulnerability attestation: %w", err)
 	}
 	durations["vuln_attest"] = time.Since(vulnStart)
@@ -233,6 +239,7 @@ func (p *Pipeline) signingPhase(ctx context.Context, imageRef string, policyDeci
 
 	p.logger.Debug("signing image", "image_ref", imageRef)
 	if err := p.worker.attestor.SignImage(ctx, imageRef); err != nil {
+		// Error already classified in attestation package
 		return false, fmt.Errorf("failed to sign image: %w", err)
 	}
 	p.logger.Info("image signed", "image_ref", imageRef)
@@ -326,3 +333,4 @@ func (p *Pipeline) getPolicyEngineForRepository(repository string) (policy.Polic
 	// Create a new policy engine with the repository-specific config
 	return policy.NewEngine(p.logger, policyConfig)
 }
+

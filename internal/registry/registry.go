@@ -9,6 +9,7 @@ import (
 	"github.com/google/go-containerregistry/pkg/name"
 	"github.com/google/go-containerregistry/pkg/v1/remote"
 	"github.com/suppline/suppline/internal/config"
+	"github.com/suppline/suppline/internal/errors"
 )
 
 // Client defines the interface for interacting with container registries
@@ -61,7 +62,7 @@ type clientImpl struct {
 // NewClient creates a new registry client configured with credentials from regsync config
 func NewClient(regsyncConfig *config.RegsyncConfig) (Client, error) {
 	if regsyncConfig == nil {
-		return nil, fmt.Errorf("regsync config is required")
+		return nil, errors.NewPermanent(fmt.Errorf("regsync config is required"))
 	}
 
 	client := &clientImpl{
@@ -139,7 +140,7 @@ func (c *clientImpl) ListRepositories(ctx context.Context) ([]string, error) {
 	// Full registry catalog enumeration is registry-specific and not always available
 	targets := c.regsyncConfig.GetTargetRepositories()
 	if len(targets) == 0 {
-		return nil, fmt.Errorf("no target repositories configured in regsync")
+		return nil, errors.NewPermanent(fmt.Errorf("no target repositories configured in regsync"))
 	}
 	return targets, nil
 }
@@ -148,14 +149,14 @@ func (c *clientImpl) ListRepositories(ctx context.Context) ([]string, error) {
 func (c *clientImpl) ListTags(ctx context.Context, repo string) ([]string, error) {
 	registry, repository, err := parseImageRef(repo)
 	if err != nil {
-		return nil, fmt.Errorf("failed to parse repository: %w", err)
+		return nil, errors.NewPermanent(fmt.Errorf("failed to parse repository: %w", err))
 	}
 
 	// Construct repository reference
 	repoRef := fmt.Sprintf("%s/%s", registry, repository)
 	ref, err := name.NewRepository(repoRef)
 	if err != nil {
-		return nil, fmt.Errorf("failed to create repository reference: %w", err)
+		return nil, errors.NewPermanent(fmt.Errorf("failed to create repository reference: %w", err))
 	}
 
 	// Get authenticator for this registry
@@ -164,7 +165,8 @@ func (c *clientImpl) ListTags(ctx context.Context, repo string) ([]string, error
 	// List tags
 	tags, err := remote.List(ref, remote.WithAuth(auth), remote.WithContext(ctx))
 	if err != nil {
-		return nil, fmt.Errorf("failed to list tags for %s: %w", repo, err)
+		// Network/registry errors are typically transient
+		return nil, errors.NewTransient(fmt.Errorf("failed to list tags for %s: %w", repo, err))
 	}
 
 	// Filter out .sig and .att artifacts (Sigstore signatures and attestations)
@@ -183,14 +185,14 @@ func (c *clientImpl) ListTags(ctx context.Context, repo string) ([]string, error
 func (c *clientImpl) GetDigest(ctx context.Context, repo, tag string) (string, error) {
 	registry, repository, err := parseImageRef(repo)
 	if err != nil {
-		return "", fmt.Errorf("failed to parse repository: %w", err)
+		return "", errors.NewPermanent(fmt.Errorf("failed to parse repository: %w", err))
 	}
 
 	// Construct image reference
 	imageRef := fmt.Sprintf("%s/%s:%s", registry, repository, tag)
 	ref, err := name.ParseReference(imageRef)
 	if err != nil {
-		return "", fmt.Errorf("failed to parse image reference: %w", err)
+		return "", errors.NewPermanent(fmt.Errorf("failed to parse image reference: %w", err))
 	}
 
 	// Get authenticator for this registry
@@ -199,7 +201,8 @@ func (c *clientImpl) GetDigest(ctx context.Context, repo, tag string) (string, e
 	// Get image descriptor to retrieve digest
 	desc, err := remote.Get(ref, remote.WithAuth(auth), remote.WithContext(ctx))
 	if err != nil {
-		return "", fmt.Errorf("failed to get image descriptor for %s: %w", imageRef, err)
+		// Network/registry errors are typically transient
+		return "", errors.NewTransient(fmt.Errorf("failed to get image descriptor for %s: %w", imageRef, err))
 	}
 
 	return desc.Digest.String(), nil
@@ -209,14 +212,14 @@ func (c *clientImpl) GetDigest(ctx context.Context, repo, tag string) (string, e
 func (c *clientImpl) GetManifest(ctx context.Context, repo, digest string) (*Manifest, error) {
 	registry, repository, err := parseImageRef(repo)
 	if err != nil {
-		return nil, fmt.Errorf("failed to parse repository: %w", err)
+		return nil, errors.NewPermanent(fmt.Errorf("failed to parse repository: %w", err))
 	}
 
 	// Construct image reference with digest
 	imageRef := fmt.Sprintf("%s/%s@%s", registry, repository, digest)
 	ref, err := name.ParseReference(imageRef)
 	if err != nil {
-		return nil, fmt.Errorf("failed to parse image reference: %w", err)
+		return nil, errors.NewPermanent(fmt.Errorf("failed to parse image reference: %w", err))
 	}
 
 	// Get authenticator for this registry
@@ -225,31 +228,33 @@ func (c *clientImpl) GetManifest(ctx context.Context, repo, digest string) (*Man
 	// Get image descriptor
 	desc, err := remote.Get(ref, remote.WithAuth(auth), remote.WithContext(ctx))
 	if err != nil {
-		return nil, fmt.Errorf("failed to get image descriptor for %s: %w", imageRef, err)
+		// Network/registry errors are typically transient
+		return nil, errors.NewTransient(fmt.Errorf("failed to get image descriptor for %s: %w", imageRef, err))
 	}
 
 	// Get image to access manifest details
 	img, err := desc.Image()
 	if err != nil {
-		return nil, fmt.Errorf("failed to get image from descriptor: %w", err)
+		// Descriptor conversion errors are typically transient
+		return nil, errors.NewTransient(fmt.Errorf("failed to get image from descriptor: %w", err))
 	}
 
 	// Get config file for architecture and OS info
 	configFile, err := img.ConfigFile()
 	if err != nil {
-		return nil, fmt.Errorf("failed to get config file: %w", err)
+		return nil, errors.NewTransient(fmt.Errorf("failed to get config file: %w", err))
 	}
 
 	// Get manifest
 	rawManifest, err := img.RawManifest()
 	if err != nil {
-		return nil, fmt.Errorf("failed to get raw manifest: %w", err)
+		return nil, errors.NewTransient(fmt.Errorf("failed to get raw manifest: %w", err))
 	}
 
 	// Get layers
 	layers, err := img.Layers()
 	if err != nil {
-		return nil, fmt.Errorf("failed to get layers: %w", err)
+		return nil, errors.NewTransient(fmt.Errorf("failed to get layers: %w", err))
 	}
 
 	// Build layer descriptors
@@ -278,7 +283,7 @@ func (c *clientImpl) GetManifest(ctx context.Context, repo, digest string) (*Man
 	// Get config descriptor
 	configHash, err := img.ConfigName()
 	if err != nil {
-		return nil, fmt.Errorf("failed to get config hash: %w", err)
+		return nil, errors.NewTransient(fmt.Errorf("failed to get config hash: %w", err))
 	}
 
 	manifest := &Manifest{

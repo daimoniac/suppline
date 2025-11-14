@@ -2,12 +2,12 @@ package attestation
 
 import (
 	"context"
-	"fmt"
 	"log/slog"
 	"strings"
 	"time"
 
 	"github.com/suppline/suppline/internal/config"
+	"github.com/suppline/suppline/internal/errors"
 	"github.com/suppline/suppline/internal/scanner"
 )
 
@@ -37,7 +37,7 @@ func NewSCAIGenerator(config *config.RegsyncConfig, logger *slog.Logger) *SCAIGe
 func convertToPURL(imageRef string) (string, error) {
 	// Image reference should contain @ for digest
 	if !strings.Contains(imageRef, "@") {
-		return "", fmt.Errorf("image reference must contain digest: %s", imageRef)
+		return "", errors.NewPermanentf("image reference must contain digest: %s", imageRef)
 	}
 
 	// Simply prepend pkg:docker/ to the image reference
@@ -124,13 +124,13 @@ func (g *SCAIGenerator) GenerateSCAI(
 	target string,
 ) (*SCAIAttestation, error) {
 	if scanResult == nil {
-		return nil, fmt.Errorf("scan result is nil")
+		return nil, errors.NewPermanentf("scan result is nil")
 	}
 
 	// Convert image reference to PURL format
 	purl, err := convertToPURL(imageRef)
 	if err != nil {
-		return nil, fmt.Errorf("failed to convert image reference to PURL: %w", err)
+		return nil, errors.NewPermanentf("failed to convert image reference to PURL: %w", err)
 	}
 
 	// Calculate validity window
