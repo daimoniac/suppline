@@ -9,7 +9,6 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/google/go-containerregistry/pkg/authn"
 	"github.com/joho/godotenv"
 	"github.com/suppline/suppline/internal/api"
 	"github.com/suppline/suppline/internal/attestation"
@@ -165,22 +164,18 @@ func run() error {
 		},
 	}
 	
-	// Build auth config from regsync credentials for attestor
-	authConfig := make(map[string]authn.Authenticator)
-	for _, cred := range regsyncCfg.Creds {
-		if cred.User != "" && cred.Pass != "" {
-			authConfig[cred.Registry] = &authn.Basic{
-				Username: cred.User,
-				Password: cred.Pass,
-			}
-		}
-	}
-	
-	attestor, err := attestation.NewSigstoreAttestor(attestorConfig, authConfig, logger, cfg.RegsyncPath)
+	attestor, err := attestation.NewSigstoreAttestor(attestorConfig, logger)
 	if err != nil {
 		return fmt.Errorf("failed to initialize attestor: %w", err)
 	}
 	logger.Info("attestor initialized")
+
+	// Authenticate cosign with registries during initialization
+	logger.Info("authenticating cosign with registries")
+	if err := attestation.AuthenticateCosignRegistries(ctx, attestor, regsyncCfg, logger); err != nil {
+		return fmt.Errorf("failed to authenticate cosign with registries: %w", err)
+	}
+	logger.Info("cosign authenticated with all registries")
 
 	// Initialize policy engine
 	logger.Info("initializing policy engine")

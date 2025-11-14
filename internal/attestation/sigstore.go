@@ -1,37 +1,28 @@
 package attestation
 
 import (
-	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
 	"log/slog"
-	"os"
-	"os/exec"
 	"time"
 
-	"github.com/google/go-containerregistry/pkg/authn"
-	"github.com/suppline/suppline/internal/config"
+	"github.com/suppline/suppline/internal/attestation/cosign"
 	"github.com/suppline/suppline/internal/scanner"
 )
 
 // SigstoreAttestor implements the Attestor interface using cosign CLI
+// It coordinates attestation operations by delegating to the cosign client
 type SigstoreAttestor struct {
-	config     AttestationConfig
-	authConfig map[string]authn.Authenticator
-	logger     *slog.Logger
+	cosignClient *cosign.Client
+	logger       *slog.Logger
 }
 
 // NewSigstoreAttestor creates a new Sigstore attestor
-func NewSigstoreAttestor(config AttestationConfig, authConfig map[string]authn.Authenticator, logger *slog.Logger, regsyncPath string) (*SigstoreAttestor, error) {
+// Registry authentication should be handled separately during initialization
+func NewSigstoreAttestor(config AttestationConfig, logger *slog.Logger) (*SigstoreAttestor, error) {
 	if logger == nil {
 		logger = slog.Default()
-	}
-	
-	attestor := &SigstoreAttestor{
-		config:     config,
-		authConfig: authConfig,
-		logger:     logger,
 	}
 
 	// Validate configuration
@@ -39,59 +30,25 @@ func NewSigstoreAttestor(config AttestationConfig, authConfig map[string]authn.A
 		return nil, fmt.Errorf("key path is required for key-based signing")
 	}
 
-	// Authenticate cosign with registry credentials from suppline.yml
-	if err := attestor.authenticateRegistries(regsyncPath); err != nil {
-		return nil, fmt.Errorf("failed to authenticate registries for cosign: %w", err)
-	}
+	// Create cosign client
+	cosignClient := cosign.NewClient(
+		config.KeyBased.KeyPath,
+		config.KeyBased.KeyPassword,
+		logger,
+	)
 
-	return attestor, nil
-}
-
-// authenticateRegistries logs into registries using credentials from suppline.yml
-func (a *SigstoreAttestor) authenticateRegistries(regsyncPath string) error {
-	// Parse regsync config
-	regsyncCfg, err := config.ParseRegsync(regsyncPath)
-	if err != nil {
-		return fmt.Errorf("failed to parse regsync config: %w", err)
-	}
-
-	// Authenticate with each registry
-	for _, cred := range regsyncCfg.Creds {
-		if cred.Registry == "" || cred.User == "" || cred.Pass == "" {
-			a.logger.Warn("skipping incomplete registry credential", "registry", cred.Registry)
-			continue
-		}
-
-		a.logger.Info("authenticating cosign with registry", "registry", cred.Registry)
-
-		// Execute cosign login
-		cmd := exec.Command("cosign", "login", cred.Registry,
-			"--username", cred.User,
-			"--password", cred.Pass)
-
-		var stderr bytes.Buffer
-		cmd.Stderr = &stderr
-
-		if err := cmd.Run(); err != nil {
-			a.logger.Error("failed to authenticate cosign with registry",
-				"registry", cred.Registry,
-				"error", err,
-				"stderr", stderr.String())
-			return fmt.Errorf("failed to login cosign to registry %s: %w", cred.Registry, err)
-		}
-
-		a.logger.Info("successfully authenticated cosign with registry", "registry", cred.Registry)
-	}
-
-	return nil
+	return &SigstoreAttestor{
+		cosignClient: cosignClient,
+		logger:       logger,
+	}, nil
 }
 
 // AttestSBOM creates and pushes SBOM attestation using cosign CLI
 // This method uses pre-generated SBOM data directly to avoid redundant Trivy invocations
 func (a *SigstoreAttestor) AttestSBOM(ctx context.Context, imageRef string, sbom *scanner.SBOM) error {
 	startTime := time.Now()
-	a.logger.Debug("starting SBOM attestation", "image_ref", imageRef, "start_time", startTime)
-	
+	a.logger.Debug("starting SBOM attestation", "image_ref", imageRef)
+
 	if sbom == nil {
 		return fmt.Errorf("SBOM is nil")
 	}
@@ -106,52 +63,27 @@ func (a *SigstoreAttestor) AttestSBOM(ctx context.Context, imageRef string, sbom
 		return fmt.Errorf("SBOM data is not valid JSON: %w", err)
 	}
 
-	// Write SBOM data directly to a temporary file as the predicate content
-	tmpFile, err := os.CreateTemp("", "sbom-*.json")
+	// Write SBOM data to temporary file
+	tmpFile, err := cosign.NewTempFile("sbom-*.json", sbom.Data)
 	if err != nil {
 		return fmt.Errorf("failed to create temp file: %w", err)
 	}
-	defer os.Remove(tmpFile.Name())
-	defer tmpFile.Close()
+	defer tmpFile.Cleanup()
 
-	if _, err := tmpFile.Write([]byte(sbom.Data)); err != nil {
-		return fmt.Errorf("failed to write SBOM to temp file: %w", err)
-	}
-	tmpFile.Close()
-
-	// Use cosign CLI to attest with pre-generated SBOM predicate
-	cosignStartTime := time.Now()
-	a.logger.Debug("invoking cosign for SBOM attestation", "image_ref", imageRef, "cosign_start_time", cosignStartTime)
-	
-	cmd := exec.CommandContext(ctx, "cosign", "attest",
-		"--key", a.config.KeyBased.KeyPath,
-		"--type", "https://cyclonedx.org/bom",
-		"--predicate", tmpFile.Name(),
-		"--replace=true",
-		"--yes",
-		"--tlog-upload=false",
-		imageRef,
-	)
-
-	// Set password via environment variable
-	cmd.Env = append(os.Environ(), fmt.Sprintf("COSIGN_PASSWORD=%s", a.config.KeyBased.KeyPassword))
-
-	output, err := cmd.CombinedOutput()
-	cosignDuration := time.Since(cosignStartTime)
-	
-	if err != nil {
-		a.logger.Error("cosign SBOM attestation failed", 
-			"image_ref", imageRef, 
-			"cosign_duration", cosignDuration,
-			"error", err)
-		return fmt.Errorf("failed to attest SBOM with cosign: %w (output: %s)", err, string(output))
+	// Attest using cosign client
+	if err := a.cosignClient.Attest(ctx, cosign.AttestOptions{
+		ImageRef:      imageRef,
+		PredicatePath: tmpFile.Path(),
+		PredicateType: "https://cyclonedx.org/bom",
+		Replace:       true,
+		TlogUpload:    false,
+	}); err != nil {
+		return err
 	}
 
-	totalDuration := time.Since(startTime)
-	a.logger.Debug("SBOM attestation completed", 
-		"image_ref", imageRef, 
-		"total_duration", totalDuration,
-		"cosign_duration", cosignDuration)
+	a.logger.Debug("SBOM attestation completed",
+		"image_ref", imageRef,
+		"duration", time.Since(startTime))
 
 	return nil
 }
@@ -160,8 +92,8 @@ func (a *SigstoreAttestor) AttestSBOM(ctx context.Context, imageRef string, sbom
 // Uses pre-generated cosign-vuln format from ScanResult to avoid redundant Trivy call
 func (a *SigstoreAttestor) AttestVulnerabilities(ctx context.Context, imageRef string, result *scanner.ScanResult) error {
 	startTime := time.Now()
-	a.logger.Debug("starting vulnerability attestation", "image_ref", imageRef, "start_time", startTime)
-	
+	a.logger.Debug("starting vulnerability attestation", "image_ref", imageRef)
+
 	if result == nil {
 		return fmt.Errorf("scan result is nil")
 	}
@@ -171,56 +103,31 @@ func (a *SigstoreAttestor) AttestVulnerabilities(ctx context.Context, imageRef s
 		return fmt.Errorf("cosign-vuln data is missing from scan result")
 	}
 
-	// Write pre-generated cosign-vuln data to temp file
-	tmpFile, err := os.CreateTemp("", "vuln-*.json")
+	a.logger.Debug("using pre-generated cosign-vuln data",
+		"image_ref", imageRef,
+		"size_bytes", len(result.CosignVulnData))
+
+	// Write cosign-vuln data to temporary file
+	tmpFile, err := cosign.NewTempFile("vuln-*.json", result.CosignVulnData)
 	if err != nil {
 		return fmt.Errorf("failed to create temp file: %w", err)
 	}
-	defer os.Remove(tmpFile.Name())
+	defer tmpFile.Cleanup()
 
-	if _, err := tmpFile.Write(result.CosignVulnData); err != nil {
-		tmpFile.Close()
-		return fmt.Errorf("failed to write cosign-vuln data to temp file: %w", err)
-	}
-	tmpFile.Close()
-
-	a.logger.Debug("using pre-generated cosign-vuln data", 
-		"image_ref", imageRef, 
-		"size_bytes", len(result.CosignVulnData))
-
-	// Use cosign CLI to attest with pre-generated predicate
-	cosignStartTime := time.Now()
-	a.logger.Debug("invoking cosign for vulnerability attestation", "image_ref", imageRef, "cosign_start_time", cosignStartTime)
-	
-	cmd := exec.CommandContext(ctx, "cosign", "attest",
-		"--key", a.config.KeyBased.KeyPath,
-		"--type", "vuln",
-		"--predicate", tmpFile.Name(),
-		"--replace=true",
-		"--yes",
-		"--tlog-upload=false",
-		imageRef,
-	)
-
-	// Set password via environment variable
-	cmd.Env = append(os.Environ(), fmt.Sprintf("COSIGN_PASSWORD=%s", a.config.KeyBased.KeyPassword))
-
-	output, err := cmd.CombinedOutput()
-	cosignDuration := time.Since(cosignStartTime)
-	
-	if err != nil {
-		a.logger.Error("cosign vulnerability attestation failed", 
-			"image_ref", imageRef, 
-			"cosign_duration", cosignDuration,
-			"error", err)
-		return fmt.Errorf("failed to attest vulnerabilities with cosign: %w (output: %s)", err, string(output))
+	// Attest using cosign client
+	if err := a.cosignClient.Attest(ctx, cosign.AttestOptions{
+		ImageRef:      imageRef,
+		PredicatePath: tmpFile.Path(),
+		PredicateType: "vuln",
+		Replace:       true,
+		TlogUpload:    false,
+	}); err != nil {
+		return err
 	}
 
-	totalDuration := time.Since(startTime)
-	a.logger.Debug("vulnerability attestation completed", 
-		"image_ref", imageRef, 
-		"total_duration", totalDuration,
-		"cosign_duration", cosignDuration)
+	a.logger.Debug("vulnerability attestation completed",
+		"image_ref", imageRef,
+		"duration", time.Since(startTime))
 
 	return nil
 }
@@ -228,98 +135,44 @@ func (a *SigstoreAttestor) AttestVulnerabilities(ctx context.Context, imageRef s
 // AttestSCAI creates and pushes SCAI attestation using cosign CLI
 func (a *SigstoreAttestor) AttestSCAI(ctx context.Context, imageRef string, scai *SCAIAttestation) error {
 	startTime := time.Now()
-	a.logger.Debug("starting SCAI attestation", "image_ref", imageRef, "start_time", startTime)
-	
+	a.logger.Debug("starting SCAI attestation", "image_ref", imageRef)
+
 	if scai == nil {
 		return fmt.Errorf("SCAI attestation is nil")
 	}
 
-	// Serialize SCAI attestation to JSON
-	scaiJSON, err := json.MarshalIndent(scai, "", "  ")
+	// Write SCAI attestation to temporary file
+	tmpFile, err := cosign.NewTempFileJSON("scai-*.json", scai)
 	if err != nil {
-		a.logger.Error("failed to serialize SCAI attestation", 
-			"image_ref", imageRef, 
-			"error", err)
-		return fmt.Errorf("failed to serialize SCAI attestation: %w", err)
-	}
-
-	// Write JSON to temporary file
-	tmpFile, err := os.CreateTemp("", "scai-*.json")
-	if err != nil {
-		a.logger.Error("failed to create temp file for SCAI attestation", 
-			"image_ref", imageRef, 
-			"error", err)
 		return fmt.Errorf("failed to create temp file: %w", err)
 	}
-	defer os.Remove(tmpFile.Name())
-	defer tmpFile.Close()
+	defer tmpFile.Cleanup()
 
-	if _, err := tmpFile.Write(scaiJSON); err != nil {
-		a.logger.Error("failed to write SCAI to temp file", 
-			"image_ref", imageRef, 
-			"error", err)
-		return fmt.Errorf("failed to write SCAI to temp file: %w", err)
-	}
-	tmpFile.Close()
-
-	// Use cosign CLI to attest with SCAI predicate
-	cosignStartTime := time.Now()
-	a.logger.Debug("invoking cosign for SCAI attestation", "image_ref", imageRef, "cosign_start_time", cosignStartTime)
-	
-	cmd := exec.CommandContext(ctx, "cosign", "attest",
-		"--key", a.config.KeyBased.KeyPath,
-		"--type", "https://in-toto.io/attestation/scai/attribute-report/v0.3",
-		"--predicate", tmpFile.Name(),
-		"--replace=true",
-		"--yes",
-		"--tlog-upload=false",
-		imageRef,
-	)
-
-	// Set password via environment variable
-	cmd.Env = append(os.Environ(), fmt.Sprintf("COSIGN_PASSWORD=%s", a.config.KeyBased.KeyPassword))
-
-	output, err := cmd.CombinedOutput()
-	cosignDuration := time.Since(cosignStartTime)
-	
-	if err != nil {
-		a.logger.Error("cosign SCAI attestation failed", 
-			"image_ref", imageRef, 
-			"cosign_duration", cosignDuration,
-			"error", err,
-			"output", string(output))
-		return fmt.Errorf("failed to attest SCAI with cosign: %w (output: %s)", err, string(output))
+	// Attest using cosign client
+	if err := a.cosignClient.Attest(ctx, cosign.AttestOptions{
+		ImageRef:      imageRef,
+		PredicatePath: tmpFile.Path(),
+		PredicateType: "https://in-toto.io/attestation/scai/attribute-report/v0.3",
+		Replace:       true,
+		TlogUpload:    false,
+	}); err != nil {
+		return err
 	}
 
-	totalDuration := time.Since(startTime)
-	a.logger.Info("SCAI attestation completed successfully", 
-		"image_ref", imageRef, 
-		"timestamp", time.Now().Format(time.RFC3339),
-		"total_duration", totalDuration,
-		"cosign_duration", cosignDuration)
+	a.logger.Info("SCAI attestation completed",
+		"image_ref", imageRef,
+		"duration", time.Since(startTime))
 
 	return nil
 }
 
 // SignImage signs the image if policy passes using cosign CLI
 func (a *SigstoreAttestor) SignImage(ctx context.Context, imageRef string) error {
-	cmd := exec.CommandContext(ctx, "cosign", "sign",
-		"--key", a.config.KeyBased.KeyPath,
-		"--yes",
-		"--tlog-upload=false",
-		"--allow-insecure-registry",
-		imageRef,
-	)
-
-	// Set password via environment variable
-	cmd.Env = append(os.Environ(), fmt.Sprintf("COSIGN_PASSWORD=%s", a.config.KeyBased.KeyPassword))
-
-	output, err := cmd.CombinedOutput()
-	if err != nil {
-		return fmt.Errorf("failed to sign image with cosign: %w (output: %s)", err, string(output))
-	}
-
-	return nil
+	return a.cosignClient.Sign(ctx, cosign.SignOptions{
+		ImageRef:      imageRef,
+		TlogUpload:    false,
+		AllowInsecure: true,
+	})
 }
 
 

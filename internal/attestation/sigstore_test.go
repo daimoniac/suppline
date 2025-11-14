@@ -16,7 +16,7 @@ func TestNewSigstoreAttestor_MissingKeyPath(t *testing.T) {
 		},
 	}
 
-	_, err := NewSigstoreAttestor(config, nil, nil, "../../suppline.yml.example")
+	_, err := NewSigstoreAttestor(config, nil)
 	if err == nil {
 		t.Fatal("expected error for missing key path")
 	}
@@ -62,7 +62,7 @@ func TestAttestSBOM_ValidCycloneDXData(t *testing.T) {
 		},
 	}
 
-	attestor, err := NewSigstoreAttestor(config, nil, nil, "../../suppline.yml.example")
+	attestor, err := NewSigstoreAttestor(config, nil)
 	if err != nil {
 		t.Fatalf("failed to create attestor: %v", err)
 	}
@@ -128,7 +128,7 @@ func TestAttestSBOM_MalformedSBOMData(t *testing.T) {
 		},
 	}
 
-	attestor, err := NewSigstoreAttestor(config, nil, nil, "../../suppline.yml.example")
+	attestor, err := NewSigstoreAttestor(config, nil)
 	if err != nil {
 		t.Fatalf("failed to create attestor: %v", err)
 	}
@@ -175,7 +175,7 @@ func TestAttestSBOM_CosignCommandConstruction(t *testing.T) {
 		},
 	}
 
-	attestor, err := NewSigstoreAttestor(config, nil, nil, "../../suppline.yml.example")
+	attestor, err := NewSigstoreAttestor(config, nil)
 	if err != nil {
 		t.Fatalf("failed to create attestor: %v", err)
 	}

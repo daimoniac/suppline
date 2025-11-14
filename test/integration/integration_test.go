@@ -999,9 +999,19 @@ func TestAttestation(t *testing.T) {
 		},
 	}
 
-	attestor, err := attestation.NewSigstoreAttestor(cfg, nil, slog.Default(), "../../suppline.yml.example")
+	attestor, err := attestation.NewSigstoreAttestor(cfg, slog.Default())
 	if err != nil {
 		t.Fatalf("Failed to create attestor: %v", err)
+	}
+	
+	// Authenticate cosign with registries
+	regsyncCfg, err := config.ParseRegsync("../../suppline.yml.example")
+	if err != nil {
+		t.Fatalf("Failed to parse regsync config: %v", err)
+	}
+	
+	if err := attestation.AuthenticateCosignRegistries(context.Background(), attestor, regsyncCfg, slog.Default()); err != nil {
+		t.Fatalf("Failed to authenticate cosign: %v", err)
 	}
 
 	ctx := context.Background()
@@ -1177,9 +1187,19 @@ func TestOptimizedAttestationFlow(t *testing.T) {
 		},
 	}
 
-	attestor, err := attestation.NewSigstoreAttestor(attestorCfg, nil, slog.Default(), "../../suppline.yml.example")
+	attestor, err := attestation.NewSigstoreAttestor(attestorCfg, slog.Default())
 	if err != nil {
 		t.Fatalf("Failed to create attestor: %v", err)
+	}
+	
+	// Authenticate cosign with registries
+	regsyncCfg, err := config.ParseRegsync("../../suppline.yml.example")
+	if err != nil {
+		t.Fatalf("Failed to parse regsync config: %v", err)
+	}
+	
+	if err := attestation.AuthenticateCosignRegistries(context.Background(), attestor, regsyncCfg, slog.Default()); err != nil {
+		t.Fatalf("Failed to authenticate cosign: %v", err)
 	}
 
 	ctx := context.Background()
