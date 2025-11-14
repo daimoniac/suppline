@@ -11,8 +11,14 @@ WORKDIR /build
 COPY go.mod go.sum ./
 RUN go mod download
 
+# Install swag for generating API documentation
+RUN go install github.com/swaggo/swag/cmd/swag@latest
+
 # Copy source code
 COPY . .
+
+# Generate Swagger documentation
+RUN swag init -g internal/api/api.go -o docs/swagger --parseDependency --parseInternal
 
 # Build the binary with CGO enabled for SQLite
 RUN CGO_ENABLED=1 GOOS=linux go build -a -installsuffix cgo \

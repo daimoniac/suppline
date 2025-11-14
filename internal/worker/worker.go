@@ -492,19 +492,17 @@ func buildScanRecord(
 		})
 	}
 
-	// Build tolerated CVEs list
+	// Build tolerated CVEs list (deduplicated)
+	// First, create a set of unique tolerated CVE IDs from the policy decision
+	toleratedSet := make(map[string]bool)
+	for _, toleratedID := range policyDecision.ToleratedCVEs {
+		toleratedSet[toleratedID] = true
+	}
+	
+	// Then build the list from tolerations that were actually applied
 	toleratedCVEs := make([]statestore.ToleratedCVE, 0, len(task.Tolerations))
 	for _, toleration := range task.Tolerations {
-		// Only include tolerations that were actually applied (in the tolerated CVEs list)
-		isTolerated := false
-		for _, toleratedID := range policyDecision.ToleratedCVEs {
-			if toleratedID == toleration.ID {
-				isTolerated = true
-				break
-			}
-		}
-		
-		if isTolerated {
+		if toleratedSet[toleration.ID] {
 			toleratedCVEs = append(toleratedCVEs, statestore.ToleratedCVE{
 				CVEID:       toleration.ID,
 				Statement:   toleration.Statement,
