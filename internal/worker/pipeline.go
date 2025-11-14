@@ -164,9 +164,6 @@ func (p *Pipeline) policyPhase(ctx context.Context, task *queue.ScanTask, imageR
 	p.logger.Info("policy evaluation completed",
 		"image_ref", imageRef,
 		"passed", policyDecision.Passed,
-		"critical_vulns", policyDecision.CriticalVulnCount,
-		"tolerated_vulns", policyDecision.ToleratedVulnCount,
-		"unfixed_vulns", policyDecision.UnfixedVulnCount,
 		"reason", policyDecision.Reason)
 
 	// Log expiring tolerations

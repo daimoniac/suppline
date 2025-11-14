@@ -174,7 +174,7 @@ func (e *Engine) Evaluate(ctx context.Context, imageRef string, result *scanner.
 	mediumCount := 0
 	lowCount := 0
 	toleratedCount := 0
-	unfixedCount := 0
+	unfixedCriticalCount := 0
 	failingVulns := make([]scanner.Vulnerability, 0)
 	
 	for _, vuln := range result.Vulnerabilities {
@@ -188,11 +188,6 @@ func (e *Engine) Evaluate(ctx context.Context, imageRef string, result *scanner.
 			"fixedVersion": vuln.FixedVersion,
 			"description": vuln.Description,
 			"tolerated":   isTolerated,
-		}
-		
-		// Count unfixed vulnerabilities (no fix available)
-		if vuln.FixedVersion == "" {
-			unfixedCount++
 		}
 		
 		if isTolerated {
@@ -215,6 +210,10 @@ func (e *Engine) Evaluate(ctx context.Context, imageRef string, result *scanner.
 			case "CRITICAL":
 				criticalCount++
 				failingVulns = append(failingVulns, vuln)
+				// Count unfixed critical vulnerabilities (no fix available)
+				if vuln.FixedVersion == "" {
+					unfixedCriticalCount++
+				}
 			case "HIGH":
 				highCount++
 			case "MEDIUM":
@@ -229,7 +228,7 @@ func (e *Engine) Evaluate(ctx context.Context, imageRef string, result *scanner.
 
 	decision.CriticalVulnCount = criticalCount
 	decision.ToleratedVulnCount = toleratedCount
-	decision.UnfixedVulnCount = unfixedCount
+	decision.UnfixedVulnCount = unfixedCriticalCount
 
 	// Evaluate CEL policy expression
 	celInput := map[string]interface{}{
@@ -258,8 +257,13 @@ func (e *Engine) Evaluate(ctx context.Context, imageRef string, result *scanner.
 	
 	// Build reason message
 	if passed {
-		decision.Reason = fmt.Sprintf("policy passed: critical=%d, high=%d, medium=%d, low=%d (tolerated=%d)",
-			criticalCount, highCount, mediumCount, lowCount, toleratedCount)
+		if unfixedCriticalCount > 0 {
+			decision.Reason = fmt.Sprintf("policy passed: critical=%d, high=%d, medium=%d, low=%d (tolerated=%d, unfixed=%d)",
+				criticalCount, highCount, mediumCount, lowCount, toleratedCount, unfixedCriticalCount)
+		} else {
+			decision.Reason = fmt.Sprintf("policy passed: critical=%d, high=%d, medium=%d, low=%d (tolerated=%d)",
+				criticalCount, highCount, mediumCount, lowCount, toleratedCount)
+		}
 		
 		e.logger.Info("policy evaluation passed",
 			"image", imageRef,
@@ -272,8 +276,13 @@ func (e *Engine) Evaluate(ctx context.Context, imageRef string, result *scanner.
 		if e.config.FailureMessage != "" {
 			decision.Reason = e.config.FailureMessage
 		} else {
-			decision.Reason = fmt.Sprintf("policy failed: critical=%d, high=%d, medium=%d, low=%d (tolerated=%d)",
-				criticalCount, highCount, mediumCount, lowCount, toleratedCount)
+			if unfixedCriticalCount > 0 {
+				decision.Reason = fmt.Sprintf("policy failed: critical=%d, high=%d, medium=%d, low=%d (tolerated=%d, unfixed=%d)",
+					criticalCount, highCount, mediumCount, lowCount, toleratedCount, unfixedCriticalCount)
+			} else {
+				decision.Reason = fmt.Sprintf("policy failed: critical=%d, high=%d, medium=%d, low=%d (tolerated=%d)",
+					criticalCount, highCount, mediumCount, lowCount, toleratedCount)
+			}
 		}
 		
 		e.logger.Warn("policy evaluation failed",
