@@ -51,57 +51,6 @@ func TestToVulnerabilityRecord(t *testing.T) {
 	}
 }
 
-func TestToVulnerabilityRecords(t *testing.T) {
-	vulns := []Vulnerability{
-		{ID: "CVE-2024-1234", Severity: "HIGH"},
-		{ID: "CVE-2024-5678", Severity: "MEDIUM"},
-	}
-
-	records := ToVulnerabilityRecords(
-		vulns,
-		"repo",
-		"tag",
-		"digest",
-		time.Now(),
-	)
-
-	if len(records) != 2 {
-		t.Errorf("Expected 2 records, got %d", len(records))
-	}
-
-	if records[0].CVEID != "CVE-2024-1234" {
-		t.Errorf("Expected first record CVEID CVE-2024-1234, got %s", records[0].CVEID)
-	}
-	if records[1].CVEID != "CVE-2024-5678" {
-		t.Errorf("Expected second record CVEID CVE-2024-5678, got %s", records[1].CVEID)
-	}
-}
-
-func TestToToleratedCVE(t *testing.T) {
-	expiresAt := time.Now().Add(30 * 24 * time.Hour)
-	toleration := CVEToleration{
-		ID:        "CVE-2024-1234",
-		Statement: "Accepted risk",
-		ExpiresAt: &expiresAt,
-	}
-
-	toleratedAt := time.Now()
-	tolerated := ToToleratedCVE(toleration, toleratedAt)
-
-	if tolerated.CVEID != "CVE-2024-1234" {
-		t.Errorf("Expected CVEID CVE-2024-1234, got %s", tolerated.CVEID)
-	}
-	if tolerated.Statement != "Accepted risk" {
-		t.Errorf("Expected Statement 'Accepted risk', got %s", tolerated.Statement)
-	}
-	if !tolerated.ToleratedAt.Equal(toleratedAt) {
-		t.Errorf("Expected ToleratedAt %v, got %v", toleratedAt, tolerated.ToleratedAt)
-	}
-	if tolerated.ExpiresAt == nil || !tolerated.ExpiresAt.Equal(expiresAt) {
-		t.Errorf("Expected ExpiresAt %v, got %v", expiresAt, tolerated.ExpiresAt)
-	}
-}
-
 func TestFilterToleratedCVEs(t *testing.T) {
 	tolerations := []CVEToleration{
 		{ID: "CVE-2024-1234", Statement: "Tolerated 1"},
@@ -132,24 +81,6 @@ func TestFilterToleratedCVEs(t *testing.T) {
 		if tc.CVEID == "CVE-2024-9999" {
 			t.Errorf("CVE-2024-9999 should not be in filtered results")
 		}
-	}
-}
-
-func TestToTolerationInfo(t *testing.T) {
-	tolerated := ToleratedCVE{
-		CVEID:       "CVE-2024-1234",
-		Statement:   "Accepted risk",
-		ToleratedAt: time.Now(),
-		ExpiresAt:   nil,
-	}
-
-	info := ToTolerationInfo(tolerated, "myrepo/myimage")
-
-	if info.CVEID != "CVE-2024-1234" {
-		t.Errorf("Expected CVEID CVE-2024-1234, got %s", info.CVEID)
-	}
-	if info.Repository != "myrepo/myimage" {
-		t.Errorf("Expected Repository myrepo/myimage, got %s", info.Repository)
 	}
 }
 

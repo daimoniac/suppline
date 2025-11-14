@@ -9,7 +9,6 @@ import (
 	"github.com/suppline/suppline/internal/policy"
 	"github.com/suppline/suppline/internal/queue"
 	"github.com/suppline/suppline/internal/scanner"
-	"github.com/suppline/suppline/internal/types"
 )
 
 // Pipeline orchestrates the complete scan workflow
@@ -145,9 +144,6 @@ func (p *Pipeline) scanPhase(ctx context.Context, imageRef string) (*scanner.SBO
 
 // policyPhase evaluates policy with CVE tolerations
 func (p *Pipeline) policyPhase(ctx context.Context, task *queue.ScanTask, imageRef string, scanResult *scanner.ScanResult) (*policy.PolicyDecision, error) {
-	// Convert queue tolerations to config format using canonical types
-	tolerations := convertQueueTolerationsToConfig(task.Tolerations)
-
 	// Get policy engine for this repository
 	policyEngine, err := p.getPolicyEngineForRepository(task.Repository)
 	if err != nil {
@@ -155,8 +151,8 @@ func (p *Pipeline) policyPhase(ctx context.Context, task *queue.ScanTask, imageR
 	}
 
 	// Evaluate policy
-	p.logger.Debug("evaluating policy", "image_ref", imageRef, "tolerations", len(tolerations))
-	policyDecision, err := policyEngine.Evaluate(ctx, imageRef, scanResult, tolerations)
+	p.logger.Debug("evaluating policy", "image_ref", imageRef, "tolerations", len(task.Tolerations))
+	policyDecision, err := policyEngine.Evaluate(ctx, imageRef, scanResult, task.Tolerations)
 	if err != nil {
 		return nil, fmt.Errorf("failed to evaluate policy: %w", err)
 	}
@@ -329,18 +325,4 @@ func (p *Pipeline) getPolicyEngineForRepository(repository string) (policy.Polic
 
 	// Create a new policy engine with the repository-specific config
 	return policy.NewEngine(p.logger, policyConfig)
-}
-
-// convertQueueTolerationsToConfig converts types.CVEToleration to types.CVEToleration
-// This is a simple pass-through conversion since the types have identical fields.
-func convertQueueTolerationsToConfig(queueTolerations []types.CVEToleration) []types.CVEToleration {
-	tolerations := make([]types.CVEToleration, len(queueTolerations))
-	for i, qt := range queueTolerations {
-		tolerations[i] = types.CVEToleration{
-			ID:        qt.ID,
-			Statement: qt.Statement,
-			ExpiresAt: qt.ExpiresAt,
-		}
-	}
-	return tolerations
 }
