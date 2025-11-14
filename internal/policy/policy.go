@@ -43,6 +43,7 @@ type PolicyDecision struct {
 	ShouldAttest       bool
 	CriticalVulnCount  int
 	ToleratedVulnCount int
+	UnfixedVulnCount   int
 	ToleratedCVEs      []string
 	ExpiringTolerations []ExpiringToleration
 }
@@ -173,6 +174,7 @@ func (e *Engine) Evaluate(ctx context.Context, imageRef string, result *scanner.
 	mediumCount := 0
 	lowCount := 0
 	toleratedCount := 0
+	unfixedCount := 0
 	failingVulns := make([]scanner.Vulnerability, 0)
 	
 	for _, vuln := range result.Vulnerabilities {
@@ -186,6 +188,11 @@ func (e *Engine) Evaluate(ctx context.Context, imageRef string, result *scanner.
 			"fixedVersion": vuln.FixedVersion,
 			"description": vuln.Description,
 			"tolerated":   isTolerated,
+		}
+		
+		// Count unfixed vulnerabilities (no fix available)
+		if vuln.FixedVersion == "" {
+			unfixedCount++
 		}
 		
 		if isTolerated {
@@ -222,6 +229,7 @@ func (e *Engine) Evaluate(ctx context.Context, imageRef string, result *scanner.
 
 	decision.CriticalVulnCount = criticalCount
 	decision.ToleratedVulnCount = toleratedCount
+	decision.UnfixedVulnCount = unfixedCount
 
 	// Evaluate CEL policy expression
 	celInput := map[string]interface{}{
