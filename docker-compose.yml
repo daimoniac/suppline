@@ -10,7 +10,7 @@ services:
       - "9090:9090"  # Metrics
       - "8081:8081"  # Health
     environment:
-      - REGSYNC_PATH=/config/regsync.yml
+      - SUPPLINE_CONFIG=/config/suppline.yml
       - LOG_LEVEL=info
       - METRICS_PORT=9090
       - HEALTH_PORT=8081
@@ -30,7 +30,7 @@ services:
       - ATTESTATION_KEY_PASSWORD=${ATTESTATION_KEY_PASSWORD}
     volumes:
       - ./data:/data
-      - ./regsync.yml:/config/regsync.yml:ro
+      - ./suppline.yml:/config/suppline.yml:ro
       - ./keys:/keys:ro
     depends_on:
       - trivy

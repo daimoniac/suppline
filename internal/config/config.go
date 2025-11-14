@@ -38,7 +38,7 @@ type ScannerConfig struct {
 	CustomHeaders map[string]string
 	Timeout       time.Duration
 	Insecure      bool
-	RegsyncPath   string // Path to regsync.yml for registry credentials
+	RegsyncPath   string // Path to suppline.yml for registry credentials
 	Logger        *slog.Logger // Logger instance for structured logging
 }
 
@@ -81,7 +81,7 @@ type ObservabilityConfig struct {
 // Load loads configuration from environment variables and files
 func Load() (*Config, error) {
 	cfg := &Config{
-		RegsyncPath: getEnv("REGSYNC_PATH", "regsync.yml"),
+		RegsyncPath: getEnv("SUPPLINE_CONFIG", "suppline.yml"),
 		Queue: QueueConfig{
 			BufferSize: getEnvInt("QUEUE_BUFFER_SIZE", 1000),
 		},
@@ -96,7 +96,7 @@ func Load() (*Config, error) {
 			CustomHeaders: make(map[string]string),
 			Timeout:       getEnvDuration("TRIVY_TIMEOUT", 5*time.Minute),
 			Insecure:      getEnvBool("TRIVY_INSECURE", false),
-			RegsyncPath:   getEnv("REGSYNC_PATH", "regsync.yml"),
+			RegsyncPath:   getEnv("SUPPLINE_CONFIG", "suppline.yml"),
 		},
 		Attestation: AttestationConfig{
 			KeyBased: struct {

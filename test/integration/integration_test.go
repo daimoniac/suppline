@@ -170,8 +170,8 @@ func getImageDigest(ctx context.Context, imageRef string) (string, error) {
 
 // TestTrivyScanner tests the Trivy scanner integration
 func TestTrivyScanner(t *testing.T) {
-	// Check if regsync.yml exists for authentication tests
-	regsyncPath := getEnv("REGSYNC_PATH", "../../regsync.yml")
+	// Check if suppline.yml exists for authentication tests
+	regsyncPath := getEnv("SUPPLINE_CONFIG", "../../suppline.yml")
 	
 	cfg := config.ScannerConfig{
 		ServerAddr:  getEnv("TRIVY_SERVER_ADDR", "localhost:4954"),
@@ -194,13 +194,13 @@ func TestTrivyScanner(t *testing.T) {
 	})
 	
 	t.Run("DockerConfigGeneration", func(t *testing.T) {
-		// Verify Docker config was generated if regsync.yml exists
+		// Verify Docker config was generated if suppline.yml exists
 		if _, err := os.Stat(regsyncPath); err == nil {
 			// Scanner should have generated Docker config
 			// This is tested implicitly by the private image scan below
-			t.Log("Docker config should be generated from regsync.yml")
+			t.Log("Docker config should be generated from suppline.yml")
 		} else {
-			t.Skip("Skipping Docker config test: regsync.yml not found")
+			t.Skip("Skipping Docker config test: suppline.yml not found")
 		}
 	})
 
@@ -1000,7 +1000,7 @@ func TestAttestation(t *testing.T) {
 		},
 	}
 
-	attestor, err := attestation.NewSigstoreAttestor(cfg, nil, slog.Default(), "../../regsync.yml.example")
+	attestor, err := attestation.NewSigstoreAttestor(cfg, nil, slog.Default(), "../../suppline.yml.example")
 	if err != nil {
 		t.Fatalf("Failed to create attestor: %v", err)
 	}
@@ -1178,7 +1178,7 @@ func TestOptimizedAttestationFlow(t *testing.T) {
 		},
 	}
 
-	attestor, err := attestation.NewSigstoreAttestor(attestorCfg, nil, slog.Default(), "../../regsync.yml.example")
+	attestor, err := attestation.NewSigstoreAttestor(attestorCfg, nil, slog.Default(), "../../suppline.yml.example")
 	if err != nil {
 		t.Fatalf("Failed to create attestor: %v", err)
 	}

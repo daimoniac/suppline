@@ -32,8 +32,8 @@ Configuration is loaded from environment variables. All settings have sensible d
 
 #### Regsync Configuration
 ```bash
-# Path to regsync.yml configuration file
-REGSYNC_PATH=regsync.yml                    # Default: regsync.yml
+# Path to suppline.yml configuration file
+SUPPLINE_CONFIG=suppline.yml                    # Default: suppline.yml
 ```
 
 #### Task Queue Configuration
@@ -144,7 +144,7 @@ For a quick start, you only need to set:
 
 ```bash
 # Required
-REGSYNC_PATH=regsync.yml
+SUPPLINE_CONFIG=suppline.yml
 ATTESTATION_KEY_PATH=/path/to/cosign.key
 
 # Optional but recommended
@@ -158,7 +158,7 @@ All other settings use sensible defaults.
 
 ## Regsync Configuration
 
-suppline reads the `regsync.yml` configuration file to determine which repositories to monitor and which CVEs to tolerate. See `regsync.yml.example` for a complete example.
+suppline reads the `suppline.yml` configuration file to determine which repositories to monitor and which CVEs to tolerate. See `suppline.yml.example` for a complete example.
 
 ### CVE Toleration Format
 
@@ -191,16 +191,16 @@ sync:
 - System logs warnings for tolerations expiring within 7 days
 - Tolerations without `expires_at` are permanent
 
-**For complete regsync.yml format documentation, see [deploy/DEPLOYMENT.md](deploy/DEPLOYMENT.md#regsync-configuration-format)**
+**For complete suppline.yml format documentation, see [deploy/DEPLOYMENT.md](deploy/DEPLOYMENT.md#regsync-configuration-format)**
 
 ## Quick Start
 
 ### Docker Compose (Recommended for Local Development)
 
 ```bash
-# 1. Create your regsync.yml configuration
-cp regsync.yml.example regsync.yml
-# Edit regsync.yml with your registry credentials and sync entries
+# 1. Create your suppline.yml configuration
+cp suppline.yml.example suppline.yml
+# Edit suppline.yml with your registry credentials and sync entries
 
 # 2. Generate signing keys (optional, for key-based signing)
 mkdir -p keys
@@ -219,7 +219,7 @@ docker compose logs -f
 
 ```bash
 # 1. Update configuration
-# Edit deploy/kubernetes/secret.yaml with your regsync.yml
+# Edit deploy/kubernetes/secret.yaml with your suppline.yml
 
 # 2. Generate signing keys
 cosign generate-key-pair
@@ -278,7 +278,7 @@ docker compose up -d
 trivy server --listen localhost:4954
 ```
 
-2. Create your `regsync.yml` configuration file
+2. Create your `suppline.yml` configuration file
 
 3. Run suppline:
 ```bash
@@ -417,7 +417,7 @@ make k8s-logs             # View Kubernetes logs
 
 - **[docs/API.md](docs/API.md)** - Complete API reference with examples
 - **[docs/CONFIGURATION.md](docs/CONFIGURATION.md)** - Complete configuration reference for all environment variables
-- **[regsync.yml.example](regsync.yml.example)** - Example regsync configuration with CVE tolerations
+- **[suppline.yml.example](suppline.yml.example)** - Example suppline configuration with CVE tolerations
 
 ### Operations
 

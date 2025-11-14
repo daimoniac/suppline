@@ -153,8 +153,8 @@ spec:
         secret:
           secretName: suppline-secrets
           items:
-          - key: regsync.yml
-            path: regsync.yml
+          - key: suppline.yml
+            path: suppline.yml
       - name: signing-key
         secret:
           secretName: suppline-signing-key

@@ -23,7 +23,7 @@ go.work
 *~
 
 # Configuration files with secrets
-/regsync.yml
+/suppline.yml
 /keys/*
 .env
 

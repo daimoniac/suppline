@@ -28,11 +28,11 @@ sync:
 	}
 
 	// Set environment variables
-	os.Setenv("REGSYNC_PATH", tmpfile.Name())
+	os.Setenv("SUPPLINE_CONFIG", tmpfile.Name())
 	os.Setenv("TRIVY_SERVER_ADDR", "localhost:4954")
 	os.Setenv("ATTESTATION_KEY_PATH", "/tmp/test.key")
 	defer func() {
-		os.Unsetenv("REGSYNC_PATH")
+		os.Unsetenv("SUPPLINE_CONFIG")
 		os.Unsetenv("TRIVY_SERVER_ADDR")
 		os.Unsetenv("ATTESTATION_KEY_PATH")
 	}()
@@ -86,7 +86,7 @@ sync:
 	}
 
 	// Set custom environment variables
-	os.Setenv("REGSYNC_PATH", tmpfile.Name())
+	os.Setenv("SUPPLINE_CONFIG", tmpfile.Name())
 	os.Setenv("QUEUE_BUFFER_SIZE", "2000")
 	os.Setenv("WORKER_RETRY_ATTEMPTS", "5")
 	os.Setenv("TRIVY_SERVER_ADDR", "trivy:4954")
@@ -94,7 +94,7 @@ sync:
 	os.Setenv("API_PORT", "9000")
 	os.Setenv("LOG_LEVEL", "debug")
 	defer func() {
-		os.Unsetenv("REGSYNC_PATH")
+		os.Unsetenv("SUPPLINE_CONFIG")
 		os.Unsetenv("QUEUE_BUFFER_SIZE")
 		os.Unsetenv("WORKER_RETRY_ATTEMPTS")
 		os.Unsetenv("TRIVY_SERVER_ADDR")
@@ -139,7 +139,7 @@ func TestValidate(t *testing.T) {
 		{
 			name: "valid config with key-based attestation",
 			config: &Config{
-				RegsyncPath: "regsync.yml",
+				RegsyncPath: "suppline.yml",
 				Scanner: ScannerConfig{
 					ServerAddr: "localhost:4954",
 				},
@@ -170,7 +170,7 @@ func TestValidate(t *testing.T) {
 		{
 			name: "missing trivy server",
 			config: &Config{
-				RegsyncPath: "regsync.yml",
+				RegsyncPath: "suppline.yml",
 				Scanner: ScannerConfig{
 					ServerAddr: "",
 				},
@@ -181,7 +181,7 @@ func TestValidate(t *testing.T) {
 		{
 			name: "invalid state store type",
 			config: &Config{
-				RegsyncPath: "regsync.yml",
+				RegsyncPath: "suppline.yml",
 				Scanner: ScannerConfig{
 					ServerAddr: "localhost:4954",
 				},
@@ -195,7 +195,7 @@ func TestValidate(t *testing.T) {
 		{
 			name: "postgres without URL",
 			config: &Config{
-				RegsyncPath: "regsync.yml",
+				RegsyncPath: "suppline.yml",
 				Scanner: ScannerConfig{
 					ServerAddr: "localhost:4954",
 				},
@@ -210,7 +210,7 @@ func TestValidate(t *testing.T) {
 		{
 			name: "key-based without key path",
 			config: &Config{
-				RegsyncPath: "regsync.yml",
+				RegsyncPath: "suppline.yml",
 				Scanner: ScannerConfig{
 					ServerAddr: "localhost:4954",
 				},
@@ -234,7 +234,7 @@ func TestValidate(t *testing.T) {
 		{
 			name: "keyless without OIDC config",
 			config: &Config{
-				RegsyncPath: "regsync.yml",
+				RegsyncPath: "suppline.yml",
 				Scanner: ScannerConfig{
 					ServerAddr: "localhost:4954",
 				},
@@ -256,7 +256,7 @@ func TestValidate(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			// Create temp file for tests that need it
-			if tt.config.RegsyncPath == "regsync.yml" {
+			if tt.config.RegsyncPath == "suppline.yml" {
 				tmpfile, err := os.CreateTemp("", "regsync-*.yml")
 				if err != nil {
 					t.Fatal(err)

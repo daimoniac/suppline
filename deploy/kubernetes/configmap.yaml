@@ -32,4 +32,4 @@ data:
   RESCAN_INTERVAL: "24h"
   
   # Regsync configuration path
-  REGSYNC_PATH: "/config/regsync.yml"
+  SUPPLINE_CONFIG: "/config/suppline.yml"

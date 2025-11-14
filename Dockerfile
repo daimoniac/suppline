@@ -59,7 +59,7 @@ USER suppline
 EXPOSE 8080 9090 8081
 
 # Set default environment variables
-ENV REGSYNC_PATH=/config/regsync.yml \
+ENV SUPPLINE_CONFIG=/config/suppline.yml \
     SQLITE_PATH=/data/suppline.db \
     LOG_LEVEL=info \
     METRICS_PORT=9090 \

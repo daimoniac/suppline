@@ -415,9 +415,9 @@ type ReevaluatePolicyResponse struct {
 	Repository string `json:"repository,omitempty"`
 }
 
-// handleReevaluatePolicy reloads regsync.yml and re-evaluates policy for all images
+// handleReevaluatePolicy reloads suppline.yml and re-evaluates policy for all images
 // @Summary Re-evaluate policy
-// @Description Reload regsync.yml configuration and re-evaluate policy for all images or a specific repository
+// @Description Reload suppline.yml configuration and re-evaluate policy for all images or a specific repository
 // @Tags Policy
 // @Accept json
 // @Produce json

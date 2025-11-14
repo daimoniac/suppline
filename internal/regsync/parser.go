@@ -68,7 +68,7 @@ type PolicyConfig struct {
 	FailureMessage string `yaml:"failureMessage,omitempty"`
 }
 
-// Parse reads and parses a regsync.yml configuration file
+// Parse reads and parses a suppline.yml configuration file
 func Parse(path string) (*Config, error) {
 	data, err := os.ReadFile(path)
 	if err != nil {

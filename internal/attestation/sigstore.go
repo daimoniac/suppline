@@ -39,7 +39,7 @@ func NewSigstoreAttestor(config AttestationConfig, authConfig map[string]authn.A
 		return nil, fmt.Errorf("key path is required for key-based signing")
 	}
 
-	// Authenticate cosign with registry credentials from regsync.yml
+	// Authenticate cosign with registry credentials from suppline.yml
 	if err := attestor.authenticateRegistries(regsyncPath); err != nil {
 		return nil, fmt.Errorf("failed to authenticate registries for cosign: %w", err)
 	}
@@ -47,7 +47,7 @@ func NewSigstoreAttestor(config AttestationConfig, authConfig map[string]authn.A
 	return attestor, nil
 }
 
-// authenticateRegistries logs into registries using credentials from regsync.yml
+// authenticateRegistries logs into registries using credentials from suppline.yml
 func (a *SigstoreAttestor) authenticateRegistries(regsyncPath string) error {
 	// Parse regsync config
 	regsyncCfg, err := regsync.Parse(regsyncPath)

@@ -29,10 +29,10 @@ type DockerAuth struct {
 	Auth string `json:"auth"`
 }
 
-// GenerateDockerConfigFromRegsync reads regsync.yml and generates a Docker config.json
+// GenerateDockerConfigFromRegsync reads suppline.yml and generates a Docker config.json
 // that Trivy can use for registry authentication
 func GenerateDockerConfigFromRegsync(regsyncPath string) (string, error) {
-	// Read regsync.yml
+	// Read suppline.yml
 	data, err := os.ReadFile(regsyncPath)
 	if err != nil {
 		return "", fmt.Errorf("failed to read regsync config: %w", err)

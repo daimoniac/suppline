@@ -40,7 +40,7 @@ func NewTrivyScanner(cfg config.ScannerConfig) (*TrivyScanner, error) {
 		logger:        logger,
 	}
 
-	// Generate Docker config from regsync.yml if registry credentials are needed
+	// Generate Docker config from suppline.yml if registry credentials are needed
 	if cfg.RegsyncPath != "" {
 		dockerConfigPath, err := GenerateDockerConfigFromRegsync(cfg.RegsyncPath)
 		if err != nil {
