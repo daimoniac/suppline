@@ -2,11 +2,11 @@ package registry
 
 import (
 	"context"
-	"github.com/suppline/suppline/internal/types"
+	"github.com/daimoniac/suppline/daimoniac/suppline/internal/types"
 	"testing"
 	"time"
 
-	"github.com/suppline/suppline/internal/config"
+	"github.com/daimoniac/suppline/daimoniac/suppline/internal/config"
 )
 
 func TestNewClient(t *testing.T) {

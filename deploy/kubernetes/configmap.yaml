@@ -1,10 +1,10 @@
 apiVersion: v1
 kind: ConfigMap
 metadata:
-  name: suppline-config
-  namespace: suppline
+  name: daimoniac/suppline-config
+  namespace: daimoniac/suppline
   labels:
-    app: suppline
+    app: daimoniac/suppline
 data:
   # Application configuration
   LOG_LEVEL: "info"
@@ -28,8 +28,8 @@ data:
   
   # State store configuration
   STATE_STORE_TYPE: "sqlite"
-  SQLITE_PATH: "/data/suppline.db"
+  SQLITE_PATH: "/data/daimoniac/suppline.db"
   RESCAN_INTERVAL: "24h"
   
   # Regsync configuration path
-  SUPPLINE_CONFIG: "/config/suppline.yml"
+  SUPPLINE_CONFIG: "/config/daimoniac/suppline.yml"

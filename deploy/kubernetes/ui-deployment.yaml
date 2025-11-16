@@ -1,10 +1,10 @@
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: suppline-ui
-  namespace: suppline
+  name: daimoniac/suppline-ui
+  namespace: daimoniac/suppline
   labels:
-    app: suppline-ui
+    app: daimoniac/suppline-ui
     app.kubernetes.io/component: web-ui
 spec:
   replicas: 2
@@ -15,14 +15,14 @@ spec:
       maxUnavailable: 0
   selector:
     matchLabels:
-      app: suppline-ui
+      app: daimoniac/suppline-ui
   template:
     metadata:
       labels:
-        app: suppline-ui
+        app: daimoniac/suppline-ui
         app.kubernetes.io/component: web-ui
     spec:
-      serviceAccountName: suppline
+      serviceAccountName: daimoniac/suppline
       securityContext:
         runAsNonRoot: true
         runAsUser: 101  # nginx user
@@ -45,7 +45,7 @@ spec:
         - name: API_BASE_URL
           valueFrom:
             configMapKeyRef:
-              name: suppline-ui-config
+              name: daimoniac/suppline-ui-config
               key: API_BASE_URL
         volumeMounts:
         - name: html
@@ -108,10 +108,10 @@ spec:
       volumes:
       - name: nginx-config
         configMap:
-          name: suppline-ui-nginx
+          name: daimoniac/suppline-ui-nginx
       - name: html
         configMap:
-          name: suppline-ui-files
+          name: daimoniac/suppline-ui-files
       - name: nginx-cache
         emptyDir: {}
       - name: nginx-run

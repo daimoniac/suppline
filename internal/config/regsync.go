@@ -5,12 +5,12 @@ import (
 	"strings"
 	"time"
 
-	"github.com/suppline/suppline/internal/errors"
-	"github.com/suppline/suppline/internal/types"
+	"github.com/daimoniac/suppline/daimoniac/suppline/internal/errors"
+	"github.com/daimoniac/suppline/daimoniac/suppline/internal/types"
 	"gopkg.in/yaml.v3"
 )
 
-// ParseRegsync reads and parses a suppline.yml configuration file
+// ParseRegsync reads and parses a daimoniac/suppline.yml configuration file
 func ParseRegsync(path string) (*RegsyncConfig, error) {
 	data, err := os.ReadFile(path)
 	if err != nil {

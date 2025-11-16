@@ -1,6 +1,6 @@
 # Binaries
-/suppline
-/suppline-ui
+suppline
+suppline-ui
 
 # Test binary
 *.test
@@ -23,7 +23,7 @@ go.work
 *~
 
 # Configuration files with secrets
-/suppline.yml
+suppline.yml
 /keys/*
 .env
 

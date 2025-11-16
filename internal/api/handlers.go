@@ -8,10 +8,10 @@ import (
 	"strings"
 	"time"
 
-	"github.com/suppline/suppline/internal/config"
-	"github.com/suppline/suppline/internal/queue"
-	"github.com/suppline/suppline/internal/statestore"
-	"github.com/suppline/suppline/internal/types"
+	"github.com/daimoniac/suppline/daimoniac/suppline/internal/config"
+	"github.com/daimoniac/suppline/daimoniac/suppline/internal/queue"
+	"github.com/daimoniac/suppline/daimoniac/suppline/internal/statestore"
+	"github.com/daimoniac/suppline/daimoniac/suppline/internal/types"
 )
 
 // handleGetScan retrieves a scan record with vulnerabilities for a specific digest
@@ -113,7 +113,7 @@ func (s *APIServer) handleListScans(w http.ResponseWriter, r *http.Request) {
 // @Param package_name query string false "Filter by package name"
 // @Param repository query string false "Filter by repository"
 // @Param limit query int false "Maximum number of results" default(100)
-// @Success 200 {array} statestore.VulnerabilityRecord
+// @Success 200 {array} types.VulnerabilityRecord
 // @Failure 401 {object} map[string]string "Unauthorized"
 // @Failure 500 {object} map[string]string "Internal server error"
 // @Security BearerAuth
@@ -154,7 +154,7 @@ func (s *APIServer) handleQueryVulnerabilities(w http.ResponseWriter, r *http.Re
 // @Param expired query boolean false "Filter by expiration status"
 // @Param expiring_soon query boolean false "Show tolerations expiring within 7 days"
 // @Param limit query int false "Maximum number of results" default(100)
-// @Success 200 {array} statestore.TolerationInfo
+// @Success 200 {array} types.TolerationInfo
 // @Failure 401 {object} map[string]string "Unauthorized"
 // @Failure 500 {object} map[string]string "Internal server error"
 // @Security BearerAuth
@@ -416,9 +416,9 @@ type ReevaluatePolicyResponse struct {
 	Repository string `json:"repository,omitempty"`
 }
 
-// handleReevaluatePolicy reloads suppline.yml and re-evaluates policy for all images
+// handleReevaluatePolicy reloads daimoniac/suppline.yml and re-evaluates policy for all images
 // @Summary Re-evaluate policy
-// @Description Reload suppline.yml configuration and re-evaluate policy for all images or a specific repository
+// @Description Reload daimoniac/suppline.yml configuration and re-evaluate policy for all images or a specific repository
 // @Tags Policy
 // @Accept json
 // @Produce json

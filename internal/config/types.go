@@ -4,7 +4,7 @@ import (
 	"log/slog"
 	"time"
 
-	"github.com/suppline/suppline/internal/types"
+	"github.com/daimoniac/suppline/daimoniac/suppline/internal/types"
 )
 
 // Config represents the complete application configuration
@@ -38,7 +38,7 @@ type ScannerConfig struct {
 	CustomHeaders map[string]string
 	Timeout       time.Duration
 	Insecure      bool
-	RegsyncPath   string // Path to suppline.yml for registry credentials
+	RegsyncPath   string // Path to daimoniac/suppline.yml for registry credentials
 	Logger        *slog.Logger // Logger instance for structured logging
 }
 

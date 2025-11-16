@@ -81,9 +81,9 @@ run_unit_tests() {
     echo ""
     
     print_test "Application Build"
-    if go build -o /tmp/suppline-test ./cmd/suppline 2>&1; then
+    if go build -o /tmp/daimoniac/suppline-test ./cmd/daimoniac/suppline 2>&1; then
         print_success "Application builds successfully"
-        rm -f /tmp/suppline-test
+        rm -f /tmp/daimoniac/suppline-test
     else
         print_error "Application build failed"
         return 1
@@ -145,21 +145,21 @@ run_integration_tests() {
 run_trivy_auth_test() {
     print_header "Testing Trivy Authentication"
     
-    if [ ! -f "suppline.yml" ]; then
-        print_error "suppline.yml not found"
+    if [ ! -f "daimoniac/suppline.yml" ]; then
+        print_error "daimoniac/suppline.yml not found"
         return 1
     fi
     
     # Test with trivy registry login (new approach)
     print_test "Trivy Registry Login"
     
-    # Extract credentials from suppline.yml
-    REGISTRY=$(grep -A 3 "^creds:" suppline.yml | grep "registry:" | head -1 | awk '{print $2}')
-    USERNAME=$(grep -A 3 "^creds:" suppline.yml | grep "user:" | head -1 | awk '{print $2}')
-    PASSWORD=$(grep -A 3 "^creds:" suppline.yml | grep "pass:" | head -1 | awk '{print $2}')
+    # Extract credentials from daimoniac/suppline.yml
+    REGISTRY=$(grep -A 3 "^creds:" daimoniac/suppline.yml | grep "registry:" | head -1 | awk '{print $2}')
+    USERNAME=$(grep -A 3 "^creds:" daimoniac/suppline.yml | grep "user:" | head -1 | awk '{print $2}')
+    PASSWORD=$(grep -A 3 "^creds:" daimoniac/suppline.yml | grep "pass:" | head -1 | awk '{print $2}')
     
     if [ -z "$REGISTRY" ] || [ -z "$USERNAME" ] || [ -z "$PASSWORD" ]; then
-        print_error "Could not extract credentials from suppline.yml"
+        print_error "Could not extract credentials from daimoniac/suppline.yml"
         return 1
     fi
     
@@ -174,10 +174,10 @@ run_trivy_auth_test() {
     
     # Test scanning a private image
     print_test "Scanning Private Image"
-    PRIVATE_IMAGE=$(grep "target:" suppline.yml | head -1 | awk '{print $2}')
+    PRIVATE_IMAGE=$(grep "target:" daimoniac/suppline.yml | head -1 | awk '{print $2}')
     
     if [ -z "$PRIVATE_IMAGE" ]; then
-        print_info "No private image found in suppline.yml, using public image"
+        print_info "No private image found in daimoniac/suppline.yml, using public image"
         PRIVATE_IMAGE="alpine:3.19"
     else
         # Add a tag if not present
@@ -205,20 +205,20 @@ run_trivy_auth_test() {
 run_cosign_auth_test() {
     print_header "Testing Cosign Authentication"
     
-    if [ ! -f "suppline.yml" ]; then
-        print_error "suppline.yml not found"
+    if [ ! -f "daimoniac/suppline.yml" ]; then
+        print_error "daimoniac/suppline.yml not found"
         return 1
     fi
     
     print_test "Cosign Registry Login"
     
-    # Extract credentials from suppline.yml
-    REGISTRY=$(grep -A 3 "^creds:" suppline.yml | grep "registry:" | head -1 | awk '{print $2}')
-    USERNAME=$(grep -A 3 "^creds:" suppline.yml | grep "user:" | head -1 | awk '{print $2}')
-    PASSWORD=$(grep -A 3 "^creds:" suppline.yml | grep "pass:" | head -1 | awk '{print $2}')
+    # Extract credentials from daimoniac/suppline.yml
+    REGISTRY=$(grep -A 3 "^creds:" daimoniac/suppline.yml | grep "registry:" | head -1 | awk '{print $2}')
+    USERNAME=$(grep -A 3 "^creds:" daimoniac/suppline.yml | grep "user:" | head -1 | awk '{print $2}')
+    PASSWORD=$(grep -A 3 "^creds:" daimoniac/suppline.yml | grep "pass:" | head -1 | awk '{print $2}')
     
     if [ -z "$REGISTRY" ] || [ -z "$USERNAME" ] || [ -z "$PASSWORD" ]; then
-        print_error "Could not extract credentials from suppline.yml"
+        print_error "Could not extract credentials from daimoniac/suppline.yml"
         return 1
     fi
     

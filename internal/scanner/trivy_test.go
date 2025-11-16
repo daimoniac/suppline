@@ -3,7 +3,7 @@ package scanner
 import (
 	"testing"
 
-	"github.com/suppline/suppline/internal/config"
+	"github.com/daimoniac/suppline/daimoniac/suppline/internal/config"
 )
 
 func TestNewTrivyScanner(t *testing.T) {

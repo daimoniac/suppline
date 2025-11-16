@@ -13,17 +13,17 @@ import (
 	"time"
 
 	"github.com/joho/godotenv"
-	"github.com/suppline/suppline/internal/api"
-	"github.com/suppline/suppline/internal/attestation"
-	"github.com/suppline/suppline/internal/config"
-	"github.com/suppline/suppline/internal/observability"
-	"github.com/suppline/suppline/internal/policy"
-	"github.com/suppline/suppline/internal/queue"
-	"github.com/suppline/suppline/internal/registry"
-	"github.com/suppline/suppline/internal/scanner"
-	"github.com/suppline/suppline/internal/statestore"
-	"github.com/suppline/suppline/internal/watcher"
-	"github.com/suppline/suppline/internal/worker"
+	"github.com/daimoniac/suppline/daimoniac/suppline/internal/api"
+	"github.com/daimoniac/suppline/daimoniac/suppline/internal/attestation"
+	"github.com/daimoniac/suppline/daimoniac/suppline/internal/config"
+	"github.com/daimoniac/suppline/daimoniac/suppline/internal/observability"
+	"github.com/daimoniac/suppline/daimoniac/suppline/internal/policy"
+	"github.com/daimoniac/suppline/daimoniac/suppline/internal/queue"
+	"github.com/daimoniac/suppline/daimoniac/suppline/internal/registry"
+	"github.com/daimoniac/suppline/daimoniac/suppline/internal/scanner"
+	"github.com/daimoniac/suppline/daimoniac/suppline/internal/statestore"
+	"github.com/daimoniac/suppline/daimoniac/suppline/internal/watcher"
+	"github.com/daimoniac/suppline/daimoniac/suppline/internal/worker"
 )
 
 func main() {
@@ -49,7 +49,7 @@ func run() error {
 	}
 
 	logger := observability.NewLogger(cfg.Observability.LogLevel)
-	logger.Info("starting suppline",
+	logger.Info("starting daimoniac/suppline",
 		"regsync_path", cfg.RegsyncPath,
 		"log_level", cfg.Observability.LogLevel)
 

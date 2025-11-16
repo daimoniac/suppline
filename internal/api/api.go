@@ -9,15 +9,15 @@ import (
 	"strings"
 	"time"
 
-	"github.com/suppline/suppline/internal/config"
-	"github.com/suppline/suppline/internal/queue"
-	"github.com/suppline/suppline/internal/statestore"
+	"github.com/daimoniac/suppline/daimoniac/suppline/internal/config"
+	"github.com/daimoniac/suppline/daimoniac/suppline/internal/queue"
+	"github.com/daimoniac/suppline/daimoniac/suppline/internal/statestore"
 	httpSwagger "github.com/swaggo/http-swagger"
 	
-	_ "github.com/suppline/suppline/build/swagger" // Import generated docs
+	_ "github.com/daimoniac/suppline/daimoniac/suppline/build/swagger" // Import generated docs
 )
 
-// @title suppline API
+// @title daimoniac/suppline API
 // @version 1.0
 // @description REST API for querying container image scan results, managing CVE tolerations, and triggering security operations.
 // @description
@@ -28,7 +28,7 @@ import (
 // @description - Trigger rescans and policy re-evaluations
 // @description - Health checks and metrics
 
-// @contact.name suppline
+// @contact.name daimoniac/suppline
 // @license.name Apache 2.0
 // @license.url https://www.apache.org/licenses/LICENSE-2.0.html
 

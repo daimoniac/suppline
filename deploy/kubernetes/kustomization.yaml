@@ -1,7 +1,7 @@
 apiVersion: kustomize.config.k8s.io/v1beta1
 kind: Kustomization
 
-namespace: suppline
+namespace: daimoniac/suppline
 
 resources:
   - namespace.yaml
@@ -12,14 +12,14 @@ resources:
 
 # Generate ConfigMap from static files
 configMapGenerator:
-  - name: suppline-ui-files
+  - name: daimoniac/suppline-ui-files
     files:
-      - index.html=../../cmd/suppline-ui/web/index.html
-      - css/main.css=../../cmd/suppline-ui/web/css/main.css
-      - css/components.css=../../cmd/suppline-ui/web/css/components.css
-      - js/main.js=../../cmd/suppline-ui/web/js/main.js
-      - js/api.js=../../cmd/suppline-ui/web/js/api.js
-      - js/auth.js=../../cmd/suppline-ui/web/js/auth.js
-      - js/router.js=../../cmd/suppline-ui/web/js/router.js
+      - index.html=../../cmd/daimoniac/suppline-ui/web/index.html
+      - css/main.css=../../cmd/daimoniac/suppline-ui/web/css/main.css
+      - css/components.css=../../cmd/daimoniac/suppline-ui/web/css/components.css
+      - js/main.js=../../cmd/daimoniac/suppline-ui/web/js/main.js
+      - js/api.js=../../cmd/daimoniac/suppline-ui/web/js/api.js
+      - js/auth.js=../../cmd/daimoniac/suppline-ui/web/js/auth.js
+      - js/router.js=../../cmd/daimoniac/suppline-ui/web/js/router.js
     options:
       disableNameSuffixHash: true

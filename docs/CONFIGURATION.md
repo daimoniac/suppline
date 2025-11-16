@@ -1,6 +1,6 @@
 # Configuration Reference
 
-Complete reference for all configuration options in suppline.
+Complete reference for all configuration options in daimoniac/suppline.
 
 ## Table of Contents
 
@@ -14,7 +14,7 @@ Complete reference for all configuration options in suppline.
 Configuration is loaded from multiple sources in this priority order:
 
 1. **Default values** - Built-in defaults in the application
-2. **Regsync file** - Registry and toleration configuration from `suppline.yml`
+2. **Regsync file** - Registry and toleration configuration from `daimoniac/suppline.yml`
 3. **Environment variables** - Runtime configuration overrides
 
 ## Environment Variables
@@ -23,7 +23,7 @@ Configuration is loaded from multiple sources in this priority order:
 
 | Variable | Type | Default | Description |
 |----------|------|---------|-------------|
-| `SUPPLINE_CONFIG` | string | `suppline.yml` | Path to regsync configuration file |
+| `SUPPLINE_CONFIG` | string | `daimoniac/suppline.yml` | Path to regsync configuration file |
 | `LOG_LEVEL` | string | `info` | Log level: `debug`, `info`, `warn`, `error` |
 
 ### Queue & Worker
@@ -49,7 +49,7 @@ Configuration is loaded from multiple sources in this priority order:
 | Variable | Type | Default | Description |
 |----------|------|---------|-------------|
 | `STATE_STORE_TYPE` | string | `sqlite` | State store type: `sqlite`, `postgres`, or `memory` |
-| `SQLITE_PATH` | string | `suppline.db` | SQLite database file path |
+| `SQLITE_PATH` | string | `daimoniac/suppline.db` | SQLite database file path |
 | `POSTGRES_URL` | string | `` | PostgreSQL connection URL (if type=postgres) |
 | `RESCAN_INTERVAL` | duration | `24h` | Default rescan interval for unchanged images |
 
@@ -80,7 +80,7 @@ Configuration is loaded from multiple sources in this priority order:
 
 ## Regsync Configuration
 
-The `suppline.yml` file defines registry credentials, sync entries, and CVE tolerations.
+The `daimoniac/suppline.yml` file defines registry credentials, sync entries, and CVE tolerations.
 
 ### File Structure
 
@@ -278,7 +278,7 @@ sync:
 
 ```bash
 # .env file
-SUPPLINE_CONFIG=suppline.yml
+SUPPLINE_CONFIG=daimoniac/suppline.yml
 ATTESTATION_KEY_PATH=/keys/cosign.key
 ```
 
@@ -286,12 +286,12 @@ ATTESTATION_KEY_PATH=/keys/cosign.key
 
 ```bash
 # .env file
-SUPPLINE_CONFIG=suppline.yml
+SUPPLINE_CONFIG=daimoniac/suppline.yml
 ATTESTATION_KEY_PATH=./keys/cosign.key
 LOG_LEVEL=debug
 TRIVY_SERVER_ADDR=localhost:4954
 STATE_STORE_TYPE=sqlite
-SQLITE_PATH=./suppline.db
+SQLITE_PATH=./daimoniac/suppline.db
 API_KEY=dev-secret-key
 RESCAN_INTERVAL=1h
 ```
@@ -307,7 +307,7 @@ QUEUE_BUFFER_SIZE=2000
 TRIVY_SERVER_ADDR=trivy:4954
 TRIVY_TIMEOUT=10m
 STATE_STORE_TYPE=sqlite
-SQLITE_PATH=/data/suppline.db
+SQLITE_PATH=/data/daimoniac/suppline.db
 LOG_LEVEL=info
 METRICS_PORT=9090
 HEALTH_CHECK_PORT=8081
@@ -315,7 +315,7 @@ API_ENABLED=true
 API_PORT=8080
 
 # Kubernetes Secret
-SUPPLINE_CONFIG=/config/suppline.yml
+SUPPLINE_CONFIG=/config/daimoniac/suppline.yml
 ATTESTATION_KEY_PATH=/keys/cosign.key
 ATTESTATION_KEY_PASSWORD=<from-secret>
 API_KEY=<from-secret>

@@ -6,9 +6,9 @@ import (
 	"strings"
 	"time"
 
-	"github.com/suppline/suppline/internal/config"
-	"github.com/suppline/suppline/internal/errors"
-	"github.com/suppline/suppline/internal/scanner"
+	"github.com/daimoniac/suppline/daimoniac/suppline/internal/config"
+	"github.com/daimoniac/suppline/daimoniac/suppline/internal/errors"
+	"github.com/daimoniac/suppline/daimoniac/suppline/internal/scanner"
 )
 
 // SCAIGenerator creates SCAI attestation predicates

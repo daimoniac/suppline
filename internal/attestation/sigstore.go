@@ -9,8 +9,8 @@ import (
 	"os/exec"
 	"time"
 
-	"github.com/suppline/suppline/internal/errors"
-	"github.com/suppline/suppline/internal/scanner"
+	"github.com/daimoniac/suppline/daimoniac/suppline/internal/errors"
+	"github.com/daimoniac/suppline/daimoniac/suppline/internal/scanner"
 )
 
 // SigstoreAttestor implements the Attestor interface using cosign CLI

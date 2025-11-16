@@ -5,7 +5,7 @@ import (
 	"errors"
 	"time"
 
-	"github.com/suppline/suppline/internal/types"
+	"github.com/daimoniac/suppline/daimoniac/suppline/internal/types"
 )
 
 // ErrScanNotFound is returned by GetLastScan when no scan record exists for the given digest.

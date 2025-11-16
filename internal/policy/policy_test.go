@@ -6,8 +6,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/suppline/suppline/internal/scanner"
-	"github.com/suppline/suppline/internal/types"
+	"github.com/daimoniac/suppline/daimoniac/suppline/internal/scanner"
+	"github.com/daimoniac/suppline/daimoniac/suppline/internal/types"
 )
 
 func TestEngine_Evaluate_NoCriticalVulnerabilities(t *testing.T) {

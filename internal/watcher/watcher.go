@@ -7,12 +7,12 @@ import (
 	"log/slog"
 	"time"
 
-	"github.com/suppline/suppline/internal/config"
-	"github.com/suppline/suppline/internal/observability"
-	"github.com/suppline/suppline/internal/queue"
-	"github.com/suppline/suppline/internal/registry"
-	"github.com/suppline/suppline/internal/statestore"
-	"github.com/suppline/suppline/internal/types"
+	"github.com/daimoniac/suppline/daimoniac/suppline/internal/config"
+	"github.com/daimoniac/suppline/daimoniac/suppline/internal/observability"
+	"github.com/daimoniac/suppline/daimoniac/suppline/internal/queue"
+	"github.com/daimoniac/suppline/daimoniac/suppline/internal/registry"
+	"github.com/daimoniac/suppline/daimoniac/suppline/internal/statestore"
+	"github.com/daimoniac/suppline/daimoniac/suppline/internal/types"
 )
 
 // Watcher continuously monitors the container registry for new and updated images

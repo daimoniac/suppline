@@ -2,7 +2,7 @@ package statestore
 
 import (
 	"context"
-	"github.com/suppline/suppline/internal/types"
+	"github.com/daimoniac/suppline/daimoniac/suppline/internal/types"
 	"os"
 	"testing"
 	"time"

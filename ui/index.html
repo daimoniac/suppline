@@ -1,0 +1,66 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta http-equiv="Content-Security-Policy" 
+          content="default-src 'self'; 
+                   script-src 'self'; 
+                   style-src 'self' 'unsafe-hashes' 'sha256-biLFinpqYMtWHmXfkA1BPeCY0/fNt46SAZ+BBk5YUog=' 'sha256-it3JZTT9nsBcOoLAgDGOgltmaGoZMFMbJ7GbQOFnFw8='; 
+                   img-src 'self' data:; 
+                   connect-src 'self' http://localhost:8080 http://localhost:* ws://localhost:*;">
+    <meta name="referrer" content="strict-origin-when-cross-origin">
+    <title>daimoniac/suppline Dashboard</title>
+    <link rel="stylesheet" href="/css/main.css">
+    <link rel="stylesheet" href="/css/components.css">
+<link rel="icon" type="image/png" href="/favicon-96x96.png" sizes="96x96" />
+<link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+<link rel="shortcut icon" href="/favicon.ico" />
+<link rel="apple-touch-icon" sizes="180x180" href="/apple-touch-icon.png" />
+<link rel="manifest" href="/site.webmanifest" />
+</head>
+<body>
+    <div id="app">
+        <header>
+            <nav>
+                <div class="nav-brand">
+                    <a href="/" data-link data-route="/"><img src="/daimoniac/suppline-icon-only.png" alt="daimoniac/suppline Logo" class="logo"></a>
+                    <h1>daimoniac/suppline</h1>
+                </div>
+                <ul id="nav-menu">
+                    <li><a href="/" data-link data-route="/">Dashboard</a></li>
+                    <li><a href="/scans" data-link data-route="/scans">Scans</a></li>
+                    <li><a href="/failed" data-link data-route="/failed">Failed Images</a></li>
+                    <li><a href="/vulnerabilities" data-link data-route="/vulnerabilities">Vulnerabilities</a></li>
+                    <li><a href="/tolerations" data-link data-route="/tolerations">Tolerations</a></li>
+                    <li><a href="#" id="logout-btn">Logout</a></li>
+                </ul>
+            </nav>
+        </header>
+        
+        <main id="content">
+            <!-- Dynamic content will be loaded here -->
+            <div class="loading">Loading...</div>
+        </main>
+    </div>
+    
+    <!-- Authentication Modal -->
+    <div id="auth-modal" class="modal hidden">
+        <div class="modal-content">
+            <h2>API Authentication Required</h2>
+            <p>Please enter your API key to access the dashboard.</p>
+            <form id="auth-form">
+                <input type="password" id="api-key-input" placeholder="Enter API Key" required>
+                <button type="submit">Authenticate</button>
+            </form>
+            <div id="auth-error" class="error hidden"></div>
+        </div>
+    </div>
+    
+    <!-- Notification Container -->
+    <div id="notifications"></div>
+    
+    <!-- Load application scripts -->
+    <script type="module" src="/js/main.js"></script>
+</body>
+</html>

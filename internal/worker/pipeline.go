@@ -6,10 +6,10 @@ import (
 	"log/slog"
 	"time"
 
-	"github.com/suppline/suppline/internal/errors"
-	"github.com/suppline/suppline/internal/policy"
-	"github.com/suppline/suppline/internal/queue"
-	"github.com/suppline/suppline/internal/scanner"
+	"github.com/daimoniac/suppline/daimoniac/suppline/internal/errors"
+	"github.com/daimoniac/suppline/daimoniac/suppline/internal/policy"
+	"github.com/daimoniac/suppline/daimoniac/suppline/internal/queue"
+	"github.com/daimoniac/suppline/daimoniac/suppline/internal/scanner"
 )
 
 // Pipeline orchestrates the complete scan workflow

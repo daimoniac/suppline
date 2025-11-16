@@ -1,10 +1,10 @@
 apiVersion: v1
 kind: Service
 metadata:
-  name: suppline
-  namespace: suppline
+  name: daimoniac/suppline
+  namespace: daimoniac/suppline
   labels:
-    app: suppline
+    app: daimoniac/suppline
 spec:
   type: ClusterIP
   ports:
@@ -21,15 +21,15 @@ spec:
     targetPort: health
     protocol: TCP
   selector:
-    app: suppline
+    app: daimoniac/suppline
 ---
 apiVersion: v1
 kind: Service
 metadata:
-  name: suppline-metrics
-  namespace: suppline
+  name: daimoniac/suppline-metrics
+  namespace: daimoniac/suppline
   labels:
-    app: suppline
+    app: daimoniac/suppline
   annotations:
     prometheus.io/scrape: "true"
     prometheus.io/port: "9090"
@@ -42,4 +42,4 @@ spec:
     targetPort: metrics
     protocol: TCP
   selector:
-    app: suppline
+    app: daimoniac/suppline

@@ -1,10 +1,10 @@
 apiVersion: v1
 kind: PersistentVolumeClaim
 metadata:
-  name: suppline-data
-  namespace: suppline
+  name: daimoniac/suppline-data
+  namespace: daimoniac/suppline
   labels:
-    app: suppline
+    app: daimoniac/suppline
 spec:
   accessModes:
     - ReadWriteOnce
@@ -18,9 +18,9 @@ apiVersion: v1
 kind: PersistentVolumeClaim
 metadata:
   name: trivy-cache
-  namespace: suppline
+  namespace: daimoniac/suppline
   labels:
-    app: suppline
+    app: daimoniac/suppline
     component: trivy
 spec:
   accessModes:

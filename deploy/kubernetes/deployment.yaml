@@ -1,27 +1,27 @@
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: suppline
-  namespace: suppline
+  name: daimoniac/suppline
+  namespace: daimoniac/suppline
   labels:
-    app: suppline
+    app: daimoniac/suppline
 spec:
   replicas: 1
   strategy:
     type: Recreate  # Use Recreate to avoid multiple instances with SQLite
   selector:
     matchLabels:
-      app: suppline
+      app: daimoniac/suppline
   template:
     metadata:
       labels:
-        app: suppline
+        app: daimoniac/suppline
       annotations:
         prometheus.io/scrape: "true"
         prometheus.io/port: "9090"
         prometheus.io/path: "/metrics"
     spec:
-      serviceAccountName: suppline
+      serviceAccountName: daimoniac/suppline
       securityContext:
         runAsNonRoot: true
         runAsUser: 1000
@@ -30,8 +30,8 @@ spec:
       
       containers:
       # Main application container
-      - name: suppline
-        image: suppline:latest
+      - name: daimoniac/suppline
+        image: daimoniac/suppline:latest
         imagePullPolicy: IfNotPresent
         
         ports:
@@ -47,9 +47,9 @@ spec:
         
         envFrom:
         - configMapRef:
-            name: suppline-config
+            name: daimoniac/suppline-config
         - secretRef:
-            name: suppline-secrets
+            name: daimoniac/suppline-secrets
         
         volumeMounts:
         - name: data
@@ -145,19 +145,19 @@ spec:
       volumes:
       - name: data
         persistentVolumeClaim:
-          claimName: suppline-data
+          claimName: daimoniac/suppline-data
       - name: trivy-cache
         persistentVolumeClaim:
           claimName: trivy-cache
       - name: config
         secret:
-          secretName: suppline-secrets
+          secretName: daimoniac/suppline-secrets
           items:
-          - key: suppline.yml
-            path: suppline.yml
+          - key: daimoniac/suppline.yml
+            path: daimoniac/suppline.yml
       - name: signing-key
         secret:
-          secretName: suppline-signing-key
+          secretName: daimoniac/suppline-signing-key
           optional: true
           items:
           - key: cosign.key

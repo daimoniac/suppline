@@ -7,9 +7,9 @@ import (
 	"time"
 
 	"github.com/google/cel-go/cel"
-	"github.com/suppline/suppline/internal/errors"
-	"github.com/suppline/suppline/internal/scanner"
-	"github.com/suppline/suppline/internal/types"
+	"github.com/daimoniac/suppline/daimoniac/suppline/internal/errors"
+	"github.com/daimoniac/suppline/daimoniac/suppline/internal/scanner"
+	"github.com/daimoniac/suppline/daimoniac/suppline/internal/types"
 )
 
 // PolicyEngine defines the interface for policy evaluation

@@ -1,6 +1,6 @@
 # Policy Configuration Guide
 
-suppline uses CEL (Common Expression Language) for flexible, powerful security policies.
+daimoniac/suppline uses CEL (Common Expression Language) for flexible, powerful security policies.
 
 ## Quick Reference
 
@@ -278,7 +278,7 @@ Track metrics to understand policy impact:
 
 ```bash
 # Check policy pass rate
-curl http://localhost:9090/metrics | grep suppline_policy
+curl http://localhost:9090/metrics | grep daimoniac/suppline_policy
 
 # Review failed images
 curl http://localhost:8080/api/v1/images/failed
@@ -317,7 +317,7 @@ sync:
 curl http://localhost:8080/api/v1/scans/sha256:abc123... | jq '.vulnerabilities'
 
 # Check logs for policy evaluation
-docker compose logs suppline | grep "policy evaluation"
+docker compose logs daimoniac/suppline | grep "policy evaluation"
 ```
 
 ### Policy Always Passes
@@ -332,7 +332,7 @@ docker compose logs suppline | grep "policy evaluation"
 curl http://localhost:8080/api/v1/tolerations
 
 # Verify policy configuration
-cat suppline.yml | grep -A5 x-policy
+cat daimoniac/suppline.yml | grep -A5 x-policy
 ```
 
 ### Expression Syntax Errors
@@ -345,7 +345,7 @@ cat suppline.yml | grep -A5 x-policy
 
 **Check logs:**
 ```bash
-docker compose logs suppline | grep -i "policy\|cel\|expression"
+docker compose logs daimoniac/suppline | grep -i "policy\|cel\|expression"
 ```
 
 ## Advanced Examples
@@ -403,7 +403,7 @@ spec:
           critical: 0
 ```
 
-Equivalent suppline policy:
+Equivalent daimoniac/suppline policy:
 ```yaml
 x-policy:
   expression: "criticalCount == 0"
@@ -420,7 +420,7 @@ deny[msg] {
 }
 ```
 
-Equivalent suppline policy:
+Equivalent daimoniac/suppline policy:
 ```yaml
 x-policy:
   expression: "criticalCount == 0"

@@ -1,16 +1,16 @@
 services:
   # Main application
-  suppline:
+  daimoniac/suppline:
     build:
       context: .
       dockerfile: Dockerfile
-    container_name: suppline
+    container_name: daimoniac/suppline
     ports:
       - "8080:8080"  # API
       - "9090:9090"  # Metrics
       - "8081:8081"  # Health
     environment:
-      - SUPPLINE_CONFIG=/config/suppline.yml
+      - SUPPLINE_CONFIG=/config/daimoniac/suppline.yml
       - LOG_LEVEL=info
       - METRICS_PORT=9090
       - HEALTH_PORT=8081
@@ -24,18 +24,18 @@ services:
       - TRIVY_SERVER_ADDR=trivy:4954
       - SCANNER_TIMEOUT=5m
       - STATE_STORE_TYPE=sqlite
-      - SQLITE_PATH=/data/suppline.db
+      - SQLITE_PATH=/data/daimoniac/suppline.db
       - RESCAN_INTERVAL=24h
       - ATTESTATION_KEY_PATH=/keys/cosign.key
       - ATTESTATION_KEY_PASSWORD=${ATTESTATION_KEY_PASSWORD}
     volumes:
       - ./data:/data
-      - ./suppline.yml:/config/suppline.yml:ro
+      - ./daimoniac/suppline.yml:/config/daimoniac/suppline.yml:ro
       - ./keys:/keys:ro
     depends_on:
       - trivy
     networks:
-      - suppline
+      - daimoniac/suppline
     restart: unless-stopped
     healthcheck:
       test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:8081/health"]
@@ -44,36 +44,36 @@ services:
       retries: 3
       start_period: 10s
 
-  # # Web UI
-  # ui:
-  #   image: nginx:alpine
-  #   container_name: suppline-ui
-  #   ports:
-  #     - "3000:80"
-  #   environment:
-  #     - API_BASE_URL=http://localhost:8080
-  #   volumes:
-  #     - ./cmd/suppline-ui/web:/usr/share/nginx/html-source:ro
-  #     - ./cmd/suppline-ui/nginx.conf:/etc/nginx/conf.d/default.conf:ro
-  #     - ui-html:/usr/share/nginx/html
-  #   entrypoint:
-  #     - sh
-  #     - -c
-  #     - |
-  #       cp -r /usr/share/nginx/html-source/* /usr/share/nginx/html/
-  #       echo "window.APP_CONFIG = {\"apiBaseURL\": \"$$API_BASE_URL\"};" > /usr/share/nginx/html/config.js
-  #       exec nginx -g 'daemon off;'
-  #   depends_on:
-  #     - suppline
-  #   networks:
-  #     - suppline
-  #   restart: unless-stopped
-  #   healthcheck:
-  #     test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:80/"]
-  #     interval: 30s
-  #     timeout: 5s
-  #     retries: 3
-  #     start_period: 5s
+  # Web UI
+  ui:
+    image: nginx:alpine
+    container_name: daimoniac/suppline-ui
+    ports:
+      - "3000:80"
+    environment:
+      - API_BASE_URL=http://localhost:8080
+    volumes:
+      - ./ui:/usr/share/nginx/html-source:ro
+      - ./ui/nginx.conf:/etc/nginx/conf.d/default.conf:ro
+      - ui-html:/usr/share/nginx/html
+    entrypoint:
+      - sh
+      - -c
+      - |
+        cp -r /usr/share/nginx/html-source/* /usr/share/nginx/html/
+        echo "window.APP_CONFIG = {\"apiBaseURL\": \"$$API_BASE_URL\"};" > /usr/share/nginx/html/config.js
+        exec nginx -g 'daemon off;'
+    depends_on:
+      - daimoniac/suppline
+    networks:
+      - daimoniac/suppline
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:80/"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 5s
 
   # Trivy server
   trivy:
@@ -87,7 +87,7 @@ services:
     volumes:
       - trivy-cache:/trivy-cache
     networks:
-      - suppline
+      - daimoniac/suppline
     restart: unless-stopped
     healthcheck:
       test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:4954/healthz"]
@@ -97,7 +97,7 @@ services:
       start_period: 30s
 
 networks:
-  suppline:
+  daimoniac/suppline:
     driver: bridge
 
 volumes:

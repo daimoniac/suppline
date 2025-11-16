@@ -7,7 +7,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/suppline/suppline/internal/scanner"
+	"github.com/daimoniac/suppline/daimoniac/suppline/internal/scanner"
 )
 
 func TestNewSigstoreAttestor_MissingKeyPath(t *testing.T) {

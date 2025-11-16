@@ -8,7 +8,7 @@ import (
 	"time"
 
 	"github.com/prometheus/client_golang/prometheus/promhttp"
-	"github.com/suppline/suppline/internal/errors"
+	"github.com/daimoniac/suppline/daimoniac/suppline/internal/errors"
 )
 
 // Server provides HTTP endpoints for metrics and health checks
