@@ -1,15 +1,6 @@
 # Binaries
-suppline
-suppline-ui
-
-# Test binary
-*.test
-
-# Output of the go coverage tool
-*.out
-
-# Dependency directories
-vendor/
+/suppline
+/suppline-ui
 
 # Go workspace file
 go.work
