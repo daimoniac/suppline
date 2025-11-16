@@ -8,8 +8,8 @@ import (
 	"github.com/google/go-containerregistry/pkg/authn"
 	"github.com/google/go-containerregistry/pkg/name"
 	"github.com/google/go-containerregistry/pkg/v1/remote"
-	"github.com/daimoniac/suppline/daimoniac/suppline/internal/config"
-	"github.com/daimoniac/suppline/daimoniac/suppline/internal/errors"
+	"github.com/daimoniac/suppline/internal/config"
+	"github.com/daimoniac/suppline/internal/errors"
 )
 
 // Client defines the interface for interacting with container registries

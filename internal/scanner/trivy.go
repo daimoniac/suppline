@@ -10,9 +10,9 @@ import (
 	"os/exec"
 	"time"
 
-	"github.com/daimoniac/suppline/daimoniac/suppline/internal/config"
-	"github.com/daimoniac/suppline/daimoniac/suppline/internal/errors"
-	"github.com/daimoniac/suppline/daimoniac/suppline/internal/types"
+	"github.com/daimoniac/suppline/internal/config"
+	"github.com/daimoniac/suppline/internal/errors"
+	"github.com/daimoniac/suppline/internal/types"
 )
 
 // TrivyScanner implements Scanner using Trivy CLI in client-server mode
@@ -42,7 +42,7 @@ func NewTrivyScanner(cfg config.ScannerConfig) (*TrivyScanner, error) {
 		logger:        logger,
 	}
 
-	// Generate Docker config from daimoniac/suppline.yml if registry credentials are needed
+	// Generate Docker config from suppline.yml if registry credentials are needed
 	if cfg.RegsyncPath != "" {
 		dockerConfigPath, err := GenerateDockerConfigFromRegsync(cfg.RegsyncPath)
 		if err != nil {

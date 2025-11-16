@@ -7,7 +7,7 @@ import (
 	"os"
 	"path/filepath"
 
-	"github.com/daimoniac/suppline/daimoniac/suppline/internal/errors"
+	"github.com/daimoniac/suppline/internal/errors"
 	"gopkg.in/yaml.v3"
 )
 
@@ -30,10 +30,10 @@ type DockerAuth struct {
 	Auth string `json:"auth"`
 }
 
-// GenerateDockerConfigFromRegsync reads daimoniac/suppline.yml and generates a Docker config.json
+// GenerateDockerConfigFromRegsync reads suppline.yml and generates a Docker config.json
 // that Trivy can use for registry authentication
 func GenerateDockerConfigFromRegsync(regsyncPath string) (string, error) {
-	// Read daimoniac/suppline.yml
+	// Read suppline.yml
 	data, err := os.ReadFile(regsyncPath)
 	if err != nil {
 		return "", errors.NewTransientf("failed to read regsync config: %w", err)

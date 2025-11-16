@@ -5,7 +5,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/daimoniac/suppline/daimoniac/suppline/internal/types"
+	"github.com/daimoniac/suppline/internal/types"
 )
 
 func TestNewInMemoryQueue(t *testing.T) {

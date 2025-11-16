@@ -7,14 +7,14 @@ import (
 	"sync"
 	"time"
 
-	"github.com/daimoniac/suppline/daimoniac/suppline/internal/attestation"
-	"github.com/daimoniac/suppline/daimoniac/suppline/internal/config"
-	"github.com/daimoniac/suppline/daimoniac/suppline/internal/errors"
-	"github.com/daimoniac/suppline/daimoniac/suppline/internal/policy"
-	"github.com/daimoniac/suppline/daimoniac/suppline/internal/queue"
-	"github.com/daimoniac/suppline/daimoniac/suppline/internal/registry"
-	"github.com/daimoniac/suppline/daimoniac/suppline/internal/scanner"
-	"github.com/daimoniac/suppline/daimoniac/suppline/internal/statestore"
+	"github.com/daimoniac/suppline/internal/attestation"
+	"github.com/daimoniac/suppline/internal/config"
+	"github.com/daimoniac/suppline/internal/errors"
+	"github.com/daimoniac/suppline/internal/policy"
+	"github.com/daimoniac/suppline/internal/queue"
+	"github.com/daimoniac/suppline/internal/registry"
+	"github.com/daimoniac/suppline/internal/scanner"
+	"github.com/daimoniac/suppline/internal/statestore"
 )
 
 // Worker defines the interface for processing scan tasks

@@ -5,12 +5,12 @@ import (
 	"os"
 	"time"
 
-	"github.com/daimoniac/suppline/daimoniac/suppline/internal/errors"
+	"github.com/daimoniac/suppline/internal/errors"
 )
 
-// Load loads configuration from environment variables and daimoniac/suppline.yml defaults
+// Load loads configuration from environment variables and suppline.yml defaults
 func Load() (*Config, error) {
-	regsyncPath := getEnv("SUPPLINE_CONFIG", "daimoniac/suppline.yml")
+	regsyncPath := getEnv("SUPPLINE_CONFIG", "suppline.yml")
 	
 	// Parse regsync config to get defaults
 	var workerPollInterval time.Duration
@@ -26,7 +26,7 @@ func Load() (*Config, error) {
 		}
 	}
 	
-	// Use defaults from daimoniac/suppline.yml, or fall back to hardcoded defaults
+	// Use defaults from suppline.yml, or fall back to hardcoded defaults
 	if workerPollInterval == 0 {
 		workerPollInterval = 5 * time.Second
 	}
@@ -50,7 +50,7 @@ func Load() (*Config, error) {
 			CustomHeaders: make(map[string]string),
 			Timeout:       getEnvDuration("TRIVY_TIMEOUT", 5*time.Minute),
 			Insecure:      getEnvBool("TRIVY_INSECURE", false),
-			RegsyncPath:   getEnv("SUPPLINE_CONFIG", "daimoniac/suppline.yml"),
+			RegsyncPath:   getEnv("SUPPLINE_CONFIG", "suppline.yml"),
 		},
 		Attestation: AttestationConfig{
 			KeyBased: struct {
@@ -69,7 +69,7 @@ func Load() (*Config, error) {
 		StateStore: StateStoreConfig{
 			Type:           getEnv("STATE_STORE_TYPE", "sqlite"),
 			PostgresURL:    getEnv("POSTGRES_URL", ""),
-			SQLitePath:     getEnv("SQLITE_PATH", "daimoniac/suppline.db"),
+			SQLitePath:     getEnv("SQLITE_PATH", "suppline.db"),
 			RescanInterval: rescanInterval,
 		},
 		API: APIConfig{

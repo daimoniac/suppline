@@ -10,7 +10,7 @@ docs/
 
 # Build artifacts
 build/
-daimoniac/suppline
+suppline
 dist/
 *.db
 coverage.txt

@@ -197,13 +197,13 @@ jobs:
       - name: Update Chart version
         run: |
           VERSION=${{ needs.create-release.outputs.version }}
-          sed -i "s/^version:.*/version: $VERSION/" charts/daimoniac/suppline/Chart.yaml
-          sed -i "s/^appVersion:.*/appVersion: \"$VERSION\"/" charts/daimoniac/suppline/Chart.yaml
+          sed -i "s/^version:.*/version: $VERSION/" charts/suppline/Chart.yaml
+          sed -i "s/^appVersion:.*/appVersion: \"$VERSION\"/" charts/suppline/Chart.yaml
 
       - name: Package Helm chart
         run: |
           mkdir -p .helm-releases
-          helm package charts/daimoniac/suppline -d .helm-releases
+          helm package charts/suppline -d .helm-releases
 
       - name: Log in to GitHub Container Registry
         run: echo "${{ secrets.GITHUB_TOKEN }}" | helm registry login ghcr.io -u ${{ github.actor }} --password-stdin
@@ -211,7 +211,7 @@ jobs:
       - name: Push Helm chart to OCI registry
         run: |
           VERSION=${{ needs.create-release.outputs.version }}
-          helm push .helm-releases/daimoniac/suppline-${VERSION}.tgz oci://ghcr.io/${{ github.repository_owner }}/charts
+          helm push .helm-releases/suppline-${VERSION}.tgz oci://ghcr.io/${{ github.repository_owner }}/charts
 
       - name: Upload Helm chart to release
         uses: softprops/action-gh-release@v1

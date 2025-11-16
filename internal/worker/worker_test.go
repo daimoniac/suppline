@@ -8,7 +8,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/daimoniac/suppline/daimoniac/suppline/internal/queue"
+	"github.com/daimoniac/suppline/internal/queue"
 )
 
 // mockQueue implements queue.TaskQueue for testing

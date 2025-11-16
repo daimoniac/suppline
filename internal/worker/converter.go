@@ -4,11 +4,11 @@ import (
 	"strings"
 	"time"
 
-	"github.com/daimoniac/suppline/daimoniac/suppline/internal/policy"
-	"github.com/daimoniac/suppline/daimoniac/suppline/internal/queue"
-	"github.com/daimoniac/suppline/daimoniac/suppline/internal/scanner"
-	"github.com/daimoniac/suppline/daimoniac/suppline/internal/statestore"
-	"github.com/daimoniac/suppline/daimoniac/suppline/internal/types"
+	"github.com/daimoniac/suppline/internal/policy"
+	"github.com/daimoniac/suppline/internal/queue"
+	"github.com/daimoniac/suppline/internal/scanner"
+	"github.com/daimoniac/suppline/internal/statestore"
+	"github.com/daimoniac/suppline/internal/types"
 )
 
 // buildScanRecord constructs a ScanRecord from workflow results using canonical types.

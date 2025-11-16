@@ -1,16 +1,16 @@
 services:
   # Main application
-  daimoniac/suppline:
+  suppline:
     build:
       context: .
       dockerfile: Dockerfile
-    container_name: daimoniac/suppline
+    container_name: suppline
     ports:
       - "8080:8080"  # API
       - "9090:9090"  # Metrics
       - "8081:8081"  # Health
     environment:
-      - SUPPLINE_CONFIG=/config/daimoniac/suppline.yml
+      - SUPPLINE_CONFIG=/config/suppline.yml
       - LOG_LEVEL=info
       - METRICS_PORT=9090
       - HEALTH_PORT=8081
@@ -24,18 +24,18 @@ services:
       - TRIVY_SERVER_ADDR=trivy:4954
       - SCANNER_TIMEOUT=5m
       - STATE_STORE_TYPE=sqlite
-      - SQLITE_PATH=/data/daimoniac/suppline.db
+      - SQLITE_PATH=/data/suppline.db
       - RESCAN_INTERVAL=24h
       - ATTESTATION_KEY_PATH=/keys/cosign.key
       - ATTESTATION_KEY_PASSWORD=${ATTESTATION_KEY_PASSWORD}
     volumes:
       - ./data:/data
-      - ./daimoniac/suppline.yml:/config/daimoniac/suppline.yml:ro
+      - ./suppline.yml:/config/suppline.yml:ro
       - ./keys:/keys:ro
     depends_on:
       - trivy
     networks:
-      - daimoniac/suppline
+      - suppline
     restart: unless-stopped
     healthcheck:
       test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:8081/health"]
@@ -47,7 +47,7 @@ services:
   # Web UI
   ui:
     image: nginx:alpine
-    container_name: daimoniac/suppline-ui
+    container_name: suppline-ui
     ports:
       - "3000:80"
     environment:
@@ -64,9 +64,9 @@ services:
         echo "window.APP_CONFIG = {\"apiBaseURL\": \"$$API_BASE_URL\"};" > /usr/share/nginx/html/config.js
         exec nginx -g 'daemon off;'
     depends_on:
-      - daimoniac/suppline
+      - suppline
     networks:
-      - daimoniac/suppline
+      - suppline
     restart: unless-stopped
     healthcheck:
       test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:80/"]
@@ -87,7 +87,7 @@ services:
     volumes:
       - trivy-cache:/trivy-cache
     networks:
-      - daimoniac/suppline
+      - suppline
     restart: unless-stopped
     healthcheck:
       test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:4954/healthz"]
@@ -97,7 +97,7 @@ services:
       start_period: 30s
 
 networks:
-  daimoniac/suppline:
+  suppline:
     driver: bridge
 
 volumes:

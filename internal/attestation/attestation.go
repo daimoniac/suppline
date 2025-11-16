@@ -4,7 +4,7 @@ import (
 	"context"
 	"time"
 
-	"github.com/daimoniac/suppline/daimoniac/suppline/internal/scanner"
+	"github.com/daimoniac/suppline/internal/scanner"
 )
 
 // Attestor defines the interface for creating attestations and signing images

@@ -10,14 +10,14 @@ import (
 	"testing"
 	"time"
 
-	"github.com/daimoniac/suppline/daimoniac/suppline/internal/attestation"
-	"github.com/daimoniac/suppline/daimoniac/suppline/internal/config"
-	"github.com/daimoniac/suppline/daimoniac/suppline/internal/policy"
-	"github.com/daimoniac/suppline/daimoniac/suppline/internal/queue"
-	"github.com/daimoniac/suppline/daimoniac/suppline/internal/registry"
-	"github.com/daimoniac/suppline/daimoniac/suppline/internal/scanner"
-	"github.com/daimoniac/suppline/daimoniac/suppline/internal/statestore"
-	"github.com/daimoniac/suppline/daimoniac/suppline/internal/types"
+	"github.com/daimoniac/suppline/internal/attestation"
+	"github.com/daimoniac/suppline/internal/config"
+	"github.com/daimoniac/suppline/internal/policy"
+	"github.com/daimoniac/suppline/internal/queue"
+	"github.com/daimoniac/suppline/internal/registry"
+	"github.com/daimoniac/suppline/internal/scanner"
+	"github.com/daimoniac/suppline/internal/statestore"
+	"github.com/daimoniac/suppline/internal/types"
 )
 
 // TestMain sets up and tears down the test environment
@@ -170,8 +170,8 @@ func getImageDigest(ctx context.Context, imageRef string) (string, error) {
 
 // TestTrivyScanner tests the Trivy scanner integration
 func TestTrivyScanner(t *testing.T) {
-	// Check if daimoniac/suppline.yml exists for authentication tests
-	regsyncPath := getEnv("SUPPLINE_CONFIG", "../../daimoniac/suppline.yml")
+	// Check if suppline.yml exists for authentication tests
+	regsyncPath := getEnv("SUPPLINE_CONFIG", "../../suppline.yml")
 	
 	cfg := config.ScannerConfig{
 		ServerAddr:  getEnv("TRIVY_SERVER_ADDR", "localhost:4954"),
@@ -194,13 +194,13 @@ func TestTrivyScanner(t *testing.T) {
 	})
 	
 	t.Run("DockerConfigGeneration", func(t *testing.T) {
-		// Verify Docker config was generated if daimoniac/suppline.yml exists
+		// Verify Docker config was generated if suppline.yml exists
 		if _, err := os.Stat(regsyncPath); err == nil {
 			// Scanner should have generated Docker config
 			// This is tested implicitly by the private image scan below
-			t.Log("Docker config should be generated from daimoniac/suppline.yml")
+			t.Log("Docker config should be generated from suppline.yml")
 		} else {
-			t.Skip("Skipping Docker config test: daimoniac/suppline.yml not found")
+			t.Skip("Skipping Docker config test: suppline.yml not found")
 		}
 	})
 

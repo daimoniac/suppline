@@ -140,7 +140,7 @@ func TestValidate(t *testing.T) {
 		{
 			name: "valid config with key-based attestation",
 			config: &Config{
-				RegsyncPath: "daimoniac/suppline.yml",
+				RegsyncPath: "suppline.yml",
 				Scanner: ScannerConfig{
 					ServerAddr: "localhost:4954",
 				},
@@ -171,7 +171,7 @@ func TestValidate(t *testing.T) {
 		{
 			name: "missing trivy server",
 			config: &Config{
-				RegsyncPath: "daimoniac/suppline.yml",
+				RegsyncPath: "suppline.yml",
 				Scanner: ScannerConfig{
 					ServerAddr: "",
 				},
@@ -182,7 +182,7 @@ func TestValidate(t *testing.T) {
 		{
 			name: "invalid state store type",
 			config: &Config{
-				RegsyncPath: "daimoniac/suppline.yml",
+				RegsyncPath: "suppline.yml",
 				Scanner: ScannerConfig{
 					ServerAddr: "localhost:4954",
 				},
@@ -196,7 +196,7 @@ func TestValidate(t *testing.T) {
 		{
 			name: "postgres without URL",
 			config: &Config{
-				RegsyncPath: "daimoniac/suppline.yml",
+				RegsyncPath: "suppline.yml",
 				Scanner: ScannerConfig{
 					ServerAddr: "localhost:4954",
 				},
@@ -211,7 +211,7 @@ func TestValidate(t *testing.T) {
 		{
 			name: "key-based without key path",
 			config: &Config{
-				RegsyncPath: "daimoniac/suppline.yml",
+				RegsyncPath: "suppline.yml",
 				Scanner: ScannerConfig{
 					ServerAddr: "localhost:4954",
 				},
@@ -235,7 +235,7 @@ func TestValidate(t *testing.T) {
 		{
 			name: "keyless without OIDC config",
 			config: &Config{
-				RegsyncPath: "daimoniac/suppline.yml",
+				RegsyncPath: "suppline.yml",
 				Scanner: ScannerConfig{
 					ServerAddr: "localhost:4954",
 				},
@@ -257,7 +257,7 @@ func TestValidate(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			// Create temp file for tests that need it
-			if tt.config.RegsyncPath == "daimoniac/suppline.yml" {
+			if tt.config.RegsyncPath == "suppline.yml" {
 				tmpfile, err := os.CreateTemp("", "regsync-*.yml")
 				if err != nil {
 					t.Fatal(err)

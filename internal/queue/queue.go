@@ -5,8 +5,8 @@ import (
 	"sync"
 	"time"
 
-	"github.com/daimoniac/suppline/daimoniac/suppline/internal/errors"
-	"github.com/daimoniac/suppline/daimoniac/suppline/internal/types"
+	"github.com/daimoniac/suppline/internal/errors"
+	"github.com/daimoniac/suppline/internal/types"
 )
 
 // TaskQueue manages a queue of scan tasks for container images

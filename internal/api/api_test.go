@@ -8,11 +8,11 @@ import (
 	"testing"
 	"time"
 
-	"github.com/daimoniac/suppline/daimoniac/suppline/internal/config"
-	"github.com/daimoniac/suppline/daimoniac/suppline/internal/observability"
-	"github.com/daimoniac/suppline/daimoniac/suppline/internal/queue"
-	"github.com/daimoniac/suppline/daimoniac/suppline/internal/statestore"
-	"github.com/daimoniac/suppline/daimoniac/suppline/internal/types"
+	"github.com/daimoniac/suppline/internal/config"
+	"github.com/daimoniac/suppline/internal/observability"
+	"github.com/daimoniac/suppline/internal/queue"
+	"github.com/daimoniac/suppline/internal/statestore"
+	"github.com/daimoniac/suppline/internal/types"
 )
 
 // mockStateStore is a minimal mock for testing
@@ -60,7 +60,7 @@ func TestNewAPIServer(t *testing.T) {
 
 	store := &mockStateStore{}
 	queue := queue.NewInMemoryQueue(100)
-	regsyncPath := "daimoniac/suppline.yml"
+	regsyncPath := "suppline.yml"
 	logger := observability.NewLogger("error")
 
 	server := NewAPIServer(cfg, store, queue, regsyncPath, logger)
@@ -102,7 +102,7 @@ func TestAuthMiddleware_NoAPIKey(t *testing.T) {
 		ReadOnly: false,
 	}
 
-	server := NewAPIServer(cfg, &mockStateStore{}, queue.NewInMemoryQueue(100), "daimoniac/suppline.yml", observability.NewLogger("error"))
+	server := NewAPIServer(cfg, &mockStateStore{}, queue.NewInMemoryQueue(100), "suppline.yml", observability.NewLogger("error"))
 
 	// Test that requests pass through without authentication
 	req := httptest.NewRequest(http.MethodGet, "/api/v1/scans", nil)
@@ -127,7 +127,7 @@ func TestAuthMiddleware_WithAPIKey_Valid(t *testing.T) {
 		ReadOnly: false,
 	}
 
-	server := NewAPIServer(cfg, &mockStateStore{}, queue.NewInMemoryQueue(100), "daimoniac/suppline.yml", observability.NewLogger("error"))
+	server := NewAPIServer(cfg, &mockStateStore{}, queue.NewInMemoryQueue(100), "suppline.yml", observability.NewLogger("error"))
 
 	req := httptest.NewRequest(http.MethodGet, "/api/v1/scans", nil)
 	req.Header.Set("Authorization", "Bearer test-api-key")
@@ -152,7 +152,7 @@ func TestAuthMiddleware_WithAPIKey_Invalid(t *testing.T) {
 		ReadOnly: false,
 	}
 
-	server := NewAPIServer(cfg, &mockStateStore{}, queue.NewInMemoryQueue(100), "daimoniac/suppline.yml", observability.NewLogger("error"))
+	server := NewAPIServer(cfg, &mockStateStore{}, queue.NewInMemoryQueue(100), "suppline.yml", observability.NewLogger("error"))
 
 	req := httptest.NewRequest(http.MethodGet, "/api/v1/scans", nil)
 	req.Header.Set("Authorization", "Bearer wrong-key")
@@ -177,7 +177,7 @@ func TestAuthMiddleware_WithAPIKey_Missing(t *testing.T) {
 		ReadOnly: false,
 	}
 
-	server := NewAPIServer(cfg, &mockStateStore{}, queue.NewInMemoryQueue(100), "daimoniac/suppline.yml", observability.NewLogger("error"))
+	server := NewAPIServer(cfg, &mockStateStore{}, queue.NewInMemoryQueue(100), "suppline.yml", observability.NewLogger("error"))
 
 	req := httptest.NewRequest(http.MethodGet, "/api/v1/scans", nil)
 	// No Authorization header
@@ -202,7 +202,7 @@ func TestAuthMiddleware_ReadOnlyMode(t *testing.T) {
 		ReadOnly: true,
 	}
 
-	server := NewAPIServer(cfg, &mockStateStore{}, queue.NewInMemoryQueue(100), "daimoniac/suppline.yml", observability.NewLogger("error"))
+	server := NewAPIServer(cfg, &mockStateStore{}, queue.NewInMemoryQueue(100), "suppline.yml", observability.NewLogger("error"))
 
 	// Test read operation (should pass)
 	req := httptest.NewRequest(http.MethodGet, "/api/v1/scans", nil)
@@ -241,7 +241,7 @@ func TestRoutes_QueryEndpoints(t *testing.T) {
 		ReadOnly: false,
 	}
 
-	server := NewAPIServer(cfg, &mockStateStore{}, queue.NewInMemoryQueue(100), "daimoniac/suppline.yml", observability.NewLogger("error"))
+	server := NewAPIServer(cfg, &mockStateStore{}, queue.NewInMemoryQueue(100), "suppline.yml", observability.NewLogger("error"))
 
 	tests := []struct {
 		name   string
@@ -279,7 +279,7 @@ func TestRoutes_ActionEndpoints(t *testing.T) {
 		ReadOnly: false,
 	}
 
-	server := NewAPIServer(cfg, &mockStateStore{}, queue.NewInMemoryQueue(100), "daimoniac/suppline.yml", observability.NewLogger("error"))
+	server := NewAPIServer(cfg, &mockStateStore{}, queue.NewInMemoryQueue(100), "suppline.yml", observability.NewLogger("error"))
 
 	tests := []struct {
 		name   string
@@ -314,7 +314,7 @@ func TestHealthEndpoint(t *testing.T) {
 		ReadOnly: false,
 	}
 
-	server := NewAPIServer(cfg, &mockStateStore{}, queue.NewInMemoryQueue(100), "daimoniac/suppline.yml", observability.NewLogger("error"))
+	server := NewAPIServer(cfg, &mockStateStore{}, queue.NewInMemoryQueue(100), "suppline.yml", observability.NewLogger("error"))
 
 	req := httptest.NewRequest(http.MethodGet, "/health", nil)
 	w := httptest.NewRecorder()
@@ -340,7 +340,7 @@ func TestMetricsEndpoint(t *testing.T) {
 		ReadOnly: false,
 	}
 
-	server := NewAPIServer(cfg, &mockStateStore{}, queue.NewInMemoryQueue(100), "daimoniac/suppline.yml", observability.NewLogger("error"))
+	server := NewAPIServer(cfg, &mockStateStore{}, queue.NewInMemoryQueue(100), "suppline.yml", observability.NewLogger("error"))
 
 	req := httptest.NewRequest(http.MethodGet, "/metrics", nil)
 	w := httptest.NewRecorder()
@@ -366,7 +366,7 @@ func TestHandleTriggerScan_MissingFields(t *testing.T) {
 		ReadOnly: false,
 	}
 
-	server := NewAPIServer(cfg, &mockStateStore{}, queue.NewInMemoryQueue(100), "daimoniac/suppline.yml", observability.NewLogger("error"))
+	server := NewAPIServer(cfg, &mockStateStore{}, queue.NewInMemoryQueue(100), "suppline.yml", observability.NewLogger("error"))
 
 	// Test with empty body
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/scans/trigger", strings.NewReader("{}"))
@@ -387,7 +387,7 @@ func TestHandleTriggerScan_BothFields(t *testing.T) {
 		ReadOnly: false,
 	}
 
-	server := NewAPIServer(cfg, &mockStateStore{}, queue.NewInMemoryQueue(100), "daimoniac/suppline.yml", observability.NewLogger("error"))
+	server := NewAPIServer(cfg, &mockStateStore{}, queue.NewInMemoryQueue(100), "suppline.yml", observability.NewLogger("error"))
 
 	// Test with both digest and repository
 	body := `{"digest": "sha256:abc123", "repository": "test/repo"}`
@@ -409,7 +409,7 @@ func TestHandleTriggerScan_InvalidJSON(t *testing.T) {
 		ReadOnly: false,
 	}
 
-	server := NewAPIServer(cfg, &mockStateStore{}, queue.NewInMemoryQueue(100), "daimoniac/suppline.yml", observability.NewLogger("error"))
+	server := NewAPIServer(cfg, &mockStateStore{}, queue.NewInMemoryQueue(100), "suppline.yml", observability.NewLogger("error"))
 
 	// Test with invalid JSON
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/scans/trigger", strings.NewReader("invalid json"))
@@ -430,7 +430,7 @@ func TestHandleReevaluatePolicy_EmptyBody(t *testing.T) {
 		ReadOnly: false,
 	}
 
-	server := NewAPIServer(cfg, &mockStateStore{}, queue.NewInMemoryQueue(100), "daimoniac/suppline.yml", observability.NewLogger("error"))
+	server := NewAPIServer(cfg, &mockStateStore{}, queue.NewInMemoryQueue(100), "suppline.yml", observability.NewLogger("error"))
 
 	// Test with empty body (should be acceptable)
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/policy/reevaluate", nil)
@@ -452,7 +452,7 @@ func TestHandleReevaluatePolicy_WithRepository(t *testing.T) {
 		ReadOnly: false,
 	}
 
-	server := NewAPIServer(cfg, &mockStateStore{}, queue.NewInMemoryQueue(100), "daimoniac/suppline.yml", observability.NewLogger("error"))
+	server := NewAPIServer(cfg, &mockStateStore{}, queue.NewInMemoryQueue(100), "suppline.yml", observability.NewLogger("error"))
 
 	// Test with repository filter
 	body := `{"repository": "test/repo"}`
@@ -475,7 +475,7 @@ func TestActionEndpoints_ReadOnlyMode(t *testing.T) {
 		ReadOnly: true,
 	}
 
-	server := NewAPIServer(cfg, &mockStateStore{}, queue.NewInMemoryQueue(100), "daimoniac/suppline.yml", observability.NewLogger("error"))
+	server := NewAPIServer(cfg, &mockStateStore{}, queue.NewInMemoryQueue(100), "suppline.yml", observability.NewLogger("error"))
 
 	tests := []struct {
 		name string

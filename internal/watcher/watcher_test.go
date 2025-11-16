@@ -3,15 +3,15 @@ package watcher
 import (
 	"context"
 	"fmt"
-	"github.com/daimoniac/suppline/daimoniac/suppline/internal/types"
+	"github.com/daimoniac/suppline/internal/types"
 	"testing"
 	"time"
 
-	"github.com/daimoniac/suppline/daimoniac/suppline/internal/config"
-	"github.com/daimoniac/suppline/daimoniac/suppline/internal/observability"
-	"github.com/daimoniac/suppline/daimoniac/suppline/internal/queue"
-	"github.com/daimoniac/suppline/daimoniac/suppline/internal/registry"
-	"github.com/daimoniac/suppline/daimoniac/suppline/internal/statestore"
+	"github.com/daimoniac/suppline/internal/config"
+	"github.com/daimoniac/suppline/internal/observability"
+	"github.com/daimoniac/suppline/internal/queue"
+	"github.com/daimoniac/suppline/internal/registry"
+	"github.com/daimoniac/suppline/internal/statestore"
 )
 
 // Mock implementations for testing

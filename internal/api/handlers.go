@@ -8,10 +8,10 @@ import (
 	"strings"
 	"time"
 
-	"github.com/daimoniac/suppline/daimoniac/suppline/internal/config"
-	"github.com/daimoniac/suppline/daimoniac/suppline/internal/queue"
-	"github.com/daimoniac/suppline/daimoniac/suppline/internal/statestore"
-	"github.com/daimoniac/suppline/daimoniac/suppline/internal/types"
+	"github.com/daimoniac/suppline/internal/config"
+	"github.com/daimoniac/suppline/internal/queue"
+	"github.com/daimoniac/suppline/internal/statestore"
+	"github.com/daimoniac/suppline/internal/types"
 )
 
 // handleGetScan retrieves a scan record with vulnerabilities for a specific digest
@@ -416,9 +416,9 @@ type ReevaluatePolicyResponse struct {
 	Repository string `json:"repository,omitempty"`
 }
 
-// handleReevaluatePolicy reloads daimoniac/suppline.yml and re-evaluates policy for all images
+// handleReevaluatePolicy reloads suppline.yml and re-evaluates policy for all images
 // @Summary Re-evaluate policy
-// @Description Reload daimoniac/suppline.yml configuration and re-evaluate policy for all images or a specific repository
+// @Description Reload suppline.yml configuration and re-evaluate policy for all images or a specific repository
 // @Tags Policy
 // @Accept json
 // @Produce json

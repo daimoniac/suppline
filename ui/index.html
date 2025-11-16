@@ -5,12 +5,12 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <meta http-equiv="Content-Security-Policy" 
           content="default-src 'self'; 
-                   script-src 'self'; 
+                   script-src 'self' 'unsafe-inline'; 
                    style-src 'self' 'unsafe-hashes' 'sha256-biLFinpqYMtWHmXfkA1BPeCY0/fNt46SAZ+BBk5YUog=' 'sha256-it3JZTT9nsBcOoLAgDGOgltmaGoZMFMbJ7GbQOFnFw8='; 
                    img-src 'self' data:; 
-                   connect-src 'self' http://localhost:8080 http://localhost:* ws://localhost:*;">
+                   connect-src 'self' http: https: ws: wss:;">
     <meta name="referrer" content="strict-origin-when-cross-origin">
-    <title>daimoniac/suppline Dashboard</title>
+    <title>suppline Dashboard</title>
     <link rel="stylesheet" href="/css/main.css">
     <link rel="stylesheet" href="/css/components.css">
 <link rel="icon" type="image/png" href="/favicon-96x96.png" sizes="96x96" />
@@ -24,8 +24,8 @@
         <header>
             <nav>
                 <div class="nav-brand">
-                    <a href="/" data-link data-route="/"><img src="/daimoniac/suppline-icon-only.png" alt="daimoniac/suppline Logo" class="logo"></a>
-                    <h1>daimoniac/suppline</h1>
+                    <a href="/" data-link data-route="/"><img src="/suppline-icon-only.png" alt="suppline Logo" class="logo"></a>
+                    <h1>suppline</h1>
                 </div>
                 <ul id="nav-menu">
                     <li><a href="/" data-link data-route="/">Dashboard</a></li>
@@ -59,6 +59,13 @@
     
     <!-- Notification Container -->
     <div id="notifications"></div>
+    
+    <!-- Load configuration from environment -->
+    <script>
+        window.APP_CONFIG = {
+            apiBaseURL: window.ENV_API_BASE_URL || 'http://localhost:8080'
+        };
+    </script>
     
     <!-- Load application scripts -->
     <script type="module" src="/js/main.js"></script>

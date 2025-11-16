@@ -1,4 +1,4 @@
-module github.com/daimoniac/suppline/daimoniac/suppline
+module github.com/daimoniac/suppline
 
 go 1.24.0
 

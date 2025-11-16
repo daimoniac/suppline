@@ -1,5 +1,5 @@
 /**
- * APIClient - Handles all communication with the daimoniac/suppline-ui REST API
+ * APIClient - Handles all communication with the suppline-ui REST API
  */
 class APIClient {
     constructor(baseURL, apiKey = null) {

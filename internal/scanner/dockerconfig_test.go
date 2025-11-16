@@ -9,9 +9,9 @@ import (
 )
 
 func TestGenerateDockerConfigFromRegsync(t *testing.T) {
-	// Create a temporary daimoniac/suppline.yml file
+	// Create a temporary suppline.yml file
 	tmpDir := t.TempDir()
-	regsyncPath := filepath.Join(tmpDir, "daimoniac/suppline.yml")
+	regsyncPath := filepath.Join(tmpDir, "suppline.yml")
 	
 	regsyncContent := `version: 1
 creds:
@@ -86,7 +86,7 @@ creds:
 }
 
 func TestGenerateDockerConfigFromRegsync_InvalidFile(t *testing.T) {
-	_, err := GenerateDockerConfigFromRegsync("/nonexistent/daimoniac/suppline.yml")
+	_, err := GenerateDockerConfigFromRegsync("/nonexistent/suppline.yml")
 	if err == nil {
 		t.Error("expected error for nonexistent file, got nil")
 	}
@@ -94,7 +94,7 @@ func TestGenerateDockerConfigFromRegsync_InvalidFile(t *testing.T) {
 
 func TestGenerateDockerConfigFromRegsync_InvalidYAML(t *testing.T) {
 	tmpDir := t.TempDir()
-	regsyncPath := filepath.Join(tmpDir, "daimoniac/suppline.yml")
+	regsyncPath := filepath.Join(tmpDir, "suppline.yml")
 	
 	// Write invalid YAML
 	if err := os.WriteFile(regsyncPath, []byte("invalid: yaml: content: ["), 0600); err != nil {

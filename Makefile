@@ -7,11 +7,11 @@ help: ## Show this help message
 	@awk 'BEGIN {FS = ":.*?## "} /^[a-zA-Z_-]+:.*?## / {printf "  %-20s %s\n", $$1, $$2}' $(MAKEFILE_LIST)
 
 build: ## Build the application
-	go build -o daimoniac/suppline ./cmd/daimoniac/suppline
+	go build -o suppline ./cmd/suppline
 
 build-ui: ## Build the UI Docker image
 	@echo "Building UI Docker image..."
-	docker build -t daimoniac/suppline-ui:latest -f ui/Dockerfile ./ui
+	docker build -t suppline-ui:latest -f ui/Dockerfile ./ui
 	@echo "✅ UI image built successfully"
 
 build-all: ## Build all components (backend + UI)
@@ -46,7 +46,7 @@ docker-logs: ## Show Docker Compose logs
 	docker compose -f docker-compose.test.yml logs -f
 
 clean: ## Clean build artifacts and test databases
-	rm -f daimoniac/suppline
+	rm -f suppline
 	rm -f *.db
 	rm -f coverage.txt
 	rm -rf test/*.db
@@ -72,17 +72,17 @@ dev-setup: deps ## Set up development environment
 	go install github.com/golangci/golangci-lint/cmd/golangci-lint@latest
 
 run: build ## Build and run the application
-	./daimoniac/suppline
+	./suppline
 
 # Docker targets
 docker-build: ## Build Docker image
-	docker build -t daimoniac/suppline:latest -f Dockerfile .
+	docker build -t suppline:latest -f Dockerfile .
 
 docker-build-trivy: ## Build Trivy server Docker image
 	docker build -t trivy-server:latest -f Dockerfile.trivy .
 
 docker-build-ui: ## Build UI Docker image
-	docker build -t daimoniac/suppline-ui:latest -f ui/Dockerfile ./ui
+	docker build -t suppline-ui:latest -f ui/Dockerfile ./ui
 
 docker-run: ## Run application with Docker Compose
 	docker compose up -d
@@ -95,7 +95,7 @@ docker-restart: ## Restart Docker Compose
 
 docker-clean: ## Clean Docker resources
 	docker compose down -v
-	docker rmi daimoniac/suppline:latest trivy-server:latest || true
+	docker rmi suppline:latest trivy-server:latest || true
 
 # Kubernetes targets
 k8s-deploy: ## Deploy to Kubernetes
@@ -105,54 +105,54 @@ k8s-delete: ## Delete from Kubernetes
 	kubectl delete -k deploy/kubernetes/
 
 k8s-logs: ## View Kubernetes logs
-	kubectl logs -n daimoniac/suppline -l app=daimoniac/suppline -f
+	kubectl logs -n suppline -l app=suppline -f
 
 k8s-status: ## Check Kubernetes deployment status
-	kubectl get all -n daimoniac/suppline
+	kubectl get all -n suppline
 
 k8s-describe: ## Describe Kubernetes resources
-	kubectl describe deployment daimoniac/suppline -n daimoniac/suppline
+	kubectl describe deployment suppline -n suppline
 
 k8s-restart: ## Restart Kubernetes deployment
-	kubectl rollout restart deployment/daimoniac/suppline -n daimoniac/suppline
+	kubectl rollout restart deployment/suppline -n suppline
 
 k8s-port-forward: ## Port forward to access services locally
 	@echo "Forwarding ports: API=8080, Metrics=9090, Health=8081"
-	kubectl port-forward -n daimoniac/suppline svc/daimoniac/suppline 8080:8080 9090:9090 8081:8081
+	kubectl port-forward -n suppline svc/suppline 8080:8080 9090:9090 8081:8081
 
 # Helm targets
 helm-package: ## Package Helm chart
 	@echo "Packaging Helm chart..."
 	@mkdir -p build/charts
-	helm package charts/daimoniac/suppline -d build/charts
+	helm package charts/suppline -d build/charts
 	@echo "✅ Helm chart packaged successfully"
 	@ls -lh build/charts/
 
 helm-lint: ## Lint Helm chart
 	@echo "Linting Helm chart..."
-	helm lint charts/daimoniac/suppline
+	helm lint charts/suppline
 	@echo "✅ Helm chart linted successfully"
 
 helm-template: ## Generate Kubernetes manifests from Helm chart
 	@echo "Generating Kubernetes manifests from Helm chart..."
-	helm template daimoniac/suppline charts/daimoniac/suppline
+	helm template suppline charts/suppline
 
 helm-install: ## Install Helm chart to current Kubernetes context
 	@echo "Installing Helm chart..."
-	helm upgrade --install daimoniac/suppline charts/daimoniac/suppline --namespace daimoniac/suppline --create-namespace
+	helm upgrade --install suppline charts/suppline --namespace suppline --create-namespace
 	@echo "✅ Helm chart installed successfully"
 
 helm-uninstall: ## Uninstall Helm chart
 	@echo "Uninstalling Helm chart..."
-	helm uninstall daimoniac/suppline --namespace daimoniac/suppline
+	helm uninstall suppline --namespace suppline
 	@echo "✅ Helm chart uninstalled successfully"
 
 # Release targets
 release-build: ## Build release binaries for multiple platforms
-	GOOS=linux GOARCH=amd64 CGO_ENABLED=1 go build -o dist/daimoniac/suppline-linux-amd64 ./cmd/daimoniac/suppline
-	GOOS=linux GOARCH=arm64 CGO_ENABLED=1 go build -o dist/daimoniac/suppline-linux-arm64 ./cmd/daimoniac/suppline
-	GOOS=darwin GOARCH=amd64 CGO_ENABLED=1 go build -o dist/daimoniac/suppline-darwin-amd64 ./cmd/daimoniac/suppline
-	GOOS=darwin GOARCH=arm64 CGO_ENABLED=1 go build -o dist/daimoniac/suppline-darwin-arm64 ./cmd/daimoniac/suppline
+	GOOS=linux GOARCH=amd64 CGO_ENABLED=1 go build -o dist/suppline-linux-amd64 ./cmd/suppline
+	GOOS=linux GOARCH=arm64 CGO_ENABLED=1 go build -o dist/suppline-linux-arm64 ./cmd/suppline
+	GOOS=darwin GOARCH=amd64 CGO_ENABLED=1 go build -o dist/suppline-darwin-amd64 ./cmd/suppline
+	GOOS=darwin GOARCH=arm64 CGO_ENABLED=1 go build -o dist/suppline-darwin-arm64 ./cmd/suppline
 
 # API Documentation targets
 swagger: ## Generate Swagger/OpenAPI documentation

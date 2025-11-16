@@ -1,6 +1,6 @@
 /**
  * Main Application Entry Point
- * Initializes the daimoniac/suppline-ui dashboard application
+ * Initializes the suppline-ui dashboard application
  */
 
 import { Router } from './router.js';

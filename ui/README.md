@@ -17,8 +17,8 @@ This is a static web application using vanilla HTML, CSS, and JavaScript. No bui
 To run locally with Docker:
 
 ```bash
-docker build -t daimoniac/suppline-ui .
-docker run -p 8081:80 -e API_BASE_URL=http://localhost:8080 daimoniac/suppline-ui
+docker build -t suppline-ui .
+docker run -p 8081:80 -e API_BASE_URL=http://localhost:8080 suppline-ui
 ```
 
 ## Configuration

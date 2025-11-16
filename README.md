@@ -1,12 +1,12 @@
 <p align="center">
-  <img src="docs/daimoniac/suppline-fullsize.png" alt="daimoniac/suppline logo" width="300"/>
+  <img src="docs/suppline-fullsize.png" alt="suppline logo" width="300"/>
 </p>
 
 A cloud-native container security pipeline that continuously monitors container registries, scans images for vulnerabilities, generates attestations, and signs compliant images using Sigstore.
 
-## What is daimoniac/suppline?
+## What is suppline?
 
-daimoniac/suppline automates container security workflows by:
+suppline automates container security workflows by:
 
 1. **Discovering** container images from your private registry using regsync configuration
 2. **Scanning** images with Trivy to identify vulnerabilities and generate SBOMs
@@ -14,9 +14,9 @@ daimoniac/suppline automates container security workflows by:
 4. **Attesting** scan results using in-toto SCAI format
 5. **Signing** compliant images with Sigstore/Cosign
 
-Built as a single Go binary, daimoniac/suppline runs as a continuous service that watches your registry and maintains a complete audit trail of your container security posture.
+Built as a single Go binary, suppline runs as a continuous service that watches your registry and maintains a complete audit trail of your container security posture.
 
-*daimoniac/suppline* uses the regsync format with daimoniac/suppline-specific extensions. Isn't that great? You can use *regsync* to synchronize other repositories to your private one and *daimoniac/suppline* to assure compliance there. Using a simple *kyverno* or *OPA* policy in your cluster you can always be sure that only vulnerability-checked, compliant images are running.
+*suppline* uses the regsync format with suppline-specific extensions. Isn't that great? You can use *regsync* to synchronize other repositories to your private one and *suppline* to assure compliance there. Using a simple *kyverno* or *OPA* policy in your cluster you can always be sure that only vulnerability-checked, compliant images are running.
 
 ## Key Features
 
@@ -32,11 +32,11 @@ Built as a single Go binary, daimoniac/suppline runs as a continuous service tha
 
 ## Architecture
 
-daimoniac/suppline consists of several components running in a single process:
+suppline consists of several components running in a single process:
 
 ```mermaid
 graph TB
-    subgraph daimoniac/suppline["daimoniac/suppline"]
+    subgraph suppline["suppline"]
         Watcher[Watcher]
         Queue[Queue]
         Worker[Worker]
@@ -73,7 +73,7 @@ graph TB
     Scanner <-->|scan requests| Trivy
     Attestor -->|transparency log| Rekor
     
-    style daimoniac/suppline fill:#f9f9f9,stroke:#333,stroke-width:2px
+    style suppline fill:#f9f9f9,stroke:#333,stroke-width:2px
     style StateStore fill:#e1f5ff,stroke:#0288d1
     style Registry fill:#fff3e0,stroke:#f57c00
     style Trivy fill:#fff3e0,stroke:#f57c00
@@ -104,13 +104,13 @@ graph TB
 
 ```bash
 # Copy example configuration
-cp daimoniac/suppline.yml.example daimoniac/suppline.yml
+cp suppline.yml.example suppline.yml
 
 # Edit with your registry details
-vim daimoniac/suppline.yml
+vim suppline.yml
 ```
 
-Example `daimoniac/suppline.yml`:
+Example `suppline.yml`:
 
 ```yaml
 version: 1
@@ -159,7 +159,7 @@ docker compose up -d
 curl http://localhost:8081/health
 
 # View logs
-docker compose logs -f daimoniac/suppline
+docker compose logs -f suppline
 
 # Check metrics
 curl http://localhost:9090/metrics
@@ -169,11 +169,11 @@ curl http://localhost:9090/metrics
 
 ### Environment Variables
 
-daimoniac/suppline is configured through environment variables and the daimoniac/suppline.yml config file:
+suppline is configured through environment variables and the suppline.yml config file:
 
 #### Core Configuration
 ```bash
-SUPPLINE_CONFIG=daimoniac/suppline.yml          # Path to regsync config
+SUPPLINE_CONFIG=suppline.yml          # Path to regsync config
 LOG_LEVEL=info                        # debug, info, warn, error
 ```
 
@@ -196,7 +196,7 @@ TRIVY_INSECURE=false                  # Skip TLS verification
 #### State Store
 ```bash
 STATE_STORE_TYPE=sqlite               # sqlite, postgres, memory
-SQLITE_PATH=daimoniac/suppline.db               # SQLite database path
+SQLITE_PATH=suppline.db               # SQLite database path
 RESCAN_INTERVAL=24h                   # Default rescan interval
 ```
 
@@ -223,7 +223,7 @@ HEALTH_CHECK_PORT=8081                # Health check port
 
 ### Regsync Configuration Format
 
-The `daimoniac/suppline.yml` file uses the regsync format with daimoniac/suppline-specific extensions. 
+The `suppline.yml` file uses the regsync format with suppline-specific extensions. 
 
 ```yaml
 version: 1
@@ -383,7 +383,7 @@ Content-Type: application/json
 ```bash
 POST /api/v1/policy/reevaluate
 
-# Reloads daimoniac/suppline.yml and re-evaluates all scans
+# Reloads suppline.yml and re-evaluates all scans
 ```
 
 ### Observability Endpoints
@@ -411,11 +411,11 @@ GET /health
 GET /metrics
 
 # Prometheus metrics including:
-# - daimoniac/suppline_scans_total
-# - daimoniac/suppline_policy_passed_total
-# - daimoniac/suppline_queue_depth
-# - daimoniac/suppline_vulnerabilities_total
-# - daimoniac/suppline_conditional_scan_decisions_total
+# - suppline_scans_total
+# - suppline_policy_passed_total
+# - suppline_queue_depth
+# - suppline_vulnerabilities_total
+# - suppline_conditional_scan_decisions_total
 ```
 
 ## Deployment
@@ -437,27 +437,27 @@ docker compose down
 
 ```bash
 # Create namespace and secrets
-kubectl create namespace daimoniac/suppline
+kubectl create namespace suppline
 
 # Create signing key secret
-kubectl create secret generic daimoniac/suppline-signing-key \
-  --namespace=daimoniac/suppline \
+kubectl create secret generic suppline-signing-key \
+  --namespace=suppline \
   --from-file=cosign.key=keys/cosign.key
 
 # Create config secret
-kubectl create secret generic daimoniac/suppline-config \
-  --namespace=daimoniac/suppline \
-  --from-file=daimoniac/suppline.yml=daimoniac/suppline.yml
+kubectl create secret generic suppline-config \
+  --namespace=suppline \
+  --from-file=suppline.yml=suppline.yml
 
 # Deploy
 kubectl apply -k deploy/kubernetes/
 
 # Check status
-kubectl get pods -n daimoniac/suppline
-kubectl logs -n daimoniac/suppline -l app=daimoniac/suppline -f
+kubectl get pods -n suppline
+kubectl logs -n suppline -l app=suppline -f
 
 # Port forward for local access
-kubectl port-forward -n daimoniac/suppline svc/daimoniac/suppline 8080:8080 9090:9090 8081:8081
+kubectl port-forward -n suppline svc/suppline 8080:8080 9090:9090 8081:8081
 ```
 
 ### Standalone Binary
@@ -469,10 +469,10 @@ make build
 # Run Trivy server
 trivy server --listen localhost:4954 &
 
-# Run daimoniac/suppline
-export SUPPLINE_CONFIG=daimoniac/suppline.yml
+# Run suppline
+export SUPPLINE_CONFIG=suppline.yml
 export ATTESTATION_KEY_PATH=keys/cosign.key
-./daimoniac/suppline
+./suppline
 ```
 
 ## Development
@@ -511,7 +511,7 @@ make run
 ```
 .
 ├── cmd/
-│   └── daimoniac/suppline/           # Main application entry point
+│   └── suppline/           # Main application entry point
 ├── internal/
 │   ├── api/                # HTTP API server and handlers
 │   ├── attestation/        # Sigstore attestation and signing
@@ -533,7 +533,7 @@ make run
 ├── docker-compose.yml      # Local development setup
 ├── Dockerfile              # Production container image
 ├── Makefile                # Build automation
-└── daimoniac/suppline.yml.example    # Example configuration
+└── suppline.yml.example    # Example configuration
 ```
 
 ### Testing
@@ -576,15 +576,15 @@ make fmt                    # Format code
 
 Key metrics exposed on `:9090/metrics`:
 
-- `daimoniac/suppline_scans_total{status}` - Total scans by status (success/failure)
-- `daimoniac/suppline_policy_passed_total` - Images passing policy
-- `daimoniac/suppline_policy_failed_total` - Images failing policy
-- `daimoniac/suppline_queue_depth` - Current task queue depth
-- `daimoniac/suppline_vulnerabilities_total{severity}` - Vulnerabilities by severity
-- `daimoniac/suppline_conditional_scan_decisions_total{decision,reason}` - Scan decisions
-- `daimoniac/suppline_conditional_scan_enqueued_total{repository,reason}` - Enqueued scans
-- `daimoniac/suppline_conditional_scan_skipped_total{repository}` - Skipped scans
-- `daimoniac/suppline_scan_duration_seconds` - Scan duration histogram
+- `suppline_scans_total{status}` - Total scans by status (success/failure)
+- `suppline_policy_passed_total` - Images passing policy
+- `suppline_policy_failed_total` - Images failing policy
+- `suppline_queue_depth` - Current task queue depth
+- `suppline_vulnerabilities_total{severity}` - Vulnerabilities by severity
+- `suppline_conditional_scan_decisions_total{decision,reason}` - Scan decisions
+- `suppline_conditional_scan_enqueued_total{repository,reason}` - Enqueued scans
+- `suppline_conditional_scan_skipped_total{repository}` - Skipped scans
+- `suppline_scan_duration_seconds` - Scan duration histogram
 
 ### Structured Logging
 
@@ -635,7 +635,7 @@ docker compose logs trivy
 
 **Authentication errors**
 ```bash
-# Verify registry credentials in daimoniac/suppline.yml
+# Verify registry credentials in suppline.yml
 # Check cosign authentication
 cosign login docker.io -u username -p password
 ```
@@ -644,7 +644,7 @@ cosign login docker.io -u username -p password
 ```bash
 # SQLite doesn't support concurrent writes well
 # Consider using PostgreSQL for high-throughput scenarios
-# Or ensure only one daimoniac/suppline instance per database
+# Or ensure only one suppline instance per database
 ```
 
 **Queue filling up**
@@ -665,7 +665,7 @@ Enable debug logging for detailed information:
 
 ```bash
 export LOG_LEVEL=debug
-./daimoniac/suppline
+./suppline
 ```
 
 ## Security Considerations
@@ -710,5 +710,5 @@ See LICENSE file for details.
 
 ## Support
 
-- **Issues**: https://github.com/daimoniac/suppline/daimoniac/suppline/issues
-- **Examples**: See `daimoniac/suppline.yml.example` and `deploy/` directory
+- **Issues**: https://github.com/daimoniac/suppline/issues
+- **Examples**: See `suppline.yml.example` and `deploy/` directory
