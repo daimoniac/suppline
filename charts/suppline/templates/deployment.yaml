@@ -1,0 +1,159 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "suppline.fullname" . }}
+  labels:
+    {{- include "suppline.labels" . | nindent 4 }}
+spec:
+  replicas: {{ .Values.backend.replicaCount }}
+  strategy:
+    type: Recreate  # Use Recreate to avoid multiple instances with SQLite
+  selector:
+    matchLabels:
+      {{- include "suppline.selectorLabels" . | nindent 6 }}
+  template:
+    metadata:
+      annotations:
+        {{- with .Values.podAnnotations }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+      labels:
+        {{- include "suppline.selectorLabels" . | nindent 8 }}
+    spec:
+      {{- with .Values.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      serviceAccountName: {{ include "suppline.serviceAccountName" . }}
+      securityContext:
+        runAsNonRoot: {{ .Values.backend.securityContext.runAsNonRoot }}
+        runAsUser: {{ .Values.backend.securityContext.runAsUser }}
+        runAsGroup: {{ .Values.backend.securityContext.runAsGroup }}
+        fsGroup: {{ .Values.backend.securityContext.fsGroup }}
+      containers:
+      # Main application container
+      - name: suppline
+        image: "{{ .Values.backend.image.repository }}:{{ .Values.backend.image.tag | default .Chart.AppVersion }}"
+        imagePullPolicy: {{ .Values.backend.image.pullPolicy }}
+        ports:
+        - name: api
+          containerPort: {{ .Values.backend.service.port }}
+          protocol: TCP
+        - name: metrics
+          containerPort: {{ .Values.backend.service.metricsPort }}
+          protocol: TCP
+        - name: health
+          containerPort: {{ .Values.backend.service.healthPort }}
+          protocol: TCP
+        env:
+        {{- if .Values.backend.signingKey.enabled }}
+        - name: ATTESTATION_KEY_PATH
+          value: /keys/cosign.key
+        {{- end }}
+        envFrom:
+        - configMapRef:
+            name: {{ include "suppline.fullname" . }}-config
+        - secretRef:
+            name: {{ include "suppline.fullname" . }}-secrets
+        volumeMounts:
+        - name: data
+          mountPath: /data
+        - name: config
+          mountPath: /config
+          readOnly: true
+        - name: cache
+          mountPath: /home/suppline/.cache
+        {{- if .Values.backend.signingKey.enabled }}
+        - name: signing-key
+          mountPath: /keys
+          readOnly: true
+        {{- end }}
+        resources:
+          {{- toYaml .Values.backend.resources | nindent 10 }}
+        startupProbe:
+          exec:
+            command:
+            - sh
+            - -c
+            - 'wget -q --spider http://localhost:4954/healthz || exit 1'
+          initialDelaySeconds: 5
+          periodSeconds: 2
+          failureThreshold: 30
+        livenessProbe:
+          {{- toYaml .Values.backend.livenessProbe | nindent 10 }}
+        readinessProbe:
+          {{- toYaml .Values.backend.readinessProbe | nindent 10 }}
+        securityContext:
+          allowPrivilegeEscalation: {{ .Values.backend.securityContext.allowPrivilegeEscalation }}
+          readOnlyRootFilesystem: {{ .Values.backend.securityContext.readOnlyRootFilesystem }}
+          capabilities:
+            {{- toYaml .Values.backend.securityContext.capabilities | nindent 12 }}
+      # Trivy server sidecar
+      - name: trivy
+        image: "{{ .Values.trivy.image.repository }}:{{ .Values.trivy.image.tag }}"
+        imagePullPolicy: {{ .Values.trivy.image.pullPolicy }}
+        args:
+        - server
+        - --listen
+        - 0.0.0.0:4954
+        ports:
+        - name: trivy
+          containerPort: 4954
+          protocol: TCP
+        env:
+        - name: TRIVY_CACHE_DIR
+          value: /trivy-cache
+        volumeMounts:
+        - name: trivy-cache
+          mountPath: /trivy-cache
+        resources:
+          {{- toYaml .Values.trivy.resources | nindent 10 }}
+        livenessProbe:
+          {{- toYaml .Values.trivy.livenessProbe | nindent 10 }}
+        readinessProbe:
+          {{- toYaml .Values.trivy.readinessProbe | nindent 10 }}
+        securityContext:
+          {{- toYaml .Values.trivy.securityContext | nindent 10 }}
+      volumes:
+      - name: data
+        {{- if .Values.persistence.data.enabled }}
+        persistentVolumeClaim:
+          claimName: {{ include "suppline.fullname" . }}-data
+        {{- else }}
+        emptyDir: {}
+        {{- end }}
+      - name: trivy-cache
+        {{- if .Values.persistence.trivyCache.enabled }}
+        persistentVolumeClaim:
+          claimName: {{ include "suppline.fullname" . }}-trivy-cache
+        {{- else }}
+        emptyDir: {}
+        {{- end }}
+      - name: cache
+        emptyDir: {}
+      - name: config
+        configMap:
+          name: {{ include "suppline.fullname" . }}-config
+          items:
+          - key: suppline.yml
+            path: suppline.yml
+      {{- if .Values.backend.signingKey.enabled }}
+      - name: signing-key
+        secret:
+          secretName: {{ include "suppline.fullname" . }}-signing-key
+          items:
+          - key: cosign.key
+            path: cosign.key
+      {{- end }}
+      {{- with .Values.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.affinity }}
+      affinity:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}

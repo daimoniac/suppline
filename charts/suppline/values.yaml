@@ -1,0 +1,230 @@
+# Default values for suppline
+# This is a YAML-formatted file.
+# Declare variables to be passed into your templates.
+
+# Global settings
+global:
+  namespace: suppline
+
+# Backend configuration
+backend:
+  replicaCount: 1
+  
+  image:
+    repository: daimoniac/suppline
+    pullPolicy: Always
+    tag: "latest"
+  
+  service:
+    type: ClusterIP
+    port: 8080
+    metricsPort: 9090
+    healthPort: 8081
+  
+  resources:
+    requests:
+      memory: "512Mi"
+      cpu: "500m"
+    limits:
+      memory: "1Gi"
+      cpu: "1000m"
+  
+  securityContext:
+    runAsNonRoot: true
+    runAsUser: 1000
+    runAsGroup: 1000
+    fsGroup: 1000
+    allowPrivilegeEscalation: false
+    readOnlyRootFilesystem: false
+    capabilities:
+      drop:
+        - ALL
+  
+  livenessProbe:
+    httpGet:
+      path: /health
+      port: health
+    initialDelaySeconds: 30
+    periodSeconds: 30
+    timeoutSeconds: 10
+    failureThreshold: 3
+  
+  readinessProbe:
+    httpGet:
+      path: /health
+      port: health
+    initialDelaySeconds: 10
+    periodSeconds: 10
+    timeoutSeconds: 5
+    failureThreshold: 3
+  
+  config:
+    logLevel: "info"
+    apiEnabled: "true"
+    apiReadOnly: "false"
+    queueBufferSize: "1000"
+    workerPollInterval: "5m"
+    workerRetryAttempts: "3"
+    workerRetryBackoff: "10s"
+    scannerTimeout: "5m"
+    rescanInterval: "24h"
+  
+ 
+  # API key for authentication
+  apiKey: "dev-secret-key"
+  
+  # Cosign signing key for attestations
+  signingKey:
+    enabled: true
+    # Base64 encoded cosign.key content
+    key: "LS0tLS1CRUdJTiBFTkNSWVBURUQgU0lHU1RPUkUgUFJJVkFURSBLRVktLS0tLQpleUpyWkdZaU9uc2libUZ0WlNJNkluTmpjbmx3ZENJc0luQmhjbUZ0Y3lJNmV5Sk9Jam8yTlRVek5pd2ljaUk2Ck9Dd2ljQ0k2TVgwc0luTmhiSFFpT2lKc2VtbGtjVzFXUjJKc05VbHFORk15V1c5Q056TXhXbkV3YTFGRFNXOTEKZDBZeE5HcHJRVzlNWVVGblBTSjlMQ0pqYVhCb1pYSWlPbnNpYm1GdFpTSTZJbTVoWTJ3dmMyVmpjbVYwWW05NApJaXdpYm05dVkyVWlPaUlyVkZCU05VZHhWMFZXYkZwdE5URmFaekpvSzBSeGRXVlZOR0UyWXpRelN5SjlMQ0pqCmFYQm9aWEowWlhoMElqb2lNMUJNWTNaSGExVlFTVEY1VG1SeldqZEpla04yVW5wNWNUVnVjMFZ2S3psVVlVUnMKV2xKUVNURkZVMnd4U0c5M1MzVTFNRU5STlVkQ1UyVkxVRTEwTUZsSVkzZEhOR2xRUkc1WlNVSkpZM1ZNVUVsaApjekp1T1VOWmExSmFSSEp6ZFN0NFJ6aHFWM1kyYW1Oc1pVWlJkRUpRUVRSU1RucE9MM05LWW5sTWFHVnpWWGQ1CloxZDZhbVl2U0hSNU9XaGtVVm9yUVZCMWEydE9TV3hYZEhwRGJrUmlUMDVaTkRkUk5IbzVhM1V5Y205SE5tbHIKVEhvemREWTJWRGM1Vmk5d2VsSkpRbmxDUkdOeGRHTnNWRkU5UFNKOQotLS0tLUVORCBFTkNSWVBURUQgU0lHU1RPUkUgUFJJVkFURSBLRVktLS0tLQo="
+    password: "glpat-RJuc7BvfGMCdaHrYU7d9sW86MQp1Omh2eGJ1Cw.01.1210ckv7u"
+
+# Trivy sidecar configuration
+trivy:
+  image:
+    repository: aquasec/trivy
+    tag: "0.58.2"
+    pullPolicy: IfNotPresent
+  
+  resources:
+    requests:
+      memory: "1Gi"
+      cpu: "500m"
+    limits:
+      memory: "2Gi"
+      cpu: "1000m"
+  
+  securityContext:
+    allowPrivilegeEscalation: false
+    readOnlyRootFilesystem: false
+    capabilities:
+      drop:
+        - ALL
+  
+  livenessProbe:
+    tcpSocket:
+      port: 4954
+    initialDelaySeconds: 30
+    periodSeconds: 30
+  
+  readinessProbe:
+    tcpSocket:
+      port: 4954
+    initialDelaySeconds: 10
+    periodSeconds: 10
+
+# Frontend (UI) configuration
+frontend:
+  enabled: true
+  replicaCount: 2
+  
+  image:
+    repository: daimoniac/suppline-ui
+    tag: "latest"
+    pullPolicy: Always
+  
+  service:
+    type: ClusterIP
+    port: 80
+  
+  resources:
+    requests:
+      memory: "32Mi"
+      cpu: "50m"
+    limits:
+      memory: "64Mi"
+      cpu: "100m"
+  
+  securityContext:
+    runAsNonRoot: true
+    runAsUser: 101  # nginx user
+    runAsGroup: 101
+    fsGroup: 101
+    allowPrivilegeEscalation: false
+    readOnlyRootFilesystem: true
+    capabilities:
+      drop:
+        - ALL
+  
+  livenessProbe:
+    httpGet:
+      path: /
+      port: http
+    initialDelaySeconds: 10
+    periodSeconds: 30
+    timeoutSeconds: 5
+    failureThreshold: 3
+  
+  readinessProbe:
+    httpGet:
+      path: /
+      port: http
+    initialDelaySeconds: 5
+    periodSeconds: 10
+    timeoutSeconds: 3
+    failureThreshold: 3
+  
+  # API base URL for the frontend to connect to backend
+  apiBaseURL: "/api"
+  
+  ingress:
+    enabled: true
+    className: nginx
+    annotations: 
+      cert-manager.io/cluster-issuer: letsencrypt-prod
+    hosts:
+      - host: suppline.development.socialhub.dev
+        paths:
+          - path: /
+            pathType: Prefix
+    tls: 
+      - hosts:
+        - suppline.development.socialhub.dev
+        secretName: suppline-oauth2-proxy
+
+# Persistence configuration
+persistence:
+  # Data volume for SQLite database
+  data:
+    enabled: true
+    storageClassName: ""
+    accessMode: ReadWriteOnce
+    size: 10Gi
+    annotations: {}
+  
+  # Trivy cache volume
+  trivyCache:
+    enabled: false
+    storageClassName: ""
+    accessMode: ReadWrite
+    size: 5Gi
+    annotations: {}
+
+# ServiceAccount configuration
+serviceAccount:
+  create: true
+  annotations: {}
+  name: "suppline"
+
+# RBAC configuration
+rbac:
+  create: true
+
+# Pod annotations
+podAnnotations:
+  prometheus.io/scrape: "true"
+  prometheus.io/port: "9090"
+  prometheus.io/path: "/metrics"
+
+# Image pull secrets
+imagePullSecrets: []
+
+# Node selector
+nodeSelector: {}
+
+# Tolerations
+tolerations: []
+
+# Affinity
+affinity: {}

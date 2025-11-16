@@ -1,0 +1,25 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "suppline.fullname" . }}-config
+  labels:
+    {{- include "suppline.labels" . | nindent 4 }}
+data:
+  LOG_LEVEL: {{ .Values.backend.config.logLevel | quote }}
+  METRICS_PORT: {{ .Values.backend.service.metricsPort | quote }}
+  HEALTH_PORT: {{ .Values.backend.service.healthPort | quote }}
+  API_PORT: {{ .Values.backend.service.port | quote }}
+  API_ENABLED: {{ .Values.backend.config.apiEnabled | quote }}
+  API_READ_ONLY: {{ .Values.backend.config.apiReadOnly | quote }}
+  QUEUE_BUFFER_SIZE: {{ .Values.backend.config.queueBufferSize | quote }}
+  WORKER_POLL_INTERVAL: {{ .Values.backend.config.workerPollInterval | quote }}
+  WORKER_RETRY_ATTEMPTS: {{ .Values.backend.config.workerRetryAttempts | quote }}
+  WORKER_RETRY_BACKOFF: {{ .Values.backend.config.workerRetryBackoff | quote }}
+  SCANNER_SERVER_ADDR: "localhost:4954"
+  SCANNER_TIMEOUT: {{ .Values.backend.config.scannerTimeout | quote }}
+  STATE_STORE_TYPE: "sqlite"
+  SQLITE_PATH: "/data/suppline.db"
+  RESCAN_INTERVAL: {{ .Values.backend.config.rescanInterval | quote }}
+  SUPPLINE_CONFIG: "/config/suppline.yml"
+  suppline.yml: |
+{{ .Files.Get "suppline.yml" | indent 4 }}

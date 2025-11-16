@@ -1,0 +1,17 @@
+apiVersion: v2
+name: suppline
+description: A Helm chart for Suppline - Supply Chain Security Scanner
+type: application
+version: 0.1.0
+appVersion: "1.0.0"
+keywords:
+  - security
+  - vulnerability-scanning
+  - supply-chain
+  - container-security
+home: https://github.com/yourusername/suppline
+sources:
+  - https://github.com/yourusername/suppline
+maintainers:
+  - name: Suppline Team
+    email: team@example.com
