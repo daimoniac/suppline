@@ -94,6 +94,9 @@ func (s *APIServer) setupRoutes() {
 
 	// Swagger documentation
 	s.router.HandleFunc("/swagger/", httpSwagger.WrapHandler)
+
+	// Redirect root to swagger
+	s.router.HandleFunc("/", s.handleRootRedirect)
 }
 
 // corsMiddleware adds CORS headers to allow cross-origin requests
@@ -226,4 +229,13 @@ func parseQueryParamBool(r *http.Request, key string) *bool {
 	}
 	boolValue := value == "true" || value == "1" || value == "yes"
 	return &boolValue
+}
+
+// handleRootRedirect redirects / to /swagger/
+func (s *APIServer) handleRootRedirect(w http.ResponseWriter, r *http.Request) {
+	if r.URL.Path != "/" {
+		s.respondError(w, http.StatusNotFound, "not found")
+		return
+	}
+	http.Redirect(w, r, "/swagger/", http.StatusMovedPermanently)
 }
