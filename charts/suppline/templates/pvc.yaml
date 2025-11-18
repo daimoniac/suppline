@@ -5,8 +5,9 @@ metadata:
   name: {{ include "suppline.fullname" . }}-data
   labels:
     {{- include "suppline.labels" . | nindent 4 }}
-  {{- with .Values.persistence.data.annotations }}
   annotations:
+    "helm.sh/resource-policy": keep
+  {{- with .Values.persistence.data.annotations }}
     {{- toYaml . | nindent 4 }}
   {{- end }}
 spec:

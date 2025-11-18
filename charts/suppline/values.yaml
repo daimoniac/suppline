@@ -59,7 +59,7 @@ backend:
     failureThreshold: 3
   
   env:
-    LOG_LEVEL: "info"
+    LOG_LEVEL: "debug"
     API_ENABLED: "true"
     API_READ_ONLY: "false"
     QUEUE_BUFFER_SIZE: "1000"
@@ -69,15 +69,8 @@ backend:
     SCANNER_TIMEOUT: "5m"
     RESCAN_INTERVAL: "24h"
  
-  # API key for authentication (set via environment variable)
-  # apiKey: ""  # Set SUPPLINE_API_KEY environment variable
-  
-  # Cosign signing key for attestations
   attestationKey:
     enabled: true
-    # Base64 encoded cosign.key content (set via environment variable)
-    # key: ""  # Set ATTESTATION_KEY environment variable
-    # password: ""  # Set ATTESTATION_KEY_PASSWORD environment variable
 
 # Trivy sidecar configuration
 trivy:
@@ -214,6 +207,8 @@ frontend:
 # Persistence configuration
 persistence:
   # Data volume for SQLite database
+  # Note: The PVC will be retained after helm uninstall to preserve data
+  # If reinstalling, the existing PVC will be reused automatically
   data:
     enabled: true
     storageClassName: ""
