@@ -14,9 +14,36 @@ import (
 	"github.com/daimoniac/suppline/internal/types"
 )
 
-// handleGetScan retrieves a scan record with vulnerabilities for a specific digest
+// handleScanDetail routes requests to /scans/{digest} and /scans/{digest}/vulnerabilities
+func (s *APIServer) handleScanDetail(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		s.respondError(w, http.StatusMethodNotAllowed, "Method not allowed")
+		return
+	}
+
+	path := r.URL.Path
+	prefix := "/api/v1/scans/"
+	if !strings.HasPrefix(path, prefix) {
+		s.respondError(w, http.StatusBadRequest, "Invalid path")
+		return
+	}
+
+	remainder := strings.TrimPrefix(path, prefix)
+	
+	// Check if this is a vulnerabilities request
+	if strings.HasSuffix(remainder, "/vulnerabilities") {
+		digest := strings.TrimSuffix(remainder, "/vulnerabilities")
+		s.handleGetScanVulnerabilities(w, r, digest)
+		return
+	}
+
+	// Otherwise, it's a regular scan detail request
+	s.handleGetScan(w, r, remainder)
+}
+
+// handleGetScan retrieves a scan record (without vulnerabilities) for a specific digest
 // @Summary Get scan by digest
-// @Description Retrieve detailed scan information for a specific image digest
+// @Description Retrieve scan information for a specific image digest (without detailed vulnerabilities)
 // @Tags Scans
 // @Accept json
 // @Produce json
@@ -28,22 +55,7 @@ import (
 // @Failure 500 {object} map[string]string "Internal server error"
 // @Security BearerAuth
 // @Router /scans/{digest} [get]
-func (s *APIServer) handleGetScan(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodGet {
-		s.respondError(w, http.StatusMethodNotAllowed, "Method not allowed")
-		return
-	}
-
-	// Extract digest from URL path
-	// Path format: /api/v1/scans/{digest}
-	path := r.URL.Path
-	prefix := "/api/v1/scans/"
-	if !strings.HasPrefix(path, prefix) {
-		s.respondError(w, http.StatusBadRequest, "Invalid path")
-		return
-	}
-
-	digest := strings.TrimPrefix(path, prefix)
+func (s *APIServer) handleGetScan(w http.ResponseWriter, r *http.Request, digest string) {
 	if digest == "" {
 		s.respondError(w, http.StatusBadRequest, "Digest is required")
 		return
@@ -61,6 +73,47 @@ func (s *APIServer) handleGetScan(w http.ResponseWriter, r *http.Request) {
 	}
 
 	s.respondJSON(w, http.StatusOK, record)
+}
+
+// handleGetScanVulnerabilities retrieves vulnerabilities for a specific digest
+// @Summary Get scan vulnerabilities
+// @Description Retrieve detailed vulnerability information for a specific image digest
+// @Tags Scans
+// @Accept json
+// @Produce json
+// @Param digest path string true "Image digest (e.g., sha256:abc123...)"
+// @Success 200 {array} types.VulnerabilityRecord
+// @Failure 400 {object} map[string]string "Invalid digest format"
+// @Failure 401 {object} map[string]string "Unauthorized"
+// @Failure 404 {object} map[string]string "Scan not found"
+// @Failure 500 {object} map[string]string "Internal server error"
+// @Security BearerAuth
+// @Router /scans/{digest}/vulnerabilities [get]
+func (s *APIServer) handleGetScanVulnerabilities(w http.ResponseWriter, r *http.Request, digest string) {
+	if digest == "" {
+		s.respondError(w, http.StatusBadRequest, "Digest is required")
+		return
+	}
+
+	// Get scan record from state store (with vulnerabilities)
+	record, err := s.stateStore.GetLastScan(r.Context(), digest)
+	if err != nil {
+		if errors.Is(err, statestore.ErrScanNotFound) {
+			s.respondError(w, http.StatusNotFound, "Scan not found")
+			return
+		}
+		s.respondError(w, http.StatusInternalServerError, fmt.Sprintf("Failed to get scan: %v", err))
+		return
+	}
+
+	// Stream JSON response to avoid buffering large payloads
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusOK)
+	encoder := json.NewEncoder(w)
+	if err := encoder.Encode(record.Vulnerabilities); err != nil {
+		s.logger.Error("error encoding JSON response",
+			"error", err.Error())
+	}
 }
 
 // handleListScans lists scan records with optional filters
@@ -90,6 +143,7 @@ func (s *APIServer) handleListScans(w http.ResponseWriter, r *http.Request) {
 		PolicyPassed: parseQueryParamBool(r, "policy_passed"),
 		Limit:        parseQueryParamInt(r, "limit", 100),
 		Offset:       parseQueryParamInt(r, "offset", 0),
+		IncludeVulns: false, // Don't load vulnerabilities in list endpoint
 	}
 
 	// Get scans from state store
@@ -99,7 +153,14 @@ func (s *APIServer) handleListScans(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	s.respondJSON(w, http.StatusOK, records)
+	// Stream JSON response to avoid buffering large payloads
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusOK)
+	encoder := json.NewEncoder(w)
+	if err := encoder.Encode(records); err != nil {
+		s.logger.Error("error encoding JSON response",
+			"error", err.Error())
+	}
 }
 
 // handleQueryVulnerabilities searches vulnerabilities across all scans
@@ -140,7 +201,14 @@ func (s *APIServer) handleQueryVulnerabilities(w http.ResponseWriter, r *http.Re
 		return
 	}
 
-	s.respondJSON(w, http.StatusOK, vulnerabilities)
+	// Stream JSON response to avoid buffering large payloads
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusOK)
+	encoder := json.NewEncoder(w)
+	if err := encoder.Encode(vulnerabilities); err != nil {
+		s.logger.Error("error encoding JSON response",
+			"error", err.Error())
+	}
 }
 
 // handleListTolerations lists tolerated CVEs with optional filters
@@ -181,7 +249,14 @@ func (s *APIServer) handleListTolerations(w http.ResponseWriter, r *http.Request
 		return
 	}
 
-	s.respondJSON(w, http.StatusOK, tolerations)
+	// Stream JSON response to avoid buffering large payloads
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusOK)
+	encoder := json.NewEncoder(w)
+	if err := encoder.Encode(tolerations); err != nil {
+		s.logger.Error("error encoding JSON response",
+			"error", err.Error())
+	}
 }
 
 // handleListFailedImages lists all images that failed policy evaluation
@@ -210,6 +285,7 @@ func (s *APIServer) handleListFailedImages(w http.ResponseWriter, r *http.Reques
 	filter := statestore.ScanFilter{
 		PolicyPassed: &policyPassed,
 		Limit:        limit,
+		IncludeVulns: false, // Don't load vulnerabilities in list endpoint
 	}
 
 	records, err := s.stateStore.ListScans(r.Context(), filter)
@@ -218,7 +294,14 @@ func (s *APIServer) handleListFailedImages(w http.ResponseWriter, r *http.Reques
 		return
 	}
 
-	s.respondJSON(w, http.StatusOK, records)
+	// Stream JSON response to avoid buffering large payloads
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusOK)
+	encoder := json.NewEncoder(w)
+	if err := encoder.Encode(records); err != nil {
+		s.logger.Error("error encoding JSON response",
+			"error", err.Error())
+	}
 }
 
 // TriggerScanRequest represents the request body for triggering a scan

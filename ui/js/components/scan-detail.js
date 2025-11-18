@@ -30,6 +30,16 @@ export class ScanDetail extends BaseComponent {
             this.digest = digest;
             // API returns single ScanRecord object with PascalCase fields
             this.scan = await this.apiClient.getScanByDigest(digest);
+            
+            // Load vulnerabilities separately from the new endpoint
+            try {
+                this.scan.Vulnerabilities = await this.apiClient.getScanVulnerabilities(digest);
+            } catch (error) {
+                console.warn('Failed to load vulnerabilities:', error);
+                // Continue without vulnerabilities rather than failing completely
+                this.scan.Vulnerabilities = [];
+            }
+            
             return this.scan;
         } catch (error) {
             console.error('Failed to load scan details:', error);

@@ -78,8 +78,8 @@ func NewAPIServer(cfg *config.APIConfig, store statestore.StateStoreQuery, queue
 // setupRoutes configures all API routes
 func (s *APIServer) setupRoutes() {
 	// Query endpoints (GET)
-	s.router.HandleFunc("/api/v1/scans/", s.corsMiddleware(s.authMiddleware(s.handleGetScan, false)))
 	s.router.HandleFunc("/api/v1/scans", s.corsMiddleware(s.authMiddleware(s.handleListScans, false)))
+	s.router.HandleFunc("/api/v1/scans/", s.corsMiddleware(s.authMiddleware(s.handleScanDetail, false)))
 	s.router.HandleFunc("/api/v1/vulnerabilities", s.corsMiddleware(s.authMiddleware(s.handleQueryVulnerabilities, false)))
 	s.router.HandleFunc("/api/v1/tolerations", s.corsMiddleware(s.authMiddleware(s.handleListTolerations, false)))
 	s.router.HandleFunc("/api/v1/images/failed", s.corsMiddleware(s.authMiddleware(s.handleListFailedImages, false)))

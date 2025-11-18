@@ -564,19 +564,22 @@ func (s *SQLiteStore) ListScans(ctx context.Context, filter ScanFilter) ([]*Scan
 			return nil, errors.NewTransientf("failed to scan row: %w", err)
 		}
 
-		// Load vulnerabilities
-		vulns, err := s.loadVulnerabilities(ctx, scanRecordID)
-		if err != nil {
-			return nil, err
-		}
-		record.Vulnerabilities = vulns
+		// Load vulnerabilities and tolerated CVEs only if requested
+		if filter.IncludeVulns {
+			// Load vulnerabilities
+			vulns, err := s.loadVulnerabilities(ctx, scanRecordID)
+			if err != nil {
+				return nil, err
+			}
+			record.Vulnerabilities = vulns
 
-		// Load tolerated CVEs
-		tolerated, err := s.loadToleratedCVEs(ctx, scanRecordID)
-		if err != nil {
-			return nil, err
+			// Load tolerated CVEs
+			tolerated, err := s.loadToleratedCVEs(ctx, scanRecordID)
+			if err != nil {
+				return nil, err
+			}
+			record.ToleratedCVEs = tolerated
 		}
-		record.ToleratedCVEs = tolerated
 
 		records = append(records, &record)
 	}

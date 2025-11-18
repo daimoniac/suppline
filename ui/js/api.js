@@ -146,6 +146,14 @@ class APIClient {
     // ==================== Vulnerabilities API ====================
 
     /**
+     * Get vulnerabilities for a specific scan digest
+     * @param {string} digest - Image digest
+     */
+    async getScanVulnerabilities(digest) {
+        return this.request(`/api/v1/scans/${encodeURIComponent(digest)}/vulnerabilities`);
+    }
+
+    /**
      * Query vulnerabilities with filters
      * @param {Object} filters - Filter parameters
      * @param {string} filters.cve_id - Filter by CVE ID
