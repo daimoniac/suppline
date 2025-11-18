@@ -1,6 +1,7 @@
 services:
   # Main application
   suppline:
+    image: daimoniac/suppline
     build:
       context: .
       dockerfile: Dockerfile
@@ -50,23 +51,15 @@ services:
 
   # Web UI
   ui:
-    image: nginx:alpine
+    image: daimoniac/suppline-ui
+    build:
+      context: ui
+      dockerfile: Dockerfile
     container_name: suppline-ui
     ports:
       - "3000:80"
     environment:
       - API_BASE_URL=http://localhost:8080
-    volumes:
-      - ./ui:/usr/share/nginx/html-source:ro
-      - ./ui/nginx.conf:/etc/nginx/conf.d/default.conf:ro
-      - ui-html:/usr/share/nginx/html
-    entrypoint:
-      - sh
-      - -c
-      - |
-        cp -r /usr/share/nginx/html-source/* /usr/share/nginx/html/
-        echo "window.APP_CONFIG = {\"apiBaseURL\": \"$$API_BASE_URL\"};" > /usr/share/nginx/html/config.js
-        exec nginx -g 'daemon off;'
     depends_on:
       - suppline
     networks:
