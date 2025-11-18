@@ -6,6 +6,10 @@
 backend:
   replicaCount: 1
   
+  # Secrets - these can be set via values-secrets.yaml or environment variables
+  # DO NOT commit actual secrets to git
+  secrets: {}
+  
   image:
     repository: daimoniac/suppline
     pullPolicy: Always

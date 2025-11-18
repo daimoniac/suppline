@@ -34,6 +34,11 @@ spec:
           - server
           - -c
           - /config/suppline.yml
+        envFrom:
+        - configMapRef:
+            name: {{ include "suppline.fullname" . }}-config
+        - secretRef:
+            name: {{ include "suppline.fullname" . }}-secrets
         securityContext:
           allowPrivilegeEscalation: {{ .Values.regsync.securityContext.allowPrivilegeEscalation }}
           readOnlyRootFilesystem: {{ .Values.regsync.securityContext.readOnlyRootFilesystem }}

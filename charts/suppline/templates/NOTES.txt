@@ -47,11 +47,11 @@ To learn more about the release, try:
   
   Then visit http://127.0.0.1:9090/metrics
 
-{{- if not .Values.backend.signingKey.enabled }}
+{{- if not .Values.backend.attestationKey.enabled }}
 
 WARNING: Attestation signing is disabled. To enable it, set:
-  backend.signingKey.enabled=true
-  backend.signingKey.key=<base64-encoded-cosign-key>
+  backend.attestationKey.enabled=true
+  backend.attestationKey.key=<base64-encoded-cosign-key>
 {{- end }}
 
 For more information, visit: https://github.com/yourusername/suppline

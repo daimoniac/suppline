@@ -211,7 +211,7 @@ REKOR_URL=https://rekor.sigstore.dev  # Transparency log URL
 ```bash
 API_ENABLED=true                      # Enable HTTP API
 API_PORT=8080                         # API server port
-API_KEY=                              # Optional API key for auth
+SUPPLINE_API_KEY=                     # Optional API key for auth
 API_READ_ONLY=false                   # Disable write operations
 ```
 
@@ -671,7 +671,7 @@ export LOG_LEVEL=debug
 ## Security Considerations
 
 - **Private Keys**: Store Cosign keys securely (Kubernetes secrets, vault)
-- **API Authentication**: Use `API_KEY` environment variable for production
+- **API Authentication**: Use `SUPPLINE_API_KEY` environment variable for production
 - **Registry Credentials**: Never commit credentials to version control
 - **TLS**: Enable TLS for Trivy server in production (`TRIVY_INSECURE=false`)
 - **Network Policies**: Restrict network access in Kubernetes deployments

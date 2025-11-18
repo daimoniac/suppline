@@ -17,6 +17,8 @@ go.work
 suppline.yml
 /keys/*
 .env
+values-secrets.yaml
+**/values-secrets.yaml
 
 # State store
 *.db

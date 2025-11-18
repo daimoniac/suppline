@@ -75,7 +75,7 @@ func Load() (*Config, error) {
 		API: APIConfig{
 			Enabled:  getEnvBool("API_ENABLED", true),
 			Port:     getEnvInt("API_PORT", 8080),
-			APIKey:   getEnv("API_KEY", ""),
+			APIKey:   getEnv("SUPPLINE_API_KEY", ""),
 			ReadOnly: getEnvBool("API_READ_ONLY", false),
 		},
 		Observability: ObservabilityConfig{

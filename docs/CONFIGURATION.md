@@ -68,7 +68,7 @@ Configuration is loaded from multiple sources in this priority order:
 |----------|------|---------|-------------|
 | `API_ENABLED` | bool | `true` | Enable HTTP API server |
 | `API_PORT` | int | `8080` | API server port |
-| `API_KEY` | string | `` | Optional API key for authentication |
+| `SUPPLINE_API_KEY` | string | `` | Optional API key for authentication |
 | `API_READ_ONLY` | bool | `false` | Disable write operations (POST endpoints) |
 
 ### Observability
@@ -320,7 +320,7 @@ LOG_LEVEL=debug
 TRIVY_SERVER_ADDR=localhost:4954
 STATE_STORE_TYPE=sqlite
 SQLITE_PATH=./suppline.db
-API_KEY=dev-secret-key
+SUPPLINE_API_KEY=dev-secret-key
 RESCAN_INTERVAL=1h
 ```
 
@@ -346,7 +346,7 @@ API_PORT=8080
 SUPPLINE_CONFIG=/config/suppline.yml
 ATTESTATION_KEY_PATH=/keys/cosign.key
 ATTESTATION_KEY_PASSWORD=<from-secret>
-API_KEY=<from-secret>
+SUPPLINE_API_KEY=<from-secret>
 ```
 
 ## Duration Format

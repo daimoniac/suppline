@@ -57,9 +57,9 @@ The following table lists the configurable parameters of the Suppline chart and 
 | `backend.resources.limits.memory` | Memory limit | `1Gi` |
 | `backend.resources.limits.cpu` | CPU limit | `1000m` |
 | `backend.supplineConfig` | Suppline configuration (suppline.yml content) | See values.yaml |
-| `backend.signingKey.enabled` | Enable attestation signing | `false` |
-| `backend.signingKey.key` | Base64 encoded cosign key | `""` |
-| `backend.signingKey.password` | Cosign key password | `""` |
+| `backend.attestationKey.enabled` | Enable attestation signing | `true` |
+| `backend.attestationKey.key` | Base64 encoded cosign key | `""` |
+| `backend.attestationKey.password` | Cosign key password | `""` |
 
 ### Trivy Configuration
 
