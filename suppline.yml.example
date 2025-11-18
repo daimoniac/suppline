@@ -1,12 +1,18 @@
 version: 1
 
 creds:
+  - registry: registry-1.docker.io
+    user: '{{ env "DOCKER_USERNAME" }}'
+    pass: '{{ env "DOCKER_PASSWORD" }}'
+    repoAuth: false
+    reqPerSec: 10
+    reqConcurrent: 10
   - registry: docker.io
-    user: myuser
-    pass: mypassword
-    repoAuth: true
-    reqPerSec: 100
-    reqConcurrent: 5
+    user: '{{ env "DOCKER_USERNAME" }}'
+    pass: '{{ env "DOCKER_PASSWORD" }}'
+    repoAuth: false
+    reqPerSec: 10
+    reqConcurrent: 10
 
 defaults:
   parallel: 2

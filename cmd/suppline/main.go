@@ -144,10 +144,10 @@ func run() error {
 	}
 
 	logger.Debug("initializing attestor",
-		"key_path", cfg.Attestation.KeyBased.KeyPath)
+		"key_configured", cfg.Attestation.KeyBased.Key != "")
 	attestorConfig := attestation.AttestationConfig{
 		KeyBased: attestation.KeyBasedConfig{
-			KeyPath:     cfg.Attestation.KeyBased.KeyPath,
+			Key:         cfg.Attestation.KeyBased.Key,
 			KeyPassword: cfg.Attestation.KeyBased.KeyPassword,
 		},
 	}

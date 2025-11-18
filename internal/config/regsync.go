@@ -1,8 +1,10 @@
 package config
 
 import (
+	"bytes"
 	"os"
 	"strings"
+	"text/template"
 	"time"
 
 	"github.com/daimoniac/suppline/internal/errors"
@@ -22,7 +24,60 @@ func ParseRegsync(path string) (*RegsyncConfig, error) {
 		return nil, errors.NewPermanentf("failed to parse regsync YAML: %w", err)
 	}
 
+	// Expand environment variables in credentials
+	if err := expandCredentials(&config); err != nil {
+		return nil, errors.NewPermanentf("failed to expand credentials: %w", err)
+	}
+
 	return &config, nil
+}
+
+// expandCredentials processes credential fields and expands Go template expressions
+// Supports {{ env "VAR_NAME" }} syntax for environment variable expansion
+func expandCredentials(config *RegsyncConfig) error {
+	funcMap := template.FuncMap{
+		"env": os.Getenv,
+	}
+
+	for i := range config.Creds {
+		cred := &config.Creds[i]
+
+		// Expand user field
+		if expanded, err := expandTemplate(cred.User, funcMap); err != nil {
+			return errors.NewPermanentf("failed to expand user for registry %s: %w", cred.Registry, err)
+		} else {
+			cred.User = expanded
+		}
+
+		// Expand pass field
+		if expanded, err := expandTemplate(cred.Pass, funcMap); err != nil {
+			return errors.NewPermanentf("failed to expand pass for registry %s: %w", cred.Registry, err)
+		} else {
+			cred.Pass = expanded
+		}
+	}
+
+	return nil
+}
+
+// expandTemplate expands a Go template string with the provided function map
+func expandTemplate(tmpl string, funcMap template.FuncMap) (string, error) {
+	// If the string doesn't contain template syntax, return as-is
+	if !strings.Contains(tmpl, "{{") {
+		return tmpl, nil
+	}
+
+	t, err := template.New("expand").Funcs(funcMap).Parse(tmpl)
+	if err != nil {
+		return "", err
+	}
+
+	var buf bytes.Buffer
+	if err := t.Execute(&buf, nil); err != nil {
+		return "", err
+	}
+
+	return buf.String(), nil
 }
 
 // GetCredentialForRegistry returns the credential for a specific registry

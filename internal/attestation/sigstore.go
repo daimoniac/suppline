@@ -2,6 +2,7 @@ package attestation
 
 import (
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"log/slog"
@@ -15,9 +16,10 @@ import (
 
 // SigstoreAttestor implements the Attestor interface using cosign CLI
 type SigstoreAttestor struct {
-	keyPath     string
+	keyPath     string // Path to temporary key file
 	keyPassword string
 	logger      *slog.Logger
+	cleanup     func() // Cleanup function to remove temp key file
 }
 
 // NewSigstoreAttestor creates a new Sigstore attestor
@@ -28,14 +30,44 @@ func NewSigstoreAttestor(config AttestationConfig, logger *slog.Logger) (*Sigsto
 	}
 
 	// Validate configuration
-	if config.KeyBased.KeyPath == "" {
-		return nil, errors.NewPermanentf("key path is required for key-based signing")
+	if config.KeyBased.Key == "" {
+		return nil, errors.NewPermanentf("attestation key is required for key-based signing")
 	}
 
+	// Decode base64 key
+	keyData, err := base64.StdEncoding.DecodeString(config.KeyBased.Key)
+	if err != nil {
+		return nil, errors.NewPermanentf("failed to decode base64 attestation key: %w", err)
+	}
+
+	// Write key to temporary file
+	tmpFile, err := os.CreateTemp("", "cosign-key-*.key")
+	if err != nil {
+		return nil, errors.NewPermanentf("failed to create temp key file: %w", err)
+	}
+	
+	if _, err := tmpFile.Write(keyData); err != nil {
+		tmpFile.Close()
+		os.Remove(tmpFile.Name())
+		return nil, errors.NewPermanentf("failed to write key to temp file: %w", err)
+	}
+	tmpFile.Close()
+
+	// Set restrictive permissions on key file
+	if err := os.Chmod(tmpFile.Name(), 0600); err != nil {
+		os.Remove(tmpFile.Name())
+		return nil, errors.NewPermanentf("failed to set key file permissions: %w", err)
+	}
+
+	logger.Debug("created temporary key file", "path", tmpFile.Name())
+
 	return &SigstoreAttestor{
-		keyPath:     config.KeyBased.KeyPath,
+		keyPath:     tmpFile.Name(),
 		keyPassword: config.KeyBased.KeyPassword,
 		logger:      logger,
+		cleanup: func() {
+			os.Remove(tmpFile.Name())
+		},
 	}, nil
 }
 
@@ -225,5 +257,13 @@ func (a *SigstoreAttestor) SignImage(ctx context.Context, imageRef string) error
 		return errors.NewTransientf("failed to sign image: %w (output: %s)", err, string(output))
 	}
 
+	return nil
+}
+
+// Close cleans up temporary resources
+func (a *SigstoreAttestor) Close() error {
+	if a.cleanup != nil {
+		a.cleanup()
+	}
 	return nil
 }

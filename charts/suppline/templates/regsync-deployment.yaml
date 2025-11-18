@@ -1,0 +1,65 @@
+{{- if .Values.regsync.enabled }}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "suppline.fullname" . }}-regsync
+  labels:
+    {{- include "suppline.labels" . | nindent 4 }}
+    app.kubernetes.io/component: regsync
+spec:
+  replicas: {{ .Values.regsync.replicaCount }}
+  selector:
+    matchLabels:
+      {{- include "suppline.selectorLabels" . | nindent 6 }}
+      app.kubernetes.io/component: regsync
+  template:
+    metadata:
+      annotations:
+        checksum/config: {{ include (print $.Template.BasePath "/configmap.yaml") . | sha256sum }}
+      labels:
+        {{- include "suppline.selectorLabels" . | nindent 8 }}
+        app.kubernetes.io/component: regsync
+    spec:
+      serviceAccountName: {{ include "suppline.serviceAccountName" . }}
+      securityContext:
+        runAsNonRoot: {{ .Values.regsync.securityContext.runAsNonRoot }}
+        runAsUser: {{ .Values.regsync.securityContext.runAsUser }}
+        runAsGroup: {{ .Values.regsync.securityContext.runAsGroup }}
+        fsGroup: {{ .Values.regsync.securityContext.fsGroup }}
+      containers:
+      - name: regsync
+        image: "{{ .Values.regsync.image.repository }}:{{ .Values.regsync.image.tag }}"
+        imagePullPolicy: {{ .Values.regsync.image.pullPolicy }}
+        args:
+          - server
+          - -c
+          - /config/suppline.yml
+        securityContext:
+          allowPrivilegeEscalation: {{ .Values.regsync.securityContext.allowPrivilegeEscalation }}
+          readOnlyRootFilesystem: {{ .Values.regsync.securityContext.readOnlyRootFilesystem }}
+          capabilities:
+            drop:
+              {{- toYaml .Values.regsync.securityContext.capabilities.drop | nindent 14 }}
+        volumeMounts:
+        - name: config
+          mountPath: /config
+          readOnly: true
+        resources:
+          {{- toYaml .Values.regsync.resources | nindent 10 }}
+      volumes:
+      - name: config
+        configMap:
+          name: {{ include "suppline.fullname" . }}-config
+      {{- with .Values.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.affinity }}
+      affinity:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+{{- end }}

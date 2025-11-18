@@ -54,10 +54,10 @@ func Load() (*Config, error) {
 		},
 		Attestation: AttestationConfig{
 			KeyBased: struct {
-				KeyPath     string
+				Key         string
 				KeyPassword string
 			}{
-				KeyPath:     getEnv("ATTESTATION_KEY_PATH", ""),
+				Key:         getEnv("ATTESTATION_KEY", ""),
 				KeyPassword: getEnv("ATTESTATION_KEY_PASSWORD", ""),
 			},
 			RekorURL:     getEnv("REKOR_URL", "https://rekor.sigstore.dev"),
@@ -114,8 +114,8 @@ func (c *Config) Validate() error {
 		return errors.NewPermanentf("sqlite path is required when using sqlite state store")
 	}
 
-	if !c.Attestation.UseKeyless && c.Attestation.KeyBased.KeyPath == "" {
-		return errors.NewPermanentf("attestation key path is required when not using keyless mode")
+	if !c.Attestation.UseKeyless && c.Attestation.KeyBased.Key == "" {
+		return errors.NewPermanentf("attestation key is required when not using keyless mode")
 	}
 
 	if c.Attestation.UseKeyless && (c.Attestation.OIDCIssuer == "" || c.Attestation.OIDCClientID == "") {

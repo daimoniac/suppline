@@ -45,11 +45,6 @@ spec:
         - name: health
           containerPort: {{ .Values.backend.service.healthPort }}
           protocol: TCP
-        env:
-        {{- if .Values.backend.signingKey.enabled }}
-        - name: ATTESTATION_KEY_PATH
-          value: /keys/cosign.key
-        {{- end }}
         envFrom:
         - configMapRef:
             name: {{ include "suppline.fullname" . }}-config
@@ -63,11 +58,6 @@ spec:
           readOnly: true
         - name: cache
           mountPath: /home/suppline/.cache
-        {{- if .Values.backend.signingKey.enabled }}
-        - name: signing-key
-          mountPath: /keys
-          readOnly: true
-        {{- end }}
         resources:
           {{- toYaml .Values.backend.resources | nindent 10 }}
         startupProbe:
@@ -137,14 +127,6 @@ spec:
           items:
           - key: suppline.yml
             path: suppline.yml
-      {{- if .Values.backend.signingKey.enabled }}
-      - name: signing-key
-        secret:
-          secretName: {{ include "suppline.fullname" . }}-signing-key
-          items:
-          - key: cosign.key
-            path: cosign.key
-      {{- end }}
       {{- with .Values.nodeSelector }}
       nodeSelector:
         {{- toYaml . | nindent 8 }}

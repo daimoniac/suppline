@@ -7,18 +7,9 @@ import (
 	"os"
 	"path/filepath"
 
+	"github.com/daimoniac/suppline/internal/config"
 	"github.com/daimoniac/suppline/internal/errors"
-	"gopkg.in/yaml.v3"
 )
-
-// RegsyncConfig represents the regsync configuration structure
-type RegsyncConfig struct {
-	Creds []struct {
-		Registry string `yaml:"registry"`
-		User     string `yaml:"user"`
-		Pass     string `yaml:"pass"`
-	} `yaml:"creds"`
-}
 
 // DockerConfig represents Docker's config.json structure
 type DockerConfig struct {
@@ -33,16 +24,10 @@ type DockerAuth struct {
 // GenerateDockerConfigFromRegsync reads suppline.yml and generates a Docker config.json
 // that Trivy can use for registry authentication
 func GenerateDockerConfigFromRegsync(regsyncPath string) (string, error) {
-	// Read suppline.yml
-	data, err := os.ReadFile(regsyncPath)
+	// Parse regsync config with template expansion
+	regsync, err := config.ParseRegsync(regsyncPath)
 	if err != nil {
-		return "", errors.NewTransientf("failed to read regsync config: %w", err)
-	}
-
-	// Parse regsync config
-	var regsync RegsyncConfig
-	if err := yaml.Unmarshal(data, &regsync); err != nil {
-		return "", errors.NewPermanentf("failed to parse regsync config: %w", err)
+		return "", errors.NewTransientf("failed to parse regsync config: %w", err)
 	}
 
 	// Build Docker config
@@ -51,6 +36,11 @@ func GenerateDockerConfigFromRegsync(regsyncPath string) (string, error) {
 	}
 
 	for _, cred := range regsync.Creds {
+		// Skip credentials without username/password
+		if cred.User == "" || cred.Pass == "" {
+			continue
+		}
+		
 		// Docker uses base64(username:password) for auth
 		auth := base64.StdEncoding.EncodeToString([]byte(fmt.Sprintf("%s:%s", cred.User, cred.Pass)))
 		

@@ -45,7 +45,7 @@ type ScannerConfig struct {
 // AttestationConfig configures Sigstore attestation and signing
 type AttestationConfig struct {
 	KeyBased struct {
-		KeyPath     string
+		Key         string // Base64-encoded key content
 		KeyPassword string
 	}
 	RekorURL     string

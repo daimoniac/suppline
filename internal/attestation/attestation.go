@@ -103,7 +103,7 @@ type VulnerabilitySummary struct {
 
 // KeyBasedConfig contains configuration for key-based signing
 type KeyBasedConfig struct {
-	KeyPath     string // Path to the private key file
+	Key         string // Base64-encoded private key content
 	KeyPassword string // Password for the private key (optional)
 	CertPath    string // Path to the certificate file (optional)
 }

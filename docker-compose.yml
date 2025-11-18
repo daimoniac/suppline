@@ -9,6 +9,8 @@ services:
       - "8080:8080"  # API
       - "9090:9090"  # Metrics
       - "8081:8081"  # Health
+    # Note: DOCKER_USERNAME and DOCKER_PASSWORD are used for Go template expansion
+    # in suppline.yml credentials. Make sure to set these in your .env file.
     environment:
       - SUPPLINE_CONFIG=/config/suppline.yml
       - LOG_LEVEL=info
@@ -26,12 +28,13 @@ services:
       - STATE_STORE_TYPE=sqlite
       - SQLITE_PATH=/data/suppline.db
       - RESCAN_INTERVAL=24h
-      - ATTESTATION_KEY_PATH=/keys/cosign.key
+      - ATTESTATION_KEY=${ATTESTATION_KEY}
       - ATTESTATION_KEY_PASSWORD=${ATTESTATION_KEY_PASSWORD}
+      - DOCKER_USERNAME=${DOCKER_USERNAME}
+      - DOCKER_PASSWORD=${DOCKER_PASSWORD}
     volumes:
       - ./data:/data
       - ./suppline.yml:/config/suppline.yml:ro
-      - ./keys:/keys:ro
     depends_on:
       - trivy
     networks:
@@ -95,6 +98,20 @@ services:
       timeout: 10s
       retries: 3
       start_period: 30s
+
+  # Regsync - Registry synchronization
+  regsync:
+    image: daimoniac/regsync:latest
+    container_name: regsync
+    command: ["server", "-c", "/config/suppline.yml"]
+    environment:
+      - DOCKER_USERNAME=${DOCKER_USERNAME}
+      - DOCKER_PASSWORD=${DOCKER_PASSWORD}
+    volumes:
+      - ./suppline.yml:/config/suppline.yml:ro
+    networks:
+      - suppline
+    restart: unless-stopped
 
 networks:
   suppline:

@@ -122,22 +122,50 @@ sync:
 
 ### Credentials Section
 
+Credentials support Go template syntax for environment variable expansion, allowing you to keep secrets out of configuration files.
+
+**Template Syntax:**
+- Use `{{ env "VAR_NAME" }}` to expand environment variables
+- Quotes are required around the template expression in YAML
+- If no template syntax is present, values are used as-is
+
+**Examples:**
+
 ```yaml
 creds:
-  # Docker Hub with personal access token
-  - registry: docker.io
-    user: myusername
-    pass: dckr_pat_xxxxxxxxxxxxx
-    repoAuth: true
-    reqPerSec: 100
-    reqConcurrent: 5
+  # Using environment variables (recommended for secrets)
+  - registry: registry-1.docker.io
+    user: '{{ env "DOCKER_USERNAME" }}'
+    pass: '{{ env "DOCKER_PASSWORD" }}'
+    repoAuth: false
+    reqPerSec: 10
+    reqConcurrent: 10
   
-  # Private registry with basic auth
+  - registry: docker.io
+    user: '{{ env "DOCKER_USERNAME" }}'
+    pass: '{{ env "DOCKER_PASSWORD" }}'
+    repoAuth: false
+    reqPerSec: 10
+    reqConcurrent: 10
+  
+  # Plain text credentials (not recommended for production)
   - registry: registry.example.com
     user: admin
     pass: secretpassword
     repoAuth: false
 ```
+
+**Environment Variables:**
+```bash
+export DOCKER_USERNAME=myusername
+export DOCKER_PASSWORD=dckr_pat_xxxxxxxxxxxxx
+```
+
+**Security Best Practices:**
+- Always use environment variables for credentials in production
+- Never commit credentials to version control
+- Use Kubernetes Secrets or similar secret management systems
+- Rotate credentials regularly
 
 ### Sync Entries
 

@@ -4,6 +4,7 @@ import (
 	"os"
 	"strings"
 	"testing"
+	"text/template"
 	"time"
 )
 
@@ -31,11 +32,11 @@ sync:
 	// Set environment variables
 	os.Setenv("SUPPLINE_CONFIG", tmpfile.Name())
 	os.Setenv("TRIVY_SERVER_ADDR", "localhost:4954")
-	os.Setenv("ATTESTATION_KEY_PATH", "/tmp/test.key")
+	os.Setenv("ATTESTATION_KEY", "dGVzdC1rZXk=")
 	defer func() {
 		os.Unsetenv("SUPPLINE_CONFIG")
 		os.Unsetenv("TRIVY_SERVER_ADDR")
-		os.Unsetenv("ATTESTATION_KEY_PATH")
+		os.Unsetenv("ATTESTATION_KEY")
 	}()
 
 	cfg, err := Load()
@@ -91,7 +92,7 @@ sync:
 	os.Setenv("QUEUE_BUFFER_SIZE", "2000")
 	os.Setenv("WORKER_RETRY_ATTEMPTS", "5")
 	os.Setenv("TRIVY_SERVER_ADDR", "trivy:4954")
-	os.Setenv("ATTESTATION_KEY_PATH", "/keys/signing.key")
+	os.Setenv("ATTESTATION_KEY", "dGVzdC1rZXk=")
 	os.Setenv("API_PORT", "9000")
 	os.Setenv("LOG_LEVEL", "debug")
 	defer func() {
@@ -99,7 +100,7 @@ sync:
 		os.Unsetenv("QUEUE_BUFFER_SIZE")
 		os.Unsetenv("WORKER_RETRY_ATTEMPTS")
 		os.Unsetenv("TRIVY_SERVER_ADDR")
-		os.Unsetenv("ATTESTATION_KEY_PATH")
+		os.Unsetenv("ATTESTATION_KEY")
 		os.Unsetenv("API_PORT")
 		os.Unsetenv("LOG_LEVEL")
 	}()
@@ -150,10 +151,10 @@ func TestValidate(t *testing.T) {
 				},
 				Attestation: AttestationConfig{
 					KeyBased: struct {
-						KeyPath     string
+						Key         string
 						KeyPassword string
 					}{
-						KeyPath: "/tmp/key",
+						Key: "dGVzdC1rZXk=", // base64 encoded "test-key"
 					},
 					UseKeyless: false,
 				},
@@ -221,16 +222,16 @@ func TestValidate(t *testing.T) {
 				},
 				Attestation: AttestationConfig{
 					KeyBased: struct {
-						KeyPath     string
+						Key         string
 						KeyPassword string
 					}{
-						KeyPath: "",
+						Key: "",
 					},
 					UseKeyless: false,
 				},
 			},
 			wantErr: true,
-			errMsg:  "attestation key path is required",
+			errMsg:  "attestation key is required",
 		},
 		{
 			name: "keyless without OIDC config",
@@ -325,5 +326,253 @@ func TestGetEnvBool(t *testing.T) {
 				t.Errorf("getEnvBool(%q) = %v, want %v", tt.value, result, tt.expected)
 			}
 		})
+	}
+}
+
+func TestExpandCredentials(t *testing.T) {
+	tests := []struct {
+		name        string
+		config      *RegsyncConfig
+		envVars     map[string]string
+		wantUser    string
+		wantPass    string
+		wantErr     bool
+	}{
+		{
+			name: "expand environment variables",
+			config: &RegsyncConfig{
+				Creds: []RegistryCredential{
+					{
+						Registry: "docker.io",
+						User:     `{{ env "DOCKER_USERNAME" }}`,
+						Pass:     `{{ env "DOCKER_PASSWORD" }}`,
+					},
+				},
+			},
+			envVars: map[string]string{
+				"DOCKER_USERNAME": "testuser",
+				"DOCKER_PASSWORD": "testpass",
+			},
+			wantUser: "testuser",
+			wantPass: "testpass",
+			wantErr:  false,
+		},
+		{
+			name: "no template syntax - pass through",
+			config: &RegsyncConfig{
+				Creds: []RegistryCredential{
+					{
+						Registry: "docker.io",
+						User:     "plainuser",
+						Pass:     "plainpass",
+					},
+				},
+			},
+			envVars:  map[string]string{},
+			wantUser: "plainuser",
+			wantPass: "plainpass",
+			wantErr:  false,
+		},
+		{
+			name: "empty environment variable",
+			config: &RegsyncConfig{
+				Creds: []RegistryCredential{
+					{
+						Registry: "docker.io",
+						User:     `{{ env "MISSING_VAR" }}`,
+						Pass:     "testpass",
+					},
+				},
+			},
+			envVars:  map[string]string{},
+			wantUser: "",
+			wantPass: "testpass",
+			wantErr:  false,
+		},
+		{
+			name: "multiple registries",
+			config: &RegsyncConfig{
+				Creds: []RegistryCredential{
+					{
+						Registry: "registry-1.docker.io",
+						User:     `{{ env "DOCKER_USERNAME" }}`,
+						Pass:     `{{ env "DOCKER_PASSWORD" }}`,
+					},
+					{
+						Registry: "docker.io",
+						User:     `{{ env "DOCKER_USERNAME" }}`,
+						Pass:     `{{ env "DOCKER_PASSWORD" }}`,
+					},
+				},
+			},
+			envVars: map[string]string{
+				"DOCKER_USERNAME": "myuser",
+				"DOCKER_PASSWORD": "mypass",
+			},
+			wantUser: "myuser",
+			wantPass: "mypass",
+			wantErr:  false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			// Set environment variables
+			for k, v := range tt.envVars {
+				os.Setenv(k, v)
+				defer os.Unsetenv(k)
+			}
+
+			err := expandCredentials(tt.config)
+			if (err != nil) != tt.wantErr {
+				t.Errorf("expandCredentials() error = %v, wantErr %v", err, tt.wantErr)
+				return
+			}
+
+			if !tt.wantErr && len(tt.config.Creds) > 0 {
+				if tt.config.Creds[0].User != tt.wantUser {
+					t.Errorf("User = %v, want %v", tt.config.Creds[0].User, tt.wantUser)
+				}
+				if tt.config.Creds[0].Pass != tt.wantPass {
+					t.Errorf("Pass = %v, want %v", tt.config.Creds[0].Pass, tt.wantPass)
+				}
+			}
+		})
+	}
+}
+
+func TestExpandTemplate(t *testing.T) {
+	tests := []struct {
+		name     string
+		template string
+		envVars  map[string]string
+		want     string
+		wantErr  bool
+	}{
+		{
+			name:     "simple env expansion",
+			template: `{{ env "TEST_VAR" }}`,
+			envVars:  map[string]string{"TEST_VAR": "value"},
+			want:     "value",
+			wantErr:  false,
+		},
+		{
+			name:     "no template syntax",
+			template: "plain text",
+			envVars:  map[string]string{},
+			want:     "plain text",
+			wantErr:  false,
+		},
+		{
+			name:     "empty env var",
+			template: `{{ env "MISSING" }}`,
+			envVars:  map[string]string{},
+			want:     "",
+			wantErr:  false,
+		},
+		{
+			name:     "template with text",
+			template: `prefix-{{ env "VAR" }}-suffix`,
+			envVars:  map[string]string{"VAR": "middle"},
+			want:     "prefix-middle-suffix",
+			wantErr:  false,
+		},
+	}
+
+	funcMap := template.FuncMap{
+		"env": os.Getenv,
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			// Set environment variables
+			for k, v := range tt.envVars {
+				os.Setenv(k, v)
+				defer os.Unsetenv(k)
+			}
+
+			got, err := expandTemplate(tt.template, funcMap)
+			if (err != nil) != tt.wantErr {
+				t.Errorf("expandTemplate() error = %v, wantErr %v", err, tt.wantErr)
+				return
+			}
+			if got != tt.want {
+				t.Errorf("expandTemplate() = %v, want %v", got, tt.want)
+			}
+		})
+	}
+}
+
+func TestParseRegsyncWithTemplates(t *testing.T) {
+	// Create a temporary regsync file with template syntax
+	tmpfile, err := os.CreateTemp("", "regsync-*.yml")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer os.Remove(tmpfile.Name())
+
+	content := `version: 1
+creds:
+  - registry: registry-1.docker.io
+    user: '{{ env "DOCKER_USERNAME" }}'
+    pass: '{{ env "DOCKER_PASSWORD" }}'
+    repoAuth: false
+    reqPerSec: 10
+    reqConcurrent: 10
+  - registry: docker.io
+    user: '{{ env "DOCKER_USERNAME" }}'
+    pass: '{{ env "DOCKER_PASSWORD" }}'
+    repoAuth: false
+    reqPerSec: 10
+    reqConcurrent: 10
+sync:
+  - source: nginx
+    target: hostingmaloonde/nginx
+    type: repository
+`
+	if _, err := tmpfile.Write([]byte(content)); err != nil {
+		t.Fatal(err)
+	}
+	if err := tmpfile.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	// Set environment variables
+	os.Setenv("DOCKER_USERNAME", "testuser")
+	os.Setenv("DOCKER_PASSWORD", "testpass")
+	defer func() {
+		os.Unsetenv("DOCKER_USERNAME")
+		os.Unsetenv("DOCKER_PASSWORD")
+	}()
+
+	config, err := ParseRegsync(tmpfile.Name())
+	if err != nil {
+		t.Fatalf("ParseRegsync failed: %v", err)
+	}
+
+	if len(config.Creds) != 2 {
+		t.Fatalf("Expected 2 credentials, got %d", len(config.Creds))
+	}
+
+	// Check first credential
+	if config.Creds[0].Registry != "registry-1.docker.io" {
+		t.Errorf("Expected registry registry-1.docker.io, got %s", config.Creds[0].Registry)
+	}
+	if config.Creds[0].User != "testuser" {
+		t.Errorf("Expected user testuser, got %s", config.Creds[0].User)
+	}
+	if config.Creds[0].Pass != "testpass" {
+		t.Errorf("Expected pass testpass, got %s", config.Creds[0].Pass)
+	}
+
+	// Check second credential
+	if config.Creds[1].Registry != "docker.io" {
+		t.Errorf("Expected registry docker.io, got %s", config.Creds[1].Registry)
+	}
+	if config.Creds[1].User != "testuser" {
+		t.Errorf("Expected user testuser, got %s", config.Creds[1].User)
+	}
+	if config.Creds[1].Pass != "testpass" {
+		t.Errorf("Expected pass testpass, got %s", config.Creds[1].Pass)
 	}
 }
