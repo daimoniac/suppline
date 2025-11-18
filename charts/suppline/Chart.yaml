@@ -13,6 +13,5 @@ home: https://github.com/daimoniac/suppline
 sources:
   - https://github.com/daimoniac/suppline
 maintainers:
-  - name: Suppline Team
-    email: team@example.com
-    url: https://github.com/daimoniac/suppline
+  - name: daimoniac
+    url: https://github.com/daimoniac
