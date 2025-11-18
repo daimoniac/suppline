@@ -54,4 +54,4 @@ WARNING: Attestation signing is disabled. To enable it, set:
   backend.attestationKey.key=<base64-encoded-cosign-key>
 {{- end }}
 
-For more information, visit: https://github.com/yourusername/suppline
+For more information, visit: https://github.com/daimoniac/suppline

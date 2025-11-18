@@ -9,9 +9,10 @@ keywords:
   - vulnerability-scanning
   - supply-chain
   - container-security
-home: https://github.com/yourusername/suppline
+home: https://github.com/daimoniac/suppline
 sources:
-  - https://github.com/yourusername/suppline
+  - https://github.com/daimoniac/suppline
 maintainers:
   - name: Suppline Team
     email: team@example.com
+    url: https://github.com/daimoniac/suppline

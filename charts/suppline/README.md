@@ -155,4 +155,4 @@ helm upgrade suppline ./charts/suppline -f my-values.yaml
 
 ## Support
 
-For issues and questions, please visit: https://github.com/yourusername/suppline
+For issues and questions, please visit: https://github.com/daimoniac/suppline
