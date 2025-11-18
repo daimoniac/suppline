@@ -2,6 +2,7 @@ package integration
 
 import (
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"log/slog"
@@ -993,9 +994,14 @@ func TestAttestation(t *testing.T) {
 		t.Skip("Skipping attestation test: ATTESTATION_KEY_PATH not set")
 	}
 
+	keyData, err := os.ReadFile(keyPath)
+	if err != nil {
+		t.Fatalf("Failed to read attestation key: %v", err)
+	}
+
 	cfg := attestation.AttestationConfig{
 		KeyBased: attestation.KeyBasedConfig{
-			KeyPath:     keyPath,
+			Key:         base64.StdEncoding.EncodeToString(keyData),
 			KeyPassword: os.Getenv("ATTESTATION_KEY_PASSWORD"),
 		},
 	}
@@ -1174,9 +1180,14 @@ func TestOptimizedAttestationFlow(t *testing.T) {
 	}
 
 	// Setup attestor
+	keyData, err := os.ReadFile(keyPath)
+	if err != nil {
+		t.Fatalf("Failed to read attestation key: %v", err)
+	}
+
 	attestorCfg := attestation.AttestationConfig{
 		KeyBased: attestation.KeyBasedConfig{
-			KeyPath:     keyPath,
+			Key:         base64.StdEncoding.EncodeToString(keyData),
 			KeyPassword: getEnv("ATTESTATION_KEY_PASSWORD", ""),
 		},
 	}

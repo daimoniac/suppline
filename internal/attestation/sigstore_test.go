@@ -2,6 +2,7 @@ package attestation
 
 import (
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"strings"
 	"testing"
@@ -13,13 +14,13 @@ import (
 func TestNewSigstoreAttestor_MissingKeyPath(t *testing.T) {
 	config := AttestationConfig{
 		KeyBased: KeyBasedConfig{
-			KeyPath: "",
+			Key: "",
 		},
 	}
 
 	_, err := NewSigstoreAttestor(config, nil)
 	if err == nil {
-		t.Fatal("expected error for missing key path")
+		t.Fatal("expected error for missing key")
 	}
 }
 
@@ -58,7 +59,7 @@ func TestAttestSBOM_ValidCycloneDXData(t *testing.T) {
 
 	config := AttestationConfig{
 		KeyBased: KeyBasedConfig{
-			KeyPath:     "/tmp/test-key.key",
+			Key:         base64.StdEncoding.EncodeToString([]byte("test-key-content")),
 			KeyPassword: "test-password",
 		},
 	}
@@ -124,7 +125,7 @@ func TestAttestSBOM_MalformedSBOMData(t *testing.T) {
 
 	config := AttestationConfig{
 		KeyBased: KeyBasedConfig{
-			KeyPath:     "/tmp/test-key.key",
+			Key:         base64.StdEncoding.EncodeToString([]byte("test-key-content")),
 			KeyPassword: "test-password",
 		},
 	}
@@ -172,7 +173,7 @@ func TestAttestSBOM_CosignCommandConstruction(t *testing.T) {
 
 	config := AttestationConfig{
 		KeyBased: KeyBasedConfig{
-			KeyPath:     "/tmp/test-key.key",
+			Key:         base64.StdEncoding.EncodeToString([]byte("test-key-content")),
 			KeyPassword: "test-password",
 		},
 	}

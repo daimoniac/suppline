@@ -54,7 +54,7 @@ func (p *Pipeline) Execute(ctx context.Context, task *queue.ScanTask) error {
 	}
 
 	// Phase 3: Attestations (SBOM, Vulnerabilities, SCAI)
-	attestDurations, scaiAttested, err := p.attestationPhase(ctx, task, imageRef, sbom, scanResult)
+	attestDurations, scaiAttested, err := p.attestationPhase(ctx, task, imageRef, sbom, scanResult, policyDecision)
 	if err != nil {
 		return err
 	}
@@ -180,7 +180,7 @@ func (p *Pipeline) policyPhase(ctx context.Context, task *queue.ScanTask, imageR
 }
 
 // attestationPhase creates all attestations (SBOM, vulnerabilities, SCAI)
-func (p *Pipeline) attestationPhase(ctx context.Context, task *queue.ScanTask, imageRef string, sbom *scanner.SBOM, scanResult *scanner.ScanResult) (map[string]time.Duration, bool, error) {
+func (p *Pipeline) attestationPhase(ctx context.Context, task *queue.ScanTask, imageRef string, sbom *scanner.SBOM, scanResult *scanner.ScanResult, policyDecision *policy.PolicyDecision) (map[string]time.Duration, bool, error) {
 	durations := make(map[string]time.Duration)
 
 	// SBOM attestation
@@ -209,7 +209,7 @@ func (p *Pipeline) attestationPhase(ctx context.Context, task *queue.ScanTask, i
 		scaiStart := time.Now()
 		p.logger.Debug("generating SCAI attestation", "image_ref", imageRef)
 
-		scai, err := p.worker.scaiGenerator.GenerateSCAI(ctx, imageRef, scanResult, task.Repository)
+		scai, err := p.worker.scaiGenerator.GenerateSCAI(ctx, imageRef, scanResult, task.Repository, policyDecision)
 		if err != nil {
 			p.logger.Error("failed to generate SCAI attestation", "image_ref", imageRef, "error", err)
 		} else {

@@ -8,6 +8,7 @@ import (
 
 	"github.com/daimoniac/suppline/internal/config"
 	"github.com/daimoniac/suppline/internal/errors"
+	"github.com/daimoniac/suppline/internal/policy"
 	"github.com/daimoniac/suppline/internal/scanner"
 )
 
@@ -116,12 +117,14 @@ func (g *SCAIGenerator) matchToleratedVulnerabilities(scanResult *scanner.ScanRe
 //   - imageRef: full image reference with digest
 //   - scanResult: vulnerability scan results
 //   - target: target repository from regsync config (for toleration lookup)
+//   - policyDecision: policy evaluation result to determine scan status
 // Returns: SCAI attestation structure ready for JSON serialization
 func (g *SCAIGenerator) GenerateSCAI(
 	ctx context.Context,
 	imageRef string,
 	scanResult *scanner.ScanResult,
 	target string,
+	policyDecision *policy.PolicyDecision,
 ) (*SCAIAttestation, error) {
 	if scanResult == nil {
 		return nil, errors.NewPermanentf("scan result is nil")
@@ -139,9 +142,15 @@ func (g *SCAIGenerator) GenerateSCAI(
 	// Match tolerated vulnerabilities
 	attributes := g.matchToleratedVulnerabilities(scanResult, target)
 
-	// Determine scan status based on whether tolerations exist
+	// Determine scan status based on policy decision
 	scanStatus := "passed"
-	if len(attributes) > 0 {
+	if policyDecision != nil {
+		if !policyDecision.Passed {
+			scanStatus = "failed"
+		} else if len(attributes) > 0 {
+			scanStatus = "passed-with-exceptions"
+		}
+	} else if len(attributes) > 0 {
 		scanStatus = "passed-with-exceptions"
 	}
 
