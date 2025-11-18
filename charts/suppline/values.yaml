@@ -5,22 +5,22 @@
 # Backend configuration
 backend:
   replicaCount: 1
-  
+
   # Secrets - these can be set via values-secrets.yaml or environment variables
   # DO NOT commit actual secrets to git
   secrets: {}
-  
+
   image:
     repository: daimoniac/suppline
     pullPolicy: Always
     tag: "latest"
-  
+
   service:
     type: ClusterIP
     port: 8080
     metricsPort: 9090
     healthPort: 8081
-  
+
   resources:
     requests:
       memory: "512Mi"
@@ -28,7 +28,7 @@ backend:
     limits:
       memory: "1Gi"
       cpu: "1000m"
-  
+
   securityContext:
     runAsNonRoot: true
     runAsUser: 1000
@@ -39,7 +39,7 @@ backend:
     capabilities:
       drop:
         - ALL
-  
+
   livenessProbe:
     httpGet:
       path: /health
@@ -48,7 +48,7 @@ backend:
     periodSeconds: 30
     timeoutSeconds: 10
     failureThreshold: 3
-  
+
   readinessProbe:
     httpGet:
       path: /health
@@ -57,7 +57,7 @@ backend:
     periodSeconds: 10
     timeoutSeconds: 5
     failureThreshold: 3
-  
+
   env:
     LOG_LEVEL: "debug"
     API_ENABLED: "true"
@@ -68,7 +68,7 @@ backend:
     WORKER_RETRY_BACKOFF: "10s"
     SCANNER_TIMEOUT: "5m"
     RESCAN_INTERVAL: "24h"
- 
+
   attestationKey:
     enabled: true
 
@@ -78,7 +78,7 @@ trivy:
     repository: aquasec/trivy
     tag: "0.58.2"
     pullPolicy: IfNotPresent
-  
+
   resources:
     requests:
       memory: "1Gi"
@@ -86,20 +86,20 @@ trivy:
     limits:
       memory: "2Gi"
       cpu: "1000m"
-  
+
   securityContext:
     allowPrivilegeEscalation: false
     readOnlyRootFilesystem: false
     capabilities:
       drop:
         - ALL
-  
+
   livenessProbe:
     tcpSocket:
       port: 4954
     initialDelaySeconds: 30
     periodSeconds: 30
-  
+
   readinessProbe:
     tcpSocket:
       port: 4954
@@ -110,12 +110,12 @@ trivy:
 regsync:
   enabled: true
   replicaCount: 1
-  
+
   image:
     repository: daimoniac/regsync
     tag: "latest"
     pullPolicy: Always
-  
+
   resources:
     requests:
       memory: "256Mi"
@@ -123,7 +123,7 @@ regsync:
     limits:
       memory: "512Mi"
       cpu: "500m"
-  
+
   securityContext:
     runAsNonRoot: true
     runAsUser: 1000
@@ -139,16 +139,16 @@ regsync:
 frontend:
   enabled: true
   replicaCount: 1
-  
+
   image:
     repository: daimoniac/suppline-ui
     tag: "latest"
     pullPolicy: Always
-  
+
   service:
     type: ClusterIP
     port: 80
-  
+
   resources:
     requests:
       memory: "32Mi"
@@ -156,7 +156,7 @@ frontend:
     limits:
       memory: "64Mi"
       cpu: "100m"
-  
+
   securityContext:
     runAsNonRoot: true
     runAsUser: 101  # nginx user
@@ -167,7 +167,7 @@ frontend:
     capabilities:
       drop:
         - ALL
-  
+
   livenessProbe:
     httpGet:
       path: /
@@ -176,7 +176,7 @@ frontend:
     periodSeconds: 30
     timeoutSeconds: 5
     failureThreshold: 3
-  
+
   readinessProbe:
     httpGet:
       path: /
@@ -185,21 +185,21 @@ frontend:
     periodSeconds: 10
     timeoutSeconds: 3
     failureThreshold: 3
-  
+
   # API base URL for the frontend to connect to backend
   apiBaseURL: "/api"
-  
+
   ingress:
     enabled: true
     className: nginx
-    annotations: 
+    annotations:
       cert-manager.io/cluster-issuer: letsencrypt-prod
     hosts:
       - host: suppline.development.socialhub.dev
         paths:
           - path: /
             pathType: Prefix
-    tls: 
+    tls:
       - hosts:
         - suppline.development.socialhub.dev
         secretName: suppline-oauth2-proxy
@@ -215,7 +215,7 @@ persistence:
     accessMode: ReadWriteOnce
     size: 10Gi
     annotations: {}
-  
+
   # Trivy cache volume
   trivyCache:
     enabled: false
