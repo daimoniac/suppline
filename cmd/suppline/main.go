@@ -226,6 +226,7 @@ func run() error {
 			"read_only", cfg.API.ReadOnly)
 		apiServer = api.NewAPIServer(
 			&cfg.API,
+			&cfg.Attestation,
 			store,
 			taskQueue,
 			cfg.RegsyncPath,

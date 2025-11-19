@@ -42,24 +42,26 @@ import (
 
 // APIServer provides HTTP API for querying scan results and triggering operations
 type APIServer struct {
-	config        *config.APIConfig
-	stateStore    statestore.StateStoreQuery
-	taskQueue     queue.TaskQueue
-	regsyncPath   string
-	router        *http.ServeMux
-	server        *http.Server
-	logger        *slog.Logger
+	config           *config.APIConfig
+	attestationConfig *config.AttestationConfig
+	stateStore       statestore.StateStoreQuery
+	taskQueue        queue.TaskQueue
+	regsyncPath      string
+	router           *http.ServeMux
+	server           *http.Server
+	logger           *slog.Logger
 }
 
 // NewAPIServer creates a new API server instance
-func NewAPIServer(cfg *config.APIConfig, store statestore.StateStoreQuery, queue queue.TaskQueue, regsyncPath string, logger *slog.Logger) *APIServer {
+func NewAPIServer(cfg *config.APIConfig, attestationCfg *config.AttestationConfig, store statestore.StateStoreQuery, queue queue.TaskQueue, regsyncPath string, logger *slog.Logger) *APIServer {
 	api := &APIServer{
-		config:      cfg,
-		stateStore:  store,
-		taskQueue:   queue,
-		regsyncPath: regsyncPath,
-		router:      http.NewServeMux(),
-		logger:      logger,
+		config:            cfg,
+		attestationConfig: attestationCfg,
+		stateStore:        store,
+		taskQueue:         queue,
+		regsyncPath:       regsyncPath,
+		router:            http.NewServeMux(),
+		logger:            logger,
 	}
 
 	api.setupRoutes()
@@ -91,6 +93,9 @@ func (s *APIServer) setupRoutes() {
 	// Health and metrics
 	s.router.HandleFunc("/health", s.corsMiddleware(s.handleHealth))
 	s.router.HandleFunc("/metrics", s.corsMiddleware(s.handleMetrics))
+
+	// Public key endpoint
+	s.router.HandleFunc("/api/v1/publickey", s.corsMiddleware(s.handleGetPublicKey))
 
 	// Swagger documentation
 	s.router.HandleFunc("/swagger/", httpSwagger.WrapHandler)

@@ -8,6 +8,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/daimoniac/suppline/internal/attestation"
 	"github.com/daimoniac/suppline/internal/config"
 	"github.com/daimoniac/suppline/internal/queue"
 	"github.com/daimoniac/suppline/internal/statestore"
@@ -595,4 +596,33 @@ func (s *APIServer) handleMetrics(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "text/plain")
 	w.WriteHeader(http.StatusOK)
 	_, _ = w.Write([]byte("# Metrics endpoint - to be implemented\n"))
+}
+
+// handleGetPublicKey returns the cosign public key
+// @Summary Get cosign public key
+// @Description Retrieve the public key used for image signing and attestation verification
+// @Tags Attestation
+// @Produce plain
+// @Success 200 {string} string "PEM-encoded public key"
+// @Failure 500 {object} map[string]string "Internal server error"
+// @Router /publickey [get]
+func (s *APIServer) handleGetPublicKey(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		s.respondError(w, http.StatusMethodNotAllowed, "Method not allowed")
+		return
+	}
+
+	// Import attestation package to use ExtractPublicKey
+	publicKey, err := attestation.GetPublicKeyFromConfig(*s.attestationConfig)
+	if err != nil {
+		s.logger.Error("failed to extract public key",
+			"error", err.Error())
+		s.respondError(w, http.StatusInternalServerError, fmt.Sprintf("Failed to extract public key: %v", err))
+		return
+	}
+
+	// Return the public key as plain text (PEM format)
+	w.Header().Set("Content-Type", "text/plain")
+	w.WriteHeader(http.StatusOK)
+	_, _ = w.Write([]byte(publicKey))
 }
