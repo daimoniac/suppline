@@ -6,7 +6,7 @@
 import { BaseComponent } from './base-component.js';
 import { formatDate, formatRelativeTime } from '../utils/date.js';
 import { truncateDigest } from '../utils/severity.js';
-import { confirmDialog } from '../utils/helpers.js';
+import { Modal } from './common.js';
 
 export class ScansList extends BaseComponent {
     constructor(apiClient) {
@@ -459,8 +459,10 @@ export class ScansList extends BaseComponent {
         // Rescan repository button
         const rescanBtn = document.getElementById('rescan-repository-btn');
         if (rescanBtn) {
-            rescanBtn.addEventListener('click', () => {
-                this.handleRescanRepository();
+            rescanBtn.addEventListener('click', async (e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                await this.handleRescanRepository();
             });
         }
     }
@@ -477,7 +479,7 @@ export class ScansList extends BaseComponent {
         }
 
         // Show confirmation dialog
-        const confirmed = await confirmDialog(
+        const confirmed = await Modal.confirm(
             'Rescan Repository',
             `Are you sure you want to trigger a rescan for all images in repository "${repository}"? This will queue scans for all images in this repository.`
         );
@@ -506,8 +508,8 @@ export class ScansList extends BaseComponent {
             this.showNotification(message + taskInfo, 'success');
 
             // Reload scans after a short delay
-            setTimeout(() => {
-                this.loadAndRender();
+            setTimeout(async () => {
+                await this.loadAndRender();
             }, 2000);
 
         } catch (error) {
