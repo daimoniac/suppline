@@ -94,8 +94,8 @@ func (s *APIServer) setupRoutes() {
 	s.router.HandleFunc("/health", s.corsMiddleware(s.handleHealth))
 	s.router.HandleFunc("/metrics", s.corsMiddleware(s.handleMetrics))
 
-	// Public key endpoint
-	s.router.HandleFunc("/api/v1/publickey", s.corsMiddleware(s.handleGetPublicKey))
+	// Integration endpoints
+	s.router.HandleFunc("/api/v1/integration/publickey", s.corsMiddleware(s.handleGetPublicKey))
 
 	// Swagger documentation
 	s.router.HandleFunc("/swagger/", httpSwagger.WrapHandler)

@@ -601,11 +601,11 @@ func (s *APIServer) handleMetrics(w http.ResponseWriter, r *http.Request) {
 // handleGetPublicKey returns the cosign public key
 // @Summary Get cosign public key
 // @Description Retrieve the public key used for image signing and attestation verification
-// @Tags Attestation
+// @Tags Integration
 // @Produce plain
 // @Success 200 {string} string "PEM-encoded public key"
 // @Failure 500 {object} map[string]string "Internal server error"
-// @Router /publickey [get]
+// @Router /integration/publickey [get]
 func (s *APIServer) handleGetPublicKey(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {
 		s.respondError(w, http.StatusMethodNotAllowed, "Method not allowed")
