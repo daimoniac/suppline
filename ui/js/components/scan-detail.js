@@ -19,6 +19,7 @@ export class ScanDetail extends BaseComponent {
         this.scan = null;
         this.digest = null;
         this.expandedSeverities = new Set(); // Track which severity groups are expanded
+        this.expandedTolerations = new Set(); // Track which tolerations are expanded
     }
 
     /**
@@ -204,7 +205,11 @@ export class ScanDetail extends BaseComponent {
      * Render vulnerability list grouped by severity
      */
     renderVulnerabilityList() {
-        const vulnerabilities = this.scan.Vulnerabilities || [];
+        let vulnerabilities = this.scan.Vulnerabilities || [];
+        
+        // Filter out tolerated vulnerabilities
+        const toleratedCVEIds = new Set((this.scan.ToleratedCVEs || []).map(tol => tol.CVEID));
+        vulnerabilities = vulnerabilities.filter(vuln => !toleratedCVEIds.has(vuln.CVEID));
         
         if (vulnerabilities.length === 0) {
             return '';
@@ -323,31 +328,17 @@ export class ScanDetail extends BaseComponent {
         return `
             <div class="dashboard-section">
                 <h2>Applied Tolerations</h2>
-                <div class="table-container">
-                    <table>
-                        <thead>
-                            <tr>
-                                <th>CVE ID</th>
-                                <th>Justification</th>
-                                <th>Tolerated At</th>
-                                <th>Expires</th>
-                                <th>Status</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            ${tolerations.map(tol => this.renderTolerationRow(tol)).join('')}
-                        </tbody>
-                    </table>
+                <div class="tolerations-list">
+                    ${tolerations.map((tol, index) => this.renderTolerationCard(tol, index)).join('')}
                 </div>
             </div>
         `;
     }
 
     /**
-     * Render individual toleration row
+     * Render individual toleration card (expandable)
      */
-    renderTolerationRow(toleration) {
-        // API uses PascalCase field names
+    renderTolerationCard(toleration, index) {
         const cveId = toleration.CVEID || 'N/A';
         const statement = toleration.Statement || 'No justification provided';
         const toleratedAt = formatDate(toleration.ToleratedAt);
@@ -366,18 +357,90 @@ export class ScanDetail extends BaseComponent {
             badgeClass = 'badge badge-success';
         }
 
+        const isExpanded = this.expandedTolerations.has(index);
+        const expandIcon = isExpanded ? '▼' : '▶';
+
+        // Find mitigated vulnerabilities by matching CVE ID
+        const mitigatedVulnerabilities = (this.scan.Vulnerabilities || []).filter(
+            vuln => vuln.CVEID === cveId
+        );
+
         return `
-            <tr>
-                <td class="toleration-cve">${this.escapeHtml(cveId)}</td>
-                <td class="toleration-statement">${this.escapeHtml(statement)}</td>
-                <td>${toleratedAt}</td>
-                <td>${expiresAt ? formatDate(expiresAt) : 'Never'}</td>
-                <td>
-                    <span class="${badgeClass}">
-                        ${expirationText}
-                    </span>
-                </td>
-            </tr>
+            <div class="toleration-card">
+                <div data-toleration-index="${index}" class="toleration-card-header">
+                    <span class="toleration-expand-icon">${expandIcon}</span>
+                    <div class="toleration-card-main">
+                        <div class="toleration-cve-id">${this.escapeHtml(cveId)}</div>
+                        <div class="toleration-card-meta">
+                            <span class="toleration-meta-item">Tolerated: ${toleratedAt}</span>
+                            <span class="toleration-meta-item">Expires: ${expiresAt ? formatDate(expiresAt) : 'Never'}</span>
+                            <span class="${badgeClass}">${expirationText}</span>
+                        </div>
+                    </div>
+                </div>
+                <div class="toleration-card-content ${isExpanded ? 'expanded' : 'collapsed'}">
+                    <div class="toleration-justification">
+                        <div class="toleration-label">Justification</div>
+                        <div class="toleration-statement">${this.escapeHtml(statement)}</div>
+                    </div>
+                    ${mitigatedVulnerabilities.length > 0 ? `
+                        <div class="toleration-mitigated-vulns">
+                            <div class="toleration-label">Mitigated Vulnerabilities (${mitigatedVulnerabilities.length})</div>
+                            <div class="mitigated-vulns-list">
+                                ${mitigatedVulnerabilities.map(vuln => this.renderMitigatedVulnerability(vuln)).join('')}
+                            </div>
+                        </div>
+                    ` : `
+                        <div class="toleration-mitigated-vulns">
+                            <div class="toleration-label">Mitigated Vulnerabilities</div>
+                            <div class="empty-mitigated">No vulnerabilities found for this CVE</div>
+                        </div>
+                    `}
+                </div>
+            </div>
+        `;
+    }
+
+    /**
+     * Render mitigated vulnerability item
+     */
+    renderMitigatedVulnerability(vuln) {
+        const packageName = vuln.PackageName || 'N/A';
+        const installedVersion = vuln.InstalledVersion || 'N/A';
+        const fixedVersion = vuln.FixedVersion || '';
+        const title = vuln.Title || '';
+        const description = vuln.Description || 'No description available';
+        const severity = vuln.Severity || 'UNKNOWN';
+
+        const versionDisplay = formatVersions(installedVersion, fixedVersion);
+
+        return `
+            <div class="mitigated-vulnerability-item">
+                <div class="mitigated-vuln-header">
+                    ${getSeverityBadge(severity)}
+                    <div class="mitigated-vuln-info">
+                        <div class="mitigated-vuln-title">${title ? this.escapeHtml(title) : 'No title'}</div>
+                        <div class="mitigated-vuln-package">${this.escapeHtml(packageName)}</div>
+                    </div>
+                </div>
+                <div class="mitigated-vuln-details">
+                    <div>
+                        <span class="detail-label">Version:</span>
+                        <span class="detail-value">${this.escapeHtml(versionDisplay)}</span>
+                    </div>
+                    ${fixedVersion ? `
+                        <div>
+                            <span class="detail-label">Fixed In:</span>
+                            <span class="detail-value fixed-version">${this.escapeHtml(fixedVersion)}</span>
+                        </div>
+                    ` : ''}
+                </div>
+                ${description ? `
+                    <div class="mitigated-vuln-description">
+                        ${this.escapeHtml(description)}
+                    </div>
+                ` : ''}
+            </div>
         `;
     }
 
@@ -427,6 +490,27 @@ export class ScanDetail extends BaseComponent {
                     icon.textContent = '▶';
                 } else {
                     this.expandedSeverities.add(severity);
+                    content.classList.remove('collapsed');
+                    content.classList.add('expanded');
+                    icon.textContent = '▼';
+                }
+            });
+        });
+
+        // Toleration card expand/collapse
+        document.querySelectorAll('[data-toleration-index]').forEach(header => {
+            header.addEventListener('click', () => {
+                const index = parseInt(header.dataset.tolerationIndex, 10);
+                const content = header.nextElementSibling;
+                const icon = header.querySelector('span:first-child');
+
+                if (this.expandedTolerations.has(index)) {
+                    this.expandedTolerations.delete(index);
+                    content.classList.remove('expanded');
+                    content.classList.add('collapsed');
+                    icon.textContent = '▶';
+                } else {
+                    this.expandedTolerations.add(index);
                     content.classList.remove('collapsed');
                     content.classList.add('expanded');
                     icon.textContent = '▼';

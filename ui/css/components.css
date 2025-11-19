@@ -1300,3 +1300,182 @@ tr:hover {
     flex-direction: column;
     gap: 0.75rem;
 }
+
+
+/* Toleration Card Styles */
+.toleration-card {
+    border: 1px solid var(--border-color);
+    border-radius: 8px;
+    overflow: hidden;
+    background-color: var(--card-bg);
+}
+
+.toleration-card-header {
+    padding: 1rem;
+    background-color: var(--bg-color);
+    cursor: pointer;
+    display: flex;
+    align-items: flex-start;
+    gap: 0.75rem;
+    user-select: none;
+    transition: background-color 0.2s;
+}
+
+.toleration-card-header:hover {
+    background-color: var(--border-color);
+}
+
+.toleration-expand-icon {
+    font-size: 0.875rem;
+    color: var(--text-secondary);
+    flex-shrink: 0;
+    margin-top: 0.125rem;
+}
+
+.toleration-card-main {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+}
+
+.toleration-cve-id {
+    font-weight: 600;
+    color: var(--text-primary);
+    font-family: 'Courier New', monospace;
+    font-size: 0.95rem;
+}
+
+.toleration-card-meta {
+    display: flex;
+    align-items: center;
+    gap: 1rem;
+    flex-wrap: wrap;
+    font-size: 0.875rem;
+}
+
+.toleration-meta-item {
+    color: var(--text-secondary);
+}
+
+.toleration-card-content {
+    border-top: 1px solid var(--border-color);
+    padding: 1rem;
+    background-color: var(--card-bg);
+    display: flex;
+    flex-direction: column;
+    gap: 1.5rem;
+}
+
+.toleration-card-content.collapsed {
+    display: none;
+}
+
+.toleration-card-content.expanded {
+    display: flex;
+}
+
+.toleration-justification {
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+}
+
+.toleration-label {
+    font-size: 0.875rem;
+    font-weight: 600;
+    color: var(--text-secondary);
+    text-transform: uppercase;
+}
+
+.toleration-statement {
+    font-size: 0.875rem;
+    color: var(--text-primary);
+    line-height: 1.5;
+    padding: 0.75rem;
+    background-color: var(--bg-color);
+    border-radius: 6px;
+}
+
+.toleration-mitigated-vulns {
+    display: flex;
+    flex-direction: column;
+    gap: 0.75rem;
+}
+
+.mitigated-vulns-list {
+    display: flex;
+    flex-direction: column;
+    gap: 0.75rem;
+}
+
+.empty-mitigated {
+    font-size: 0.875rem;
+    color: var(--text-secondary);
+    padding: 0.75rem;
+    background-color: var(--bg-color);
+    border-radius: 6px;
+    text-align: center;
+}
+
+/* Mitigated Vulnerability Item Styles */
+.mitigated-vulnerability-item {
+    padding: 0.75rem;
+    background-color: var(--bg-color);
+    border-radius: 6px;
+    border-left: 3px solid var(--border-color);
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+}
+
+.mitigated-vuln-header {
+    display: flex;
+    align-items: flex-start;
+    gap: 0.75rem;
+}
+
+.mitigated-vuln-info {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    gap: 0.25rem;
+}
+
+.mitigated-vuln-title {
+    font-weight: 500;
+    color: var(--text-primary);
+    font-size: 0.875rem;
+}
+
+.mitigated-vuln-package {
+    font-size: 0.8125rem;
+    color: var(--text-secondary);
+    font-family: 'Courier New', monospace;
+}
+
+.mitigated-vuln-details {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+    gap: 0.5rem;
+    font-size: 0.8125rem;
+}
+
+.mitigated-vuln-details .detail-label {
+    font-size: 0.8125rem;
+    color: var(--text-secondary);
+}
+
+.mitigated-vuln-details .detail-value {
+    font-size: 0.8125rem;
+    margin-left: 0.25rem;
+}
+
+.mitigated-vuln-description {
+    font-size: 0.8125rem;
+    color: var(--text-secondary);
+    line-height: 1.4;
+    padding: 0.5rem;
+    background-color: var(--card-bg);
+    border-radius: 4px;
+}
