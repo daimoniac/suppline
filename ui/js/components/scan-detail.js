@@ -370,19 +370,18 @@ export class ScanDetail extends BaseComponent {
                 <div data-toleration-index="${index}" class="toleration-card-header">
                     <span class="toleration-expand-icon">${expandIcon}</span>
                     <div class="toleration-card-main">
-                        <div class="toleration-cve-id">${this.escapeHtml(cveId)}</div>
-                        <div class="toleration-card-meta">
-                            <span class="toleration-meta-item">Tolerated: ${toleratedAt}</span>
-                            <span class="toleration-meta-item">Expires: ${expiresAt ? formatDate(expiresAt) : 'Never'}</span>
-                            <span class="${badgeClass}">${expirationText}</span>
+                        <div class="toleration-header-top">
+                            <div class="toleration-cve-id">${this.escapeHtml(cveId)}</div>
+                            <div class="toleration-card-meta">
+                                <span class="toleration-meta-item">Tolerated: ${toleratedAt}</span>
+                                <span class="toleration-meta-item">Expires: ${expiresAt ? formatDate(expiresAt) : 'Never'}</span>
+                                <span class="${badgeClass}">${expirationText}</span>
+                            </div>
                         </div>
+                        <div class="toleration-statement">${this.escapeHtml(statement)}</div>
                     </div>
                 </div>
                 <div class="toleration-card-content ${isExpanded ? 'expanded' : 'collapsed'}">
-                    <div class="toleration-justification">
-                        <div class="toleration-label">Justification</div>
-                        <div class="toleration-statement">${this.escapeHtml(statement)}</div>
-                    </div>
                     ${mitigatedVulnerabilities.length > 0 ? `
                         <div class="toleration-mitigated-vulns">
                             <div class="toleration-label">Mitigated Vulnerabilities (${mitigatedVulnerabilities.length})</div>

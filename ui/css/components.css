@@ -780,10 +780,6 @@ tr:hover {
     font-weight: 500;
 }
 
-.toleration-statement {
-    max-width: 300px;
-}
-
 /* Alert Boxes */
 .expiring-alert,
 .failure-alert {
@@ -1339,23 +1335,40 @@ tr:hover {
     gap: 0.5rem;
 }
 
+.toleration-header-top {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 1rem;
+    flex-wrap: wrap;
+}
+
 .toleration-cve-id {
     font-weight: 600;
     color: var(--text-primary);
     font-family: 'Courier New', monospace;
     font-size: 0.95rem;
+    flex-shrink: 0;
+}
+
+.toleration-card-header .toleration-statement {
+    font-size: 0.875rem;
+    color: var(--text-primary);
+    line-height: 1.5;
+    width: 100%;
 }
 
 .toleration-card-meta {
     display: flex;
     align-items: center;
-    gap: 1rem;
+    gap: 0.75rem;
     flex-wrap: wrap;
-    font-size: 0.875rem;
+    font-size: 0.8125rem;
 }
 
 .toleration-meta-item {
     color: var(--text-secondary);
+    white-space: nowrap;
 }
 
 .toleration-card-content {
