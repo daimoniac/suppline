@@ -76,11 +76,10 @@ type VulnFilter struct {
 
 // ScanFilter defines criteria for listing scans
 type ScanFilter struct {
-	Repository        string
-	PolicyPassed      *bool
-	Limit             int
-	Offset            int
-	IncludeVulns      bool // If false, vulnerabilities and tolerated CVEs are not loaded
+	Repository   string
+	PolicyPassed *bool
+	Limit        int
+	Offset       int
 }
 
 // TolerationFilter defines criteria for listing tolerations

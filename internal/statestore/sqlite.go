@@ -564,22 +564,9 @@ func (s *SQLiteStore) ListScans(ctx context.Context, filter ScanFilter) ([]*Scan
 			return nil, errors.NewTransientf("failed to scan row: %w", err)
 		}
 
-		// Load vulnerabilities and tolerated CVEs only if requested
-		if filter.IncludeVulns {
-			// Load vulnerabilities
-			vulns, err := s.loadVulnerabilities(ctx, scanRecordID)
-			if err != nil {
-				return nil, err
-			}
-			record.Vulnerabilities = vulns
-
-			// Load tolerated CVEs
-			tolerated, err := s.loadToleratedCVEs(ctx, scanRecordID)
-			if err != nil {
-				return nil, err
-			}
-			record.ToleratedCVEs = tolerated
-		}
+		// Don't load vulnerabilities or tolerated CVEs for list operations
+		// These are only needed for detail views, which use GetLastScan directly
+		// This keeps list responses lightweight and fast
 
 		records = append(records, &record)
 	}
