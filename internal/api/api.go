@@ -96,6 +96,7 @@ func (s *APIServer) setupRoutes() {
 
 	// Integration endpoints
 	s.router.HandleFunc("/api/v1/integration/publickey", s.corsMiddleware(s.handleGetPublicKey))
+	s.router.HandleFunc("/api/v1/integration/kyverno/policy", s.corsMiddleware(s.handleGenerateKyvernoPolicy))
 
 	// Swagger documentation
 	s.router.HandleFunc("/swagger/", httpSwagger.WrapHandler)

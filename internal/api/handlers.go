@@ -8,8 +8,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/daimoniac/suppline/internal/attestation"
 	"github.com/daimoniac/suppline/internal/config"
+	"github.com/daimoniac/suppline/internal/integration"
 	"github.com/daimoniac/suppline/internal/queue"
 	"github.com/daimoniac/suppline/internal/statestore"
 	"github.com/daimoniac/suppline/internal/types"
@@ -612,8 +612,8 @@ func (s *APIServer) handleGetPublicKey(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Import attestation package to use ExtractPublicKey
-	publicKey, err := attestation.GetPublicKeyFromConfig(*s.attestationConfig)
+	// Get public key from integration package
+	publicKey, err := integration.GetPublicKeyFromConfig(*s.attestationConfig)
 	if err != nil {
 		s.logger.Error("failed to extract public key",
 			"error", err.Error())
@@ -625,4 +625,30 @@ func (s *APIServer) handleGetPublicKey(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "text/plain")
 	w.WriteHeader(http.StatusOK)
 	_, _ = w.Write([]byte(publicKey))
+}
+
+// handleGenerateKyvernoPolicy generates a Kyverno ClusterPolicy YAML for SCAI attestation verification
+// @Summary Generate Kyverno ClusterPolicy
+// @Description Generate a Kyverno ClusterPolicy YAML for verifying SCAI attestations with the configured public key
+// @Tags Integration
+// @Produce plain
+// @Success 200 {string} string "Kyverno ClusterPolicy YAML"
+// @Failure 500 {object} map[string]string "Internal server error"
+// @Router /integration/kyverno/policy [get]
+func (s *APIServer) handleGenerateKyvernoPolicy(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		s.respondError(w, http.StatusMethodNotAllowed, "Method not allowed")
+		return
+	}
+
+	// Get public key
+	publicKey, err := integration.GetPublicKeyFromConfig(*s.attestationConfig)
+
+	// Generate policy
+	policy, err := integration.GenerateKyvernoPolicy(publicKey)
+
+	// Return YAML
+	w.Header().Set("Content-Type", "text/plain")
+	w.WriteHeader(http.StatusOK)
+	_, _ = w.Write([]byte(policy))
 }

@@ -1,4 +1,4 @@
-package attestation
+package integration
 
 import (
 	"encoding/base64"
