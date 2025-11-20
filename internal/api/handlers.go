@@ -643,9 +643,17 @@ func (s *APIServer) handleGenerateKyvernoPolicy(w http.ResponseWriter, r *http.R
 
 	// Get public key
 	publicKey, err := integration.GetPublicKeyFromConfig(*s.attestationConfig)
+	if err != nil {
+		s.respondError(w, http.StatusInternalServerError, "Failed to get public key")
+		return
+	}
 
 	// Generate policy
 	policy, err := integration.GenerateKyvernoPolicy(publicKey)
+	if err != nil {
+		s.respondError(w, http.StatusInternalServerError, "Failed to generate policy")
+		return
+	}
 
 	// Return YAML
 	w.Header().Set("Content-Type", "text/plain")

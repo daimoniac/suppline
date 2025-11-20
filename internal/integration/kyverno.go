@@ -3,7 +3,6 @@ package integration
 import (
 	"fmt"
 	"strings"
-	"text/template"
 )
 
 // GenerateKyvernoPolicy generates a Kyverno ClusterPolicy YAML for SCAI attestation verification
@@ -12,20 +11,25 @@ func GenerateKyvernoPolicy(publicKey string) (string, error) {
 		return "", fmt.Errorf("public key is required")
 	}
 
-	tmpl, err := template.New("kyverno").Parse(kyvernoPolicyTemplate)
-	if err != nil {
-		return "", fmt.Errorf("failed to parse template: %w", err)
-	}
+	// Indent the public key for proper YAML formatting
+	indentedKey := indentString(strings.TrimSpace(publicKey), "                ")
 
-	var result strings.Builder
-	err = tmpl.Execute(&result, map[string]string{
-		"PublicKey": publicKey,
-	})
-	if err != nil {
-		return "", fmt.Errorf("failed to execute template: %w", err)
-	}
+	// Build the policy by string replacement to avoid template parsing issues with Kyverno syntax
+	policy := kyvernoPolicyTemplate
+	policy = strings.ReplaceAll(policy, "{{.PublicKey}}", indentedKey)
 
-	return result.String(), nil
+	return policy, nil
+}
+
+// indentString adds indentation to each line of a string
+func indentString(s, indent string) string {
+	lines := strings.Split(s, "\n")
+	for i, line := range lines {
+		if line != "" {
+			lines[i] = indent + line
+		}
+	}
+	return strings.Join(lines, "\n")
 }
 
 const kyvernoPolicyTemplate = `apiVersion: kyverno.io/v1
@@ -44,6 +48,15 @@ spec:
       - resources:
           kinds:
           - Pod
+    exclude:
+      any:
+      - resources:
+          namespaces:
+          - kube-system
+          - cattle-fleet-system
+          - cattle-system
+          - kyverno
+          - suppline
     verifyImages:
     - imageReferences:
       - "*"
@@ -53,18 +66,12 @@ spec:
       - type: https://in-toto.io/attestation/scai/attribute-report/v0.3
         conditions:
         - all:
-          # validUntil must be in the future
-          - key: "{{ predicate.evidence.validUntil }}"
-            operator: GreaterThan
-            value: "{{ time_now() }}"
-          # scanStatus must be acceptable
-          - any:
-            - key: "{{ predicate.evidence.scanStatus }}"
-              operator: Equals
-              value: "passed"
-            - key: "{{ predicate.evidence.scanStatus }}"
-              operator: Equals
-              value: "passed-with-exceptions"
+          - key: '{{ time_since('''',''{{ evidence.validUntil }}'', '''') }}'
+            operator: LessThan
+            value: 0h
+          - key: "{{ evidence.scanStatus }}"
+            operator: AnyIn
+            value: ["passed", "passed-with-exceptions"]
         attestors:
         - count: 1
           entries:

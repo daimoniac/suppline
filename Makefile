@@ -6,7 +6,7 @@ help: ## Show this help message
 	@echo 'Available targets:'
 	@awk 'BEGIN {FS = ":.*?## "} /^[a-zA-Z_-]+:.*?## / {printf "  %-20s %s\n", $$1, $$2}' $(MAKEFILE_LIST)
 
-build: ## Build the application
+build: swagger ## Build the application
 	go build -o suppline ./cmd/suppline
 
 build-ui: ## Build the UI Docker image
