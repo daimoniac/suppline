@@ -660,3 +660,362 @@ func (s *APIServer) handleGenerateKyvernoPolicy(w http.ResponseWriter, r *http.R
 	w.WriteHeader(http.StatusOK)
 	_, _ = w.Write([]byte(policy))
 }
+
+// handleListRepositories lists all repositories with aggregated metadata
+// @Summary List repositories
+// @Description List all repositories with aggregated vulnerability and policy status
+// @Tags Repositories
+// @Accept json
+// @Produce json
+// @Param search query string false "Filter by repository name"
+// @Param limit query int false "Maximum number of results" default(100)
+// @Param offset query int false "Pagination offset" default(0)
+// @Success 200 {object} map[string]interface{} "List of repositories with aggregated data"
+// @Failure 401 {object} map[string]string "Unauthorized"
+// @Failure 500 {object} map[string]string "Internal server error"
+// @Security BearerAuth
+// @Router /repositories [get]
+func (s *APIServer) handleListRepositories(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		s.respondError(w, http.StatusMethodNotAllowed, "Method not allowed")
+		return
+	}
+
+	// Parse query parameters
+	filter := statestore.RepositoryFilter{
+		Search: parseQueryParam(r, "search"),
+		Limit:  parseQueryParamInt(r, "limit", 100),
+		Offset: parseQueryParamInt(r, "offset", 0),
+	}
+
+	// Get repositories from state store
+	response, err := s.stateStore.ListRepositories(r.Context(), filter)
+	if err != nil {
+		s.respondError(w, http.StatusInternalServerError, fmt.Sprintf("Failed to list repositories: %v", err))
+		return
+	}
+
+	s.respondJSON(w, http.StatusOK, response)
+}
+
+// handleGetRepository retrieves a repository with all its tags
+// @Summary Get repository details
+// @Description Get a repository with all its tags and their scan results
+// @Tags Repositories
+// @Accept json
+// @Produce json
+// @Param name path string true "Repository name"
+// @Param search query string false "Filter by tag name"
+// @Param limit query int false "Maximum number of results" default(100)
+// @Param offset query int false "Pagination offset" default(0)
+// @Success 200 {object} statestore.RepositoryDetail
+// @Failure 401 {object} map[string]string "Unauthorized"
+// @Failure 404 {object} map[string]string "Repository not found"
+// @Failure 500 {object} map[string]string "Internal server error"
+// @Security BearerAuth
+// @Router /repositories/{name} [get]
+func (s *APIServer) handleGetRepository(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		s.respondError(w, http.StatusMethodNotAllowed, "Method not allowed")
+		return
+	}
+
+	// Extract repository name from URL path
+	// Path format: /api/v1/repositories/{name}
+	path := r.URL.Path
+	prefix := "/api/v1/repositories/"
+	if !strings.HasPrefix(path, prefix) {
+		s.respondError(w, http.StatusBadRequest, "Invalid path")
+		return
+	}
+
+	name := strings.TrimPrefix(path, prefix)
+	if name == "" {
+		s.respondError(w, http.StatusBadRequest, "Repository name is required")
+		return
+	}
+
+	// Parse query parameters
+	filter := statestore.RepositoryTagFilter{
+		Search: parseQueryParam(r, "search"),
+		Limit:  parseQueryParamInt(r, "limit", 100),
+		Offset: parseQueryParamInt(r, "offset", 0),
+	}
+
+	// Get repository from state store
+	detail, err := s.stateStore.GetRepository(r.Context(), name, filter)
+	if err != nil {
+		s.respondError(w, http.StatusInternalServerError, fmt.Sprintf("Failed to get repository: %v", err))
+		return
+	}
+
+	// Check if repository exists (has tags)
+	if detail.Total == 0 {
+		s.respondError(w, http.StatusNotFound, "Repository not found")
+		return
+	}
+
+	s.respondJSON(w, http.StatusOK, detail)
+}
+
+// handleRescanRepository triggers a rescan for all tags in a repository
+// @Summary Rescan repository
+// @Description Trigger a rescan for all tags in a repository
+// @Tags Repositories
+// @Accept json
+// @Produce json
+// @Param name path string true "Repository name"
+// @Success 200 {object} TriggerScanResponse
+// @Failure 401 {object} map[string]string "Unauthorized"
+// @Failure 403 {object} map[string]string "API is in read-only mode"
+// @Failure 404 {object} map[string]string "Repository not found"
+// @Failure 500 {object} map[string]string "Internal server error"
+// @Security BearerAuth
+// @Router /repositories/{name}/rescan [post]
+func (s *APIServer) handleRescanRepository(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		s.respondError(w, http.StatusMethodNotAllowed, "Method not allowed")
+		return
+	}
+
+	// Extract repository name from URL path
+	// Path format: /api/v1/repositories/{name}/rescan
+	path := r.URL.Path
+	prefix := "/api/v1/repositories/"
+	suffix := "/rescan"
+	if !strings.HasPrefix(path, prefix) || !strings.HasSuffix(path, suffix) {
+		s.respondError(w, http.StatusBadRequest, "Invalid path")
+		return
+	}
+
+	name := strings.TrimPrefix(path, prefix)
+	name = strings.TrimSuffix(name, suffix)
+	if name == "" {
+		s.respondError(w, http.StatusBadRequest, "Repository name is required")
+		return
+	}
+
+	ctx := r.Context()
+
+	// Query all scans for this repository
+	filter := statestore.ScanFilter{
+		Repository: name,
+		Limit:      1000,
+	}
+
+	scans, err := s.stateStore.ListScans(ctx, filter)
+	if err != nil {
+		s.respondError(w, http.StatusInternalServerError, fmt.Sprintf("Failed to list scans: %v", err))
+		return
+	}
+
+	if len(scans) == 0 {
+		s.respondError(w, http.StatusNotFound, "Repository not found")
+		return
+	}
+
+	// Load regsync config to get tolerations
+	regsyncConfig, err := config.ParseRegsync(s.regsyncPath)
+	if err != nil {
+		s.respondError(w, http.StatusInternalServerError, fmt.Sprintf("Failed to load regsync config: %v", err))
+		return
+	}
+
+	// Get tolerations for this repository
+	tolerations := regsyncConfig.GetTolerationsForTarget(name)
+	queueTolerations := make([]types.CVEToleration, len(tolerations))
+	for i, t := range tolerations {
+		queueTolerations[i] = types.CVEToleration{
+			ID:        t.ID,
+			Statement: t.Statement,
+			ExpiresAt: t.ExpiresAt,
+		}
+	}
+
+	// Enqueue tasks for all scans
+	queuedCount := 0
+	for _, scan := range scans {
+		task := &queue.ScanTask{
+			ID:          fmt.Sprintf("%s-%d", scan.Digest, time.Now().Unix()),
+			Repository:  scan.Repository,
+			Digest:      scan.Digest,
+			Tag:         scan.Tag,
+			EnqueuedAt:  time.Now(),
+			Attempts:    0,
+			IsRescan:    true,
+			Tolerations: queueTolerations,
+		}
+
+		if err := s.taskQueue.Enqueue(ctx, task); err != nil {
+			s.logger.Error("failed to enqueue task",
+				"digest", scan.Digest,
+				"error", err.Error())
+			continue
+		}
+
+		queuedCount++
+	}
+
+	s.logger.Info("triggered rescan for repository",
+		"repository", name,
+		"image_count", queuedCount)
+
+	// Return response
+	response := TriggerScanResponse{
+		Queued: queuedCount,
+	}
+
+	s.respondJSON(w, http.StatusOK, response)
+}
+
+// handleRepositoriesRouter routes requests to the appropriate handler based on method and path
+func (s *APIServer) handleRepositoriesRouter(w http.ResponseWriter, r *http.Request) {
+	path := r.URL.Path
+
+	// Check if this is a rescan request
+	if strings.Contains(path, "/rescan") {
+		if r.Method == http.MethodPost {
+			// Check if it's a tag rescan or repository rescan
+			if strings.Contains(path, "/tags/") {
+				s.handleRescanTag(w, r)
+			} else {
+				s.handleRescanRepository(w, r)
+			}
+			return
+		}
+		s.respondError(w, http.StatusMethodNotAllowed, "Method not allowed")
+		return
+	}
+
+	// Otherwise, it's a GET request for repository detail
+	if r.Method == http.MethodGet {
+		s.handleGetRepository(w, r)
+		return
+	}
+
+	s.respondError(w, http.StatusMethodNotAllowed, "Method not allowed")
+}
+
+// handleRescanTag triggers a rescan for a specific tag
+// @Summary Rescan tag
+// @Description Trigger a rescan for a specific tag in a repository
+// @Tags Repositories
+// @Accept json
+// @Produce json
+// @Param name path string true "Repository name"
+// @Param tag path string true "Tag name"
+// @Success 200 {object} TriggerScanResponse
+// @Failure 401 {object} map[string]string "Unauthorized"
+// @Failure 403 {object} map[string]string "API is in read-only mode"
+// @Failure 404 {object} map[string]string "Tag not found"
+// @Failure 500 {object} map[string]string "Internal server error"
+// @Security BearerAuth
+// @Router /repositories/{name}/tags/{tag}/rescan [post]
+func (s *APIServer) handleRescanTag(w http.ResponseWriter, r *http.Request) {
+	// Extract repository name and tag from URL path
+	// Path format: /api/v1/repositories/{name}/tags/{tag}/rescan
+	path := r.URL.Path
+	prefix := "/api/v1/repositories/"
+	suffix := "/rescan"
+	if !strings.HasPrefix(path, prefix) || !strings.HasSuffix(path, suffix) {
+		s.respondError(w, http.StatusBadRequest, "Invalid path")
+		return
+	}
+
+	// Remove prefix and suffix
+	middle := strings.TrimPrefix(path, prefix)
+	middle = strings.TrimSuffix(middle, suffix)
+
+	// Split by /tags/
+	parts := strings.Split(middle, "/tags/")
+	if len(parts) != 2 {
+		s.respondError(w, http.StatusBadRequest, "Invalid path format")
+		return
+	}
+
+	name := parts[0]
+	tag := parts[1]
+
+	if name == "" || tag == "" {
+		s.respondError(w, http.StatusBadRequest, "Repository name and tag are required")
+		return
+	}
+
+	ctx := r.Context()
+
+	// Get repository detail to find the digest for this tag
+	detail, err := s.stateStore.GetRepository(ctx, name, statestore.RepositoryTagFilter{
+		Search: tag,
+		Limit:  1,
+	})
+	if err != nil {
+		s.respondError(w, http.StatusInternalServerError, fmt.Sprintf("Failed to get repository: %v", err))
+		return
+	}
+
+	if len(detail.Tags) == 0 {
+		s.respondError(w, http.StatusNotFound, "Tag not found")
+		return
+	}
+
+	digest := detail.Tags[0].Digest
+
+	// Get the last scan record to retrieve repository and tag info
+	lastScan, err := s.stateStore.GetLastScan(ctx, digest)
+	if err != nil {
+		if errors.Is(err, statestore.ErrScanNotFound) {
+			s.respondError(w, http.StatusNotFound, "Tag not found")
+			return
+		}
+		s.respondError(w, http.StatusInternalServerError, fmt.Sprintf("Failed to get scan: %v", err))
+		return
+	}
+
+	// Load regsync config to get tolerations
+	regsyncConfig, err := config.ParseRegsync(s.regsyncPath)
+	if err != nil {
+		s.respondError(w, http.StatusInternalServerError, fmt.Sprintf("Failed to load regsync config: %v", err))
+		return
+	}
+
+	// Get tolerations for this repository
+	tolerations := regsyncConfig.GetTolerationsForTarget(lastScan.Repository)
+	queueTolerations := make([]types.CVEToleration, len(tolerations))
+	for i, t := range tolerations {
+		queueTolerations[i] = types.CVEToleration{
+			ID:        t.ID,
+			Statement: t.Statement,
+			ExpiresAt: t.ExpiresAt,
+		}
+	}
+
+	// Create and enqueue task
+	task := &queue.ScanTask{
+		ID:          fmt.Sprintf("%s-%d", digest, time.Now().Unix()),
+		Repository:  lastScan.Repository,
+		Digest:      digest,
+		Tag:         lastScan.Tag,
+		EnqueuedAt:  time.Now(),
+		Attempts:    0,
+		IsRescan:    true,
+		Tolerations: queueTolerations,
+	}
+
+	if err := s.taskQueue.Enqueue(ctx, task); err != nil {
+		s.respondError(w, http.StatusInternalServerError, fmt.Sprintf("Failed to enqueue task: %v", err))
+		return
+	}
+
+	s.logger.Info("triggered rescan for tag",
+		"repository", name,
+		"tag", tag,
+		"digest", digest)
+
+	// Return response
+	response := TriggerScanResponse{
+		Queued: 1,
+		TaskID: task.ID,
+	}
+
+	s.respondJSON(w, http.StatusOK, response)
+}

@@ -85,6 +85,8 @@ func (s *APIServer) setupRoutes() {
 	s.router.HandleFunc("/api/v1/vulnerabilities", s.corsMiddleware(s.authMiddleware(s.handleQueryVulnerabilities, false)))
 	s.router.HandleFunc("/api/v1/tolerations", s.corsMiddleware(s.authMiddleware(s.handleListTolerations, false)))
 	s.router.HandleFunc("/api/v1/images/failed", s.corsMiddleware(s.authMiddleware(s.handleListFailedImages, false)))
+	s.router.HandleFunc("/api/v1/repositories", s.corsMiddleware(s.authMiddleware(s.handleListRepositories, false)))
+	s.router.HandleFunc("/api/v1/repositories/", s.corsMiddleware(s.authMiddleware(s.handleRepositoriesRouter, false)))
 
 	// Action endpoints (POST)
 	s.router.HandleFunc("/api/v1/scans/trigger", s.corsMiddleware(s.authMiddleware(s.handleTriggerScan, true)))

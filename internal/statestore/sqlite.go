@@ -781,3 +781,241 @@ func (s *SQLiteStore) ListTolerations(ctx context.Context, filter TolerationFilt
 
 	return tolerations, nil
 }
+
+// ListRepositories returns all repositories with aggregated metadata
+func (s *SQLiteStore) ListRepositories(ctx context.Context, filter RepositoryFilter) (*RepositoriesListResponse, error) {
+	// First, get total count
+	countQuery := `
+		SELECT COUNT(DISTINCT r.id)
+		FROM repositories r
+		WHERE 1=1
+	`
+	countArgs := []interface{}{}
+
+	if filter.Search != "" {
+		countQuery += " AND r.name LIKE ?"
+		countArgs = append(countArgs, "%"+filter.Search+"%")
+	}
+
+	var total int
+	err := s.db.QueryRowContext(ctx, countQuery, countArgs...).Scan(&total)
+	if err != nil {
+		return nil, errors.NewTransientf("failed to count repositories: %w", err)
+	}
+
+	// Query repositories with aggregated data
+	query := `
+		SELECT 
+			r.id,
+			r.name,
+			COUNT(DISTINCT a.id) as tag_count,
+			MAX(sr.created_at) as last_scan_time,
+			MIN(a.next_scan_at) as next_scan_time,
+			MAX(sr.critical_vuln_count) as max_critical,
+			MAX(sr.high_vuln_count) as max_high,
+			MAX(sr.medium_vuln_count) as max_medium,
+			MAX(sr.low_vuln_count) as max_low,
+			CASE WHEN COUNT(CASE WHEN sr.policy_passed = 0 THEN 1 END) > 0 THEN 0 ELSE 1 END as policy_passed
+		FROM repositories r
+		LEFT JOIN artifacts a ON r.id = a.repository_id
+		LEFT JOIN scan_records sr ON a.last_scan_id = sr.id
+		WHERE 1=1
+	`
+	args := []interface{}{}
+
+	if filter.Search != "" {
+		query += " AND r.name LIKE ?"
+		args = append(args, "%"+filter.Search+"%")
+	}
+
+	query += " GROUP BY r.id, r.name"
+	query += " ORDER BY r.name ASC"
+
+	if filter.Limit > 0 {
+		query += " LIMIT ?"
+		args = append(args, filter.Limit)
+	}
+
+	if filter.Offset > 0 {
+		query += " OFFSET ?"
+		args = append(args, filter.Offset)
+	}
+
+	rows, err := s.db.QueryContext(ctx, query, args...)
+	if err != nil {
+		return nil, errors.NewTransientf("failed to list repositories: %w", err)
+	}
+	defer rows.Close()
+
+	var repositories []RepositoryInfo
+	for rows.Next() {
+		var repo RepositoryInfo
+		var lastScanTime sql.NullTime
+		var nextScanTime sql.NullTime
+		var maxCritical sql.NullInt64
+		var maxHigh sql.NullInt64
+		var maxMedium sql.NullInt64
+		var maxLow sql.NullInt64
+		var policyPassed int
+
+		err := rows.Scan(
+			nil, // repository id (not needed in response)
+			&repo.Name,
+			&repo.TagCount,
+			&lastScanTime,
+			&nextScanTime,
+			&maxCritical,
+			&maxHigh,
+			&maxMedium,
+			&maxLow,
+			&policyPassed,
+		)
+		if err != nil {
+			return nil, errors.NewTransientf("failed to scan repository row: %w", err)
+		}
+
+		if lastScanTime.Valid {
+			repo.LastScanTime = &lastScanTime.Time
+		}
+		if nextScanTime.Valid {
+			repo.NextScanTime = &nextScanTime.Time
+		}
+
+		// Aggregate vulnerability counts from most vulnerable artifact
+		if maxCritical.Valid {
+			repo.VulnerabilityCount.Critical = int(maxCritical.Int64)
+		}
+		if maxHigh.Valid {
+			repo.VulnerabilityCount.High = int(maxHigh.Int64)
+		}
+		if maxMedium.Valid {
+			repo.VulnerabilityCount.Medium = int(maxMedium.Int64)
+		}
+		if maxLow.Valid {
+			repo.VulnerabilityCount.Low = int(maxLow.Int64)
+		}
+
+		repo.PolicyPassed = policyPassed == 1
+
+		repositories = append(repositories, repo)
+	}
+
+	if err := rows.Err(); err != nil {
+		return nil, errors.NewTransientf("error iterating repository rows: %w", err)
+	}
+
+	return &RepositoriesListResponse{
+		Repositories: repositories,
+		Total:        total,
+	}, nil
+}
+
+// GetRepository returns a repository with all its tags
+func (s *SQLiteStore) GetRepository(ctx context.Context, name string, filter RepositoryTagFilter) (*RepositoryDetail, error) {
+	// First, get total count of tags for this repository
+	countQuery := `
+		SELECT COUNT(DISTINCT a.id)
+		FROM artifacts a
+		JOIN repositories r ON a.repository_id = r.id
+		WHERE r.name = ?
+	`
+	countArgs := []interface{}{name}
+
+	if filter.Search != "" {
+		countQuery += " AND a.tag LIKE ?"
+		countArgs = append(countArgs, "%"+filter.Search+"%")
+	}
+
+	var total int
+	err := s.db.QueryRowContext(ctx, countQuery, countArgs...).Scan(&total)
+	if err != nil {
+		return nil, errors.NewTransientf("failed to count tags: %w", err)
+	}
+
+	// Query tags with their scan data
+	query := `
+		SELECT 
+			a.tag,
+			a.digest,
+			sr.created_at as last_scan_time,
+			a.next_scan_at,
+			COALESCE(sr.critical_vuln_count, 0) as critical,
+			COALESCE(sr.high_vuln_count, 0) as high,
+			COALESCE(sr.medium_vuln_count, 0) as medium,
+			COALESCE(sr.low_vuln_count, 0) as low,
+			COALESCE(sr.policy_passed, 1) as policy_passed
+		FROM artifacts a
+		JOIN repositories r ON a.repository_id = r.id
+		LEFT JOIN scan_records sr ON a.last_scan_id = sr.id
+		WHERE r.name = ?
+	`
+	args := []interface{}{name}
+
+	if filter.Search != "" {
+		query += " AND a.tag LIKE ?"
+		args = append(args, "%"+filter.Search+"%")
+	}
+
+	query += " ORDER BY a.tag ASC"
+
+	if filter.Limit > 0 {
+		query += " LIMIT ?"
+		args = append(args, filter.Limit)
+	}
+
+	if filter.Offset > 0 {
+		query += " OFFSET ?"
+		args = append(args, filter.Offset)
+	}
+
+	rows, err := s.db.QueryContext(ctx, query, args...)
+	if err != nil {
+		return nil, errors.NewTransientf("failed to get repository tags: %w", err)
+	}
+	defer rows.Close()
+
+	detail := &RepositoryDetail{
+		Name:  name,
+		Tags:  []TagInfo{},
+		Total: total,
+	}
+
+	for rows.Next() {
+		var tag TagInfo
+		var lastScanTime sql.NullTime
+		var nextScanTime sql.NullTime
+		var policyPassed int
+
+		err := rows.Scan(
+			&tag.Name,
+			&tag.Digest,
+			&lastScanTime,
+			&nextScanTime,
+			&tag.VulnerabilityCount.Critical,
+			&tag.VulnerabilityCount.High,
+			&tag.VulnerabilityCount.Medium,
+			&tag.VulnerabilityCount.Low,
+			&policyPassed,
+		)
+		if err != nil {
+			return nil, errors.NewTransientf("failed to scan tag row: %w", err)
+		}
+
+		if lastScanTime.Valid {
+			tag.LastScanTime = &lastScanTime.Time
+		}
+		if nextScanTime.Valid {
+			tag.NextScanTime = &nextScanTime.Time
+		}
+
+		tag.PolicyPassed = policyPassed == 1
+
+		detail.Tags = append(detail.Tags, tag)
+	}
+
+	if err := rows.Err(); err != nil {
+		return nil, errors.NewTransientf("error iterating tag rows: %w", err)
+	}
+
+	return detail, nil
+}

@@ -63,6 +63,38 @@ func (m *mockStateStore) ListTolerations(ctx context.Context, filter statestore.
 	return nil, nil
 }
 
+func (m *mockStateStore) ListRepositories(ctx context.Context, filter statestore.RepositoryFilter) (*statestore.RepositoriesListResponse, error) {
+	return &statestore.RepositoriesListResponse{
+		Repositories: []statestore.RepositoryInfo{},
+		Total:        0,
+	}, nil
+}
+
+func (m *mockStateStore) GetRepository(ctx context.Context, name string, filter statestore.RepositoryTagFilter) (*statestore.RepositoryDetail, error) {
+	// Return a repository with at least one tag so it's not considered "not found"
+	now := time.Now()
+	return &statestore.RepositoryDetail{
+		Name: name,
+		Tags: []statestore.TagInfo{
+			{
+				Name:       "latest",
+				Digest:     "sha256:abc123",
+				LastScanTime: &now,
+				NextScanTime: &now,
+				VulnerabilityCount: statestore.VulnerabilityCountSummary{
+					Critical:  1,
+					High:      2,
+					Medium:    3,
+					Low:       1,
+					Tolerated: 0,
+				},
+				PolicyPassed: true,
+			},
+		},
+		Total: 1,
+	}, nil
+}
+
 func TestNewAPIServer(t *testing.T) {
 	cfg := &config.APIConfig{
 		Enabled:  true,
@@ -510,5 +542,112 @@ func TestActionEndpoints_ReadOnlyMode(t *testing.T) {
 				t.Errorf("Expected status 403 for read-only mode, got %d", w.Code)
 			}
 		})
+	}
+}
+
+func TestHandleGetRepository_Success(t *testing.T) {
+	cfg := &config.APIConfig{
+		Enabled:  true,
+		Port:     8080,
+		APIKey:   "",
+		ReadOnly: false,
+	}
+
+	// Create a mock state store that returns repository details
+	mockStore := &mockStateStore{}
+	server := NewAPIServer(cfg, mockAttestationConfig(), mockStore, queue.NewInMemoryQueue(100), "suppline.yml", observability.NewLogger("error"))
+
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/repositories/test-repo", nil)
+	w := httptest.NewRecorder()
+
+	server.router.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Errorf("Expected status 200, got %d", w.Code)
+	}
+
+	// Verify response contains repository detail structure
+	body := w.Body.String()
+	if !strings.Contains(body, "test-repo") {
+		t.Errorf("Expected response to contain repository name")
+	}
+}
+
+// emptyRepositoryMockStore returns empty repositories
+type emptyRepositoryMockStore struct {
+	*mockStateStore
+}
+
+func (m *emptyRepositoryMockStore) GetRepository(ctx context.Context, name string, filter statestore.RepositoryTagFilter) (*statestore.RepositoryDetail, error) {
+	return &statestore.RepositoryDetail{
+		Name:  name,
+		Tags:  []statestore.TagInfo{},
+		Total: 0,
+	}, nil
+}
+
+func TestHandleGetRepository_NotFound(t *testing.T) {
+	cfg := &config.APIConfig{
+		Enabled:  true,
+		Port:     8080,
+		APIKey:   "",
+		ReadOnly: false,
+	}
+
+	// Create a mock state store that returns empty repository
+	mockStore := &emptyRepositoryMockStore{mockStateStore: &mockStateStore{}}
+	server := NewAPIServer(cfg, mockAttestationConfig(), mockStore, queue.NewInMemoryQueue(100), "suppline.yml", observability.NewLogger("error"))
+
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/repositories/nonexistent", nil)
+	w := httptest.NewRecorder()
+
+	server.router.ServeHTTP(w, req)
+
+	if w.Code != http.StatusNotFound {
+		t.Errorf("Expected status 404, got %d", w.Code)
+	}
+}
+
+func TestHandleGetRepository_WithPagination(t *testing.T) {
+	cfg := &config.APIConfig{
+		Enabled:  true,
+		Port:     8080,
+		APIKey:   "",
+		ReadOnly: false,
+	}
+
+	mockStore := &mockStateStore{}
+	server := NewAPIServer(cfg, mockAttestationConfig(), mockStore, queue.NewInMemoryQueue(100), "suppline.yml", observability.NewLogger("error"))
+
+	// Test with pagination parameters
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/repositories/test-repo?limit=10&offset=0", nil)
+	w := httptest.NewRecorder()
+
+	server.router.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Errorf("Expected status 200, got %d", w.Code)
+	}
+}
+
+func TestHandleGetRepository_WithSearch(t *testing.T) {
+	cfg := &config.APIConfig{
+		Enabled:  true,
+		Port:     8080,
+		APIKey:   "",
+		ReadOnly: false,
+	}
+
+	mockStore := &mockStateStore{}
+	server := NewAPIServer(cfg, mockAttestationConfig(), mockStore, queue.NewInMemoryQueue(100), "suppline.yml", observability.NewLogger("error"))
+
+	// Test with search parameter
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/repositories/test-repo?search=latest", nil)
+	w := httptest.NewRecorder()
+
+	server.router.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Errorf("Expected status 200, got %d", w.Code)
 	}
 }

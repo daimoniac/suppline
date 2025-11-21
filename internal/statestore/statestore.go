@@ -48,6 +48,42 @@ type StateStore interface {
 	ListDueForRescan(ctx context.Context, interval time.Duration) ([]string, error)
 }
 
+// RepositoryInfo represents a repository with aggregated metadata
+type RepositoryInfo struct {
+	Name                 string
+	TagCount             int
+	LastScanTime         *time.Time
+	NextScanTime         *time.Time
+	VulnerabilityCount   VulnerabilityCountSummary
+	PolicyPassed         bool
+}
+
+// VulnerabilityCountSummary represents aggregated vulnerability counts
+type VulnerabilityCountSummary struct {
+	Critical int
+	High     int
+	Medium   int
+	Low      int
+	Tolerated int
+}
+
+// RepositoryDetail represents a repository with its tags
+type RepositoryDetail struct {
+	Name  string
+	Tags  []TagInfo
+	Total int
+}
+
+// TagInfo represents a tag within a repository
+type TagInfo struct {
+	Name                 string
+	Digest               string
+	LastScanTime         *time.Time
+	NextScanTime         *time.Time
+	VulnerabilityCount   VulnerabilityCountSummary
+	PolicyPassed         bool
+}
+
 // StateStoreQuery defines the extended interface for querying scan data.
 // This interface is primarily used by the API layer for reporting and analysis.
 // Implementations should also implement StateStore for core functionality.
@@ -68,6 +104,32 @@ type StateStoreQuery interface {
 
 	// ListTolerations returns tolerated CVEs with optional filters
 	ListTolerations(ctx context.Context, filter TolerationFilter) ([]*types.TolerationInfo, error)
+
+	// ListRepositories returns all repositories with aggregated metadata
+	ListRepositories(ctx context.Context, filter RepositoryFilter) (*RepositoriesListResponse, error)
+
+	// GetRepository returns a repository with all its tags
+	GetRepository(ctx context.Context, name string, filter RepositoryTagFilter) (*RepositoryDetail, error)
+}
+
+// RepositoryFilter defines criteria for listing repositories
+type RepositoryFilter struct {
+	Search string
+	Limit  int
+	Offset int
+}
+
+// RepositoriesListResponse represents the response for listing repositories
+type RepositoriesListResponse struct {
+	Repositories []RepositoryInfo
+	Total        int
+}
+
+// RepositoryTagFilter defines criteria for listing tags in a repository
+type RepositoryTagFilter struct {
+	Search string
+	Limit  int
+	Offset int
 }
 
 // ScanRecord represents a complete scan result for an image digest
