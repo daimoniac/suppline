@@ -212,6 +212,56 @@ class APIClient {
         });
     }
 
+    // ==================== Integration API ====================
+
+    /**
+     * Get the cosign public key
+     */
+    async getPublicKey() {
+        const url = `${this.baseURL}/api/v1/integration/publickey`;
+        
+        try {
+            const response = await fetch(url, {
+                method: 'GET',
+                mode: 'cors',
+                credentials: 'omit',
+                headers: this.getHeaders(),
+            });
+
+            if (!response.ok) {
+                throw new APIError('Failed to fetch public key', response.status, response.statusText);
+            }
+
+            return await response.text();
+        } catch (error) {
+            throw error;
+        }
+    }
+
+    /**
+     * Get the Kyverno ClusterPolicy YAML
+     */
+    async getKyvernoPolicy() {
+        const url = `${this.baseURL}/api/v1/integration/kyverno/policy`;
+        
+        try {
+            const response = await fetch(url, {
+                method: 'GET',
+                mode: 'cors',
+                credentials: 'omit',
+                headers: this.getHeaders(),
+            });
+
+            if (!response.ok) {
+                throw new APIError('Failed to fetch Kyverno policy', response.status, response.statusText);
+            }
+
+            return await response.text();
+        } catch (error) {
+            throw error;
+        }
+    }
+
     // ==================== Health API ====================
 
     /**

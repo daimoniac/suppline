@@ -12,6 +12,7 @@ import { ScanDetail } from './components/scan-detail.js';
 import { Tolerations } from './components/tolerations.js';
 import { Vulnerabilities } from './components/vulnerabilities.js';
 import { FailedImages } from './components/failed-images.js';
+import { Integrations } from './components/integrations.js';
 
 /**
  * Application class - manages the entire application lifecycle
@@ -152,6 +153,11 @@ class Application {
         // Expiring tolerations
         this.router.addRoute('/tolerations/expiring', async () => {
             await this.renderExpiringTolerations();
+        });
+
+        // Integrations
+        this.router.addRoute('/integrations', async (params, queryParams) => {
+            await this.renderIntegrations(queryParams);
         });
 
         // 404 handler
@@ -371,6 +377,34 @@ class Application {
             
             this.currentView = tolerations;
             this.updateActiveNavLink('/tolerations');
+        } catch (error) {
+            this.handleViewError(error);
+        }
+    }
+
+    /**
+     * Render integrations view
+     */
+    async renderIntegrations(queryParams = {}) {
+        if (!this.authManager.isAuthenticated()) {
+            this.showAuthRequired();
+            return;
+        }
+
+        try {
+            this.showLoading();
+            const integrations = new Integrations(this.apiClient);
+            
+            // Load default integration (public key) or from query params
+            const integrationType = queryParams.type || 'publickey';
+            await integrations.loadIntegrationData(integrationType);
+            
+            const content = document.getElementById('content');
+            content.innerHTML = integrations.render();
+            integrations.attachEventListeners();
+            
+            this.currentView = integrations;
+            this.updateActiveNavLink('/integrations');
         } catch (error) {
             this.handleViewError(error);
         }
