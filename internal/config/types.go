@@ -45,8 +45,7 @@ type ScannerConfig struct {
 // AttestationConfig configures Sigstore attestation and signing
 type AttestationConfig struct {
 	KeyBased struct {
-		Key         string // Base64-encoded key content
-		KeyPassword string
+		Key string // Base64-encoded key content
 	}
 	RekorURL     string
 	FulcioURL    string

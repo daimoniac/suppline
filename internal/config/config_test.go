@@ -151,8 +151,7 @@ func TestValidate(t *testing.T) {
 				},
 				Attestation: AttestationConfig{
 					KeyBased: struct {
-						Key         string
-						KeyPassword string
+						Key string
 					}{
 						Key: "dGVzdC1rZXk=", // base64 encoded "test-key"
 					},
@@ -222,8 +221,7 @@ func TestValidate(t *testing.T) {
 				},
 				Attestation: AttestationConfig{
 					KeyBased: struct {
-						Key         string
-						KeyPassword string
+						Key string
 					}{
 						Key: "",
 					},

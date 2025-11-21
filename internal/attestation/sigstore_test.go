@@ -59,8 +59,7 @@ func TestAttestSBOM_ValidCycloneDXData(t *testing.T) {
 
 	config := AttestationConfig{
 		KeyBased: KeyBasedConfig{
-			Key:         base64.StdEncoding.EncodeToString([]byte("test-key-content")),
-			KeyPassword: "test-password",
+			Key: base64.StdEncoding.EncodeToString([]byte("test-key-content")),
 		},
 	}
 
@@ -125,8 +124,7 @@ func TestAttestSBOM_MalformedSBOMData(t *testing.T) {
 
 	config := AttestationConfig{
 		KeyBased: KeyBasedConfig{
-			Key:         base64.StdEncoding.EncodeToString([]byte("test-key-content")),
-			KeyPassword: "test-password",
+			Key: base64.StdEncoding.EncodeToString([]byte("test-key-content")),
 		},
 	}
 
@@ -173,8 +171,7 @@ func TestAttestSBOM_CosignCommandConstruction(t *testing.T) {
 
 	config := AttestationConfig{
 		KeyBased: KeyBasedConfig{
-			Key:         base64.StdEncoding.EncodeToString([]byte("test-key-content")),
-			KeyPassword: "test-password",
+			Key: base64.StdEncoding.EncodeToString([]byte("test-key-content")),
 		},
 	}
 

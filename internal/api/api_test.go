@@ -22,11 +22,9 @@ type mockStateStore struct{}
 func mockAttestationConfig() *config.AttestationConfig {
 	return &config.AttestationConfig{
 		KeyBased: struct {
-			Key         string
-			KeyPassword string
+			Key string
 		}{
-			Key:         "",
-			KeyPassword: "",
+			Key: "",
 		},
 	}
 }

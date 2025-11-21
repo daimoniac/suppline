@@ -90,9 +90,9 @@ type VulnerabilitySummary struct {
 
 // KeyBasedConfig contains configuration for key-based signing
 type KeyBasedConfig struct {
-	Key         string // Base64-encoded private key content
-	KeyPassword string // Password for the private key (optional)
-	CertPath    string // Path to the certificate file (optional)
+	Key      string // Base64-encoded private key content
+	CertPath string // Path to the certificate file (optional)
+	// Note: Key password is read from ATTESTATION_KEY_PASSWORD environment variable
 }
 
 // AttestationConfig contains configuration for the attestation service

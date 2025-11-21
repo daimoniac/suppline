@@ -54,11 +54,9 @@ func Load() (*Config, error) {
 		},
 		Attestation: AttestationConfig{
 			KeyBased: struct {
-				Key         string
-				KeyPassword string
+				Key string
 			}{
-				Key:         getEnv("ATTESTATION_KEY", ""),
-				KeyPassword: getEnv("ATTESTATION_KEY_PASSWORD", ""),
+				Key: getEnv("ATTESTATION_KEY", ""),
 			},
 			RekorURL:     getEnv("REKOR_URL", "https://rekor.sigstore.dev"),
 			FulcioURL:    getEnv("FULCIO_URL", "https://fulcio.sigstore.dev"),

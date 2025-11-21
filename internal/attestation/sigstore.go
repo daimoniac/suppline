@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/base64"
 	"encoding/json"
-	"fmt"
 	"log/slog"
 	"os"
 	"os/exec"
@@ -16,10 +15,9 @@ import (
 
 // SigstoreAttestor implements the Attestor interface using cosign CLI
 type SigstoreAttestor struct {
-	keyPath     string // Path to temporary key file
-	keyPassword string
-	logger      *slog.Logger
-	cleanup     func() // Cleanup function to remove temp key file
+	keyPath string // Path to temporary key file
+	logger  *slog.Logger
+	cleanup func() // Cleanup function to remove temp key file
 }
 
 // NewSigstoreAttestor creates a new Sigstore attestor
@@ -62,9 +60,8 @@ func NewSigstoreAttestor(config AttestationConfig, logger *slog.Logger) (*Sigsto
 	logger.Debug("created temporary key file", "path", tmpFile.Name())
 
 	return &SigstoreAttestor{
-		keyPath:     tmpFile.Name(),
-		keyPassword: config.KeyBased.KeyPassword,
-		logger:      logger,
+		keyPath: tmpFile.Name(),
+		logger:  logger,
 		cleanup: func() {
 			os.Remove(tmpFile.Name())
 		},
@@ -112,7 +109,7 @@ func (a *SigstoreAttestor) AttestSBOM(ctx context.Context, imageRef string, sbom
 		"--tlog-upload=false",
 		imageRef,
 	)
-	cmd.Env = append(os.Environ(), fmt.Sprintf("COSIGN_PASSWORD=%s", a.keyPassword))
+	cmd.Env = os.Environ()
 
 	output, err := cmd.CombinedOutput()
 	if err != nil {
@@ -166,7 +163,7 @@ func (a *SigstoreAttestor) AttestVulnerabilities(ctx context.Context, imageRef s
 		"--tlog-upload=false",
 		imageRef,
 	)
-	cmd.Env = append(os.Environ(), fmt.Sprintf("COSIGN_PASSWORD=%s", a.keyPassword))
+	cmd.Env = os.Environ()
 
 	output, err := cmd.CombinedOutput()
 	if err != nil {
@@ -222,7 +219,7 @@ func (a *SigstoreAttestor) AttestSCAI(ctx context.Context, imageRef string, scai
 		"--tlog-upload=false",
 		imageRef,
 	)
-	cmd.Env = append(os.Environ(), fmt.Sprintf("COSIGN_PASSWORD=%s", a.keyPassword))
+	cmd.Env = os.Environ()
 
 	output, err := cmd.CombinedOutput()
 	if err != nil {

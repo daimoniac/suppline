@@ -147,8 +147,7 @@ func run() error {
 		"key_configured", cfg.Attestation.KeyBased.Key != "")
 	attestorConfig := attestation.AttestationConfig{
 		KeyBased: attestation.KeyBasedConfig{
-			Key:         cfg.Attestation.KeyBased.Key,
-			KeyPassword: cfg.Attestation.KeyBased.KeyPassword,
+			Key: cfg.Attestation.KeyBased.Key,
 		},
 	}
 	

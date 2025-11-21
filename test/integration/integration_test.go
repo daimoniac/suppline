@@ -998,8 +998,7 @@ func TestAttestation(t *testing.T) {
 
 	cfg := attestation.AttestationConfig{
 		KeyBased: attestation.KeyBasedConfig{
-			Key:         base64.StdEncoding.EncodeToString(keyData),
-			KeyPassword: os.Getenv("ATTESTATION_KEY_PASSWORD"),
+			Key: base64.StdEncoding.EncodeToString(keyData),
 		},
 	}
 
@@ -1172,8 +1171,7 @@ func TestOptimizedAttestationFlow(t *testing.T) {
 
 	attestorCfg := attestation.AttestationConfig{
 		KeyBased: attestation.KeyBasedConfig{
-			Key:         base64.StdEncoding.EncodeToString(keyData),
-			KeyPassword: getEnv("ATTESTATION_KEY_PASSWORD", ""),
+			Key: base64.StdEncoding.EncodeToString(keyData),
 		},
 	}
 

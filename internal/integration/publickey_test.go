@@ -9,11 +9,9 @@ import (
 func TestGetPublicKeyFromConfig_NoKey(t *testing.T) {
 	cfg := config.AttestationConfig{
 		KeyBased: struct {
-			Key         string
-			KeyPassword string
+			Key string
 		}{
-			Key:         "",
-			KeyPassword: "",
+			Key: "",
 		},
 	}
 

@@ -11,7 +11,8 @@ import (
 )
 
 // ExtractPublicKey extracts the public key from a base64-encoded private key using cosign
-func ExtractPublicKey(base64Key string, password string) (string, error) {
+// The ATTESTATION_KEY_PASSWORD environment variable should be set if the key is encrypted
+func ExtractPublicKey(base64Key string) (string, error) {
 	// Decode base64 key
 	keyData, err := base64.StdEncoding.DecodeString(base64Key)
 	if err != nil {
@@ -37,10 +38,9 @@ func ExtractPublicKey(base64Key string, password string) (string, error) {
 	}
 
 	// Use cosign to extract the public key
+	// ATTESTATION_KEY_PASSWORD will be read from the environment if set
 	cmd := exec.Command("cosign", "public-key", "--key", tmpFile.Name())
-	if password != "" {
-		cmd.Env = append(os.Environ(), fmt.Sprintf("COSIGN_PASSWORD=%s", password))
-	}
+	cmd.Env = os.Environ()
 
 	output, err := cmd.CombinedOutput()
 	if err != nil {
@@ -56,5 +56,5 @@ func GetPublicKeyFromConfig(cfg config.AttestationConfig) (string, error) {
 		return "", fmt.Errorf("no attestation key configured")
 	}
 
-	return ExtractPublicKey(cfg.KeyBased.Key, cfg.KeyBased.KeyPassword)
+	return ExtractPublicKey(cfg.KeyBased.Key)
 }
