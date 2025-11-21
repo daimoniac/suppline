@@ -82,6 +82,13 @@ func (m *mockStateStore) GetLastScan(ctx context.Context, digest string) (*state
 	return nil, statestore.ErrScanNotFound
 }
 
+func (m *mockStateStore) ListDueForRescan(ctx context.Context, interval time.Duration) ([]string, error) {
+	if m.err != nil {
+		return nil, m.err
+	}
+	return m.dueForRescan, nil
+}
+
 // mockStateStore only implements the core StateStore interface
 // since the watcher doesn't need query methods
 
@@ -193,7 +200,7 @@ func TestWatcher_Discover_RescanDue(t *testing.T) {
 				Digest:     "sha256:digest1",
 				Repository: "myorg/app1",
 				Tag:        "v1.0",
-				ScannedAt:  oldScanTime,
+				CreatedAt:  oldScanTime,
 			},
 		},
 	}
@@ -261,7 +268,7 @@ func TestWatcher_Discover_SkipRecentScan(t *testing.T) {
 				Digest:     "sha256:digest1",
 				Repository: "myorg/app1",
 				Tag:        "v1.0",
-				ScannedAt:  recentScanTime,
+				CreatedAt:  recentScanTime,
 			},
 		},
 	}
@@ -456,7 +463,7 @@ func TestShouldScanImage_DigestChanged(t *testing.T) {
 				Digest:     "sha256:olddigest", // Different digest in record
 				Repository: "myorg/app1",
 				Tag:        "v1.0",
-				ScannedAt:  oldScanTime,
+				CreatedAt:  oldScanTime,
 			},
 		},
 	}
@@ -511,7 +518,7 @@ func TestShouldScanImage_IntervalElapsed(t *testing.T) {
 				Digest:     "sha256:samedigest",
 				Repository: "myorg/app1",
 				Tag:        "v1.0",
-				ScannedAt:  oldScanTime,
+				CreatedAt:  oldScanTime,
 			},
 		},
 	}
@@ -566,7 +573,7 @@ func TestShouldScanImage_Skip(t *testing.T) {
 				Digest:     "sha256:samedigest",
 				Repository: "myorg/app1",
 				Tag:        "v1.0",
-				ScannedAt:  recentScanTime,
+				CreatedAt:  recentScanTime,
 			},
 		},
 	}

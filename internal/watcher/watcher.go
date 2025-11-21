@@ -198,7 +198,7 @@ func (w *watcherImpl) shouldScanImage(
 	}
 
 	// Step 3: Check rescan interval
-	timeSinceLastScan := time.Since(lastScan.ScannedAt)
+	timeSinceLastScan := time.Since(lastScan.CreatedAt)
 	if timeSinceLastScan >= rescanInterval {
 		return true, fmt.Sprintf("rescan interval elapsed (%v since last scan)", timeSinceLastScan), true, nil
 	}
@@ -260,9 +260,9 @@ func (w *watcherImpl) processTag(ctx context.Context, repo, tag string, tolerati
 				attrs = append(attrs, "old_digest", lastScan.Digest, "new_digest", currentDigest)
 			}
 			if isRescan {
-				timeSinceLastScan := time.Since(lastScan.ScannedAt)
+				timeSinceLastScan := time.Since(lastScan.CreatedAt)
 				attrs = append(attrs,
-					"last_scan_time", lastScan.ScannedAt.Format(time.RFC3339),
+					"last_scan_time", lastScan.CreatedAt.Format(time.RFC3339),
 					"time_since_scan", timeSinceLastScan.String(),
 					"rescan_interval", rescanInterval.String())
 			}
@@ -287,9 +287,9 @@ func (w *watcherImpl) processTag(ctx context.Context, repo, tag string, tolerati
 		
 		var timeSinceLastScan time.Duration
 		if scanErr == nil && lastScan != nil {
-			timeSinceLastScan = time.Since(lastScan.ScannedAt)
+			timeSinceLastScan = time.Since(lastScan.CreatedAt)
 			attrs = append(attrs,
-				"last_scan_time", lastScan.ScannedAt.Format(time.RFC3339),
+				"last_scan_time", lastScan.CreatedAt.Format(time.RFC3339),
 				"time_since_scan", timeSinceLastScan.String(),
 				"rescan_interval", rescanInterval.String())
 		}

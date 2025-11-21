@@ -10,6 +10,7 @@ import (
 	"github.com/daimoniac/suppline/internal/policy"
 	"github.com/daimoniac/suppline/internal/queue"
 	"github.com/daimoniac/suppline/internal/scanner"
+	"github.com/daimoniac/suppline/internal/statestore"
 )
 
 // Pipeline orchestrates the complete scan workflow
@@ -66,7 +67,8 @@ func (p *Pipeline) Execute(ctx context.Context, task *queue.ScanTask) error {
 	}
 
 	// Log completion
-	p.logCompletion(task, imageRef, startTime, scanDurations, attestDurations, scaiAttested, policyDecision)
+	totalDuration := time.Since(startTime)
+	p.logCompletion(task, imageRef, startTime, scanDurations, attestDurations, scaiAttested, policyDecision, totalDuration)
 
 	return nil
 }
@@ -240,6 +242,11 @@ func (p *Pipeline) persistencePhase(ctx context.Context, task *queue.ScanTask, s
 	return nil
 }
 
+// updateScanRecordWithDuration updates the scan record with calculated duration
+func updateScanRecordWithDuration(scanRecord *statestore.ScanRecord, duration time.Duration) {
+	scanRecord.ScanDurationMs = int(duration.Milliseconds())
+}
+
 // checkPolicyFailures logs warnings and alerts for policy failures
 func (p *Pipeline) checkPolicyFailures(ctx context.Context, task *queue.ScanTask, policyDecision *policy.PolicyDecision) {
 	if !policyDecision.Passed {
@@ -260,7 +267,7 @@ func (p *Pipeline) checkPolicyFailures(ctx context.Context, task *queue.ScanTask
 				"digest", task.Digest,
 				"repository", task.Repository,
 				"tag", task.Tag,
-				"previous_scan", lastScan.ScannedAt,
+				"previous_scan", lastScan.CreatedAt,
 				"critical_vulns", policyDecision.CriticalVulnCount,
 				"reason", policyDecision.Reason)
 		}
@@ -268,12 +275,11 @@ func (p *Pipeline) checkPolicyFailures(ctx context.Context, task *queue.ScanTask
 }
 
 // logCompletion logs the final workflow completion with all durations
-func (p *Pipeline) logCompletion(task *queue.ScanTask, imageRef string, startTime time.Time, scanDurations, attestDurations map[string]time.Duration, scaiAttested bool, policyDecision *policy.PolicyDecision) {
-	duration := time.Since(startTime)
+func (p *Pipeline) logCompletion(task *queue.ScanTask, imageRef string, startTime time.Time, scanDurations, attestDurations map[string]time.Duration, scaiAttested bool, policyDecision *policy.PolicyDecision, totalDuration time.Duration) {
 	p.logger.Info("scan workflow completed",
 		"task_id", task.ID,
 		"image_ref", imageRef,
-		"total_duration", duration,
+		"total_duration", totalDuration,
 		"sbom_generation_duration", scanDurations["sbom"],
 		"vulnerability_scan_duration", scanDurations["vuln_scan"],
 		"sbom_attestation_duration", attestDurations["sbom_attest"],

@@ -62,7 +62,8 @@ func buildScanRecord(
 		Digest:            task.Digest,
 		Repository:        task.Repository,
 		Tag:               task.Tag,
-		ScannedAt:         scannedAt,
+		CreatedAt:         scannedAt,
+		ScanDurationMs:    0, // Will be calculated by pipeline
 		CriticalVulnCount: criticalCount,
 		HighVulnCount:     highCount,
 		MediumVulnCount:   mediumCount,
@@ -70,6 +71,7 @@ func buildScanRecord(
 		PolicyPassed:      policyDecision.Passed,
 		SBOMAttested:      true,
 		VulnAttested:      true,
+		SCAIAttested:      false, // Will be set by pipeline if SCAI attestation succeeds
 		Vulnerabilities:   vulnerabilityRecords,
 		ToleratedCVEs:     toleratedCVEs,
 		ErrorMessage:      "",
