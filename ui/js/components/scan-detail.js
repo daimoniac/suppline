@@ -56,8 +56,8 @@ export class ScanDetail extends BaseComponent {
                         </svg>
                         Back to Scans
                     </button>
-                    <h1 class="scan-detail-title">Scan Details</h1>
-                    <p class="scan-detail-subtitle">Detailed information about this image scan</p>
+                    <h1 class="page-title">Scan Details</h1>
+                    <p class="page-subtitle">Detailed information about this image scan</p>
                 </div>
 
                 ${this.renderImageInformation()}

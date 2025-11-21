@@ -1,5 +1,166 @@
+/**
+ * SUPPLINE UI STYLESHEET
+ *
+ * 1. DESIGN TOKENS - CSS variables for spacing, colors, and sizing
+ * 2. BASE STYLES - Foundational classes for cards, typography, badges, alerts
+ * 3. UTILITY CLASSES - Reusable flex, gap, grid, and font utilities
+ * 4. COMPONENT STYLES - Modal, button, badge, table, and form components
+ * 5. PAGE-SPECIFIC COMPONENTS - Dashboard, scans, vulnerabilities, etc.
+ * 6. RESPONSIVE STYLES - Media queries for tablet and mobile breakpoints
+ * 
+ */
+
 /* ============================================
-   COMPONENT STYLES
+   SECTION 1: DESIGN TOKENS
+   Spacing, Border Radius, Colors
+   ============================================ */
+
+:root {
+    /* Spacing Scale */
+    --spacing-xs: 0.25rem;   /* 4px */
+    --spacing-sm: 0.5rem;    /* 8px */
+    --spacing-md: 0.75rem;   /* 12px */
+    --spacing-lg: 1rem;      /* 16px */
+    --spacing-xl: 1.5rem;    /* 24px */
+    --spacing-2xl: 2rem;     /* 32px */
+
+    /* Border Radius Scale */
+    --radius-sm: 4px;
+    --radius-md: 6px;
+    --radius-lg: 8px;
+    --radius-full: 12px;
+
+    /* Severity Colors */
+    --critical-color: #dc2626;
+    --high-color: #f97316;
+    --medium-color: #eab308;
+    --low-color: #3b82f6;
+    --info-color: #3b82f6;
+    --success-color: #10b981;
+
+    /* Severity Background Colors */
+    --critical-bg: #fee2e2;
+    --high-bg: #ffedd5;
+    --medium-bg: #fef9c3;
+    --low-bg: #dbeafe;
+    --info-bg: #dbeafe;
+    --success-bg: #d1fae5;
+}
+
+/* ============================================
+   SECTION 2: BASE STYLES
+   Card Base, Typography, Badges, Alerts
+   ============================================ */
+
+/* Card Base Class */
+.card-base {
+    background-color: var(--card-bg);
+    border-radius: var(--radius-lg);
+    box-shadow: var(--shadow);
+    border: 1px solid var(--border-color);
+}
+
+.card-base.card-compact {
+    padding: var(--spacing-lg);
+}
+
+.card-base.card-standard {
+    padding: var(--spacing-xl);
+}
+
+/* Apply card-base to card-like elements */
+.modal-dialog,
+.card,
+.filters-container,
+.summary-card,
+.dashboard-section,
+.rescan-container,
+.pagination-container,
+.results-summary,
+.vulnerability-group,
+.integration-selector,
+.integration-content {
+    background-color: var(--card-bg);
+    border-radius: var(--radius-lg);
+    box-shadow: var(--shadow);
+    border: 1px solid var(--border-color);
+}
+
+/* Page Title and Subtitle Classes */
+.page-title {
+    font-size: 2rem;
+    font-weight: 700;
+    color: var(--text-primary);
+    margin-bottom: 0.5rem;
+}
+
+.page-subtitle {
+    color: var(--text-secondary);
+    font-size: 1rem;
+}
+
+/* ============================================
+   SECTION 3: UTILITY CLASSES
+   Flex, Gap, Grid, Font
+   ============================================ */
+
+/* Flex Utilities */
+.flex-col {
+    display: flex;
+    flex-direction: column;
+}
+
+.flex-row {
+    display: flex;
+    flex-direction: row;
+}
+
+.flex-center {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.flex-between {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+}
+
+/* Gap Utilities */
+.gap-xs { gap: var(--spacing-xs); }
+.gap-sm { gap: var(--spacing-sm); }
+.gap-md { gap: var(--spacing-md); }
+.gap-lg { gap: var(--spacing-lg); }
+.gap-xl { gap: var(--spacing-xl); }
+.gap-2xl { gap: var(--spacing-2xl); }
+
+/* Font Utilities */
+.font-mono {
+    font-family: 'Courier New', monospace;
+}
+
+/* Grid Utilities */
+.grid-auto-fit-250 {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+    gap: var(--spacing-xl);
+}
+
+.grid-auto-fit-200 {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+    gap: var(--spacing-xl);
+}
+
+.grid-auto-fit-150 {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+    gap: var(--spacing-lg);
+}
+
+/* ============================================
+   SECTION 4: COMPONENT STYLES
    Cards, Buttons, Badges, Tables, Forms
    ============================================ */
 
@@ -19,9 +180,6 @@
 }
 
 .modal-dialog {
-    background-color: var(--card-bg);
-    border-radius: 8px;
-    box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 10px 10px -5px rgba(0, 0, 0, 0.04);
     max-width: 500px;
     width: 100%;
     max-height: 90vh;
@@ -29,7 +187,7 @@
 }
 
 .modal-header {
-    padding: 1.5rem;
+    padding: var(--spacing-xl);
     border-bottom: 1px solid var(--border-color);
 }
 
@@ -41,7 +199,7 @@
 }
 
 .modal-body {
-    padding: 1.5rem;
+    padding: var(--spacing-xl);
 }
 
 .modal-body p {
@@ -51,26 +209,22 @@
 }
 
 .modal-footer {
-    padding: 1rem 1.5rem;
+    padding: var(--spacing-lg) var(--spacing-xl);
     border-top: 1px solid var(--border-color);
     display: flex;
     justify-content: flex-end;
-    gap: 0.75rem;
+    gap: var(--spacing-md);
 }
 
 /* Cards */
 .card {
-    background-color: var(--card-bg);
-    border-radius: 8px;
-    padding: 1.5rem;
-    box-shadow: var(--shadow);
-    border: 1px solid var(--border-color);
+    padding: var(--spacing-xl);
 }
 
 .card-header {
     font-size: 1.25rem;
     font-weight: 600;
-    margin-bottom: 1rem;
+    margin-bottom: var(--spacing-lg);
     color: var(--text-primary);
 }
 
@@ -132,7 +286,7 @@
 .btn-with-icon {
     display: inline-flex;
     align-items: center;
-    gap: 0.5rem;
+    gap: var(--spacing-sm);
 }
 
 .btn:disabled {
@@ -151,29 +305,16 @@
     text-transform: uppercase;
 }
 
-.badge-success,
-.status-success {
-    background-color: #d1fae5;
-    color: #065f46;
-}
-
-.badge-danger,
-.status-danger {
-    background-color: #fee2e2;
-    color: #991b1b;
-}
-
-.badge-warning {
-    background-color: #fef3c7;
-    color: #92400e;
-}
-
-.badge-critical {
+/* Severity Badge Modifiers */
+.badge-critical,
+.status-danger,
+.failure-reason-critical {
     background-color: #fee2e2;
     color: #7f1d1d;
 }
 
-.badge-high {
+.badge-high,
+.failure-reason-high {
     background-color: #ffedd5;
     color: #9a3412;
 }
@@ -183,20 +324,38 @@
     color: #854d0e;
 }
 
-.badge-low {
-    background-color: #dbeafe;
-    color: #1e40af;
-}
-
+.badge-low,
 .status-info {
     background-color: #dbeafe;
     color: #1e40af;
 }
 
+.badge-info {
+    background-color: #dbeafe;
+    color: #1e40af;
+}
+
+.badge-success,
+.status-success {
+    background-color: #d1fae5;
+    color: #065f46;
+}
+
+.badge-warning,
+.failure-reason-warning {
+    background-color: #fef3c7;
+    color: #92400e;
+}
+
+.badge-danger {
+    background-color: #fee2e2;
+    color: #991b1b;
+}
+
 .attestation-badge {
     display: inline-flex;
     align-items: center;
-    gap: 0.25rem;
+    gap: var(--spacing-xs);
 }
 
 .attestation-label {
@@ -206,7 +365,7 @@
 
 .attestation-badges {
     display: flex;
-    gap: 0.5rem;
+    gap: var(--spacing-sm);
     flex-wrap: wrap;
 }
 
@@ -277,21 +436,17 @@ tr:hover {
 
 /* Forms & Filters */
 .filters-container {
-    background-color: var(--card-bg);
-    border-radius: 8px;
-    padding: 1.5rem;
-    box-shadow: var(--shadow);
-    border: 1px solid var(--border-color);
+    padding: var(--spacing-xl);
     display: flex;
     flex-wrap: wrap;
-    gap: 1rem;
+    gap: var(--spacing-lg);
     align-items: flex-end;
 }
 
 .filter-group {
     display: flex;
     flex-direction: column;
-    gap: 0.5rem;
+    gap: var(--spacing-sm);
     flex: 1;
     min-width: 200px;
 }
@@ -321,11 +476,11 @@ tr:hover {
 
 .filter-actions {
     display: flex;
-    gap: 0.5rem;
+    gap: var(--spacing-sm);
 }
 
 /* ============================================
-   PAGE-SPECIFIC COMPONENTS
+   SECTION 5: PAGE-SPECIFIC COMPONENTS
    Dashboard, Scans, Vulnerabilities, etc.
    ============================================ */
 
@@ -333,7 +488,7 @@ tr:hover {
 .dashboard {
     display: flex;
     flex-direction: column;
-    gap: 2rem;
+    gap: var(--spacing-2xl);
 }
 
 .dashboard-header {
@@ -341,33 +496,31 @@ tr:hover {
 }
 
 .dashboard-header h1 {
-    font-size: 2rem;
-    font-weight: 700;
-    color: var(--text-primary);
-    margin-bottom: 0.5rem;
+    margin: 0;
+}
+
+.dashboard-header h1,
+.dashboard-header .page-title {
+    margin: 0;
 }
 
 .dashboard-subtitle {
-    color: var(--text-secondary);
-    font-size: 1rem;
+    margin: 0;
 }
 
 /* Summary Cards */
 .summary-cards {
     display: grid;
     grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
-    gap: 1.5rem;
+    gap: var(--spacing-xl);
+    /* Uses .grid-auto-fit-250 utility class */
 }
 
 .summary-card {
-    background-color: var(--card-bg);
-    border-radius: 8px;
-    padding: 1.5rem;
-    box-shadow: var(--shadow);
-    border: 1px solid var(--border-color);
+    padding: var(--spacing-xl);
     display: flex;
     align-items: center;
-    gap: 1rem;
+    gap: var(--spacing-lg);
     transition: transform 0.2s, box-shadow 0.2s;
 }
 
@@ -405,6 +558,9 @@ tr:hover {
 
 .summary-card-content {
     flex: 1;
+    display: flex;
+    flex-direction: column;
+    gap: var(--spacing-xs);
 }
 
 .summary-card-value {
@@ -423,25 +579,21 @@ tr:hover {
 
 /* Dashboard Sections */
 .dashboard-section {
-    background-color: var(--card-bg);
-    border-radius: 8px;
-    padding: 1.5rem;
-    box-shadow: var(--shadow);
-    border: 1px solid var(--border-color);
+    padding: var(--spacing-xl);
 }
 
 .dashboard-section h2 {
     font-size: 1.25rem;
     font-weight: 600;
     color: var(--text-primary);
-    margin-bottom: 1.5rem;
+    margin-bottom: var(--spacing-xl);
 }
 
 /* Vulnerability Breakdown */
 .vulnerability-breakdown {
     display: flex;
     flex-direction: column;
-    gap: 1.5rem;
+    gap: var(--spacing-xl);
 }
 
 .vulnerability-bar {
@@ -482,15 +634,16 @@ tr:hover {
 .vulnerability-stats {
     display: grid;
     grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
-    gap: 1rem;
+    gap: var(--spacing-lg);
+    /* Uses .grid-auto-fit-150 utility class */
 }
 
 .vulnerability-stat {
     display: flex;
     flex-direction: column;
     align-items: center;
-    gap: 0.5rem;
-    padding: 1rem;
+    gap: var(--spacing-sm);
+    padding: var(--spacing-lg);
     background-color: var(--bg-color);
     border-radius: 8px;
 }
@@ -510,13 +663,13 @@ tr:hover {
 .repository-chart {
     display: flex;
     flex-direction: column;
-    gap: 1rem;
+    gap: var(--spacing-lg);
 }
 
 .repository-bar-item {
     display: flex;
     flex-direction: column;
-    gap: 0.5rem;
+    gap: var(--spacing-sm);
 }
 
 .repository-bar-label {
@@ -585,7 +738,7 @@ tr:hover {
 
 .vulnerabilities-cell {
     display: flex;
-    gap: 0.5rem;
+    gap: var(--spacing-sm);
     align-items: center;
 }
 
@@ -625,7 +778,8 @@ tr:hover {
 }
 
 /* ============================================
-   RESPONSIVE STYLES
+   SECTION 6: RESPONSIVE STYLES
+   Tablet (768px) and Mobile (480px) Breakpoints
    ============================================ */
 
 @media (max-width: 768px) {
@@ -748,41 +902,29 @@ tr:hover {
 .scans-list {
     display: flex;
     flex-direction: column;
-    gap: 1.5rem;
+    gap: var(--spacing-xl);
 }
 
 .scans-header h1 {
-    font-size: 2rem;
-    font-weight: 700;
-    color: var(--text-primary);
-    margin-bottom: 0.5rem;
+    margin: 0;
 }
 
 .scans-subtitle {
-    color: var(--text-secondary);
-    font-size: 1rem;
+    margin: 0;
 }
 
 .rescan-container {
-    background-color: var(--card-bg);
-    border-radius: 8px;
-    padding: 1rem;
-    box-shadow: var(--shadow);
-    border: 1px solid var(--border-color);
+    padding: var(--spacing-lg);
 }
 
 /* Pagination */
 .pagination-container {
-    background-color: var(--card-bg);
-    border-radius: 8px;
-    padding: 1rem 1.5rem;
-    box-shadow: var(--shadow);
-    border: 1px solid var(--border-color);
+    padding: var(--spacing-lg) var(--spacing-xl);
     display: flex;
     justify-content: space-between;
     align-items: center;
     flex-wrap: wrap;
-    gap: 1rem;
+    gap: var(--spacing-lg);
 }
 
 .pagination-info {
@@ -792,12 +934,12 @@ tr:hover {
 
 .pagination-controls {
     display: flex;
-    gap: 0.5rem;
+    gap: var(--spacing-sm);
     align-items: center;
 }
 
 .pagination-current {
-    padding: 0 1rem;
+    padding: 0 var(--spacing-lg);
     font-weight: 500;
     color: var(--text-primary);
 }
@@ -807,21 +949,17 @@ tr:hover {
 .expiring-tolerations-list {
     display: flex;
     flex-direction: column;
-    gap: 1.5rem;
+    gap: var(--spacing-xl);
 }
 
 .tolerations-header h1,
 .expiring-tolerations-header h1 {
-    font-size: 2rem;
-    font-weight: 700;
-    color: var(--text-primary);
-    margin-bottom: 0.5rem;
+    margin: 0;
 }
 
 .tolerations-subtitle,
 .expiring-tolerations-subtitle {
-    color: var(--text-secondary);
-    font-size: 1rem;
+    margin: 0;
 }
 
 .statement-cell {
@@ -836,47 +974,62 @@ tr:hover {
 }
 
 /* Alert Boxes */
+.alert,
 .expiring-alert,
 .failure-alert {
     border-radius: 8px;
-    padding: 1rem 1.5rem;
+    padding: var(--spacing-lg) var(--spacing-xl);
     display: flex;
     align-items: center;
-    gap: 1rem;
+    gap: var(--spacing-lg);
 }
 
+.alert-warning,
 .expiring-alert {
     background-color: #fef3c7;
     border: 1px solid var(--warning-color);
 }
 
+.alert-critical,
 .failure-alert {
     background-color: #fee2e2;
     border: 1px solid var(--danger-color);
 }
 
+.alert svg,
+.expiring-alert svg,
+.failure-alert svg {
+    flex-shrink: 0;
+}
+
+.alert-warning svg,
 .expiring-alert svg {
     color: var(--warning-color);
-    flex-shrink: 0;
 }
 
+.alert-critical svg,
 .failure-alert svg {
     color: var(--danger-color);
-    flex-shrink: 0;
 }
 
+.alert-content,
 .expiring-alert-content,
 .failure-alert-content {
     flex: 1;
+    display: flex;
+    flex-direction: column;
+    gap: var(--spacing-xs);
 }
 
+.alert-title,
 .expiring-alert-title,
 .failure-alert-title {
     font-weight: 600;
     color: var(--text-primary);
-    margin-bottom: 0.25rem;
+    margin-bottom: 0;
 }
 
+.alert-message,
 .expiring-alert-message,
 .failure-alert-message {
     color: var(--text-secondary);
@@ -916,19 +1069,15 @@ tr:hover {
 .failed-images-list {
     display: flex;
     flex-direction: column;
-    gap: 1.5rem;
+    gap: var(--spacing-xl);
 }
 
 .failed-images-header h1 {
-    font-size: 2rem;
-    font-weight: 700;
-    color: var(--text-primary);
-    margin-bottom: 0.5rem;
+    margin: 0;
 }
 
 .failed-images-subtitle {
-    color: var(--text-secondary);
-    font-size: 1rem;
+    margin: 0;
 }
 
 .vulnerability-breakdown-cell {
@@ -938,13 +1087,13 @@ tr:hover {
 .vulnerability-breakdown-inline {
     display: flex;
     flex-direction: column;
-    gap: 0.5rem;
+    gap: var(--spacing-sm);
 }
 
 .vuln-count-item {
     display: flex;
     align-items: center;
-    gap: 0.5rem;
+    gap: var(--spacing-sm);
 }
 
 .vuln-label {
@@ -960,7 +1109,7 @@ tr:hover {
 .failure-reasons-list {
     display: flex;
     flex-direction: column;
-    gap: 0.5rem;
+    gap: var(--spacing-sm);
 }
 
 .failure-reason {
@@ -978,20 +1127,7 @@ tr:hover {
     flex-shrink: 0;
 }
 
-.failure-reason-critical {
-    background-color: #fee2e2;
-    color: #7f1d1d;
-}
 
-.failure-reason-high {
-    background-color: #ffedd5;
-    color: #9a3412;
-}
-
-.failure-reason-warning {
-    background-color: #fef3c7;
-    color: #92400e;
-}
 
 
 
@@ -999,33 +1135,25 @@ tr:hover {
 .vulnerabilities-list {
     display: flex;
     flex-direction: column;
-    gap: 1.5rem;
+    gap: var(--spacing-xl);
 }
 
 .vulnerabilities-header h1 {
-    font-size: 2rem;
-    font-weight: 700;
-    color: var(--text-primary);
-    margin-bottom: 0.5rem;
+    margin: 0;
 }
 
 .vulnerabilities-subtitle {
-    color: var(--text-secondary);
-    font-size: 1rem;
+    margin: 0;
 }
 
 .vulnerabilities-results {
     display: flex;
     flex-direction: column;
-    gap: 1rem;
+    gap: var(--spacing-lg);
 }
 
 .results-summary {
-    background-color: var(--card-bg);
-    border-radius: 8px;
-    padding: 1rem 1.5rem;
-    box-shadow: var(--shadow);
-    border: 1px solid var(--border-color);
+    padding: var(--spacing-lg) var(--spacing-xl);
     font-size: 0.875rem;
     color: var(--text-secondary);
     font-weight: 500;
@@ -1034,23 +1162,19 @@ tr:hover {
 .vulnerability-groups {
     display: flex;
     flex-direction: column;
-    gap: 1rem;
+    gap: var(--spacing-lg);
 }
 
 .vulnerability-group {
-    background-color: var(--card-bg);
-    border-radius: 8px;
-    box-shadow: var(--shadow);
-    border: 1px solid var(--border-color);
     overflow: hidden;
 }
 
 .vulnerability-group-header {
-    padding: 1.5rem;
+    padding: var(--spacing-xl);
     display: flex;
     justify-content: space-between;
     align-items: flex-start;
-    gap: 1rem;
+    gap: var(--spacing-lg);
     cursor: pointer;
     transition: background-color 0.2s;
 }
@@ -1063,13 +1187,13 @@ tr:hover {
     flex: 1;
     display: flex;
     flex-direction: column;
-    gap: 0.75rem;
+    gap: var(--spacing-md);
 }
 
 .vulnerability-group-title {
     display: flex;
     align-items: center;
-    gap: 0.75rem;
+    gap: var(--spacing-md);
     flex-wrap: wrap;
 }
 
@@ -1087,12 +1211,7 @@ tr:hover {
     font-weight: 500;
 }
 
-.vulnerability-description {
-    margin: 0;
-    color: var(--text-secondary);
-    line-height: 1.6;
-    font-size: 0.875rem;
-}
+
 
 .vulnerability-link {
     display: inline-flex;
@@ -1110,15 +1229,23 @@ tr:hover {
     text-decoration: underline;
 }
 
+/* Expand Icon Base Class */
+.expand-icon,
+.expand-toggle,
+.toleration-expand-icon,
+.severity-expand-icon {
+    font-size: 0.875rem;
+    color: var(--text-secondary);
+    flex-shrink: 0;
+    transition: all 0.2s;
+}
+
 .expand-toggle {
     background: none;
     border: none;
     cursor: pointer;
     padding: 0.5rem;
-    color: var(--text-secondary);
-    transition: all 0.2s;
     border-radius: 4px;
-    flex-shrink: 0;
 }
 
 .expand-toggle:hover {
@@ -1126,13 +1253,14 @@ tr:hover {
     color: var(--text-primary);
 }
 
-.expand-toggle.expanded {
+.expand-toggle.expanded,
+.expand-icon.expanded {
     transform: rotate(180deg);
 }
 
 .vulnerability-group-content {
     border-top: 1px solid var(--border-color);
-    padding: 1.5rem;
+    padding: var(--spacing-xl);
     background-color: var(--bg-color);
 }
 
@@ -1140,7 +1268,7 @@ tr:hover {
     font-size: 1rem;
     font-weight: 600;
     color: var(--text-primary);
-    margin-bottom: 1rem;
+    margin-bottom: var(--spacing-lg);
 }
 
 .affected-images-table {
@@ -1169,12 +1297,12 @@ tr:hover {
 }
 
 .severity-group-header {
-    padding: 0.75rem 1rem;
+    padding: var(--spacing-md) var(--spacing-lg);
     background-color: var(--bg-color);
     cursor: pointer;
     display: flex;
     align-items: center;
-    gap: 0.75rem;
+    gap: var(--spacing-md);
     user-select: none;
     transition: background-color 0.2s;
 }
@@ -1183,10 +1311,7 @@ tr:hover {
     background-color: var(--border-color);
 }
 
-.severity-expand-icon {
-    font-size: 0.875rem;
-    color: var(--text-secondary);
-}
+
 
 .severity-count {
     font-weight: 500;
@@ -1203,7 +1328,7 @@ tr:hover {
 
 /* Vulnerability Item Styles */
 .vulnerability-item {
-    padding: 1rem;
+    padding: var(--spacing-lg);
     border-bottom: 1px solid var(--border-color);
     background-color: var(--card-bg);
 }
@@ -1211,22 +1336,13 @@ tr:hover {
 .vulnerability-header {
     display: flex;
     flex-direction: column;
-    gap: 0.5rem;
-    margin-bottom: 0.75rem;
+    gap: var(--spacing-sm);
+    margin-bottom: var(--spacing-md);
 }
 
 .vulnerability-cve {
     font-weight: 600;
     color: var(--text-primary);
-}
-
-.vulnerability-link {
-    color: var(--primary-color);
-    text-decoration: none;
-}
-
-.vulnerability-link:hover {
-    text-decoration: underline;
 }
 
 .vulnerability-title {
@@ -1237,8 +1353,9 @@ tr:hover {
 .vulnerability-details {
     display: grid;
     grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
-    gap: 0.75rem;
-    margin-bottom: 0.75rem;
+    gap: var(--spacing-md);
+    margin-bottom: var(--spacing-md);
+    /* Uses .grid-auto-fit-200 utility class */
 }
 
 .detail-label {
@@ -1256,9 +1373,10 @@ tr:hover {
 }
 
 .vulnerability-description {
+    margin: 0;
     font-size: 0.875rem;
     color: var(--text-secondary);
-    line-height: 1.5;
+    line-height: 1.6;
     padding: 0.75rem;
     background-color: var(--bg-color);
     border-radius: 6px;
@@ -1266,36 +1384,30 @@ tr:hover {
 
 /* Scan Detail */
 .scan-section {
-    margin-bottom: 1.5rem;
+    margin-bottom: var(--spacing-xl);
 }
 
 .back-button {
-    margin-bottom: 1rem;
+    margin-bottom: var(--spacing-lg);
 }
 
-.scan-detail-title {
-    font-size: 2rem;
-    font-weight: 700;
-    margin-bottom: 0.5rem;
-}
-
-.scan-detail-subtitle {
-    color: var(--text-secondary);
-    margin-bottom: 2rem;
+.scan-detail .page-subtitle {
+    margin-bottom: var(--spacing-2xl);
 }
 
 .info-grid {
     display: grid;
     grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
-    gap: 1.5rem;
-    margin-bottom: 1.5rem;
+    gap: var(--spacing-xl);
+    margin-bottom: var(--spacing-xl);
+    /* Uses .grid-auto-fit-250 utility class */
 }
 
 .info-label {
     font-size: 0.875rem;
     font-weight: 500;
     color: var(--text-secondary);
-    margin-bottom: 0.5rem;
+    margin-bottom: var(--spacing-sm);
 }
 
 .info-value {
@@ -1320,22 +1432,23 @@ tr:hover {
 }
 
 .rescan-button-container {
-    padding-top: 1rem;
+    padding-top: var(--spacing-lg);
     border-top: 1px solid var(--border-color);
 }
 
 .vuln-summary-grid {
     display: grid;
     grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
-    gap: 1rem;
+    gap: var(--spacing-lg);
+    /* Uses .grid-auto-fit-150 utility class */
 }
 
 .vuln-summary-card {
     display: flex;
     flex-direction: column;
     align-items: center;
-    gap: 0.5rem;
-    padding: 1rem;
+    gap: var(--spacing-sm);
+    padding: var(--spacing-lg);
     background-color: var(--bg-color);
     border-radius: 8px;
 }
@@ -1349,7 +1462,7 @@ tr:hover {
 .vuln-details-list {
     display: flex;
     flex-direction: column;
-    gap: 0.75rem;
+    gap: var(--spacing-md);
 }
 
 
@@ -1362,12 +1475,12 @@ tr:hover {
 }
 
 .toleration-card-header {
-    padding: 1rem;
+    padding: var(--spacing-lg);
     background-color: var(--bg-color);
     cursor: pointer;
     display: flex;
     align-items: flex-start;
-    gap: 0.75rem;
+    gap: var(--spacing-md);
     user-select: none;
     transition: background-color 0.2s;
 }
@@ -1377,9 +1490,6 @@ tr:hover {
 }
 
 .toleration-expand-icon {
-    font-size: 0.875rem;
-    color: var(--text-secondary);
-    flex-shrink: 0;
     margin-top: 0.125rem;
 }
 
@@ -1387,23 +1497,23 @@ tr:hover {
     flex: 1;
     display: flex;
     flex-direction: column;
-    gap: 0.5rem;
+    gap: var(--spacing-sm);
 }
 
 .toleration-header-top {
     display: flex;
     align-items: center;
     justify-content: space-between;
-    gap: 1rem;
+    gap: var(--spacing-lg);
     flex-wrap: wrap;
 }
 
 .toleration-cve-id {
     font-weight: 600;
     color: var(--text-primary);
-    font-family: 'Courier New', monospace;
     font-size: 0.95rem;
     flex-shrink: 0;
+    font-family: 'Courier New', monospace;
 }
 
 .toleration-card-header .toleration-statement {
@@ -1416,7 +1526,7 @@ tr:hover {
 .toleration-card-meta {
     display: flex;
     align-items: center;
-    gap: 0.75rem;
+    gap: var(--spacing-md);
     flex-wrap: wrap;
     font-size: 0.8125rem;
 }
@@ -1428,11 +1538,11 @@ tr:hover {
 
 .toleration-card-content {
     border-top: 1px solid var(--border-color);
-    padding: 1rem;
+    padding: var(--spacing-lg);
     background-color: var(--card-bg);
     display: flex;
     flex-direction: column;
-    gap: 1.5rem;
+    gap: var(--spacing-xl);
 }
 
 .toleration-card-content.collapsed {
@@ -1446,7 +1556,7 @@ tr:hover {
 .toleration-justification {
     display: flex;
     flex-direction: column;
-    gap: 0.5rem;
+    gap: var(--spacing-sm);
 }
 
 .toleration-label {
@@ -1468,13 +1578,13 @@ tr:hover {
 .toleration-mitigated-vulns {
     display: flex;
     flex-direction: column;
-    gap: 0.75rem;
+    gap: var(--spacing-md);
 }
 
 .mitigated-vulns-list {
     display: flex;
     flex-direction: column;
-    gap: 0.75rem;
+    gap: var(--spacing-md);
 }
 
 .empty-mitigated {
@@ -1488,26 +1598,26 @@ tr:hover {
 
 /* Mitigated Vulnerability Item Styles */
 .mitigated-vulnerability-item {
-    padding: 0.75rem;
+    padding: var(--spacing-md);
     background-color: var(--bg-color);
     border-radius: 6px;
     border-left: 3px solid var(--border-color);
     display: flex;
     flex-direction: column;
-    gap: 0.5rem;
+    gap: var(--spacing-sm);
 }
 
 .mitigated-vuln-header {
     display: flex;
     align-items: flex-start;
-    gap: 0.75rem;
+    gap: var(--spacing-md);
 }
 
 .mitigated-vuln-info {
     flex: 1;
     display: flex;
     flex-direction: column;
-    gap: 0.25rem;
+    gap: var(--spacing-xs);
 }
 
 .mitigated-vuln-title {
@@ -1525,8 +1635,9 @@ tr:hover {
 .mitigated-vuln-details {
     display: grid;
     grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
-    gap: 0.5rem;
+    gap: var(--spacing-sm);
     font-size: 0.8125rem;
+    /* Uses .grid-auto-fit-150 utility class */
 }
 
 .mitigated-vuln-details .detail-label {
@@ -1552,30 +1663,22 @@ tr:hover {
 .integrations-list {
     display: flex;
     flex-direction: column;
-    gap: 1.5rem;
+    gap: var(--spacing-xl);
 }
 
 .integrations-header h1 {
-    font-size: 2rem;
-    font-weight: 700;
-    color: var(--text-primary);
-    margin-bottom: 0.5rem;
+    margin: 0;
 }
 
 .integrations-subtitle {
-    color: var(--text-secondary);
-    font-size: 1rem;
+    margin: 0;
 }
 
 .integration-selector {
-    background-color: var(--card-bg);
-    border-radius: 8px;
-    padding: 1.5rem;
-    box-shadow: var(--shadow);
-    border: 1px solid var(--border-color);
+    padding: var(--spacing-xl);
     display: flex;
     align-items: center;
-    gap: 1rem;
+    gap: var(--spacing-lg);
 }
 
 .integration-selector label {
@@ -1605,40 +1708,40 @@ tr:hover {
 }
 
 .integration-content {
-    background-color: var(--card-bg);
-    border-radius: 8px;
-    box-shadow: var(--shadow);
-    border: 1px solid var(--border-color);
     min-height: 400px;
 }
 
 .integration-details {
     display: flex;
     flex-direction: column;
+    gap: 0;
 }
 
 .integration-header {
-    padding: 1.5rem;
+    padding: var(--spacing-xl);
     border-bottom: 1px solid var(--border-color);
+    display: flex;
+    flex-direction: column;
+    gap: var(--spacing-lg);
 }
 
 .integration-header h3 {
     font-size: 1.25rem;
     font-weight: 600;
     color: var(--text-primary);
-    margin-bottom: 0.5rem;
+    margin-bottom: 0;
 }
 
 .integration-header p {
     color: var(--text-secondary);
     font-size: 0.875rem;
     line-height: 1.6;
-    margin-bottom: 1rem;
+    margin-bottom: 0;
 }
 
 .integration-actions {
     display: flex;
-    gap: 0.75rem;
+    gap: var(--spacing-md);
     flex-wrap: wrap;
 }
 
@@ -1649,13 +1752,13 @@ tr:hover {
 }
 
 .integration-code {
-    padding: 1.5rem;
+    padding: var(--spacing-xl);
     background-color: var(--bg-color);
 }
 
 .integration-code pre {
     margin: 0;
-    padding: 1rem;
+    padding: var(--spacing-lg);
     background-color: #1e293b;
     border-radius: 6px;
     overflow-x: auto;

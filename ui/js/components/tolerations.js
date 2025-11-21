@@ -143,8 +143,8 @@ export class Tolerations extends BaseComponent {
         return `
             <div class="tolerations-list">
                 <div class="tolerations-header">
-                    <h1>CVE Tolerations</h1>
-                    <p class="tolerations-subtitle">View and manage approved CVE exceptions</p>
+                    <h1 class="page-title">CVE Tolerations</h1>
+                    <p class="page-subtitle">View and manage approved CVE exceptions</p>
                 </div>
 
                 ${this.renderFilters()}
@@ -482,8 +482,8 @@ export class ExpiringTolerations extends BaseComponent {
         return `
             <div class="expiring-tolerations-list">
                 <div class="expiring-tolerations-header">
-                    <h1>Expiring Tolerations</h1>
-                    <p class="expiring-tolerations-subtitle">CVE tolerations expiring within 7 days</p>
+                    <h1 class="page-title">Expiring Tolerations</h1>
+                    <p class="page-subtitle">CVE tolerations expiring within 7 days</p>
                 </div>
 
                 ${this.renderAlert()}

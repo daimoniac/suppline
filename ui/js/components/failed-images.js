@@ -24,8 +24,8 @@ export class FailedImages extends ScansList {
         return `
             <div class="failed-images-list">
                 <div class="failed-images-header">
-                    <h1>${this.pageTitle}</h1>
-                    <p class="failed-images-subtitle">${this.pageSubtitle}</p>
+                    <h1 class="page-title">${this.pageTitle}</h1>
+                    <p class="page-subtitle">${this.pageSubtitle}</p>
                 </div>
 
                 ${this.renderFailureAlert()}

@@ -127,8 +127,8 @@ export class Vulnerabilities extends BaseComponent {
         return `
             <div class="vulnerabilities-list">
                 <div class="vulnerabilities-header">
-                    <h1>Vulnerability Search</h1>
-                    <p class="vulnerabilities-subtitle">Search and analyze vulnerabilities across all scanned images</p>
+                    <h1 class="page-title">Vulnerability Search</h1>
+                    <p class="page-subtitle">Search and analyze vulnerabilities across all scanned images</p>
                 </div>
 
                 ${this.renderSearchForm()}

@@ -143,8 +143,8 @@ export class ScansList extends BaseComponent {
         return `
             <div class="scans-list">
                 <div class="scans-header">
-                    <h1>Image Scans</h1>
-                    <p class="scans-subtitle">View and manage container image security scans</p>
+                    <h1 class="page-title">Image Scans</h1>
+                    <p class="page-subtitle">View and manage container image security scans</p>
                 </div>
 
                 ${this.renderFilters()}

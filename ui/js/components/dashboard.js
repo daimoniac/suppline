@@ -109,8 +109,8 @@ export class Dashboard extends BaseComponent {
         return `
             <div class="dashboard">
                 <div class="dashboard-header">
-                    <h1>Security Dashboard</h1>
-                    <p class="dashboard-subtitle">Container Image Security Overview</p>
+                    <h1 class="page-title">Security Dashboard</h1>
+                    <p class="page-subtitle">Container Image Security Overview</p>
                 </div>
 
                 ${this.renderSummaryCards()}

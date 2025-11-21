@@ -41,8 +41,8 @@ export class Integrations extends BaseComponent {
         return `
             <div class="integrations-list">
                 <div class="integrations-header">
-                    <h1>Integrations</h1>
-                    <p class="integrations-subtitle">Export integration configurations for use with external systems</p>
+                    <h1 class="page-title">Integrations</h1>
+                    <p class="page-subtitle">Export integration configurations for use with external systems</p>
                 </div>
 
                 <div class="integration-selector">
