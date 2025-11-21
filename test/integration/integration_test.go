@@ -322,7 +322,6 @@ func TestStateStore(t *testing.T) {
 			MediumVulnCount:   0,
 			LowVulnCount:      0,
 			PolicyPassed:      true,
-			Signed:            true,
 			SBOMAttested:      true,
 			VulnAttested:      true,
 			Vulnerabilities: []types.VulnerabilityRecord{
@@ -407,7 +406,6 @@ func TestStateStore(t *testing.T) {
 			MediumVulnCount:   0,
 			LowVulnCount:      0,
 			PolicyPassed:      true,
-			Signed:            false,
 			SBOMAttested:      false,
 			VulnAttested:      false,
 		}
@@ -663,7 +661,6 @@ func TestEndToEndWorkflow(t *testing.T) {
 			MediumVulnCount:   mediumCount,
 			LowVulnCount:      lowCount,
 			PolicyPassed:      true, // Would be determined by policy engine
-			Signed:            false,
 			SBOMAttested:      true,
 			VulnAttested:      false,
 			Vulnerabilities:   vulnRecords,
@@ -1055,18 +1052,6 @@ func TestAttestation(t *testing.T) {
 			t.Logf("Successfully attested vulnerabilities for %s", scanResult.ImageRef)
 		}
 	})
-
-	t.Run("SignImage", func(t *testing.T) {
-		imageRef := "test.registry.io/test/image@sha256:test123"
-
-		err := attestor.SignImage(ctx, imageRef)
-		if err != nil {
-			t.Logf("Image signing failed (expected in test environment): %v", err)
-			// Don't fail the test as this requires actual registry access
-		} else {
-			t.Logf("Successfully signed image %s", imageRef)
-		}
-	})
 }
 
 // TestPolicyAndAttestationWorkflow tests the integration between policy and attestation
@@ -1118,12 +1103,12 @@ func TestPolicyAndAttestationWorkflow(t *testing.T) {
 		// In a real workflow, we would:
 		// 1. Attest SBOM (always)
 		// 2. Attest vulnerabilities (always)
-		// 3. Sign image (only if policy passed)
+		// 3. Attest SCAI (always)
 
 		t.Logf("Policy passed: %v", decision.Passed)
 		t.Logf("Critical count: %d", decision.CriticalVulnCount)
 		t.Logf("Tolerated CVEs: %v", decision.ToleratedCVEs)
-		t.Log("Would attest SBOM, attest vulnerabilities, and sign image")
+		t.Log("Would attest SBOM, vulnerabilities, and SCAI")
 	})
 
 	t.Run("WorkflowWithPolicyFail", func(t *testing.T) {
@@ -1574,7 +1559,6 @@ func TestCompleteWorkerWorkflow(t *testing.T) {
 			MediumVulnCount:   mediumCount,
 			LowVulnCount:      lowCount,
 			PolicyPassed:      decision.Passed,
-			Signed:            decision.ShouldSign,
 			SBOMAttested:      true,
 			VulnAttested:      true,
 			Vulnerabilities:   vulnRecords,
@@ -1609,7 +1593,6 @@ func TestCompleteWorkerWorkflow(t *testing.T) {
 		t.Logf("  - Vulnerabilities: %d (Critical: %d, High: %d, Medium: %d, Low: %d)",
 			len(retrieved.Vulnerabilities), criticalCount, highCount, mediumCount, lowCount)
 		t.Logf("  - Policy passed: %v", retrieved.PolicyPassed)
-		t.Logf("  - Signed: %v", retrieved.Signed)
 	})
 
 	t.Run("WorkflowWithVulnerableImage", func(t *testing.T) {
@@ -1683,7 +1666,6 @@ func TestCompleteWorkerWorkflow(t *testing.T) {
 			MediumVulnCount:   mediumCount,
 			LowVulnCount:      lowCount,
 			PolicyPassed:      decision.Passed,
-			Signed:            decision.ShouldSign,
 			SBOMAttested:      true,
 			VulnAttested:      true,
 			Vulnerabilities:   vulnRecords,
@@ -1714,17 +1696,12 @@ func TestCompleteWorkerWorkflow(t *testing.T) {
 			t.Error("Expected vulnerabilities to be attested")
 		}
 
-		// Should NOT sign if policy failed
-		if decision.CriticalVulnCount > 0 && retrieved.Signed {
-			t.Error("Expected image NOT to be signed when critical vulnerabilities exist")
-		}
 
 		t.Logf("Workflow completed successfully:")
 		t.Logf("  - Image: %s", imageRef)
 		t.Logf("  - Vulnerabilities: %d (Critical: %d, High: %d, Medium: %d, Low: %d)",
 			len(retrieved.Vulnerabilities), criticalCount, highCount, mediumCount, lowCount)
 		t.Logf("  - Policy passed: %v", retrieved.PolicyPassed)
-		t.Logf("  - Signed: %v", retrieved.Signed)
 	})
 
 	t.Run("WorkflowWithToleratedCVEs", func(t *testing.T) {
@@ -1848,7 +1825,6 @@ func TestCompleteWorkerWorkflow(t *testing.T) {
 			MediumVulnCount:   mediumCount,
 			LowVulnCount:      lowCount,
 			PolicyPassed:      decision.Passed,
-			Signed:            decision.ShouldSign,
 			SBOMAttested:      true,
 			VulnAttested:      true,
 			Vulnerabilities:   vulnRecords,
@@ -1881,11 +1857,10 @@ func TestCompleteWorkerWorkflow(t *testing.T) {
 			len(retrieved.Vulnerabilities), criticalCount, highCount, mediumCount, lowCount)
 		t.Logf("  - Tolerated CVEs: %d", len(retrieved.ToleratedCVEs))
 		t.Logf("  - Policy passed: %v", retrieved.PolicyPassed)
-		t.Logf("  - Signed: %v", retrieved.Signed)
 	})
 
 	t.Run("WorkflowWithRescan", func(t *testing.T) {
-		// Test rescan scenario where a previously signed image now fails
+		// Test rescan scenario where a previously passing image now fails
 		imageRef := "alpine:3.7"
 		digest := "sha256:rescan-test-999"
 
@@ -1931,7 +1906,6 @@ func TestCompleteWorkerWorkflow(t *testing.T) {
 			ScannedAt:         time.Now().Add(-24 * time.Hour), // Yesterday
 			CriticalVulnCount: 0, // Tolerated
 			PolicyPassed:      true,
-			Signed:            true,
 			SBOMAttested:      true,
 			VulnAttested:      true,
 		}
@@ -1956,7 +1930,6 @@ func TestCompleteWorkerWorkflow(t *testing.T) {
 			ScannedAt:         time.Now(),
 			CriticalVulnCount: decision2.CriticalVulnCount,
 			PolicyPassed:      decision2.Passed,
-			Signed:            false, // Should not sign on rescan failure
 			SBOMAttested:      true,
 			VulnAttested:      true,
 		}
@@ -1972,17 +1945,14 @@ func TestCompleteWorkerWorkflow(t *testing.T) {
 			t.Fatalf("Failed to retrieve scan: %v", err)
 		}
 
-		if retrieved.Signed {
-			t.Error("Expected image NOT to be signed on failed rescan")
-		}
 
 		if retrieved.PolicyPassed {
 			t.Error("Expected policy to fail on rescan without toleration")
 		}
 
 		t.Logf("Rescan workflow completed successfully:")
-		t.Logf("  - First scan: passed=%v, signed=%v", true, true)
-		t.Logf("  - Second scan: passed=%v, signed=%v", retrieved.PolicyPassed, retrieved.Signed)
-		t.Logf("  - Alert: Previously signed image now fails policy")
+		t.Logf("  - First scan: passed=%v", true)
+		t.Logf("  - Second scan: passed=%v", retrieved.PolicyPassed)
+		t.Logf("  - Alert: Previously passing image now fails policy")
 	})
 }

@@ -88,9 +88,9 @@ The integration tests cover:
 
 ### 6. Complete Worker Workflow (Task 8.2)
 - **Clean Image Workflow**: Tests scanning, SBOM generation, policy evaluation, and state recording for images with minimal vulnerabilities
-- **Vulnerable Image Workflow**: Tests handling of images with critical vulnerabilities, ensuring attestations are created but signing is skipped
-- **Tolerated CVEs Workflow**: Tests policy evaluation with CVE tolerations, verifying that tolerated critical CVEs allow signing
-- **Rescan Workflow**: Tests the rescan scenario where a previously signed image now fails policy, including alert detection
+- **Vulnerable Image Workflow**: Tests handling of images with critical vulnerabilities, ensuring attestations are created
+- **Tolerated CVEs Workflow**: Tests policy evaluation with CVE tolerations, verifying that tolerated critical CVEs allow policy to pass
+- **Rescan Workflow**: Tests the rescan scenario where a previously passing image now fails policy, including alert detection
 
 ## Test Services
 

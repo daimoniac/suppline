@@ -221,16 +221,7 @@ export class FailedImages extends ScansList {
             </span>`);
         }
 
-        // Check attestation status
-        if (!scan.Signed) {
-            reasons.push(`<span class="failure-reason failure-reason-warning">
-                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                    <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"></path>
-                    <line x1="9" y1="12" x2="15" y2="12"></line>
-                </svg>
-                Not Signed
-            </span>`);
-        }
+        // Check attestation status (signing removed)
 
         if (!scan.VulnAttested) {
             reasons.push(`<span class="failure-reason failure-reason-warning">

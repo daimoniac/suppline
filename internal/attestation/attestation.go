@@ -17,29 +17,16 @@ type Attestor interface {
 
 	// AttestSCAI creates and pushes SCAI attestation using sigstore-go
 	AttestSCAI(ctx context.Context, imageRef string, scai *SCAIAttestation) error
-
-	// SignImage signs the image using sigstore-go if policy passes
-	SignImage(ctx context.Context, imageRef string) error
 }
 
 // AttestationResult represents the result of an attestation operation
 type AttestationResult struct {
-	ImageRef      string
+	ImageRef        string
 	AttestationType string // "sbom" or "vulnerability"
-	Success       bool
-	Error         error
-	Timestamp     time.Time
-	DigestSigned  string // The digest that was attested/signed
-}
-
-// SignatureResult represents the result of a signing operation
-type SignatureResult struct {
-	ImageRef     string
-	Success      bool
-	Error        error
-	Timestamp    time.Time
-	DigestSigned string // The digest that was signed
-	SignatureRef string // Reference to the signature in the registry
+	Success         bool
+	Error           error
+	Timestamp       time.Time
+	DigestAttested  string // The digest that was attested
 }
 
 // SBOMAttestation represents SBOM attestation data

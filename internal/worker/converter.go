@@ -16,7 +16,6 @@ func buildScanRecord(
 	task *queue.ScanTask,
 	scanResult *scanner.ScanResult,
 	policyDecision *policy.PolicyDecision,
-	signed bool,
 	scannedAt time.Time,
 ) *statestore.ScanRecord {
 	// Count vulnerabilities by severity and convert to records
@@ -69,7 +68,6 @@ func buildScanRecord(
 		MediumVulnCount:   mediumCount,
 		LowVulnCount:      lowCount,
 		PolicyPassed:      policyDecision.Passed,
-		Signed:            signed,
 		SBOMAttested:      true,
 		VulnAttested:      true,
 		Vulnerabilities:   vulnerabilityRecords,

@@ -33,10 +33,6 @@ type Metrics struct {
 	AttestationsCreated *prometheus.CounterVec
 	AttestationsFailed *prometheus.CounterVec
 
-	// Signing metrics
-	ImagesSigned prometheus.Counter
-	SigningFailed prometheus.Counter
-
 	// Discovery metrics
 	ImagesDiscovered prometheus.Counter
 	DiscoveryErrors prometheus.Counter
@@ -136,16 +132,6 @@ func GetMetrics() *Metrics {
 				},
 				[]string{"type"},
 			),
-
-			// Signing metrics
-			ImagesSigned: promauto.NewCounter(prometheus.CounterOpts{
-				Name: "suppline_images_signed_total",
-				Help: "Total number of images signed",
-			}),
-			SigningFailed: promauto.NewCounter(prometheus.CounterOpts{
-				Name: "suppline_signing_failed_total",
-				Help: "Total number of signing operations that failed",
-			}),
 
 			// Discovery metrics
 			ImagesDiscovered: promauto.NewCounter(prometheus.CounterOpts{

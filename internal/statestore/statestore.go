@@ -57,7 +57,6 @@ type ScanRecord struct {
 	MediumVulnCount   int
 	LowVulnCount      int
 	PolicyPassed      bool
-	Signed            bool
 	SBOMAttested      bool
 	VulnAttested      bool
 	Vulnerabilities   []types.VulnerabilityRecord // Using canonical type

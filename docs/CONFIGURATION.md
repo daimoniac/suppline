@@ -53,13 +53,12 @@ Configuration is loaded from multiple sources in this priority order:
 | `POSTGRES_URL` | string | `` | PostgreSQL connection URL (if type=postgres) |
 | `RESCAN_INTERVAL` | duration | `24h` | Default rescan interval for unchanged images |
 
-### Attestation & Signing
+### Attestation
 
 | Variable | Type | Default | Description |
 |----------|------|---------|-------------|
-| `ATTESTATION_KEY_PATH` | string | `` | Path to Cosign private key (required if not keyless) |
+| `ATTESTATION_KEY_PATH` | string | `` | Path to Cosign private key (required) |
 | `ATTESTATION_KEY_PASSWORD` | string | `` | Password for encrypted private key |
-| `REKOR_URL` | string | `https://rekor.sigstore.dev` | Rekor transparency log URL |
 | `FULCIO_URL` | string | `https://fulcio.sigstore.dev` | Fulcio certificate authority URL |
 
 ### API Server

@@ -37,9 +37,6 @@ func TestEngine_Evaluate_NoCriticalVulnerabilities(t *testing.T) {
 		t.Errorf("expected policy to pass, got failed")
 	}
 
-	if !decision.ShouldSign {
-		t.Errorf("expected ShouldSign to be true")
-	}
 
 	if !decision.ShouldAttest {
 		t.Errorf("expected ShouldAttest to be true")
@@ -77,9 +74,6 @@ func TestEngine_Evaluate_CriticalVulnerabilitiesPresent(t *testing.T) {
 		t.Errorf("expected policy to fail, got passed")
 	}
 
-	if decision.ShouldSign {
-		t.Errorf("expected ShouldSign to be false")
-	}
 
 	if !decision.ShouldAttest {
 		t.Errorf("expected ShouldAttest to be true")
@@ -176,10 +170,6 @@ func TestEngine_Evaluate_AllCriticalVulnerabilitiesTolerated(t *testing.T) {
 
 	if !decision.Passed {
 		t.Errorf("expected policy to pass (all critical tolerated), got failed")
-	}
-
-	if !decision.ShouldSign {
-		t.Errorf("expected ShouldSign to be true")
 	}
 
 	if decision.CriticalVulnCount != 0 {

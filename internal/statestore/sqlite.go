@@ -59,7 +59,6 @@ func (s *SQLiteStore) initSchema() error {
 		medium_vuln_count INTEGER NOT NULL,
 		low_vuln_count INTEGER NOT NULL,
 		policy_passed BOOLEAN NOT NULL,
-		signed BOOLEAN NOT NULL,
 		sbom_attested BOOLEAN NOT NULL,
 		vuln_attested BOOLEAN NOT NULL,
 		error_message TEXT,
@@ -121,12 +120,12 @@ func (s *SQLiteStore) RecordScan(ctx context.Context, record *ScanRecord) error 
 		INSERT INTO scan_records (
 			digest, repository, tag, scanned_at,
 			critical_vuln_count, high_vuln_count, medium_vuln_count, low_vuln_count,
-			policy_passed, signed, sbom_attested, vuln_attested, error_message
-		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+			policy_passed, sbom_attested, vuln_attested, error_message
+		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 	`,
 		record.Digest, record.Repository, record.Tag, record.ScannedAt,
 		record.CriticalVulnCount, record.HighVulnCount, record.MediumVulnCount, record.LowVulnCount,
-		record.PolicyPassed, record.Signed, record.SBOMAttested, record.VulnAttested, record.ErrorMessage,
+		record.PolicyPassed, record.SBOMAttested, record.VulnAttested, record.ErrorMessage,
 	)
 	if err != nil {
 		return errors.NewTransientf("failed to insert scan record: %w", err)
@@ -198,7 +197,7 @@ func (s *SQLiteStore) GetLastScan(ctx context.Context, digest string) (*ScanReco
 	err := s.db.QueryRowContext(ctx, `
 		SELECT id, digest, repository, tag, scanned_at,
 			critical_vuln_count, high_vuln_count, medium_vuln_count, low_vuln_count,
-			policy_passed, signed, sbom_attested, vuln_attested, error_message
+			policy_passed, sbom_attested, vuln_attested, error_message
 		FROM scan_records
 		WHERE digest = ?
 		ORDER BY scanned_at DESC
@@ -206,7 +205,7 @@ func (s *SQLiteStore) GetLastScan(ctx context.Context, digest string) (*ScanReco
 	`, digest).Scan(
 		&scanRecordID, &record.Digest, &record.Repository, &record.Tag, &record.ScannedAt,
 		&record.CriticalVulnCount, &record.HighVulnCount, &record.MediumVulnCount, &record.LowVulnCount,
-		&record.PolicyPassed, &record.Signed, &record.SBOMAttested, &record.VulnAttested, &record.ErrorMessage,
+		&record.PolicyPassed, &record.SBOMAttested, &record.VulnAttested, &record.ErrorMessage,
 	)
 	if err == sql.ErrNoRows {
 		return nil, ErrScanNotFound
@@ -268,7 +267,7 @@ func (s *SQLiteStore) GetScanHistory(ctx context.Context, digest string, limit i
 	query := `
 		SELECT id, digest, repository, tag, scanned_at,
 			critical_vuln_count, high_vuln_count, medium_vuln_count, low_vuln_count,
-			policy_passed, signed, sbom_attested, vuln_attested, error_message
+			policy_passed, sbom_attested, vuln_attested, error_message
 		FROM scan_records
 		WHERE digest = ?
 		ORDER BY scanned_at DESC
@@ -291,7 +290,7 @@ func (s *SQLiteStore) GetScanHistory(ctx context.Context, digest string, limit i
 		err := rows.Scan(
 			&scanRecordID, &record.Digest, &record.Repository, &record.Tag, &record.ScannedAt,
 			&record.CriticalVulnCount, &record.HighVulnCount, &record.MediumVulnCount, &record.LowVulnCount,
-			&record.PolicyPassed, &record.Signed, &record.SBOMAttested, &record.VulnAttested, &record.ErrorMessage,
+			&record.PolicyPassed, &record.SBOMAttested, &record.VulnAttested, &record.ErrorMessage,
 		)
 		if err != nil {
 			return nil, errors.NewTransientf("failed to scan row: %w", err)
@@ -392,7 +391,7 @@ func (s *SQLiteStore) GetImagesByCVE(ctx context.Context, cveID string) ([]*Scan
 	query := `
 		SELECT DISTINCT sr.id, sr.digest, sr.repository, sr.tag, sr.scanned_at,
 			sr.critical_vuln_count, sr.high_vuln_count, sr.medium_vuln_count, sr.low_vuln_count,
-			sr.policy_passed, sr.signed, sr.sbom_attested, sr.vuln_attested, sr.error_message
+			sr.policy_passed, sr.sbom_attested, sr.vuln_attested, sr.error_message
 		FROM scan_records sr
 		JOIN vulnerabilities v ON sr.id = v.scan_record_id
 		WHERE v.cve_id = ?
@@ -413,7 +412,7 @@ func (s *SQLiteStore) GetImagesByCVE(ctx context.Context, cveID string) ([]*Scan
 		err := rows.Scan(
 			&scanRecordID, &record.Digest, &record.Repository, &record.Tag, &record.ScannedAt,
 			&record.CriticalVulnCount, &record.HighVulnCount, &record.MediumVulnCount, &record.LowVulnCount,
-			&record.PolicyPassed, &record.Signed, &record.SBOMAttested, &record.VulnAttested, &record.ErrorMessage,
+			&record.PolicyPassed, &record.SBOMAttested, &record.VulnAttested, &record.ErrorMessage,
 		)
 		if err != nil {
 			return nil, errors.NewTransientf("failed to scan row: %w", err)
@@ -516,7 +515,7 @@ func (s *SQLiteStore) ListScans(ctx context.Context, filter ScanFilter) ([]*Scan
 	query := `
 		SELECT id, digest, repository, tag, scanned_at,
 			critical_vuln_count, high_vuln_count, medium_vuln_count, low_vuln_count,
-			policy_passed, signed, sbom_attested, vuln_attested, error_message
+			policy_passed, sbom_attested, vuln_attested, error_message
 		FROM scan_records
 		WHERE 1=1
 	`
@@ -558,7 +557,7 @@ func (s *SQLiteStore) ListScans(ctx context.Context, filter ScanFilter) ([]*Scan
 		err := rows.Scan(
 			&scanRecordID, &record.Digest, &record.Repository, &record.Tag, &record.ScannedAt,
 			&record.CriticalVulnCount, &record.HighVulnCount, &record.MediumVulnCount, &record.LowVulnCount,
-			&record.PolicyPassed, &record.Signed, &record.SBOMAttested, &record.VulnAttested, &record.ErrorMessage,
+			&record.PolicyPassed, &record.SBOMAttested, &record.VulnAttested, &record.ErrorMessage,
 		)
 		if err != nil {
 			return nil, errors.NewTransientf("failed to scan row: %w", err)

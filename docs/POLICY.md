@@ -186,7 +186,7 @@ x-policy:
 2. **Apply tolerations** - Tolerated CVEs are marked and excluded from counts
 3. **Evaluate policy** - CEL expression is evaluated with current data
 4. **Make decision** - If expression returns `true`, policy passes
-5. **Sign if passed** - Images passing policy are signed with Sigstore
+5. **Attest results** - All images receive attestations (SBOM, vulnerabilities, SCAI)
 
 ## Interaction with Tolerations
 

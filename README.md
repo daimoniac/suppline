@@ -2,7 +2,7 @@
   <img src="docs/suppline-fullsize.png" alt="suppline logo" width="300"/>
 </p>
 
-A cloud-native container security pipeline that continuously monitors container registries, scans images for vulnerabilities, generates attestations, and signs compliant images using Sigstore.
+A cloud-native container security pipeline that continuously monitors container registries, scans images for vulnerabilities, and generates attestations using Sigstore.
 
 ## What is suppline?
 
@@ -11,8 +11,7 @@ suppline automates container security workflows by:
 1. **Discovering** container images from your private registry using regsync configuration
 2. **Scanning** images with Trivy to identify vulnerabilities and generate SBOMs
 3. **Evaluating** security policies with CVE toleration support
-4. **Attesting** scan results using in-toto SCAI format
-5. **Signing** compliant images with Sigstore/Cosign
+4. **Attesting** scan results (SBOM, vulnerabilities, SCAI) using Sigstore/Cosign
 
 Built as a single Go binary, suppline runs as a continuous service that watches your registry and maintains a complete audit trail of your container security posture.
 
@@ -25,7 +24,7 @@ Built as a single Go binary, suppline runs as a continuous service that watches 
 - **CVE Tolerations**: Accept specific vulnerabilities with expiry dates and audit statements
 - **Policy Engine**: Flexible CEL-based policies with per-repository overrides
 - **SCAI Attestations**: Standards-compliant security attestations (in-toto SCAI v0.3)
-- **Sigstore Integration**: Keyless or key-based signing with transparency log support
+- **Sigstore Integration**: Key-based attestation with cosign (SBOM, vulnerabilities, SCAI)
 - **State Tracking**: SQLite-based persistence for scan history and vulnerability records
 - **REST API**: Query scan results, trigger rescans, and manage policies
 - **Observability**: Prometheus metrics, structured logging, and health checks
@@ -53,7 +52,7 @@ graph TB
         Worker -->|execute| Pipeline
         Pipeline -->|scan| Scanner
         Pipeline -->|evaluate| Policy
-        Pipeline -->|sign| Attestor
+        Pipeline -->|attest| Attestor
         
         Watcher -->|read/write| StateStore
         Scanner -->|persist results| StateStore
@@ -85,10 +84,10 @@ graph TB
 - **Watcher**: Polls registry for new/updated images, checks scan history, enqueues tasks
 - **Queue**: In-memory task queue with retry and failure tracking
 - **Worker**: Processes scan tasks through the pipeline
-- **Pipeline**: Orchestrates scan → policy → attest → sign workflow
+- **Pipeline**: Orchestrates scan → policy → attest workflow
 - **Scanner**: Integrates with Trivy for vulnerability scanning and SBOM generation
 - **Policy Engine**: Evaluates CEL expressions with CVE toleration support
-- **Attestor**: Creates and signs in-toto attestations using Sigstore
+- **Attestor**: Creates in-toto attestations (SBOM, vulnerabilities, SCAI) using Sigstore
 - **State Store**: Persists scan records, vulnerabilities, and policy decisions
 - **API Server**: REST endpoints for querying and triggering operations
 
@@ -138,7 +137,7 @@ sync:
         expires_at: 2025-12-31T23:59:59Z
 ```
 
-### 2. Generate Signing Keys
+### 2. Generate Attestation Keys
 
 ```bash
 mkdir -p keys
@@ -200,11 +199,10 @@ SQLITE_PATH=suppline.db               # SQLite database path
 RESCAN_INTERVAL=24h                   # Default rescan interval
 ```
 
-#### Attestation & Signing
+#### Attestation
 ```bash
 ATTESTATION_KEY_PATH=/keys/cosign.key # Path to Cosign private key
 ATTESTATION_KEY_PASSWORD=             # Key password (if encrypted)
-REKOR_URL=https://rekor.sigstore.dev  # Transparency log URL
 ```
 
 #### API Server
@@ -439,8 +437,8 @@ docker compose down
 # Create namespace and secrets
 kubectl create namespace suppline
 
-# Create signing key secret
-kubectl create secret generic suppline-signing-key \
+# Create attestation key secret
+kubectl create secret generic suppline-attestation-key \
   --namespace=suppline \
   --from-file=cosign.key=keys/cosign.key
 
@@ -514,7 +512,7 @@ make run
 │   └── suppline/           # Main application entry point
 ├── internal/
 │   ├── api/                # HTTP API server and handlers
-│   ├── attestation/        # Sigstore attestation and signing
+│   ├── attestation/        # Sigstore attestation (SBOM, vulnerabilities, SCAI)
 │   ├── config/             # Configuration loading and regsync parsing
 │   ├── errors/             # Error classification (transient/permanent)
 │   ├── observability/      # Metrics, logging, health checks
@@ -680,7 +678,7 @@ export LOG_LEVEL=debug
 ## Roadmap
 
 - [ ] PostgreSQL state store implementation
-- [ ] Keyless signing support (OIDC)
+- [ ] Keyless attestation support (OIDC)
 - [ ] Web UI for visualization
 - [ ] Slack/webhook notifications
 - [ ] Multi-architecture image support

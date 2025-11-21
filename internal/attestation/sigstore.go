@@ -240,26 +240,6 @@ func (a *SigstoreAttestor) AttestSCAI(ctx context.Context, imageRef string, scai
 	return nil
 }
 
-// SignImage signs the image using cosign CLI
-func (a *SigstoreAttestor) SignImage(ctx context.Context, imageRef string) error {
-	cmd := exec.CommandContext(ctx, "cosign", "sign",
-		"--key", a.keyPath,
-		"--yes",
-		"--tlog-upload=false",
-		"--allow-insecure-registry",
-		imageRef,
-	)
-	cmd.Env = append(os.Environ(), fmt.Sprintf("COSIGN_PASSWORD=%s", a.keyPassword))
-
-	output, err := cmd.CombinedOutput()
-	if err != nil {
-		// Cosign signing failures are typically transient (network, registry issues)
-		return errors.NewTransientf("failed to sign image: %w (output: %s)", err, string(output))
-	}
-
-	return nil
-}
-
 // Close cleans up temporary resources
 func (a *SigstoreAttestor) Close() error {
 	if a.cleanup != nil {

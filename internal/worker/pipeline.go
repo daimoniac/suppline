@@ -59,20 +59,14 @@ func (p *Pipeline) Execute(ctx context.Context, task *queue.ScanTask) error {
 		return err
 	}
 
-	// Phase 4: Signing (conditional)
-	signed, err := p.signingPhase(ctx, imageRef, policyDecision)
-	if err != nil {
-		return err
-	}
-
-	// Phase 5: Persistence
-	if err := p.persistencePhase(ctx, task, scanResult, policyDecision, signed, startTime); err != nil {
+	// Phase 4: Persistence
+	if err := p.persistencePhase(ctx, task, scanResult, policyDecision, startTime); err != nil {
 		// Log error but don't fail - attestations and signatures are already created
 		p.logger.Error("failed to persist scan results", "image_ref", imageRef, "error", err)
 	}
 
 	// Log completion
-	p.logCompletion(task, imageRef, startTime, scanDurations, attestDurations, scaiAttested, policyDecision, signed)
+	p.logCompletion(task, imageRef, startTime, scanDurations, attestDurations, scaiAttested, policyDecision)
 
 	return nil
 }
@@ -228,28 +222,10 @@ func (p *Pipeline) attestationPhase(ctx context.Context, task *queue.ScanTask, i
 	return durations, scaiAttested, nil
 }
 
-// signingPhase signs the image if policy passes
-func (p *Pipeline) signingPhase(ctx context.Context, imageRef string, policyDecision *policy.PolicyDecision) (bool, error) {
-	if !policyDecision.ShouldSign {
-		p.logger.Info("image not signed due to policy failure",
-			"image_ref", imageRef,
-			"reason", policyDecision.Reason)
-		return false, nil
-	}
-
-	p.logger.Debug("signing image", "image_ref", imageRef)
-	if err := p.worker.attestor.SignImage(ctx, imageRef); err != nil {
-		// Error already classified in attestation package
-		return false, fmt.Errorf("failed to sign image: %w", err)
-	}
-	p.logger.Info("image signed", "image_ref", imageRef)
-	return true, nil
-}
-
 // persistencePhase records scan results to state store
-func (p *Pipeline) persistencePhase(ctx context.Context, task *queue.ScanTask, scanResult *scanner.ScanResult, policyDecision *policy.PolicyDecision, signed bool, scannedAt time.Time) error {
+func (p *Pipeline) persistencePhase(ctx context.Context, task *queue.ScanTask, scanResult *scanner.ScanResult, policyDecision *policy.PolicyDecision, scannedAt time.Time) error {
 	// Build scan record from workflow results
-	scanRecord := buildScanRecord(task, scanResult, policyDecision, signed, scannedAt)
+	scanRecord := buildScanRecord(task, scanResult, policyDecision, scannedAt)
 
 	p.logger.Debug("recording scan results", "image_ref", fmt.Sprintf("%s@%s", task.Repository, task.Digest))
 	if err := p.worker.stateStore.RecordScan(ctx, scanRecord); err != nil {
@@ -276,11 +252,11 @@ func (p *Pipeline) checkPolicyFailures(ctx context.Context, task *queue.ScanTask
 			"reason", policyDecision.Reason)
 	}
 
-	// Alert if rescan shows previously signed image now fails
+	// Alert if rescan shows policy failure
 	if task.IsRescan && !policyDecision.Passed {
 		lastScan, err := p.worker.stateStore.GetLastScan(ctx, task.Digest)
-		if err == nil && lastScan != nil && lastScan.Signed {
-			p.logger.Error("ALERT: previously signed image now fails policy",
+		if err == nil && lastScan != nil && lastScan.PolicyPassed {
+			p.logger.Error("ALERT: previously passing image now fails policy",
 				"digest", task.Digest,
 				"repository", task.Repository,
 				"tag", task.Tag,
@@ -292,7 +268,7 @@ func (p *Pipeline) checkPolicyFailures(ctx context.Context, task *queue.ScanTask
 }
 
 // logCompletion logs the final workflow completion with all durations
-func (p *Pipeline) logCompletion(task *queue.ScanTask, imageRef string, startTime time.Time, scanDurations, attestDurations map[string]time.Duration, scaiAttested bool, policyDecision *policy.PolicyDecision, signed bool) {
+func (p *Pipeline) logCompletion(task *queue.ScanTask, imageRef string, startTime time.Time, scanDurations, attestDurations map[string]time.Duration, scaiAttested bool, policyDecision *policy.PolicyDecision) {
 	duration := time.Since(startTime)
 	p.logger.Info("scan workflow completed",
 		"task_id", task.ID,
@@ -304,8 +280,7 @@ func (p *Pipeline) logCompletion(task *queue.ScanTask, imageRef string, startTim
 		"vulnerability_attestation_duration", attestDurations["vuln_attest"],
 		"scai_attestation_duration", attestDurations["scai_attest"],
 		"scai_attested", scaiAttested,
-		"policy_passed", policyDecision.Passed,
-		"signed", signed)
+		"policy_passed", policyDecision.Passed)
 }
 
 // getPolicyEngineForRepository returns a policy engine for the given repository

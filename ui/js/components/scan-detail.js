@@ -106,7 +106,6 @@ export class ScanDetail extends BaseComponent {
                         <div class="attestation-badges">
                             ${this.renderAttestationIndicator('SBOM', this.scan.SBOMAttested)}
                             ${this.renderAttestationIndicator('Vuln', this.scan.VulnAttested)}
-                            ${this.renderAttestationIndicator('Signed', this.scan.Signed)}
                         </div>
                     </div>
                 </div>

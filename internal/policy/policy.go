@@ -40,7 +40,6 @@ type PolicyConfig struct {
 type PolicyDecision struct {
 	Passed             bool
 	Reason             string
-	ShouldSign         bool
 	ShouldAttest       bool
 	CriticalVulnCount  int
 	ToleratedVulnCount int
@@ -241,7 +240,6 @@ func (e *Engine) Evaluate(ctx context.Context, imageRef string, result *scanner.
 	}
 	
 	decision.Passed = passed
-	decision.ShouldSign = passed
 	
 	if passed {
 		if unfixedCriticalCount > 0 {

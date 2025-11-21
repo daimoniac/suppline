@@ -34,7 +34,6 @@ func TestSQLiteStore(t *testing.T) {
 			MediumVulnCount:   10,
 			LowVulnCount:      3,
 			PolicyPassed:      false,
-			Signed:            false,
 			SBOMAttested:      true,
 			VulnAttested:      true,
 			Vulnerabilities: []types.VulnerabilityRecord{
@@ -108,7 +107,6 @@ func TestSQLiteStore(t *testing.T) {
 			MediumVulnCount:   5,
 			LowVulnCount:      2,
 			PolicyPassed:      true,
-			Signed:            true,
 			SBOMAttested:      true,
 			VulnAttested:      true,
 			Vulnerabilities:   []types.VulnerabilityRecord{},
@@ -141,7 +139,6 @@ func TestSQLiteStore(t *testing.T) {
 			MediumVulnCount:   0,
 			LowVulnCount:      0,
 			PolicyPassed:      true,
-			Signed:            true,
 			SBOMAttested:      true,
 			VulnAttested:      true,
 			Vulnerabilities:   []types.VulnerabilityRecord{},
