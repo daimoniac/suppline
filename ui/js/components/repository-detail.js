@@ -227,7 +227,6 @@ export class RepositoryDetail extends BaseComponent {
                         <tr>
                             ${this.renderTableHeader('name', 'Tag')}
                             ${this.renderTableHeader('lastScanTime', 'Last Scan')}
-                            ${this.renderTableHeader('nextScanTime', 'Next Scan')}
                             <th>Vulnerabilities</th>
                             <th>Status</th>
                             <th>Action</th>
@@ -266,7 +265,6 @@ export class RepositoryDetail extends BaseComponent {
         const statusClass = tag.PolicyPassed ? 'status-success' : 'status-danger';
         const statusText = tag.PolicyPassed ? 'Passed' : 'Failed';
         const lastScanTime = tag.LastScanTime ? formatRelativeTime(tag.LastScanTime) : 'Never';
-        const nextScanTime = tag.NextScanTime ? formatRelativeTime(tag.NextScanTime) : 'N/A';
 
         const vulnCounts = [
             { severity: 'critical', count: tag.VulnerabilityCount?.Critical || 0 },
@@ -284,7 +282,6 @@ export class RepositoryDetail extends BaseComponent {
             <tr class="tag-row" data-tag="${this.escapeHtml(tag.Name)}" data-digest="${this.escapeHtml(tag.Digest || '')}">
                 <td class="tag-name-cell clickable" data-digest="${this.escapeHtml(tag.Digest || '')}">${this.escapeHtml(tag.Name)}</td>
                 <td title="${tag.LastScanTime ? formatDate(tag.LastScanTime) : 'Never scanned'}">${lastScanTime}</td>
-                <td title="${tag.NextScanTime ? formatDate(tag.NextScanTime) : 'N/A'}">${nextScanTime}</td>
                 <td class="vulnerabilities-cell">
                     ${vulnDisplay}
                 </td>

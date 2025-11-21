@@ -20,7 +20,8 @@ RUN --mount=type=cache,target=/go/pkg/mod \
     go install github.com/swaggo/swag/cmd/swag@latest
 
 # Copy source code
-COPY . .
+COPY cmd/ ./cmd/
+COPY internal/ ./internal/
 
 # Generate Swagger documentation
 RUN mkdir -p build/swagger && \
@@ -29,7 +30,7 @@ RUN mkdir -p build/swagger && \
 # Build the binary with CGO enabled for SQLite and cache mount
 RUN --mount=type=cache,target=/go/pkg/mod \
     --mount=type=cache,target=/root/.cache/go-build \
-    CGO_ENABLED=1 GOOS=linux go build -a -installsuffix cgo \
+    CGO_ENABLED=1 GOOS=linux go build \
     -ldflags="-w -s" \
     -o suppline \
     ./cmd/suppline

@@ -79,8 +79,7 @@ export class RepositoriesList extends BaseComponent {
         // Map camelCase column names to PascalCase API property names
         const columnMap = {
             'name': 'Name',
-            'lastScanTime': 'LastScanTime',
-            'nextScanTime': 'NextScanTime'
+            'lastScanTime': 'LastScanTime'
         };
 
         const apiColumn = columnMap[this.sortColumn] || this.sortColumn;
@@ -94,7 +93,7 @@ export class RepositoriesList extends BaseComponent {
             if (bVal === null || bVal === undefined) bVal = '';
 
             // Handle date sorting
-            if (this.sortColumn === 'lastScanTime' || this.sortColumn === 'nextScanTime') {
+            if (this.sortColumn === 'lastScanTime') {
                 aVal = new Date(aVal).getTime();
                 bVal = new Date(bVal).getTime();
             }
@@ -210,7 +209,6 @@ export class RepositoriesList extends BaseComponent {
                         <tr>
                             ${this.renderTableHeader('name', 'Name')}
                             ${this.renderTableHeader('lastScanTime', 'Last Scan')}
-                            ${this.renderTableHeader('nextScanTime', 'Next Scan')}
                             <th>Vulnerabilities</th>
                             <th>Status</th>
                             <th>Action</th>
@@ -249,7 +247,6 @@ export class RepositoriesList extends BaseComponent {
         const statusClass = repo.PolicyPassed ? 'status-success' : 'status-danger';
         const statusText = repo.PolicyPassed ? 'Passed' : 'Failed';
         const lastScanTime = repo.LastScanTime ? formatRelativeTime(repo.LastScanTime) : 'Never';
-        const nextScanTime = repo.NextScanTime ? formatRelativeTime(repo.NextScanTime) : 'N/A';
 
         const vulnCounts = [
             { severity: 'critical', count: repo.VulnerabilityCount?.Critical || 0 },
@@ -267,7 +264,6 @@ export class RepositoriesList extends BaseComponent {
             <tr class="repository-row" data-repository="${this.escapeHtml(repo.Name)}">
                 <td class="repository-name-cell clickable" data-repository="${this.escapeHtml(repo.Name)}">${this.escapeHtml(repo.Name)}</td>
                 <td title="${repo.LastScanTime ? formatDate(repo.LastScanTime) : 'Never scanned'}">${lastScanTime}</td>
-                <td title="${repo.NextScanTime ? formatDate(repo.NextScanTime) : 'N/A'}">${nextScanTime}</td>
                 <td class="vulnerabilities-cell">
                     ${vulnDisplay}
                 </td>

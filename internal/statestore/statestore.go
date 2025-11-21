@@ -53,7 +53,6 @@ type RepositoryInfo struct {
 	Name                 string
 	TagCount             int
 	LastScanTime         *time.Time
-	NextScanTime         *time.Time
 	VulnerabilityCount   VulnerabilityCountSummary
 	PolicyPassed         bool
 }
