@@ -1468,3 +1468,459 @@ func TestRescanScheduling(t *testing.T) {
 		}
 	})
 }
+
+
+// TestRepositoryAggregation tests the repository aggregation logic
+func TestRepositoryAggregation(t *testing.T) {
+	dbPath := "test_repo_aggregation_" + t.Name() + ".db"
+	os.Remove(dbPath)
+	defer os.Remove(dbPath)
+
+	store, err := NewSQLiteStore(dbPath)
+	if err != nil {
+		t.Fatalf("Failed to create SQLite store: %v", err)
+	}
+	defer store.Close()
+
+	ctx := context.Background()
+
+	// Setup: Create multiple repositories with different vulnerability profiles
+	// Repository 1: myapp with 3 tags (latest, v1.0, v0.9)
+	// Repository 2: database with 2 tags (latest, v5.0)
+
+	// Record scans for myapp repository
+	record1 := &ScanRecord{
+		Digest:            "sha256:myapp-latest",
+		Repository:        "myapp",
+		Tag:               "latest",
+		ScanDurationMs:    1000,
+		CriticalVulnCount: 2,
+		HighVulnCount:     3,
+		MediumVulnCount:   5,
+		LowVulnCount:      1,
+		PolicyPassed:      false,
+		SBOMAttested:      true,
+		VulnAttested:      true,
+		SCAIAttested:      false,
+		Vulnerabilities:   []types.VulnerabilityRecord{},
+		ToleratedCVEs:     []types.ToleratedCVE{},
+	}
+	err = store.RecordScan(ctx, record1)
+	if err != nil {
+		t.Fatalf("Failed to record scan 1: %v", err)
+	}
+
+	record2 := &ScanRecord{
+		Digest:            "sha256:myapp-v1.0",
+		Repository:        "myapp",
+		Tag:               "v1.0",
+		ScanDurationMs:    1000,
+		CriticalVulnCount: 1,
+		HighVulnCount:     2,
+		MediumVulnCount:   3,
+		LowVulnCount:      0,
+		PolicyPassed:      true,
+		SBOMAttested:      true,
+		VulnAttested:      true,
+		SCAIAttested:      false,
+		Vulnerabilities:   []types.VulnerabilityRecord{},
+		ToleratedCVEs:     []types.ToleratedCVE{},
+	}
+	err = store.RecordScan(ctx, record2)
+	if err != nil {
+		t.Fatalf("Failed to record scan 2: %v", err)
+	}
+
+	record3 := &ScanRecord{
+		Digest:            "sha256:myapp-v0.9",
+		Repository:        "myapp",
+		Tag:               "v0.9",
+		ScanDurationMs:    1000,
+		CriticalVulnCount: 0,
+		HighVulnCount:     1,
+		MediumVulnCount:   2,
+		LowVulnCount:      1,
+		PolicyPassed:      true,
+		SBOMAttested:      true,
+		VulnAttested:      true,
+		SCAIAttested:      false,
+		Vulnerabilities:   []types.VulnerabilityRecord{},
+		ToleratedCVEs:     []types.ToleratedCVE{},
+	}
+	err = store.RecordScan(ctx, record3)
+	if err != nil {
+		t.Fatalf("Failed to record scan 3: %v", err)
+	}
+
+	// Record scans for database repository
+	record4 := &ScanRecord{
+		Digest:            "sha256:database-latest",
+		Repository:        "database",
+		Tag:               "latest",
+		ScanDurationMs:    1000,
+		CriticalVulnCount: 0,
+		HighVulnCount:     0,
+		MediumVulnCount:   1,
+		LowVulnCount:      0,
+		PolicyPassed:      true,
+		SBOMAttested:      true,
+		VulnAttested:      true,
+		SCAIAttested:      false,
+		Vulnerabilities:   []types.VulnerabilityRecord{},
+		ToleratedCVEs:     []types.ToleratedCVE{},
+	}
+	err = store.RecordScan(ctx, record4)
+	if err != nil {
+		t.Fatalf("Failed to record scan 4: %v", err)
+	}
+
+	record5 := &ScanRecord{
+		Digest:            "sha256:database-v5.0",
+		Repository:        "database",
+		Tag:               "v5.0",
+		ScanDurationMs:    1000,
+		CriticalVulnCount: 0,
+		HighVulnCount:     0,
+		MediumVulnCount:   0,
+		LowVulnCount:      0,
+		PolicyPassed:      true,
+		SBOMAttested:      true,
+		VulnAttested:      true,
+		SCAIAttested:      false,
+		Vulnerabilities:   []types.VulnerabilityRecord{},
+		ToleratedCVEs:     []types.ToleratedCVE{},
+	}
+	err = store.RecordScan(ctx, record5)
+	if err != nil {
+		t.Fatalf("Failed to record scan 5: %v", err)
+	}
+
+	// Test 1: Vulnerability count aggregation (most vulnerable artifact)
+	t.Run("Vulnerability count aggregation shows most vulnerable artifact", func(t *testing.T) {
+		filter := RepositoryFilter{
+			Limit:  100,
+			Offset: 0,
+		}
+		response, err := store.ListRepositories(ctx, filter)
+		if err != nil {
+			t.Fatalf("Failed to list repositories: %v", err)
+		}
+
+		if len(response.Repositories) != 2 {
+			t.Errorf("Expected 2 repositories, got %d", len(response.Repositories))
+		}
+
+		// Find myapp repository
+		var myappRepo *RepositoryInfo
+		for i := range response.Repositories {
+			if response.Repositories[i].Name == "myapp" {
+				myappRepo = &response.Repositories[i]
+				break
+			}
+		}
+
+		if myappRepo == nil {
+			t.Fatal("Expected to find myapp repository")
+		}
+
+		// Verify aggregation shows most vulnerable artifact (latest tag)
+		if myappRepo.VulnerabilityCount.Critical != 2 {
+			t.Errorf("Expected 2 critical vulnerabilities (from most vulnerable), got %d", myappRepo.VulnerabilityCount.Critical)
+		}
+		if myappRepo.VulnerabilityCount.High != 3 {
+			t.Errorf("Expected 3 high vulnerabilities (from most vulnerable), got %d", myappRepo.VulnerabilityCount.High)
+		}
+		if myappRepo.VulnerabilityCount.Medium != 5 {
+			t.Errorf("Expected 5 medium vulnerabilities (from most vulnerable), got %d", myappRepo.VulnerabilityCount.Medium)
+		}
+		if myappRepo.VulnerabilityCount.Low != 1 {
+			t.Errorf("Expected 1 low vulnerability (from most vulnerable), got %d", myappRepo.VulnerabilityCount.Low)
+		}
+	})
+
+	// Test 2: Policy status aggregation (failed if any failed)
+	t.Run("Policy status aggregation - failed if any artifact failed", func(t *testing.T) {
+		filter := RepositoryFilter{
+			Limit:  100,
+			Offset: 0,
+		}
+		response, err := store.ListRepositories(ctx, filter)
+		if err != nil {
+			t.Fatalf("Failed to list repositories: %v", err)
+		}
+
+		// Find myapp repository (has one failed tag)
+		var myappRepo *RepositoryInfo
+		for i := range response.Repositories {
+			if response.Repositories[i].Name == "myapp" {
+				myappRepo = &response.Repositories[i]
+				break
+			}
+		}
+
+		if myappRepo == nil {
+			t.Fatal("Expected to find myapp repository")
+		}
+
+		// myapp should be failed because latest tag failed
+		if myappRepo.PolicyPassed {
+			t.Error("Expected myapp to have PolicyPassed=false (because latest tag failed)")
+		}
+
+		// Find database repository (all tags passed)
+		var databaseRepo *RepositoryInfo
+		for i := range response.Repositories {
+			if response.Repositories[i].Name == "database" {
+				databaseRepo = &response.Repositories[i]
+				break
+			}
+		}
+
+		if databaseRepo == nil {
+			t.Fatal("Expected to find database repository")
+		}
+
+		// database should be passed because all tags passed
+		if !databaseRepo.PolicyPassed {
+			t.Error("Expected database to have PolicyPassed=true (all tags passed)")
+		}
+	})
+
+	// Test 3: Pagination and offset calculations
+	t.Run("Pagination with limit and offset", func(t *testing.T) {
+		// Get first page (limit=1, offset=0)
+		filter := RepositoryFilter{
+			Limit:  1,
+			Offset: 0,
+		}
+		response, err := store.ListRepositories(ctx, filter)
+		if err != nil {
+			t.Fatalf("Failed to list repositories page 1: %v", err)
+		}
+
+		if len(response.Repositories) != 1 {
+			t.Errorf("Expected 1 repository on page 1, got %d", len(response.Repositories))
+		}
+		if response.Total != 2 {
+			t.Errorf("Expected total count of 2, got %d", response.Total)
+		}
+
+		firstPageRepo := response.Repositories[0].Name
+
+		// Get second page (limit=1, offset=1)
+		filter.Offset = 1
+		response, err = store.ListRepositories(ctx, filter)
+		if err != nil {
+			t.Fatalf("Failed to list repositories page 2: %v", err)
+		}
+
+		if len(response.Repositories) != 1 {
+			t.Errorf("Expected 1 repository on page 2, got %d", len(response.Repositories))
+		}
+
+		secondPageRepo := response.Repositories[0].Name
+
+		// Verify different repositories on different pages
+		if firstPageRepo == secondPageRepo {
+			t.Error("Expected different repositories on different pages")
+		}
+	})
+
+	// Test 4: Search filtering logic
+	t.Run("Search filtering by repository name", func(t *testing.T) {
+		// Search for "myapp"
+		filter := RepositoryFilter{
+			Search: "myapp",
+			Limit:  100,
+			Offset: 0,
+		}
+		response, err := store.ListRepositories(ctx, filter)
+		if err != nil {
+			t.Fatalf("Failed to search repositories: %v", err)
+		}
+
+		if len(response.Repositories) != 1 {
+			t.Errorf("Expected 1 repository matching 'myapp', got %d", len(response.Repositories))
+		}
+		if response.Repositories[0].Name != "myapp" {
+			t.Errorf("Expected repository name 'myapp', got %s", response.Repositories[0].Name)
+		}
+		if response.Total != 1 {
+			t.Errorf("Expected total count of 1, got %d", response.Total)
+		}
+	})
+
+	// Test 5: Tag count aggregation
+	t.Run("Tag count aggregation", func(t *testing.T) {
+		filter := RepositoryFilter{
+			Limit:  100,
+			Offset: 0,
+		}
+		response, err := store.ListRepositories(ctx, filter)
+		if err != nil {
+			t.Fatalf("Failed to list repositories: %v", err)
+		}
+
+		// Find myapp repository
+		var myappRepo *RepositoryInfo
+		for i := range response.Repositories {
+			if response.Repositories[i].Name == "myapp" {
+				myappRepo = &response.Repositories[i]
+				break
+			}
+		}
+
+		if myappRepo == nil {
+			t.Fatal("Expected to find myapp repository")
+		}
+
+		if myappRepo.TagCount != 3 {
+			t.Errorf("Expected 3 tags for myapp, got %d", myappRepo.TagCount)
+		}
+	})
+
+	// Test 6: GetRepository returns tags with correct data
+	t.Run("GetRepository returns tags with correct aggregation", func(t *testing.T) {
+		filter := RepositoryTagFilter{
+			Limit:  100,
+			Offset: 0,
+		}
+		detail, err := store.GetRepository(ctx, "myapp", filter)
+		if err != nil {
+			t.Fatalf("Failed to get repository: %v", err)
+		}
+
+		if detail.Name != "myapp" {
+			t.Errorf("Expected repository name 'myapp', got %s", detail.Name)
+		}
+		if detail.Total != 3 {
+			t.Errorf("Expected 3 tags total, got %d", detail.Total)
+		}
+		if len(detail.Tags) != 3 {
+			t.Errorf("Expected 3 tags in response, got %d", len(detail.Tags))
+		}
+
+		// Verify latest tag has correct vulnerability counts
+		var latestTag *TagInfo
+		for i := range detail.Tags {
+			if detail.Tags[i].Name == "latest" {
+				latestTag = &detail.Tags[i]
+				break
+			}
+		}
+
+		if latestTag == nil {
+			t.Fatal("Expected to find 'latest' tag")
+		}
+
+		if latestTag.VulnerabilityCount.Critical != 2 {
+			t.Errorf("Expected 2 critical vulnerabilities for latest tag, got %d", latestTag.VulnerabilityCount.Critical)
+		}
+		if latestTag.PolicyPassed {
+			t.Error("Expected latest tag to have PolicyPassed=false")
+		}
+	})
+
+	// Test 7: GetRepository pagination
+	t.Run("GetRepository pagination", func(t *testing.T) {
+		// Get first page (limit=1, offset=0)
+		filter := RepositoryTagFilter{
+			Limit:  1,
+			Offset: 0,
+		}
+		detail, err := store.GetRepository(ctx, "myapp", filter)
+		if err != nil {
+			t.Fatalf("Failed to get repository page 1: %v", err)
+		}
+
+		if len(detail.Tags) != 1 {
+			t.Errorf("Expected 1 tag on page 1, got %d", len(detail.Tags))
+		}
+		if detail.Total != 3 {
+			t.Errorf("Expected total count of 3, got %d", detail.Total)
+		}
+
+		firstPageTag := detail.Tags[0].Name
+
+		// Get second page (limit=1, offset=1)
+		filter.Offset = 1
+		detail, err = store.GetRepository(ctx, "myapp", filter)
+		if err != nil {
+			t.Fatalf("Failed to get repository page 2: %v", err)
+		}
+
+		if len(detail.Tags) != 1 {
+			t.Errorf("Expected 1 tag on page 2, got %d", len(detail.Tags))
+		}
+
+		secondPageTag := detail.Tags[0].Name
+
+		// Verify different tags on different pages
+		if firstPageTag == secondPageTag {
+			t.Error("Expected different tags on different pages")
+		}
+	})
+
+	// Test 8: GetRepository search filtering
+	t.Run("GetRepository search filtering by tag name", func(t *testing.T) {
+		// Search for "v1" in tags
+		filter := RepositoryTagFilter{
+			Search: "v1",
+			Limit:  100,
+			Offset: 0,
+		}
+		detail, err := store.GetRepository(ctx, "myapp", filter)
+		if err != nil {
+			t.Fatalf("Failed to search tags: %v", err)
+		}
+
+		if len(detail.Tags) != 1 {
+			t.Errorf("Expected 1 tag matching 'v1', got %d", len(detail.Tags))
+		}
+		if detail.Tags[0].Name != "v1.0" {
+			t.Errorf("Expected tag name 'v1.0', got %s", detail.Tags[0].Name)
+		}
+		if detail.Total != 1 {
+			t.Errorf("Expected total count of 1, got %d", detail.Total)
+		}
+	})
+
+	// Test 9: Empty search results
+	t.Run("Empty search results", func(t *testing.T) {
+		filter := RepositoryFilter{
+			Search: "nonexistent",
+			Limit:  100,
+			Offset: 0,
+		}
+		response, err := store.ListRepositories(ctx, filter)
+		if err != nil {
+			t.Fatalf("Failed to search repositories: %v", err)
+		}
+
+		if len(response.Repositories) != 0 {
+			t.Errorf("Expected 0 repositories for non-matching search, got %d", len(response.Repositories))
+		}
+		if response.Total != 0 {
+			t.Errorf("Expected total count of 0, got %d", response.Total)
+		}
+	})
+
+	// Test 10: Offset beyond total count
+	t.Run("Offset beyond total count returns empty", func(t *testing.T) {
+		filter := RepositoryFilter{
+			Limit:  100,
+			Offset: 100,
+		}
+		response, err := store.ListRepositories(ctx, filter)
+		if err != nil {
+			t.Fatalf("Failed to list repositories: %v", err)
+		}
+
+		if len(response.Repositories) != 0 {
+			t.Errorf("Expected 0 repositories with large offset, got %d", len(response.Repositories))
+		}
+		if response.Total != 2 {
+			t.Errorf("Expected total count of 2, got %d", response.Total)
+		}
+	})
+}

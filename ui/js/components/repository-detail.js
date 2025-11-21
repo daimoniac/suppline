@@ -354,6 +354,28 @@ export class RepositoryDetail extends BaseComponent {
     }
 
     /**
+     * Update URL with current state (filters, sort, pagination)
+     */
+    updateURL() {
+        const queryParams = {};
+        
+        if (this.filters.search) {
+            queryParams.search = this.filters.search;
+        }
+        if (this.currentPage > 1) {
+            queryParams.page = this.currentPage;
+        }
+        if (this.sortColumn !== 'name') {
+            queryParams.sort = this.sortColumn;
+        }
+        if (this.sortDirection !== 'asc') {
+            queryParams.order = this.sortDirection;
+        }
+        
+        window.router.navigate(`/repositories/${encodeURIComponent(this.repositoryName)}`, queryParams, true);
+    }
+
+    /**
      * Attach event listeners after rendering
      */
     attachEventListeners() {
@@ -374,6 +396,8 @@ export class RepositoryDetail extends BaseComponent {
             applyFiltersBtn.addEventListener('click', async () => {
                 const search = searchInput.value.trim();
                 this.setFilters({ search });
+                this.currentPage = 1;
+                this.updateURL();
                 await this.loadAndRender();
             });
         }
@@ -381,6 +405,8 @@ export class RepositoryDetail extends BaseComponent {
         if (clearFiltersBtn) {
             clearFiltersBtn.addEventListener('click', async () => {
                 this.setFilters({ search: '' });
+                this.currentPage = 1;
+                this.updateURL();
                 await this.loadAndRender();
             });
         }
@@ -399,6 +425,8 @@ export class RepositoryDetail extends BaseComponent {
             header.addEventListener('click', async () => {
                 const column = header.dataset.column;
                 this.setSort(column);
+                this.currentPage = 1;
+                this.updateURL();
                 this.renderAndAttach();
             });
         });
@@ -434,6 +462,7 @@ export class RepositoryDetail extends BaseComponent {
         if (firstPageBtn) {
             firstPageBtn.addEventListener('click', async () => {
                 this.goToPage(1);
+                this.updateURL();
                 await this.loadAndRender();
             });
         }
@@ -441,6 +470,7 @@ export class RepositoryDetail extends BaseComponent {
         if (prevPageBtn) {
             prevPageBtn.addEventListener('click', async () => {
                 this.goToPage(this.currentPage - 1);
+                this.updateURL();
                 await this.loadAndRender();
             });
         }
@@ -448,6 +478,7 @@ export class RepositoryDetail extends BaseComponent {
         if (nextPageBtn) {
             nextPageBtn.addEventListener('click', async () => {
                 this.goToPage(this.currentPage + 1);
+                this.updateURL();
                 await this.loadAndRender();
             });
         }
@@ -456,6 +487,7 @@ export class RepositoryDetail extends BaseComponent {
             lastPageBtn.addEventListener('click', async () => {
                 const totalPages = Math.ceil(this.total / this.pageSize);
                 this.goToPage(totalPages);
+                this.updateURL();
                 await this.loadAndRender();
             });
         }

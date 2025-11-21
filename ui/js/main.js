@@ -286,6 +286,20 @@ class Application {
                 repositoriesList.setFilters({ search: decodeURIComponent(queryParams.search) });
             }
             
+            // Apply pagination from query parameters
+            if (queryParams.page) {
+                const page = parseInt(queryParams.page, 10);
+                if (!isNaN(page) && page > 0) {
+                    repositoriesList.currentPage = page;
+                }
+            }
+            
+            // Apply sorting from query parameters
+            if (queryParams.sort) {
+                const direction = queryParams.order === 'desc' ? 'desc' : 'asc';
+                repositoriesList.setSort(queryParams.sort, direction);
+            }
+            
             await repositoriesList.loadRepositories();
             
             const content = document.getElementById('content');
@@ -318,6 +332,20 @@ class Application {
             // Apply filters from query parameters
             if (queryParams.search) {
                 repositoryDetail.setFilters({ search: decodeURIComponent(queryParams.search) });
+            }
+            
+            // Apply pagination from query parameters
+            if (queryParams.page) {
+                const page = parseInt(queryParams.page, 10);
+                if (!isNaN(page) && page > 0) {
+                    repositoryDetail.currentPage = page;
+                }
+            }
+            
+            // Apply sorting from query parameters
+            if (queryParams.sort) {
+                const direction = queryParams.order === 'desc' ? 'desc' : 'asc';
+                repositoryDetail.setSort(queryParams.sort, direction);
             }
             
             await repositoryDetail.loadRepository();
