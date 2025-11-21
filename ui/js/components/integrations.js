@@ -39,12 +39,12 @@ export class Integrations extends BaseComponent {
      */
     render() {
         return `
-            <div class="page-header">
-                <h2>Integrations</h2>
-                <p>Export integration configurations for use with external systems</p>
-            </div>
+            <div class="integrations-list">
+                <div class="integrations-header">
+                    <h1>Integrations</h1>
+                    <p class="integrations-subtitle">Export integration configurations for use with external systems</p>
+                </div>
 
-            <div class="integrations-container">
                 <div class="integration-selector">
                     <label for="integration-type">Select Integration Type:</label>
                     <select id="integration-type" class="integration-dropdown">

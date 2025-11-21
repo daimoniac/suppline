@@ -1549,26 +1549,22 @@ tr:hover {
 }
 
 /* Integrations */
-.page-header {
-    margin-bottom: 2rem;
+.integrations-list {
+    display: flex;
+    flex-direction: column;
+    gap: 1.5rem;
 }
 
-.page-header h2 {
+.integrations-header h1 {
     font-size: 2rem;
     font-weight: 700;
     color: var(--text-primary);
     margin-bottom: 0.5rem;
 }
 
-.page-header p {
+.integrations-subtitle {
     color: var(--text-secondary);
     font-size: 1rem;
-}
-
-.integrations-container {
-    display: flex;
-    flex-direction: column;
-    gap: 1.5rem;
 }
 
 .integration-selector {
