@@ -9,6 +9,8 @@ import { AuthManager } from './auth.js';
 import { Dashboard } from './components/dashboard.js';
 import { ScansList } from './components/scans.js';
 import { ScanDetail } from './components/scan-detail.js';
+import { RepositoriesList } from './components/repositories-list.js';
+import { RepositoryDetail } from './components/repository-detail.js';
 import { Tolerations } from './components/tolerations.js';
 import { Vulnerabilities } from './components/vulnerabilities.js';
 import { FailedImages } from './components/failed-images.js';
@@ -125,14 +127,31 @@ class Application {
             await this.renderDashboard();
         });
 
+        // More specific routes first (with dynamic segments)
+        // Scan detail (more specific)
+        this.router.addRoute('/scans/:digest', async (params) => {
+            await this.renderScanDetail(params.digest);
+        });
+
+        // Repository detail (more specific)
+        this.router.addRoute('/repositories/:name', async (params, queryParams) => {
+            await this.renderRepositoryDetail(params.name, queryParams);
+        });
+
+        // Expiring tolerations (more specific)
+        this.router.addRoute('/tolerations/expiring', async () => {
+            await this.renderExpiringTolerations();
+        });
+
+        // Less specific routes (static paths)
         // Scans list
         this.router.addRoute('/scans', async (params, queryParams) => {
             await this.renderScansList(queryParams);
         });
 
-        // Scan detail
-        this.router.addRoute('/scans/:digest', async (params) => {
-            await this.renderScanDetail(params.digest);
+        // Repositories list
+        this.router.addRoute('/repositories', async (params, queryParams) => {
+            await this.renderRepositoriesList(queryParams);
         });
 
         // Failed images
@@ -148,11 +167,6 @@ class Application {
         // Tolerations list
         this.router.addRoute('/tolerations', async (params, queryParams) => {
             await this.renderTolerations(queryParams);
-        });
-
-        // Expiring tolerations
-        this.router.addRoute('/tolerations/expiring', async () => {
-            await this.renderExpiringTolerations();
         });
 
         // Integrations
@@ -249,6 +263,71 @@ class Application {
             
             this.currentView = scanDetail;
             this.updateActiveNavLink('/scans');
+        } catch (error) {
+            this.handleViewError(error);
+        }
+    }
+
+    /**
+     * Render repositories list view
+     */
+    async renderRepositoriesList(queryParams = {}) {
+        if (!this.authManager.isAuthenticated()) {
+            this.showAuthRequired();
+            return;
+        }
+
+        try {
+            this.showLoading();
+            const repositoriesList = new RepositoriesList(this.apiClient);
+            
+            // Apply filters from query parameters
+            if (queryParams.search) {
+                repositoriesList.setFilters({ search: decodeURIComponent(queryParams.search) });
+            }
+            
+            await repositoriesList.loadRepositories();
+            
+            const content = document.getElementById('content');
+            content.innerHTML = repositoriesList.render();
+            repositoriesList.attachEventListeners();
+            
+            this.currentView = repositoriesList;
+            this.updateActiveNavLink('/repositories');
+        } catch (error) {
+            this.handleViewError(error);
+        }
+    }
+
+    /**
+     * Render repository detail view
+     */
+    async renderRepositoryDetail(repositoryName, queryParams = {}) {
+        if (!this.authManager.isAuthenticated()) {
+            this.showAuthRequired();
+            return;
+        }
+
+        try {
+            this.showLoading();
+            // Decode the repository name from URL encoding
+            const decodedName = decodeURIComponent(repositoryName);
+            const repositoryDetail = new RepositoryDetail(this.apiClient);
+            repositoryDetail.setRepository(decodedName);
+            
+            // Apply filters from query parameters
+            if (queryParams.search) {
+                repositoryDetail.setFilters({ search: decodeURIComponent(queryParams.search) });
+            }
+            
+            await repositoryDetail.loadRepository();
+            
+            const content = document.getElementById('content');
+            content.innerHTML = repositoryDetail.render();
+            repositoryDetail.attachEventListeners();
+            
+            this.currentView = repositoryDetail;
+            this.updateActiveNavLink('/repositories');
         } catch (error) {
             this.handleViewError(error);
         }

@@ -809,8 +809,8 @@ func (s *SQLiteStore) ListRepositories(ctx context.Context, filter RepositoryFil
 			r.id,
 			r.name,
 			COUNT(DISTINCT a.id) as tag_count,
-			MAX(sr.created_at) as last_scan_time,
-			MIN(a.next_scan_at) as next_scan_time,
+			CAST(MAX(sr.created_at) AS TEXT) as last_scan_time,
+			CAST(MIN(a.next_scan_at) AS TEXT) as next_scan_time,
 			MAX(sr.critical_vuln_count) as max_critical,
 			MAX(sr.high_vuln_count) as max_high,
 			MAX(sr.medium_vuln_count) as max_medium,
@@ -850,8 +850,9 @@ func (s *SQLiteStore) ListRepositories(ctx context.Context, filter RepositoryFil
 	var repositories []RepositoryInfo
 	for rows.Next() {
 		var repo RepositoryInfo
-		var lastScanTime sql.NullTime
-		var nextScanTime sql.NullTime
+		var repoID int64 // repository id (not needed in response, but must scan into something)
+		var lastScanTimeStr sql.NullString
+		var nextScanTimeStr sql.NullString
 		var maxCritical sql.NullInt64
 		var maxHigh sql.NullInt64
 		var maxMedium sql.NullInt64
@@ -859,11 +860,11 @@ func (s *SQLiteStore) ListRepositories(ctx context.Context, filter RepositoryFil
 		var policyPassed int
 
 		err := rows.Scan(
-			nil, // repository id (not needed in response)
+			&repoID, // repository id (not needed in response)
 			&repo.Name,
 			&repo.TagCount,
-			&lastScanTime,
-			&nextScanTime,
+			&lastScanTimeStr,
+			&nextScanTimeStr,
 			&maxCritical,
 			&maxHigh,
 			&maxMedium,
@@ -874,11 +875,16 @@ func (s *SQLiteStore) ListRepositories(ctx context.Context, filter RepositoryFil
 			return nil, errors.NewTransientf("failed to scan repository row: %w", err)
 		}
 
-		if lastScanTime.Valid {
-			repo.LastScanTime = &lastScanTime.Time
+		// Parse timestamp strings
+		if lastScanTimeStr.Valid && lastScanTimeStr.String != "" {
+			if t, err := time.Parse(time.RFC3339, lastScanTimeStr.String); err == nil {
+				repo.LastScanTime = &t
+			}
 		}
-		if nextScanTime.Valid {
-			repo.NextScanTime = &nextScanTime.Time
+		if nextScanTimeStr.Valid && nextScanTimeStr.String != "" {
+			if t, err := time.Parse(time.RFC3339, nextScanTimeStr.String); err == nil {
+				repo.NextScanTime = &t
+			}
 		}
 
 		// Aggregate vulnerability counts from most vulnerable artifact

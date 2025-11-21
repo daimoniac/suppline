@@ -262,6 +262,72 @@ class APIClient {
         }
     }
 
+    // ==================== Repositories API ====================
+
+    /**
+     * Get repositories with optional filters
+     * @param {Object} filters - Filter parameters
+     * @param {string} filters.search - Filter by repository name
+     * @param {number} filters.limit - Limit number of results
+     * @param {number} filters.offset - Offset for pagination
+     */
+    async getRepositories(filters = {}) {
+        const params = new URLSearchParams();
+        
+        if (filters.search) params.append('search', filters.search);
+        if (filters.limit) params.append('limit', filters.limit);
+        if (filters.offset) params.append('offset', filters.offset);
+
+        const queryString = params.toString();
+        const endpoint = `/api/v1/repositories${queryString ? '?' + queryString : ''}`;
+        
+        return this.request(endpoint);
+    }
+
+    /**
+     * Get repository details with tags
+     * @param {string} name - Repository name
+     * @param {Object} filters - Filter parameters
+     * @param {string} filters.search - Filter by tag name
+     * @param {number} filters.limit - Limit number of results
+     * @param {number} filters.offset - Offset for pagination
+     */
+    async getRepository(name, filters = {}) {
+        const params = new URLSearchParams();
+        
+        if (filters.search) params.append('search', filters.search);
+        if (filters.limit) params.append('limit', filters.limit);
+        if (filters.offset) params.append('offset', filters.offset);
+
+        const queryString = params.toString();
+        const endpoint = `/api/v1/repositories/${encodeURIComponent(name)}${queryString ? '?' + queryString : ''}`;
+        
+        return this.request(endpoint);
+    }
+
+    /**
+     * Trigger rescan for entire repository
+     * @param {string} name - Repository name
+     */
+    async triggerRepositoryRescan(name) {
+        return this.request(`/api/v1/repositories/${encodeURIComponent(name)}/rescan`, {
+            method: 'POST',
+            body: JSON.stringify({}),
+        });
+    }
+
+    /**
+     * Trigger rescan for specific tag
+     * @param {string} name - Repository name
+     * @param {string} tag - Tag name
+     */
+    async triggerTagRescan(name, tag) {
+        return this.request(`/api/v1/repositories/${encodeURIComponent(name)}/tags/${encodeURIComponent(tag)}/rescan`, {
+            method: 'POST',
+            body: JSON.stringify({}),
+        });
+    }
+
     // ==================== Health API ====================
 
     /**

@@ -45,7 +45,7 @@ class Router {
      * @param {string} path - Route path with optional :param segments
      */
     pathToRegex(path) {
-        // Escape special regex characters except :
+        // Escape special regex characters except : and /
         const escaped = path.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
         
         // Convert :param to named capture groups

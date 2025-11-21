@@ -7,12 +7,17 @@ RUN apk add --no-cache git ca-certificates gcc musl-dev sqlite-dev
 
 WORKDIR /build
 
-# Copy go mod files
+# Copy go mod files first for better caching
 COPY go.mod go.sum ./
-RUN go mod download
 
-# Install swag for generating API documentation
-RUN go install github.com/swaggo/swag/cmd/swag@latest
+# Download dependencies with cache mount
+RUN --mount=type=cache,target=/go/pkg/mod \
+    go mod download
+
+# Install swag for generating API documentation with cache mount
+RUN --mount=type=cache,target=/go/pkg/mod \
+    --mount=type=cache,target=/root/.cache/go-build \
+    go install github.com/swaggo/swag/cmd/swag@latest
 
 # Copy source code
 COPY . .
@@ -21,14 +26,19 @@ COPY . .
 RUN mkdir -p build/swagger && \
     swag init -g internal/api/api.go -o build/swagger --parseDependency --parseInternal
 
-# Build the binary with CGO enabled for SQLite
-RUN CGO_ENABLED=1 GOOS=linux go build -a -installsuffix cgo \
+# Build the binary with CGO enabled for SQLite and cache mount
+RUN --mount=type=cache,target=/go/pkg/mod \
+    --mount=type=cache,target=/root/.cache/go-build \
+    CGO_ENABLED=1 GOOS=linux go build -a -installsuffix cgo \
     -ldflags="-w -s" \
     -o suppline \
     ./cmd/suppline
 
+# Create directories that will be needed in the runtime image
+RUN mkdir -p /build/data /build/config
+
 # Stage 2: Create minimal runtime image
-FROM alpine:3.21
+FROM alpine:3.22
 
 # Install runtime dependencies including trivy client
 RUN apk add --no-cache ca-certificates sqlite-libs wget cosign && \

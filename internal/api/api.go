@@ -66,9 +66,27 @@ func NewAPIServer(cfg *config.APIConfig, attestationCfg *config.AttestationConfi
 
 	api.setupRoutes()
 
+	// Wrap router with global CORS handler
+	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// Set CORS headers for all requests BEFORE writing any response
+		w.Header().Set("Access-Control-Allow-Origin", "*")
+		w.Header().Set("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS")
+		w.Header().Set("Access-Control-Allow-Headers", "Content-Type, Authorization")
+		w.Header().Set("Access-Control-Max-Age", "3600")
+
+		// Handle preflight OPTIONS request
+		if r.Method == http.MethodOptions {
+			w.WriteHeader(http.StatusNoContent)
+			return
+		}
+
+		// Delegate to the router
+		api.router.ServeHTTP(w, r)
+	})
+
 	api.server = &http.Server{
 		Addr:         fmt.Sprintf(":%d", cfg.Port),
-		Handler:      api.router,
+		Handler:      handler,
 		ReadTimeout:  15 * time.Second,
 		WriteTimeout: 15 * time.Second,
 		IdleTimeout:  60 * time.Second,
