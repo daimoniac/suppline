@@ -19,7 +19,7 @@ func TestLoad(t *testing.T) {
 	content := `version: 1
 sync:
   - source: nginx
-    target: hostingmaloonde/nginx
+    target: myprivateregistry/nginx
     type: repository
 `
 	if _, err := tmpfile.Write([]byte(content)); err != nil {
@@ -77,7 +77,7 @@ func TestLoadWithCustomValues(t *testing.T) {
 	content := `version: 1
 sync:
   - source: nginx
-    target: hostingmaloonde/nginx
+    target: myprivateregistry/nginx
     type: repository
 `
 	if _, err := tmpfile.Write([]byte(content)); err != nil {
@@ -525,7 +525,7 @@ creds:
     reqConcurrent: 10
 sync:
   - source: nginx
-    target: hostingmaloonde/nginx
+    target: myprivateregistry/nginx
     type: repository
 `
 	if _, err := tmpfile.Write([]byte(content)); err != nil {

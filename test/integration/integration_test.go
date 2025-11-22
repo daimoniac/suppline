@@ -269,7 +269,7 @@ func TestTrivyScanner(t *testing.T) {
 	t.Run("PrivateRegistryAuthentication", func(t *testing.T) {
 		// Test scanning a private image from the configured registry
 		// This verifies that Docker config authentication is working
-		privateImage := getEnv("TEST_PRIVATE_IMAGE", "hostingmaloonde/nginx:1.27.1")
+		privateImage := getEnv("TEST_PRIVATE_IMAGE", "myprivateregistry/nginx:1.27.1")
 		
 		t.Logf("Testing private image authentication: %s", privateImage)
 		

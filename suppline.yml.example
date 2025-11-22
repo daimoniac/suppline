@@ -23,7 +23,7 @@ defaults:
 
 sync:
   - source: nginx
-    target: hostingmaloonde/nginx
+    target: myprivateregistry/nginx
     type: repository
     schedule: "0 */6 * * *"
     x-rescanInterval: 3d      # Override default rescan interval for this entry (optional)
@@ -35,7 +35,7 @@ sync:
         statement: no fix available, accepted risk
 
   - source: alpine
-    target: hostingmaloonde/alpine
+    target: myprivateregistry/alpine
     type: repository
     tags:
       semverRange:
