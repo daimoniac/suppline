@@ -483,17 +483,17 @@ func (s *SQLiteStore) QueryVulnerabilities(ctx context.Context, filter VulnFilte
 	var vulnerabilities []*types.VulnerabilityRecord
 	for rows.Next() {
 		var vuln types.VulnerabilityRecord
-		var scannedAt sql.NullTime
+		var scannedAtUnix sql.NullInt64
 		err := rows.Scan(
 			&vuln.CVEID, &vuln.Severity, &vuln.PackageName,
 			&vuln.InstalledVersion, &vuln.FixedVersion, &vuln.Title, &vuln.Description, &vuln.PrimaryURL,
-			&vuln.Repository, &vuln.Tag, &vuln.Digest, &scannedAt,
+			&vuln.Repository, &vuln.Tag, &vuln.Digest, &scannedAtUnix,
 		)
 		if err != nil {
 			return nil, errors.NewTransientf("failed to scan vulnerability: %w", err)
 		}
-		if scannedAt.Valid {
-			vuln.ScannedAt = scannedAt.Time
+		if scannedAtUnix.Valid {
+			vuln.ScannedAt = time.Unix(scannedAtUnix.Int64, 0).UTC()
 		}
 		vulnerabilities = append(vulnerabilities, &vuln)
 	}

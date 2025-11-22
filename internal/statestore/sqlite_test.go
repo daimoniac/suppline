@@ -210,6 +210,15 @@ func TestSQLiteStore(t *testing.T) {
 			t.Fatalf("Failed to record old scan: %v", err)
 		}
 
+		// Update next_scan_at to the past to simulate a scan due for rescan
+		pastTime := time.Now().Add(-1 * time.Hour).Unix()
+		_, err = store.db.ExecContext(ctx, `
+			UPDATE artifacts SET next_scan_at = ? WHERE digest = ?
+		`, pastTime, "sha256:old123")
+		if err != nil {
+			t.Fatalf("Failed to update next_scan_at: %v", err)
+		}
+
 		digests, err := store.ListDueForRescan(ctx, 24*time.Hour)
 		if err != nil {
 			t.Fatalf("Failed to list due for rescan: %v", err)
@@ -886,7 +895,7 @@ func TestSchemaAndConstraints(t *testing.T) {
 			"id":         "INTEGER",
 			"name":       "TEXT",
 			"registry":   "TEXT",
-			"created_at": "TIMESTAMP",
+			"created_at": "INTEGER",
 		}
 
 		for col, expectedType := range expectedColumns {
@@ -920,11 +929,11 @@ func TestSchemaAndConstraints(t *testing.T) {
 			"repository_id": "INTEGER",
 			"digest":        "TEXT",
 			"tag":           "TEXT",
-			"first_seen":    "TIMESTAMP",
-			"last_seen":     "TIMESTAMP",
+			"first_seen":    "INTEGER",
+			"last_seen":     "INTEGER",
 			"last_scan_id":  "INTEGER",
-			"next_scan_at":  "TIMESTAMP",
-			"created_at":    "TIMESTAMP",
+			"next_scan_at":  "INTEGER",
+			"created_at":    "INTEGER",
 		}
 
 		for col, expectedType := range expectedColumns {
@@ -966,7 +975,7 @@ func TestSchemaAndConstraints(t *testing.T) {
 			"vuln_attested":        "BOOLEAN",
 			"scai_attested":        "BOOLEAN",
 			"error_message":        "TEXT",
-			"created_at":           "TIMESTAMP",
+			"created_at":           "INTEGER",
 		}
 
 		for col, expectedType := range expectedColumns {
@@ -1006,7 +1015,7 @@ func TestSchemaAndConstraints(t *testing.T) {
 			"title":             "TEXT",
 			"description":       "TEXT",
 			"primary_url":       "TEXT",
-			"created_at":        "TIMESTAMP",
+			"created_at":        "INTEGER",
 		}
 
 		for col, expectedType := range expectedColumns {
@@ -1041,9 +1050,9 @@ func TestSchemaAndConstraints(t *testing.T) {
 			"artifact_id":   "INTEGER",
 			"cve_id":        "TEXT",
 			"statement":     "TEXT",
-			"tolerated_at":  "TIMESTAMP",
-			"expires_at":    "TIMESTAMP",
-			"created_at":    "TIMESTAMP",
+			"tolerated_at":  "INTEGER",
+			"expires_at":    "INTEGER",
+			"created_at":    "INTEGER",
 		}
 
 		for col, expectedType := range expectedColumns {
@@ -1095,15 +1104,15 @@ func TestRescanScheduling(t *testing.T) {
 		}
 
 		// Query the artifact to verify next_scan_at is set
-		var nextScanAt sql.NullTime
+		var nextScanAtUnix sql.NullInt64
 		err = store.db.QueryRowContext(ctx, `
 			SELECT next_scan_at FROM artifacts WHERE digest = ?
-		`, "sha256:rescan-test-1").Scan(&nextScanAt)
+		`, "sha256:rescan-test-1").Scan(&nextScanAtUnix)
 		if err != nil {
 			t.Fatalf("Failed to query artifact: %v", err)
 		}
 
-		if !nextScanAt.Valid {
+		if !nextScanAtUnix.Valid {
 			t.Error("Expected next_scan_at to be set, but it was NULL")
 		}
 	})
@@ -1134,7 +1143,7 @@ func TestRescanScheduling(t *testing.T) {
 		}
 
 		// Update next_scan_at to the past to simulate a scan due for rescan
-		pastTime := time.Now().Add(-1 * time.Hour)
+		pastTime := time.Now().Add(-1 * time.Hour).Unix()
 		_, err = store.db.ExecContext(ctx, `
 			UPDATE artifacts SET next_scan_at = ? WHERE digest = ?
 		`, pastTime, "sha256:rescan-test-2")
@@ -1241,7 +1250,7 @@ func TestRescanScheduling(t *testing.T) {
 			}
 
 			// Set different next_scan_at times
-			pastTime := time.Now().Add(time.Duration(-(4-i)) * time.Hour)
+			pastTime := time.Now().Add(time.Duration(-(4-i)) * time.Hour).Unix()
 			_, err = store.db.ExecContext(ctx, `
 				UPDATE artifacts SET next_scan_at = ? WHERE digest = ?
 			`, pastTime, digest)
@@ -1271,18 +1280,18 @@ func TestRescanScheduling(t *testing.T) {
 
 		// Verify ordering by checking that results are ordered by next_scan_at
 		// Get the next_scan_at times for each digest
-		nextScanTimes := make(map[string]time.Time)
+		nextScanTimes := make(map[string]int64)
 		for i := 1; i <= 3; i++ {
 			digest := fmt.Sprintf("sha256:rescan-order-%d", i)
-			var nextScanAt sql.NullTime
+			var nextScanAtUnix sql.NullInt64
 			err := store.db.QueryRowContext(ctx, `
 				SELECT next_scan_at FROM artifacts WHERE digest = ?
-			`, digest).Scan(&nextScanAt)
+			`, digest).Scan(&nextScanAtUnix)
 			if err != nil {
 				t.Fatalf("Failed to query next_scan_at: %v", err)
 			}
-			if nextScanAt.Valid {
-				nextScanTimes[digest] = nextScanAt.Time
+			if nextScanAtUnix.Valid {
+				nextScanTimes[digest] = nextScanAtUnix.Int64
 			}
 		}
 
@@ -1292,8 +1301,8 @@ func TestRescanScheduling(t *testing.T) {
 			d2 := digests[i+1]
 			t1, ok1 := nextScanTimes[d1]
 			t2, ok2 := nextScanTimes[d2]
-			if ok1 && ok2 && t1.After(t2) {
-				t.Errorf("Expected %s (time %v) to come before %s (time %v) in results", d2, t2, d1, t1)
+			if ok1 && ok2 && t1 > t2 {
+				t.Errorf("Expected %s (time %d) to come before %s (time %d) in results", d2, t2, d1, t1)
 			}
 		}
 	})
@@ -1377,10 +1386,10 @@ func TestRescanScheduling(t *testing.T) {
 		}
 
 		// Get first next_scan_at
-		var firstNextScanAt sql.NullTime
+		var firstNextScanAtUnix sql.NullInt64
 		err = store.db.QueryRowContext(ctx, `
 			SELECT next_scan_at FROM artifacts WHERE digest = ?
-		`, digest).Scan(&firstNextScanAt)
+		`, digest).Scan(&firstNextScanAtUnix)
 		if err != nil {
 			t.Fatalf("Failed to query first next_scan_at: %v", err)
 		}
@@ -1412,19 +1421,19 @@ func TestRescanScheduling(t *testing.T) {
 		}
 
 		// Get second next_scan_at
-		var secondNextScanAt sql.NullTime
+		var secondNextScanAtUnix sql.NullInt64
 		err = store.db.QueryRowContext(ctx, `
 			SELECT next_scan_at FROM artifacts WHERE digest = ?
-		`, digest).Scan(&secondNextScanAt)
+		`, digest).Scan(&secondNextScanAtUnix)
 		if err != nil {
 			t.Fatalf("Failed to query second next_scan_at: %v", err)
 		}
 
-		// Verify next_scan_at was updated (should be more recent)
-		if !firstNextScanAt.Valid || !secondNextScanAt.Valid {
+		// Verify next_scan_at was updated (should be set to current time or later)
+		if !firstNextScanAtUnix.Valid || !secondNextScanAtUnix.Valid {
 			t.Error("Expected both next_scan_at values to be set")
-		} else if !secondNextScanAt.Time.After(firstNextScanAt.Time) {
-			t.Error("Expected second next_scan_at to be after first next_scan_at")
+		} else if secondNextScanAtUnix.Int64 < firstNextScanAtUnix.Int64 {
+			t.Error("Expected second next_scan_at to be same or after first next_scan_at")
 		}
 	})
 
@@ -1439,8 +1448,8 @@ func TestRescanScheduling(t *testing.T) {
 			t.Fatalf("Failed to get repository: %v", err)
 		}
 
-		now := time.Now()
-		pastTime := now.Add(-1 * time.Hour)
+		now := time.Now().Unix()
+		pastTime := time.Now().Add(-1 * time.Hour).Unix()
 		_, err = store.db.ExecContext(ctx, `
 			INSERT INTO artifacts (repository_id, digest, first_seen, last_seen, next_scan_at)
 			VALUES (?, ?, ?, ?, ?)
@@ -1779,6 +1788,41 @@ func TestRepositoryAggregation(t *testing.T) {
 		}
 	})
 
+	// Test 5b: LastScanTime is populated correctly (regression test for timestamp migration)
+	t.Run("LastScanTime is populated correctly", func(t *testing.T) {
+		filter := RepositoryFilter{
+			Limit:  100,
+			Offset: 0,
+		}
+		response, err := store.ListRepositories(ctx, filter)
+		if err != nil {
+			t.Fatalf("Failed to list repositories: %v", err)
+		}
+
+		// Find myapp repository
+		var myappRepo *RepositoryInfo
+		for i := range response.Repositories {
+			if response.Repositories[i].Name == "myapp" {
+				myappRepo = &response.Repositories[i]
+				break
+			}
+		}
+
+		if myappRepo == nil {
+			t.Fatal("Expected to find myapp repository")
+		}
+
+		// Verify LastScanTime is not nil (regression test for timestamp migration issue)
+		if myappRepo.LastScanTime == nil {
+			t.Error("Expected LastScanTime to be populated, got nil")
+		} else {
+			// Verify it's a reasonable timestamp (within last hour)
+			if myappRepo.LastScanTime.Before(time.Now().Add(-1 * time.Hour)) {
+				t.Errorf("Expected LastScanTime to be recent, got %v", myappRepo.LastScanTime)
+			}
+		}
+	})
+
 	// Test 6: GetRepository returns tags with correct data
 	t.Run("GetRepository returns tags with correct aggregation", func(t *testing.T) {
 		filter := RepositoryTagFilter{
@@ -1818,6 +1862,39 @@ func TestRepositoryAggregation(t *testing.T) {
 		}
 		if latestTag.PolicyPassed {
 			t.Error("Expected latest tag to have PolicyPassed=false")
+		}
+	})
+
+	// Test 6b: GetRepository returns tags with LastScanTime and NextScanTime (regression test)
+	t.Run("GetRepository returns tags with scan time fields populated", func(t *testing.T) {
+		filter := RepositoryTagFilter{
+			Limit:  100,
+			Offset: 0,
+		}
+		detail, err := store.GetRepository(ctx, "myapp", filter)
+		if err != nil {
+			t.Fatalf("Failed to get repository: %v", err)
+		}
+
+		if len(detail.Tags) == 0 {
+			t.Fatal("Expected at least one tag")
+		}
+
+		// Verify at least one tag has LastScanTime populated (regression test for timestamp migration)
+		foundWithLastScanTime := false
+		for _, tag := range detail.Tags {
+			if tag.LastScanTime != nil {
+				foundWithLastScanTime = true
+				// Verify it's a reasonable timestamp (within last hour)
+				if tag.LastScanTime.Before(time.Now().Add(-1 * time.Hour)) {
+					t.Errorf("Expected LastScanTime to be recent, got %v", tag.LastScanTime)
+				}
+				break
+			}
+		}
+
+		if !foundWithLastScanTime {
+			t.Error("Expected at least one tag to have LastScanTime populated, but all were nil")
 		}
 	})
 
