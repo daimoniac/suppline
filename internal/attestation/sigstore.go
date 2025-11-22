@@ -110,6 +110,10 @@ func (a *SigstoreAttestor) AttestSBOM(ctx context.Context, imageRef string, sbom
 		imageRef,
 	)
 	cmd.Env = os.Environ()
+	// Ensure COSIGN_PASSWORD is set from ATTESTATION_KEY_PASSWORD if available
+	if password := os.Getenv("ATTESTATION_KEY_PASSWORD"); password != "" {
+		cmd.Env = append(cmd.Env, "COSIGN_PASSWORD="+password)
+	}
 
 	output, err := cmd.CombinedOutput()
 	if err != nil {
@@ -164,6 +168,10 @@ func (a *SigstoreAttestor) AttestVulnerabilities(ctx context.Context, imageRef s
 		imageRef,
 	)
 	cmd.Env = os.Environ()
+	// Ensure COSIGN_PASSWORD is set from ATTESTATION_KEY_PASSWORD if available
+	if password := os.Getenv("ATTESTATION_KEY_PASSWORD"); password != "" {
+		cmd.Env = append(cmd.Env, "COSIGN_PASSWORD="+password)
+	}
 
 	output, err := cmd.CombinedOutput()
 	if err != nil {
@@ -220,6 +228,10 @@ func (a *SigstoreAttestor) AttestSCAI(ctx context.Context, imageRef string, scai
 		imageRef,
 	)
 	cmd.Env = os.Environ()
+	// Ensure COSIGN_PASSWORD is set from ATTESTATION_KEY_PASSWORD if available
+	if password := os.Getenv("ATTESTATION_KEY_PASSWORD"); password != "" {
+		cmd.Env = append(cmd.Env, "COSIGN_PASSWORD="+password)
+	}
 
 	output, err := cmd.CombinedOutput()
 	if err != nil {

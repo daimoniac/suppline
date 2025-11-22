@@ -421,6 +421,7 @@ The following checks were performed on each of these signatures:
   }
 }
 ```
+You can also check the attestations of type `cyclonedx` and `vuln` that suppline also generates for each digest.
 
 **Database locked**
 SQLite has limited concurrent write support
@@ -450,46 +451,7 @@ export LOG_LEVEL=debug
 
 ## Integration
 
-### Kyverno
 
-Enforce only scanned, compliant images:
-
-```yaml
-apiVersion: kyverno.io/v1
-kind: ClusterPolicy
-metadata:
-  name: require-suppline-attestation
-spec:
-  validationFailureAction: enforce
-  rules:
-  - name: check-attestation
-    match:
-      resources:
-        kinds:
-        - Pod
-    verifyImages:
-    - imageReferences:
-      - "*"
-        attestations:
-        - name: suppline-sbom
-          attestationProvider: sigstore
-```
-
-### OPA/Gatekeeper
-
-Query suppline API to enforce policies:
-
-```rego
-deny[msg] {
-  image := input.review.object.spec.containers[_].image
-  response := http.send({
-    "method": "GET",
-    "url": sprintf("http://suppline:8080/api/v1/scans?image=%s", [image])
-  })
-  response.body.policy_passed == false
-  msg := sprintf("Image %s failed security policy", [image])
-}
-```
 
 ## Documentation
 

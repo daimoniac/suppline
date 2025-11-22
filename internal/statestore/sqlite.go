@@ -617,17 +617,57 @@ func (s *SQLiteStore) loadToleratedCVEsByRepository(ctx context.Context, reposit
 	var tolerated []types.ToleratedCVE
 	for rows.Next() {
 		var cve types.ToleratedCVE
-		var toleratedAtUnix int64
-		var expiresAtUnix sql.NullInt64
-		err := rows.Scan(&cve.CVEID, &cve.Statement, &toleratedAtUnix, &expiresAtUnix)
+		var toleratedAtRaw interface{}
+		var expiresAtRaw interface{}
+		err := rows.Scan(&cve.CVEID, &cve.Statement, &toleratedAtRaw, &expiresAtRaw)
 		if err != nil {
 			return nil, errors.NewTransientf("failed to scan tolerated CVE: %w", err)
 		}
+
+		// Handle both int64 (Unix timestamp) and string (ISO format) for tolerated_at
+		var toleratedAtUnix int64
+		switch v := toleratedAtRaw.(type) {
+		case int64:
+			toleratedAtUnix = v
+		case string:
+			// Try to parse ISO format timestamp
+			t, err := time.Parse(time.RFC3339Nano, v)
+			if err != nil {
+				// Fallback to parsing without timezone
+				t, err = time.Parse("2006-01-02 15:04:05.999999999", v)
+				if err != nil {
+					return nil, errors.NewTransientf("failed to parse tolerated_at timestamp: %w", err)
+				}
+			}
+			toleratedAtUnix = t.Unix()
+		default:
+			return nil, errors.NewTransientf("unexpected type for tolerated_at: %T", v)
+		}
+
 		cve.ToleratedAt = time.Unix(toleratedAtUnix, 0).UTC()
-		if expiresAtUnix.Valid {
-			t := time.Unix(expiresAtUnix.Int64, 0).UTC()
+
+		// Handle both int64 and string for expires_at
+		if expiresAtRaw != nil {
+			var expiresAtUnix int64
+			switch v := expiresAtRaw.(type) {
+			case int64:
+				expiresAtUnix = v
+			case string:
+				// Try to parse ISO format timestamp
+				t, err := time.Parse(time.RFC3339Nano, v)
+				if err != nil {
+					// Fallback to parsing without timezone
+					t, err = time.Parse("2006-01-02 15:04:05.999999999", v)
+					if err != nil {
+						return nil, errors.NewTransientf("failed to parse expires_at timestamp: %w", err)
+					}
+				}
+				expiresAtUnix = t.Unix()
+			}
+			t := time.Unix(expiresAtUnix, 0).UTC()
 			cve.ExpiresAt = &t
 		}
+
 		tolerated = append(tolerated, cve)
 	}
 

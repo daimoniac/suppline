@@ -41,6 +41,10 @@ func ExtractPublicKey(base64Key string) (string, error) {
 	// ATTESTATION_KEY_PASSWORD will be read from the environment if set
 	cmd := exec.Command("cosign", "public-key", "--key", tmpFile.Name())
 	cmd.Env = os.Environ()
+	// Ensure COSIGN_PASSWORD is set from ATTESTATION_KEY_PASSWORD if available
+	if password := os.Getenv("ATTESTATION_KEY_PASSWORD"); password != "" {
+		cmd.Env = append(cmd.Env, "COSIGN_PASSWORD="+password)
+	}
 
 	output, err := cmd.CombinedOutput()
 	if err != nil {
