@@ -20,6 +20,7 @@ func buildScanRecord(
 ) *statestore.ScanRecord {
 	// Count vulnerabilities by severity and convert to records
 	var criticalCount, highCount, mediumCount, lowCount int
+	scannedAtUnix := scannedAt.Unix()
 	vulnerabilityRecords := make([]types.VulnerabilityRecord, 0, len(scanResult.Vulnerabilities))
 
 	for _, vuln := range scanResult.Vulnerabilities {
@@ -41,7 +42,7 @@ func buildScanRecord(
 			task.Repository,
 			task.Tag,
 			task.Digest,
-			scannedAt,
+			scannedAtUnix,
 		))
 	}
 
@@ -55,14 +56,14 @@ func buildScanRecord(
 	toleratedCVEs := types.FilterToleratedCVEs(
 		task.Tolerations,
 		toleratedSet,
-		scannedAt,
+		scannedAtUnix,
 	)
 
 	return &statestore.ScanRecord{
 		Digest:            task.Digest,
 		Repository:        task.Repository,
 		Tag:               task.Tag,
-		CreatedAt:         scannedAt,
+		CreatedAt:         scannedAtUnix,
 		ScanDurationMs:    0, // Will be calculated by pipeline
 		CriticalVulnCount: criticalCount,
 		HighVulnCount:     highCount,

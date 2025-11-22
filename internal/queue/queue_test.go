@@ -372,7 +372,7 @@ func TestCVETolerations(t *testing.T) {
 	defer q.Close()
 
 	ctx := context.Background()
-	expiresAt := time.Now().Add(24 * time.Hour)
+	expiresAt := time.Now().Add(24 * time.Hour).Unix()
 
 	task := &ScanTask{
 		ID:         "task-1",

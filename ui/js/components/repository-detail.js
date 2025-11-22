@@ -101,10 +101,11 @@ export class RepositoryDetail extends BaseComponent {
             if (aVal === null || aVal === undefined) aVal = '';
             if (bVal === null || bVal === undefined) bVal = '';
 
-            // Handle date sorting
+            // Handle date sorting (Unix timestamps in seconds)
             if (this.sortColumn === 'lastScanTime' || this.sortColumn === 'nextScanTime') {
-                aVal = new Date(aVal).getTime();
-                bVal = new Date(bVal).getTime();
+                // Unix timestamps are already numbers, just ensure they're treated as such
+                aVal = typeof aVal === 'number' ? aVal : (new Date(aVal).getTime() / 1000);
+                bVal = typeof bVal === 'number' ? bVal : (new Date(bVal).getTime() / 1000);
             }
 
             // Handle numeric sorting

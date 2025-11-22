@@ -70,7 +70,7 @@ func (m *mockStateStore) ListRepositories(ctx context.Context, filter statestore
 
 func (m *mockStateStore) GetRepository(ctx context.Context, name string, filter statestore.RepositoryTagFilter) (*statestore.RepositoryDetail, error) {
 	// Return a repository with at least one tag so it's not considered "not found"
-	now := time.Now()
+	now := time.Now().Unix()
 	return &statestore.RepositoryDetail{
 		Name: name,
 		Tags: []statestore.TagInfo{

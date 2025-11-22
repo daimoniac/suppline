@@ -37,8 +37,6 @@ services:
     volumes:
       - ./data:/data
       - ./suppline.yml:/config/suppline.yml:ro
-    depends_on:
-      - trivy
     networks:
       - suppline
     restart: unless-stopped

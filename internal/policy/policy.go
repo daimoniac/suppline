@@ -52,7 +52,7 @@ type PolicyDecision struct {
 type ExpiringToleration struct {
 	CVEID     string
 	Statement string
-	ExpiresAt time.Time
+	ExpiresAt int64 // Unix timestamp in seconds
 	DaysUntil int
 }
 
@@ -124,14 +124,14 @@ func (e *Engine) Evaluate(ctx context.Context, imageRef string, result *scanner.
 		ExpiringTolerations: make([]ExpiringToleration, 0),
 	}
 
-	now := time.Now()
+	nowUnix := time.Now().Unix()
 	activeTolerations := make(map[string]types.CVEToleration)
 	
 	for _, toleration := range tolerations {
-		if toleration.ExpiresAt != nil && toleration.ExpiresAt.Before(now) {
+		if toleration.ExpiresAt != nil && *toleration.ExpiresAt < nowUnix {
 			e.logger.Debug("toleration expired",
 				"cve_id", toleration.ID,
-				"expired_at", toleration.ExpiresAt,
+				"expired_at", *toleration.ExpiresAt,
 				"image", imageRef)
 			continue
 		}
@@ -139,9 +139,9 @@ func (e *Engine) Evaluate(ctx context.Context, imageRef string, result *scanner.
 		activeTolerations[toleration.ID] = toleration
 		
 		if toleration.ExpiresAt != nil {
-			timeUntilExpiry := toleration.ExpiresAt.Sub(now)
-			if timeUntilExpiry > 0 && timeUntilExpiry <= e.expiryWarningWindow {
-				daysUntil := int(timeUntilExpiry.Hours() / 24)
+			secondsUntilExpiry := *toleration.ExpiresAt - nowUnix
+			if secondsUntilExpiry > 0 && time.Duration(secondsUntilExpiry)*time.Second <= e.expiryWarningWindow {
+				daysUntil := int(secondsUntilExpiry / (24 * 3600))
 				decision.ExpiringTolerations = append(decision.ExpiringTolerations, ExpiringToleration{
 					CVEID:     toleration.ID,
 					Statement: toleration.Statement,
@@ -152,7 +152,7 @@ func (e *Engine) Evaluate(ctx context.Context, imageRef string, result *scanner.
 				e.logger.Warn("toleration expiring soon",
 					"cve_id", toleration.ID,
 					"statement", toleration.Statement,
-					"expires_at", toleration.ExpiresAt,
+					"expires_at", *toleration.ExpiresAt,
 					"days_until_expiry", daysUntil,
 					"image", imageRef)
 			}
@@ -184,7 +184,7 @@ func (e *Engine) Evaluate(ctx context.Context, imageRef string, result *scanner.
 		if isTolerated {
 			enriched["tolerationStatement"] = toleration.Statement
 			if toleration.ExpiresAt != nil {
-				enriched["tolerationExpiry"] = toleration.ExpiresAt.Format(time.RFC3339)
+				enriched["tolerationExpiry"] = time.Unix(*toleration.ExpiresAt, 0).UTC().Format(time.RFC3339)
 			}
 			toleratedCount++
 			decision.ToleratedCVEs = append(decision.ToleratedCVEs, vuln.ID)

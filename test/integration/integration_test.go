@@ -311,7 +311,7 @@ func TestStateStore(t *testing.T) {
 	ctx := context.Background()
 
 	t.Run("RecordAndRetrieveScan", func(t *testing.T) {
-		expiresAt := time.Now().Add(30 * 24 * time.Hour)
+		expiresAt := time.Now().Add(30 * 24 * time.Hour).Unix()
 		record := &statestore.ScanRecord{
 			Digest:            "sha256:test123",
 			Repository:        "test/image",
@@ -338,7 +338,7 @@ func TestStateStore(t *testing.T) {
 				{
 					CVEID:       "CVE-2024-99999",
 					Statement:   "Test toleration",
-					ToleratedAt: time.Now(),
+					ToleratedAt: time.Now().Unix(),
 					ExpiresAt:   &expiresAt,
 				},
 			},
@@ -701,8 +701,8 @@ func TestEndToEndWorkflow(t *testing.T) {
 
 // TestPolicyEngine tests the policy engine integration
 func TestPolicyEngine(t *testing.T) {
-	expiresAt := time.Now().Add(30 * 24 * time.Hour)
-	expiredAt := time.Now().Add(-1 * time.Hour)
+	expiresAt := time.Now().Add(30 * 24 * time.Hour).Unix()
+	expiredAt := time.Now().Add(-1 * time.Hour).Unix()
 
 	tolerations := []types.CVEToleration{
 		{
@@ -829,7 +829,7 @@ func TestPolicyEngine(t *testing.T) {
 	})
 
 	t.Run("ExpiringTolerationsWarning", func(t *testing.T) {
-		expiringSoon := time.Now().Add(5 * 24 * time.Hour)
+		expiringSoon := time.Now().Add(5 * 24 * time.Hour).Unix()
 		expiringTolerations := []types.CVEToleration{
 			{
 				ID:        "CVE-2024-EXPIRING",
@@ -1056,7 +1056,7 @@ func TestAttestation(t *testing.T) {
 // TestPolicyAndAttestationWorkflow tests the integration between policy and attestation
 func TestPolicyAndAttestationWorkflow(t *testing.T) {
 	// Setup policy engine
-	expiresAt := time.Now().Add(30 * 24 * time.Hour)
+	expiresAt := time.Now().Add(30 * 24 * time.Hour).Unix()
 	tolerations := []types.CVEToleration{
 		{
 			ID:        "CVE-2024-TOLERATED",
@@ -1738,7 +1738,7 @@ func TestCompleteWorkerWorkflow(t *testing.T) {
 
 		// Step 3: Evaluate policy WITH toleration
 		t.Log("Step 3: Evaluating policy with toleration...")
-		expiresAt := time.Now().Add(30 * 24 * time.Hour)
+		expiresAt := time.Now().Add(30 * 24 * time.Hour).Unix()
 		tolerations := []types.CVEToleration{
 			{
 				ID:        criticalCVE,
@@ -1808,7 +1808,7 @@ func TestCompleteWorkerWorkflow(t *testing.T) {
 			{
 				CVEID:       criticalCVE,
 				Statement:   "Accepted risk for integration testing",
-				ToleratedAt: time.Now(),
+				ToleratedAt: time.Now().Unix(),
 				ExpiresAt:   &expiresAt,
 			},
 		}
@@ -1882,7 +1882,7 @@ func TestCompleteWorkerWorkflow(t *testing.T) {
 			t.Skip("No critical CVEs found for rescan test")
 		}
 
-		expiresAt := time.Now().Add(30 * 24 * time.Hour)
+		expiresAt := time.Now().Add(30 * 24 * time.Hour).Unix()
 		tolerations := []types.CVEToleration{
 			{
 				ID:        criticalCVE,

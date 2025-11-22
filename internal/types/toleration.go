@@ -1,13 +1,11 @@
 package types
 
-import "time"
-
 // CVEToleration represents the canonical CVE toleration type.
 // This is the single source of truth for toleration data structures.
 type CVEToleration struct {
 	ID        string
 	Statement string
-	ExpiresAt *time.Time
+	ExpiresAt *int64 // Unix timestamp in seconds, nil means no expiry
 }
 
 // ToleratedCVE extends CVEToleration with tracking metadata for storage.
@@ -16,8 +14,8 @@ type CVEToleration struct {
 type ToleratedCVE struct {
 	CVEID       string
 	Statement   string
-	ToleratedAt time.Time
-	ExpiresAt   *time.Time // Nil means no expiry
+	ToleratedAt int64  // Unix timestamp in seconds
+	ExpiresAt   *int64 // Unix timestamp in seconds, nil means no expiry
 }
 
 // TolerationInfo extends ToleratedCVE with repository context for queries.
@@ -26,7 +24,7 @@ type ToleratedCVE struct {
 type TolerationInfo struct {
 	CVEID       string
 	Statement   string
-	ToleratedAt time.Time
-	ExpiresAt   *time.Time
+	ToleratedAt int64  // Unix timestamp in seconds
+	ExpiresAt   *int64 // Unix timestamp in seconds
 	Repository  string
 }

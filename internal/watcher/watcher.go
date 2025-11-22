@@ -198,7 +198,8 @@ func (w *watcherImpl) shouldScanImage(
 	}
 
 	// Step 3: Check rescan interval
-	timeSinceLastScan := time.Since(lastScan.CreatedAt)
+	lastScanTime := time.Unix(lastScan.CreatedAt, 0).UTC()
+	timeSinceLastScan := time.Since(lastScanTime)
 	if timeSinceLastScan >= rescanInterval {
 		return true, fmt.Sprintf("rescan interval elapsed (%v since last scan)", timeSinceLastScan), true, nil
 	}
@@ -260,9 +261,10 @@ func (w *watcherImpl) processTag(ctx context.Context, repo, tag string, tolerati
 				attrs = append(attrs, "old_digest", lastScan.Digest, "new_digest", currentDigest)
 			}
 			if isRescan {
-				timeSinceLastScan := time.Since(lastScan.CreatedAt)
+				lastScanTime := time.Unix(lastScan.CreatedAt, 0).UTC()
+				timeSinceLastScan := time.Since(lastScanTime)
 				attrs = append(attrs,
-					"last_scan_time", lastScan.CreatedAt.Format(time.RFC3339),
+					"last_scan_time", lastScanTime.Format(time.RFC3339),
 					"time_since_scan", timeSinceLastScan.String(),
 					"rescan_interval", rescanInterval.String())
 			}
@@ -287,9 +289,10 @@ func (w *watcherImpl) processTag(ctx context.Context, repo, tag string, tolerati
 		
 		var timeSinceLastScan time.Duration
 		if scanErr == nil && lastScan != nil {
-			timeSinceLastScan = time.Since(lastScan.CreatedAt)
+			lastScanTime := time.Unix(lastScan.CreatedAt, 0).UTC()
+			timeSinceLastScan = time.Since(lastScanTime)
 			attrs = append(attrs,
-				"last_scan_time", lastScan.CreatedAt.Format(time.RFC3339),
+				"last_scan_time", lastScanTime.Format(time.RFC3339),
 				"time_since_scan", timeSinceLastScan.String(),
 				"rescan_interval", rescanInterval.String())
 		}
@@ -330,16 +333,17 @@ func (w *watcherImpl) processTag(ctx context.Context, repo, tag string, tolerati
 
 // checkExpiringTolerations logs warnings for tolerations expiring soon
 func (w *watcherImpl) checkExpiringTolerations(repo string, tolerations []types.CVEToleration) {
-	now := time.Now()
-	warningThreshold := 7 * 24 * time.Hour // 7 days
+	nowUnix := time.Now().Unix()
+	warningThreshold := int64(7 * 24 * 3600) // 7 days in seconds
 
 	for _, toleration := range tolerations {
 		if toleration.ExpiresAt == nil {
 			continue // No expiry, skip
 		}
 
-		timeUntilExpiry := toleration.ExpiresAt.Sub(now)
-		if timeUntilExpiry > 0 && timeUntilExpiry <= warningThreshold {
+		secondsUntilExpiry := *toleration.ExpiresAt - nowUnix
+		timeUntilExpiry := time.Duration(secondsUntilExpiry) * time.Second
+		if secondsUntilExpiry > 0 && secondsUntilExpiry <= warningThreshold {
 			w.logger.Warn("CVE toleration expiring soon",
 				"repo", repo,
 				"cve_id", toleration.ID,

@@ -1,20 +1,55 @@
 /**
  * Date formatting utilities
+ * Handles Unix timestamps (int64 seconds) from the API
  */
 
 /**
- * Format a date string to a human-readable format
- * @param {string} dateString - ISO date string
+ * Convert Unix timestamp to Date object
+ * @param {number|string} timestamp - Unix timestamp in seconds or ISO date string
+ * @returns {Date|null} Date object or null if invalid
+ */
+function parseTimestamp(timestamp) {
+    if (!timestamp) return null;
+    
+    try {
+        let date;
+        
+        // Handle Unix timestamp (number in seconds)
+        if (typeof timestamp === 'number') {
+            date = new Date(timestamp * 1000); // Convert seconds to milliseconds
+        } 
+        // Handle ISO date string (for backwards compatibility)
+        else if (typeof timestamp === 'string') {
+            date = new Date(timestamp);
+        } 
+        else {
+            return null;
+        }
+        
+        if (isNaN(date.getTime())) {
+            return null;
+        }
+        
+        return date;
+    } catch (error) {
+        console.error('Error parsing timestamp:', error);
+        return null;
+    }
+}
+
+/**
+ * Format a timestamp to a human-readable format
+ * @param {number|string} timestamp - Unix timestamp in seconds or ISO date string
  * @param {boolean} includeTime - Whether to include time in output
  * @returns {string} Formatted date string
  */
-function formatDate(dateString, includeTime = true) {
-    if (!dateString) return 'N/A';
+function formatDate(timestamp, includeTime = true) {
+    if (!timestamp) return 'N/A';
     
     try {
-        const date = new Date(dateString);
+        const date = parseTimestamp(timestamp);
         
-        if (isNaN(date.getTime())) {
+        if (!date) {
             return 'Invalid Date';
         }
         
@@ -37,15 +72,18 @@ function formatDate(dateString, includeTime = true) {
 }
 
 /**
- * Format a date to relative time (e.g., "2 hours ago", "3 days ago")
- * @param {string} dateString - ISO date string
+ * Format a timestamp to relative time (e.g., "2 hours ago", "3 days ago")
+ * @param {number|string} timestamp - Unix timestamp in seconds or ISO date string
  * @returns {string} Relative time string
  */
-function formatRelativeTime(dateString) {
-    if (!dateString) return 'N/A';
+function formatRelativeTime(timestamp) {
+    if (!timestamp) return 'N/A';
     
     try {
-        const date = new Date(dateString);
+        const date = parseTimestamp(timestamp);
+        
+        if (!date) return 'N/A';
+        
         const now = new Date();
         const diffMs = now - date;
         const diffSec = Math.floor(diffMs / 1000);
@@ -79,14 +117,17 @@ function formatRelativeTime(dateString) {
 
 /**
  * Calculate days until a future date
- * @param {string} dateString - ISO date string
+ * @param {number|string} timestamp - Unix timestamp in seconds or ISO date string
  * @returns {number|null} Number of days until date (negative if past), null if invalid
  */
-function daysUntil(dateString) {
-    if (!dateString) return null;
+function daysUntil(timestamp) {
+    if (!timestamp) return null;
     
     try {
-        const date = new Date(dateString);
+        const date = parseTimestamp(timestamp);
+        
+        if (!date) return null;
+        
         const now = new Date();
         
         // Reset time to midnight for accurate day calculation
@@ -104,15 +145,18 @@ function daysUntil(dateString) {
 }
 
 /**
- * Check if a date is in the past
- * @param {string} dateString - ISO date string
+ * Check if a timestamp is in the past
+ * @param {number|string} timestamp - Unix timestamp in seconds or ISO date string
  * @returns {boolean} True if date is in the past
  */
-function isPast(dateString) {
-    if (!dateString) return false;
+function isPast(timestamp) {
+    if (!timestamp) return false;
     
     try {
-        const date = new Date(dateString);
+        const date = parseTimestamp(timestamp);
+        
+        if (!date) return false;
+        
         const now = new Date();
         return date < now;
     } catch (error) {
@@ -121,25 +165,25 @@ function isPast(dateString) {
 }
 
 /**
- * Check if a date is within the next N days
- * @param {string} dateString - ISO date string
+ * Check if a timestamp is within the next N days
+ * @param {number|string} timestamp - Unix timestamp in seconds or ISO date string
  * @param {number} days - Number of days to check
  * @returns {boolean} True if date is within the next N days
  */
-function isWithinDays(dateString, days) {
-    const daysRemaining = daysUntil(dateString);
+function isWithinDays(timestamp, days) {
+    const daysRemaining = daysUntil(timestamp);
     return daysRemaining !== null && daysRemaining >= 0 && daysRemaining <= days;
 }
 
 /**
  * Format expiration status with days remaining
- * @param {string} dateString - ISO date string
+ * @param {number|string} timestamp - Unix timestamp in seconds or ISO date string
  * @returns {string} Formatted expiration status
  */
-function formatExpirationStatus(dateString) {
-    if (!dateString) return 'No expiration';
+function formatExpirationStatus(timestamp) {
+    if (!timestamp) return 'No expiration';
     
-    const days = daysUntil(dateString);
+    const days = daysUntil(timestamp);
     
     if (days === null) return 'Invalid date';
     if (days < 0) return 'Expired';
@@ -148,18 +192,18 @@ function formatExpirationStatus(dateString) {
     if (days <= 7) return `Expires in ${days} days`;
     if (days <= 30) return `Expires in ${Math.ceil(days / 7)} weeks`;
     
-    return formatDate(dateString, false);
+    return formatDate(timestamp, false);
 }
 
 /**
  * Get expiration status class for styling
- * @param {string} dateString - ISO date string
+ * @param {number|string} timestamp - Unix timestamp in seconds or ISO date string
  * @returns {string} CSS class name
  */
-function getExpirationStatusClass(dateString) {
-    if (!dateString) return 'no-expiration';
+function getExpirationStatusClass(timestamp) {
+    if (!timestamp) return 'no-expiration';
     
-    const days = daysUntil(dateString);
+    const days = daysUntil(timestamp);
     
     if (days === null) return 'invalid';
     if (days < 0) return 'expired';
@@ -170,6 +214,7 @@ function getExpirationStatusClass(dateString) {
 
 // Export for use in other modules
 export {
+    parseTimestamp,
     formatDate,
     formatRelativeTime,
     daysUntil,

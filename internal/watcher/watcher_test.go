@@ -118,7 +118,7 @@ func TestWatcher_Discover_NewImages(t *testing.T) {
 	mockQueue := queue.NewInMemoryQueue(100)
 
 	// Setup regsync config with tolerations
-	expiresAt := time.Now().Add(30 * 24 * time.Hour)
+	expiresAt := time.Now().Add(30 * 24 * time.Hour).Unix()
 	regsyncCfg := &config.RegsyncConfig{
 		Sync: []config.SyncEntry{
 			{
@@ -193,7 +193,7 @@ func TestWatcher_Discover_RescanDue(t *testing.T) {
 	}
 
 	// Setup mock state store with old scan
-	oldScanTime := time.Now().Add(-25 * time.Hour) // 25 hours ago
+	oldScanTime := time.Now().Add(-25 * time.Hour).Unix() // 25 hours ago
 	mockStore := &mockStateStore{
 		scans: map[string]*statestore.ScanRecord{
 			"sha256:digest1": {
@@ -261,7 +261,7 @@ func TestWatcher_Discover_SkipRecentScan(t *testing.T) {
 	}
 
 	// Setup mock state store with recent scan
-	recentScanTime := time.Now().Add(-1 * time.Hour) // 1 hour ago
+	recentScanTime := time.Now().Add(-1 * time.Hour).Unix() // 1 hour ago
 	mockStore := &mockStateStore{
 		scans: map[string]*statestore.ScanRecord{
 			"sha256:digest1": {
@@ -456,7 +456,7 @@ func TestShouldScanImage_DigestChanged(t *testing.T) {
 	// Setup mock state store with scan for new digest that has wrong digest in record
 	// This simulates the case where we query by current digest but the stored record
 	// has a different digest (which shouldn't happen in practice, but tests the logic)
-	oldScanTime := time.Now().Add(-1 * time.Hour)
+	oldScanTime := time.Now().Add(-1 * time.Hour).Unix()
 	mockStore := &mockStateStore{
 		scans: map[string]*statestore.ScanRecord{
 			"sha256:newdigest": {
@@ -511,7 +511,7 @@ func TestShouldScanImage_IntervalElapsed(t *testing.T) {
 	ctx := context.Background()
 
 	// Setup mock state store with old scan (25 hours ago)
-	oldScanTime := time.Now().Add(-25 * time.Hour)
+	oldScanTime := time.Now().Add(-25 * time.Hour).Unix()
 	mockStore := &mockStateStore{
 		scans: map[string]*statestore.ScanRecord{
 			"sha256:samedigest": {
@@ -566,7 +566,7 @@ func TestShouldScanImage_Skip(t *testing.T) {
 	ctx := context.Background()
 
 	// Setup mock state store with recent scan (1 hour ago)
-	recentScanTime := time.Now().Add(-1 * time.Hour)
+	recentScanTime := time.Now().Add(-1 * time.Hour).Unix()
 	mockStore := &mockStateStore{
 		scans: map[string]*statestore.ScanRecord{
 			"sha256:samedigest": {

@@ -144,13 +144,13 @@ func (c *RegsyncConfig) GetTargetRepositories() []string {
 // Returns true if the CVE is tolerated and not expired
 func (c *RegsyncConfig) IsToleratedCVE(target, cveID string) (bool, *types.CVEToleration) {
 	tolerations := c.GetTolerationsForTarget(target)
-	now := time.Now()
+	nowUnix := time.Now().Unix()
 
 	for i := range tolerations {
 		toleration := &tolerations[i]
 		if toleration.ID == cveID {
 			// Check if toleration has expired
-			if toleration.ExpiresAt != nil && toleration.ExpiresAt.Before(now) {
+			if toleration.ExpiresAt != nil && *toleration.ExpiresAt < nowUnix {
 				return false, nil
 			}
 			return true, toleration
@@ -163,13 +163,13 @@ func (c *RegsyncConfig) IsToleratedCVE(target, cveID string) (bool, *types.CVETo
 // GetExpiringTolerations returns tolerations that will expire within the specified duration
 func (c *RegsyncConfig) GetExpiringTolerations(within time.Duration) []types.CVEToleration {
 	var expiring []types.CVEToleration
-	now := time.Now()
-	threshold := now.Add(within)
+	nowUnix := time.Now().Unix()
+	thresholdUnix := time.Now().Add(within).Unix()
 
 	for _, sync := range c.Sync {
 		for _, toleration := range sync.Tolerate {
 			if toleration.ExpiresAt != nil {
-				if toleration.ExpiresAt.After(now) && toleration.ExpiresAt.Before(threshold) {
+				if *toleration.ExpiresAt > nowUnix && *toleration.ExpiresAt < thresholdUnix {
 					expiring = append(expiring, toleration)
 				}
 			}

@@ -52,7 +52,7 @@ type StateStore interface {
 type RepositoryInfo struct {
 	Name                 string
 	TagCount             int
-	LastScanTime         *time.Time
+	LastScanTime         *int64 // Unix timestamp in seconds
 	VulnerabilityCount   VulnerabilityCountSummary
 	PolicyPassed         bool
 }
@@ -77,8 +77,8 @@ type RepositoryDetail struct {
 type TagInfo struct {
 	Name                 string
 	Digest               string
-	LastScanTime         *time.Time
-	NextScanTime         *time.Time
+	LastScanTime         *int64 // Unix timestamp in seconds
+	NextScanTime         *int64 // Unix timestamp in seconds
 	VulnerabilityCount   VulnerabilityCountSummary
 	PolicyPassed         bool
 }
@@ -145,7 +145,7 @@ type ScanRecord struct {
 	VulnAttested      bool
 	SCAIAttested      bool
 	ErrorMessage      string
-	CreatedAt         time.Time
+	CreatedAt         int64 // Unix timestamp in seconds
 	// Denormalized for convenience (loaded via joins)
 	Digest            string
 	Repository        string

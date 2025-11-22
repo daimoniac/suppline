@@ -1,14 +1,10 @@
 package types
 
-import (
-	"time"
-)
-
 // ToVulnerabilityRecord converts a Vulnerability to a VulnerabilityRecord with image context.
 func ToVulnerabilityRecord(
 	vuln Vulnerability,
 	repository, tag, digest string,
-	scannedAt time.Time,
+	scannedAt int64,
 ) VulnerabilityRecord {
 	return VulnerabilityRecord{
 		CVEID:            vuln.ID,
@@ -31,7 +27,7 @@ func ToVulnerabilityRecord(
 func FilterToleratedCVEs(
 	tolerations []CVEToleration,
 	toleratedSet map[string]bool,
-	toleratedAt time.Time,
+	toleratedAt int64,
 ) []ToleratedCVE {
 	filtered := make([]ToleratedCVE, 0, len(tolerations))
 	for _, toleration := range tolerations {

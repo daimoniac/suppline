@@ -17,7 +17,7 @@ func TestToVulnerabilityRecord(t *testing.T) {
 		PrimaryURL:   "https://cve.mitre.org/cgi-bin/cvename.cgi?name=CVE-2024-1234",
 	}
 
-	scannedAt := time.Now()
+	scannedAt := time.Now().Unix()
 	record := ToVulnerabilityRecord(
 		vuln,
 		"myrepo/myimage",
@@ -42,8 +42,8 @@ func TestToVulnerabilityRecord(t *testing.T) {
 	if record.Digest != "sha256:abc123" {
 		t.Errorf("Expected Digest sha256:abc123, got %s", record.Digest)
 	}
-	if !record.ScannedAt.Equal(scannedAt) {
-		t.Errorf("Expected ScannedAt %v, got %v", scannedAt, record.ScannedAt)
+	if record.ScannedAt != scannedAt {
+		t.Errorf("Expected ScannedAt %d, got %d", scannedAt, record.ScannedAt)
 	}
 }
 
@@ -59,7 +59,7 @@ func TestFilterToleratedCVEs(t *testing.T) {
 		"CVE-2024-5678": true,
 	}
 
-	filtered := FilterToleratedCVEs(tolerations, toleratedSet, time.Now())
+	filtered := FilterToleratedCVEs(tolerations, toleratedSet, time.Now().Unix())
 
 	if len(filtered) != 2 {
 		t.Errorf("Expected 2 filtered tolerations, got %d", len(filtered))

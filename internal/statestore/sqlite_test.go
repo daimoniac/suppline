@@ -28,7 +28,7 @@ func TestSQLiteStore(t *testing.T) {
 
 	// Test RecordScan
 	t.Run("RecordScan", func(t *testing.T) {
-		expiresAt := time.Now().Add(30 * 24 * time.Hour)
+		expiresAtUnix := time.Now().Add(30 * 24 * time.Hour).Unix()
 		record := &ScanRecord{
 			Digest:            "sha256:abc123",
 			Repository:        "myorg/myapp",
@@ -68,8 +68,8 @@ func TestSQLiteStore(t *testing.T) {
 				{
 					CVEID:       "CVE-2024-1234",
 					Statement:   "Accepted risk for legacy system",
-					ToleratedAt: time.Now(),
-					ExpiresAt:   &expiresAt,
+					ToleratedAt: time.Now().Unix(),
+					ExpiresAt:   &expiresAtUnix,
 				},
 			},
 		}
@@ -435,7 +435,7 @@ func TestSQLiteStore(t *testing.T) {
 			t.Errorf("Expected 1 non-expired toleration, got %d", len(tolerations))
 		}
 		// Verify the toleration is not expired
-		if tolerations[0].ExpiresAt != nil && tolerations[0].ExpiresAt.Before(time.Now()) {
+		if tolerations[0].ExpiresAt != nil && *tolerations[0].ExpiresAt < time.Now().Unix() {
 			t.Error("Expected non-expired toleration, but it is expired")
 		}
 	})
@@ -461,8 +461,8 @@ func TestSQLiteStore(t *testing.T) {
 				{
 					CVEID:       "CVE-2024-9999",
 					Statement:   "Expiring soon",
-					ToleratedAt: time.Now(),
-					ExpiresAt:   &[]time.Time{time.Now().Add(3 * 24 * time.Hour)}[0],
+					ToleratedAt: time.Now().Unix(),
+					ExpiresAt:   &[]int64{time.Now().Add(3 * 24 * time.Hour).Unix()}[0],
 				},
 			},
 		}
@@ -526,7 +526,7 @@ func TestSQLiteStore(t *testing.T) {
 		if tol.Repository == "" {
 			t.Error("Expected Repository to be set")
 		}
-		if tol.ToleratedAt.IsZero() {
+		if tol.ToleratedAt == 0 {
 			t.Error("Expected ToleratedAt to be set")
 		}
 		if tol.ExpiresAt == nil {
@@ -1817,8 +1817,9 @@ func TestRepositoryAggregation(t *testing.T) {
 			t.Error("Expected LastScanTime to be populated, got nil")
 		} else {
 			// Verify it's a reasonable timestamp (within last hour)
-			if myappRepo.LastScanTime.Before(time.Now().Add(-1 * time.Hour)) {
-				t.Errorf("Expected LastScanTime to be recent, got %v", myappRepo.LastScanTime)
+			oneHourAgo := time.Now().Add(-1 * time.Hour).Unix()
+			if *myappRepo.LastScanTime < oneHourAgo {
+				t.Errorf("Expected LastScanTime to be recent, got %d", *myappRepo.LastScanTime)
 			}
 		}
 	})
@@ -1886,8 +1887,9 @@ func TestRepositoryAggregation(t *testing.T) {
 			if tag.LastScanTime != nil {
 				foundWithLastScanTime = true
 				// Verify it's a reasonable timestamp (within last hour)
-				if tag.LastScanTime.Before(time.Now().Add(-1 * time.Hour)) {
-					t.Errorf("Expected LastScanTime to be recent, got %v", tag.LastScanTime)
+				oneHourAgo := time.Now().Add(-1 * time.Hour).Unix()
+				if *tag.LastScanTime < oneHourAgo {
+					t.Errorf("Expected LastScanTime to be recent, got %d", *tag.LastScanTime)
 				}
 				break
 			}

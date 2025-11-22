@@ -266,13 +266,12 @@ func (s *SQLiteStore) RecordScan(ctx context.Context, record *ScanRecord) error 
 		defer toleratedStmt.Close()
 
 		for _, tolerated := range record.ToleratedCVEs {
-			toleratedAtUnix := tolerated.ToleratedAt.Unix()
 			var expiresAtUnix interface{} = nil
 			if tolerated.ExpiresAt != nil {
-				expiresAtUnix = tolerated.ExpiresAt.Unix()
+				expiresAtUnix = *tolerated.ExpiresAt
 			}
 			_, err := toleratedStmt.ExecContext(ctx,
-				repositoryID, tolerated.CVEID, tolerated.Statement, toleratedAtUnix, expiresAtUnix,
+				repositoryID, tolerated.CVEID, tolerated.Statement, tolerated.ToleratedAt, expiresAtUnix,
 			)
 			if err != nil {
 				return errors.NewTransientf("failed to insert tolerated CVE: %w", err)
@@ -291,7 +290,6 @@ func (s *SQLiteStore) RecordScan(ctx context.Context, record *ScanRecord) error 
 func (s *SQLiteStore) GetLastScan(ctx context.Context, digest string) (*ScanRecord, error) {
 	var record ScanRecord
 	var repositoryID int64
-	var createdAtUnix int64
 
 	err := s.db.QueryRowContext(ctx, `
 		SELECT sr.id, sr.artifact_id, sr.scan_duration_ms,
@@ -307,12 +305,9 @@ func (s *SQLiteStore) GetLastScan(ctx context.Context, digest string) (*ScanReco
 	`, digest).Scan(
 		&record.ID, &record.ArtifactID, &record.ScanDurationMs,
 		&record.CriticalVulnCount, &record.HighVulnCount, &record.MediumVulnCount, &record.LowVulnCount,
-		&record.PolicyPassed, &record.SBOMAttested, &record.VulnAttested, &record.SCAIAttested, &record.ErrorMessage, &createdAtUnix,
+		&record.PolicyPassed, &record.SBOMAttested, &record.VulnAttested, &record.SCAIAttested, &record.ErrorMessage, &record.CreatedAt,
 		&record.Digest, &record.Tag, &record.Repository, &repositoryID,
 	)
-	if err == nil {
-		record.CreatedAt = time.Unix(createdAtUnix, 0).UTC()
-	}
 	if err == sql.ErrNoRows {
 		return nil, ErrScanNotFound
 	}
@@ -396,18 +391,16 @@ func (s *SQLiteStore) GetScanHistory(ctx context.Context, digest string, limit i
 	for rows.Next() {
 		var record ScanRecord
 		var repositoryID int64
-		var createdAtUnix int64
 
 		err := rows.Scan(
 			&record.ID, &record.ArtifactID, &record.ScanDurationMs,
 			&record.CriticalVulnCount, &record.HighVulnCount, &record.MediumVulnCount, &record.LowVulnCount,
-			&record.PolicyPassed, &record.SBOMAttested, &record.VulnAttested, &record.SCAIAttested, &record.ErrorMessage, &createdAtUnix,
+			&record.PolicyPassed, &record.SBOMAttested, &record.VulnAttested, &record.SCAIAttested, &record.ErrorMessage, &record.CreatedAt,
 			&record.Digest, &record.Tag, &record.Repository, &repositoryID,
 		)
 		if err != nil {
 			return nil, errors.NewTransientf("failed to scan row: %w", err)
 		}
-		record.CreatedAt = time.Unix(createdAtUnix, 0).UTC()
 
 		// Load vulnerabilities for this scan
 		vulns, err := s.loadVulnerabilitiesByScan(ctx, record.ID)
@@ -483,17 +476,13 @@ func (s *SQLiteStore) QueryVulnerabilities(ctx context.Context, filter VulnFilte
 	var vulnerabilities []*types.VulnerabilityRecord
 	for rows.Next() {
 		var vuln types.VulnerabilityRecord
-		var scannedAtUnix sql.NullInt64
 		err := rows.Scan(
 			&vuln.CVEID, &vuln.Severity, &vuln.PackageName,
 			&vuln.InstalledVersion, &vuln.FixedVersion, &vuln.Title, &vuln.Description, &vuln.PrimaryURL,
-			&vuln.Repository, &vuln.Tag, &vuln.Digest, &scannedAtUnix,
+			&vuln.Repository, &vuln.Tag, &vuln.Digest, &vuln.ScannedAt,
 		)
 		if err != nil {
 			return nil, errors.NewTransientf("failed to scan vulnerability: %w", err)
-		}
-		if scannedAtUnix.Valid {
-			vuln.ScannedAt = time.Unix(scannedAtUnix.Int64, 0).UTC()
 		}
 		vulnerabilities = append(vulnerabilities, &vuln)
 	}
@@ -530,18 +519,16 @@ func (s *SQLiteStore) GetImagesByCVE(ctx context.Context, cveID string) ([]*Scan
 	for rows.Next() {
 		var record ScanRecord
 		var repositoryID int64
-		var createdAtUnix int64
 
 		err := rows.Scan(
 			&record.ID, &record.ArtifactID, &record.ScanDurationMs,
 			&record.CriticalVulnCount, &record.HighVulnCount, &record.MediumVulnCount, &record.LowVulnCount,
-			&record.PolicyPassed, &record.SBOMAttested, &record.VulnAttested, &record.SCAIAttested, &record.ErrorMessage, &createdAtUnix,
+			&record.PolicyPassed, &record.SBOMAttested, &record.VulnAttested, &record.SCAIAttested, &record.ErrorMessage, &record.CreatedAt,
 			&record.Digest, &record.Tag, &record.Repository, &repositoryID,
 		)
 		if err != nil {
 			return nil, errors.NewTransientf("failed to scan row: %w", err)
 		}
-		record.CreatedAt = time.Unix(createdAtUnix, 0).UTC()
 
 		// Load vulnerabilities for this scan
 		vulns, err := s.loadVulnerabilitiesByScan(ctx, record.ID)
@@ -617,55 +604,14 @@ func (s *SQLiteStore) loadToleratedCVEsByRepository(ctx context.Context, reposit
 	var tolerated []types.ToleratedCVE
 	for rows.Next() {
 		var cve types.ToleratedCVE
-		var toleratedAtRaw interface{}
-		var expiresAtRaw interface{}
-		err := rows.Scan(&cve.CVEID, &cve.Statement, &toleratedAtRaw, &expiresAtRaw)
+		var expiresAtUnix sql.NullInt64
+		err := rows.Scan(&cve.CVEID, &cve.Statement, &cve.ToleratedAt, &expiresAtUnix)
 		if err != nil {
 			return nil, errors.NewTransientf("failed to scan tolerated CVE: %w", err)
 		}
 
-		// Handle both int64 (Unix timestamp) and string (ISO format) for tolerated_at
-		var toleratedAtUnix int64
-		switch v := toleratedAtRaw.(type) {
-		case int64:
-			toleratedAtUnix = v
-		case string:
-			// Try to parse ISO format timestamp
-			t, err := time.Parse(time.RFC3339Nano, v)
-			if err != nil {
-				// Fallback to parsing without timezone
-				t, err = time.Parse("2006-01-02 15:04:05.999999999", v)
-				if err != nil {
-					return nil, errors.NewTransientf("failed to parse tolerated_at timestamp: %w", err)
-				}
-			}
-			toleratedAtUnix = t.Unix()
-		default:
-			return nil, errors.NewTransientf("unexpected type for tolerated_at: %T", v)
-		}
-
-		cve.ToleratedAt = time.Unix(toleratedAtUnix, 0).UTC()
-
-		// Handle both int64 and string for expires_at
-		if expiresAtRaw != nil {
-			var expiresAtUnix int64
-			switch v := expiresAtRaw.(type) {
-			case int64:
-				expiresAtUnix = v
-			case string:
-				// Try to parse ISO format timestamp
-				t, err := time.Parse(time.RFC3339Nano, v)
-				if err != nil {
-					// Fallback to parsing without timezone
-					t, err = time.Parse("2006-01-02 15:04:05.999999999", v)
-					if err != nil {
-						return nil, errors.NewTransientf("failed to parse expires_at timestamp: %w", err)
-					}
-				}
-				expiresAtUnix = t.Unix()
-			}
-			t := time.Unix(expiresAtUnix, 0).UTC()
-			cve.ExpiresAt = &t
+		if expiresAtUnix.Valid {
+			cve.ExpiresAt = &expiresAtUnix.Int64
 		}
 
 		tolerated = append(tolerated, cve)
@@ -723,18 +669,16 @@ func (s *SQLiteStore) ListScans(ctx context.Context, filter ScanFilter) ([]*Scan
 	var records []*ScanRecord
 	for rows.Next() {
 		var record ScanRecord
-		var createdAtUnix int64
 
 		err := rows.Scan(
 			&record.ID, &record.ArtifactID, &record.ScanDurationMs,
 			&record.CriticalVulnCount, &record.HighVulnCount, &record.MediumVulnCount, &record.LowVulnCount,
-			&record.PolicyPassed, &record.SBOMAttested, &record.VulnAttested, &record.SCAIAttested, &record.ErrorMessage, &createdAtUnix,
+			&record.PolicyPassed, &record.SBOMAttested, &record.VulnAttested, &record.SCAIAttested, &record.ErrorMessage, &record.CreatedAt,
 			&record.Digest, &record.Tag, &record.Repository,
 		)
 		if err != nil {
 			return nil, errors.NewTransientf("failed to scan row: %w", err)
 		}
-		record.CreatedAt = time.Unix(createdAtUnix, 0).UTC()
 
 		// Don't load vulnerabilities or tolerated CVEs for list operations
 		// These are only needed for detail views, which use GetLastScan directly
@@ -813,13 +757,12 @@ func (s *SQLiteStore) ListTolerations(ctx context.Context, filter TolerationFilt
 	var tolerations []*types.TolerationInfo
 	for rows.Next() {
 		var info types.TolerationInfo
-		var toleratedAtUnix int64
 		var expiresAtUnix sql.NullInt64
 
 		err := rows.Scan(
 			&info.CVEID,
 			&info.Statement,
-			&toleratedAtUnix,
+			&info.ToleratedAt,
 			&expiresAtUnix,
 			&info.Repository,
 		)
@@ -827,10 +770,8 @@ func (s *SQLiteStore) ListTolerations(ctx context.Context, filter TolerationFilt
 			return nil, errors.NewTransientf("failed to scan toleration: %w", err)
 		}
 
-		info.ToleratedAt = time.Unix(toleratedAtUnix, 0).UTC()
 		if expiresAtUnix.Valid {
-			t := time.Unix(expiresAtUnix.Int64, 0).UTC()
-			info.ExpiresAt = &t
+			info.ExpiresAt = &expiresAtUnix.Int64
 		}
 
 		tolerations = append(tolerations, &info)
@@ -935,10 +876,9 @@ func (s *SQLiteStore) ListRepositories(ctx context.Context, filter RepositoryFil
 			return nil, errors.NewTransientf("failed to scan repository row: %w", err)
 		}
 
-		// Convert Unix timestamps to time.Time
+		// Store Unix timestamps directly
 		if lastScanTimeUnix.Valid {
-			t := time.Unix(lastScanTimeUnix.Int64, 0).UTC()
-			repo.LastScanTime = &t
+			repo.LastScanTime = &lastScanTimeUnix.Int64
 		}
 
 		// Aggregate vulnerability counts from most vulnerable artifact
@@ -1063,12 +1003,10 @@ func (s *SQLiteStore) GetRepository(ctx context.Context, name string, filter Rep
 		}
 
 		if lastScanTimeUnix.Valid {
-			t := time.Unix(lastScanTimeUnix.Int64, 0).UTC()
-			tag.LastScanTime = &t
+			tag.LastScanTime = &lastScanTimeUnix.Int64
 		}
 		if nextScanTimeUnix.Valid {
-			t := time.Unix(nextScanTimeUnix.Int64, 0).UTC()
-			tag.NextScanTime = &t
+			tag.NextScanTime = &nextScanTimeUnix.Int64
 		}
 
 		tag.PolicyPassed = policyPassed == 1

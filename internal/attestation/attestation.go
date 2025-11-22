@@ -137,12 +137,12 @@ type SCAIAttributeItem struct {
 
 // SCAIToleratedVulnEvidence contains details about a tolerated vulnerability
 type SCAIToleratedVulnEvidence struct {
-	CVEID          string     `json:"cveId"`
-	Severity       string     `json:"severity"`
-	PackageName    string     `json:"packageName"`
-	Version        string     `json:"version"`
-	FixedVersion   string     `json:"fixedVersion,omitempty"`   // Version with fix (empty if no fix available)
-	Description    string     `json:"description,omitempty"`    // Short description of the vulnerability
-	Statement      string     `json:"statement"`
-	ToleratedUntil *time.Time `json:"toleratedUntil,omitempty"` // RFC 3339 format, nil if no expiry
+	CVEID          string `json:"cveId"`
+	Severity       string `json:"severity"`
+	PackageName    string `json:"packageName"`
+	Version        string `json:"version"`
+	FixedVersion   string `json:"fixedVersion,omitempty"`   // Version with fix (empty if no fix available)
+	Description    string `json:"description,omitempty"`    // Short description of the vulnerability
+	Statement      string `json:"statement"`
+	ToleratedUntil *int64 `json:"toleratedUntil,omitempty"` // Unix timestamp in seconds, nil if no expiry
 }

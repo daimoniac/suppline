@@ -197,7 +197,7 @@ func TestEngine_Evaluate_ExpiredToleration(t *testing.T) {
 		},
 	}
 
-	expiredTime := time.Now().Add(-24 * time.Hour)
+	expiredTime := time.Now().Add(-24 * time.Hour).Unix()
 	tolerations := []types.CVEToleration{
 		{
 			ID:        "CVE-2024-0001",
@@ -240,7 +240,7 @@ func TestEngine_Evaluate_ActiveToleration(t *testing.T) {
 		},
 	}
 
-	futureTime := time.Now().Add(30 * 24 * time.Hour)
+	futureTime := time.Now().Add(30 * 24 * time.Hour).Unix()
 	tolerations := []types.CVEToleration{
 		{
 			ID:        "CVE-2024-0001",
@@ -284,7 +284,7 @@ func TestEngine_Evaluate_ExpiringTolerationWarning(t *testing.T) {
 	}
 
 	// Toleration expires in 3 days (within 7-day warning window)
-	expiringTime := time.Now().Add(3 * 24 * time.Hour)
+	expiringTime := time.Now().Add(3 * 24 * time.Hour).Unix()
 	tolerations := []types.CVEToleration{
 		{
 			ID:        "CVE-2024-0001",
@@ -334,7 +334,7 @@ func TestEngine_Evaluate_NoExpiringTolerationWarning(t *testing.T) {
 	}
 
 	// Toleration expires in 30 days (outside 7-day warning window)
-	futureTime := time.Now().Add(30 * 24 * time.Hour)
+	futureTime := time.Now().Add(30 * 24 * time.Hour).Unix()
 	tolerations := []types.CVEToleration{
 		{
 			ID:        "CVE-2024-0001",
@@ -455,7 +455,7 @@ func TestEngine_SetExpiryWarningWindow(t *testing.T) {
 	}
 
 	// Toleration expires in 10 days (within 14-day window)
-	expiringTime := time.Now().Add(10 * 24 * time.Hour)
+	expiringTime := time.Now().Add(10 * 24 * time.Hour).Unix()
 	tolerations := []types.CVEToleration{
 		{
 			ID:        "CVE-2024-0001",
@@ -652,8 +652,8 @@ func TestEngine_Evaluate_MixedExpiredAndActiveTolerations(t *testing.T) {
 		},
 	}
 
-	expiredTime := time.Now().Add(-24 * time.Hour)
-	futureTime := time.Now().Add(30 * 24 * time.Hour)
+	expiredTime := time.Now().Add(-24 * time.Hour).Unix()
+	futureTime := time.Now().Add(30 * 24 * time.Hour).Unix()
 	
 	tolerations := []types.CVEToleration{
 		{
@@ -723,8 +723,8 @@ func TestEngine_Evaluate_AllTolerationsExpired(t *testing.T) {
 		},
 	}
 
-	expiredTime1 := time.Now().Add(-48 * time.Hour)
-	expiredTime2 := time.Now().Add(-1 * time.Hour)
+	expiredTime1 := time.Now().Add(-48 * time.Hour).Unix()
+	expiredTime2 := time.Now().Add(-1 * time.Hour).Unix()
 	
 	tolerations := []types.CVEToleration{
 		{
@@ -782,8 +782,8 @@ func TestEngine_Evaluate_ExpiredTolerationWithCELFilter(t *testing.T) {
 		},
 	}
 
-	expiredTime := time.Now().Add(-24 * time.Hour)
-	futureTime := time.Now().Add(30 * 24 * time.Hour)
+	expiredTime := time.Now().Add(-24 * time.Hour).Unix()
+	futureTime := time.Now().Add(30 * 24 * time.Hour).Unix()
 	
 	tolerations := []types.CVEToleration{
 		{

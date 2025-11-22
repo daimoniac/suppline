@@ -98,10 +98,11 @@ export class Tolerations extends BaseComponent {
             if (aVal === null || aVal === undefined) return 1;
             if (bVal === null || bVal === undefined) return -1;
 
-            // Handle date sorting
+            // Handle date sorting (Unix timestamps in seconds)
             if (this.sortColumn === 'tolerated_at' || this.sortColumn === 'expires_at') {
-                aVal = new Date(aVal).getTime();
-                bVal = new Date(bVal).getTime();
+                // Unix timestamps are already numbers, just ensure they're treated as such
+                aVal = typeof aVal === 'number' ? aVal : (new Date(aVal).getTime() / 1000);
+                bVal = typeof bVal === 'number' ? bVal : (new Date(bVal).getTime() / 1000);
             }
 
             // Handle numeric sorting
@@ -444,10 +445,11 @@ export class ExpiringTolerations extends BaseComponent {
             if (aVal === null || aVal === undefined) return 1;
             if (bVal === null || bVal === undefined) return -1;
 
-            // Handle date sorting
+            // Handle date sorting (Unix timestamps in seconds)
             if (this.sortColumn === 'tolerated_at' || this.sortColumn === 'expires_at') {
-                aVal = new Date(aVal).getTime();
-                bVal = new Date(bVal).getTime();
+                // Unix timestamps are already numbers, just ensure they're treated as such
+                aVal = typeof aVal === 'number' ? aVal : (new Date(aVal).getTime() / 1000);
+                bVal = typeof bVal === 'number' ? bVal : (new Date(bVal).getTime() / 1000);
             }
 
             // Handle numeric sorting

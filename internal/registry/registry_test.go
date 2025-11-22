@@ -206,7 +206,7 @@ func TestListRepositoriesEmpty(t *testing.T) {
 }
 
 func TestClientWithTolerations(t *testing.T) {
-	expiresAt := time.Now().Add(30 * 24 * time.Hour)
+	expiresAt := time.Now().Add(30 * 24 * time.Hour).Unix()
 	config := &config.RegsyncConfig{
 		Version: 1,
 		Creds: []config.RegistryCredential{
