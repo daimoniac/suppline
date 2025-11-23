@@ -1,0 +1,429 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="description" content="suppline - Self-hosted image intake gateway for Kubernetes. Continuous registry mirroring with vulnerability scanning and policy enforcement.">
+    <meta name="keywords" content="Kubernetes, container security, image mirroring, vulnerability scanning, supply chain security">
+    <meta name="author" content="suppline">
+    <meta name="theme-color" content="#1e40af">
+    <meta name="robots" content="index, follow">
+    <meta property="og:title" content="suppline - Image Intake Gateway for Kubernetes">
+    <meta property="og:description" content="Self-hosted image intake gateway for Kubernetes with continuous mirroring, scanning, and attestations.">
+    <meta property="og:type" content="website">
+    <meta property="og:url" content="https://suppline.cloud/">
+    <meta name="twitter:card" content="summary_large_image">
+    <meta name="twitter:title" content="suppline - Image Intake Gateway for Kubernetes">
+    <meta name="twitter:description" content="Self-hosted image intake gateway for Kubernetes with continuous mirroring, scanning, and attestations.">
+    <title>suppline - Self-hosted Image Intake Gateway for Kubernetes</title>
+    <link rel="preload" href="css/style.css" as="style">
+    <link rel="stylesheet" href="css/style.css">
+    <link rel="icon" type="image/svg+xml" href="favicon.svg">
+    <link rel="canonical" href="https://suppline.cloud/">
+    <link rel="preconnect" href="https://github.com">
+    <link rel="dns-prefetch" href="https://github.com">
+    
+    <!-- Structured Data (JSON-LD) -->
+    <script type="application/ld+json">
+    {
+        "@context": "https://schema.org",
+        "@type": "SoftwareApplication",
+        "name": "suppline",
+        "description": "Self-hosted image intake gateway for Kubernetes with continuous registry mirroring, vulnerability scanning, policy enforcement, and Sigstore attestations.",
+        "url": "https://suppline.cloud/",
+        "applicationCategory": "DeveloperApplication",
+        "operatingSystem": "Linux, Kubernetes",
+        "offers": {
+            "@type": "Offer",
+            "price": "0",
+            "priceCurrency": "USD"
+        },
+        "author": {
+            "@type": "Organization",
+            "name": "suppline",
+            "url": "https://github.com/daimoniac"
+        },
+        "codeRepository": "https://github.com/daimoniac/suppline",
+        "license": "https://opensource.org/licenses/Apache-2.0",
+        "image": "https://suppline.cloud/suppline-icon-only.png",
+        "keywords": "Kubernetes, container security, image mirroring, vulnerability scanning, supply chain security, Sigstore, attestation",
+        "featureList": [
+            "Continuous Registry Mirroring",
+            "Vulnerability Scanning with Trivy",
+            "Policy Engine with Kyverno",
+            "Sigstore Attestations",
+            "State Persistence with SQLite",
+            "REST API",
+            "Observability and Metrics",
+            "Air-Gap Compatible"
+        ]
+    }
+    </script>
+    
+    <!-- Organization Schema -->
+    <script type="application/ld+json">
+    {
+        "@context": "https://schema.org",
+        "@type": "Organization",
+        "name": "suppline",
+        "url": "https://suppline.cloud/",
+        "logo": "https://suppline.cloud/suppline-icon-only.png",
+        "description": "Self-hosted image intake gateway for Kubernetes",
+        "sameAs": [
+            "https://github.com/daimoniac/suppline"
+        ]
+    }
+    </script>
+</head>
+<body>
+    <!-- Skip to main content link for keyboard navigation -->
+    <a href="#main-content" class="skip-link">Skip to main content</a>
+
+    <!-- Navigation Header -->
+    <header class="header" role="banner">
+        <nav class="navbar" aria-label="Main navigation">
+            <div class="navbar-container">
+                <div class="navbar-logo">
+                    <a href="#home" aria-label="suppline - Self-hosted image intake gateway for Kubernetes">suppline</a>
+                </div>
+                <button class="hamburger" id="hamburger" aria-label="Toggle navigation menu" aria-expanded="false" aria-controls="navMenu">
+                    <span aria-hidden="true"></span>
+                    <span aria-hidden="true"></span>
+                    <span aria-hidden="true"></span>
+                </button>
+                <ul class="nav-menu" id="navMenu" role="menubar">
+                    <li class="nav-item" role="none"><a href="#features" class="nav-link" role="menuitem">Features</a></li>
+                    <li class="nav-item" role="none"><a href="#benefits" class="nav-link" role="menuitem">Benefits</a></li>
+                    <li class="nav-item" role="none"><a href="#architecture" class="nav-link" role="menuitem">Architecture</a></li>
+                    <li class="nav-item" role="none"><a href="#getting-started" class="nav-link" role="menuitem">Getting Started</a></li>
+                    <li class="nav-item" role="none"><a href="https://github.com/daimoniac/suppline" class="nav-link" role="menuitem" target="_blank" rel="noopener noreferrer">GitHub <span aria-label="opens in new window">(opens in new window)</span></a></li>
+                </ul>
+            </div>
+        </nav>
+    </header>
+
+    <main id="main-content">
+        <!-- Hero Section -->
+        <section id="home" class="hero" aria-label="Hero section">
+            <div class="hero-content">
+                <h1 class="hero-title">suppline</h1>
+                <p class="hero-tagline">Self-hosted image intake gateway for Kubernetes</p>
+                <p class="hero-description">
+                    Continuous registry mirroring with vulnerability scanning, policy enforcement, and Sigstore attestations.
+                    Secure your supply chain with air-gap compatible deployments.
+                </p>
+                <div class="hero-ctas" role="group" aria-label="Call to action buttons">
+                    <a href="#getting-started" class="cta-button cta-primary">Get Started</a>
+                    <a href="https://github.com/daimoniac/suppline" class="cta-button cta-secondary" target="_blank" rel="noopener noreferrer">View Documentation <span aria-label="opens in new window">(opens in new window)</span></a>
+                </div>
+            </div>
+        </section>
+
+        <!-- Features Section -->
+        <section id="features" class="features" aria-label="Core features">
+            <div class="container">
+                <h2>Core Features</h2>
+                <div class="features-grid" role="list">
+                    <article class="feature-card" role="listitem">
+                        <div class="feature-icon" aria-hidden="true">
+                            <img src="images/icons/mirroring.svg" alt="">
+                        </div>
+                        <h3>Continuous Registry Mirroring</h3>
+                        <p>Automatically mirror container images from remote registries to your local registry with configurable policies.</p>
+                    </article>
+
+                    <article class="feature-card" role="listitem">
+                        <div class="feature-icon" aria-hidden="true">
+                            <img src="images/icons/scanning.svg" alt="">
+                        </div>
+                        <h3>Vulnerability Scanning</h3>
+                        <p>Integrated Trivy scanning to detect vulnerabilities in mirrored images before they reach your cluster.</p>
+                    </article>
+
+                    <article class="feature-card" role="listitem">
+                        <div class="feature-icon" aria-hidden="true">
+                            <img src="images/icons/policy.svg" alt="">
+                        </div>
+                        <h3>Policy Engine</h3>
+                        <p>Define and enforce policies using Kyverno to control which images can be deployed in your Kubernetes cluster.</p>
+                    </article>
+
+                    <article class="feature-card" role="listitem">
+                        <div class="feature-icon" aria-hidden="true">
+                            <img src="images/icons/attestation.svg" alt="">
+                        </div>
+                        <h3>Sigstore Attestations</h3>
+                        <p>Generate and verify Sigstore attestations for supply chain security and compliance requirements.</p>
+                    </article>
+
+                    <article class="feature-card" role="listitem">
+                        <div class="feature-icon" aria-hidden="true">
+                            <img src="images/icons/persistence.svg" alt="">
+                        </div>
+                        <h3>State Persistence</h3>
+                        <p>SQLite-based state store to track mirrored images, scan results, and policy decisions across restarts.</p>
+                    </article>
+
+                    <article class="feature-card" role="listitem">
+                        <div class="feature-icon" aria-hidden="true">
+                            <img src="images/icons/api.svg" alt="">
+                        </div>
+                        <h3>REST API</h3>
+                        <p>Comprehensive REST API for querying scan results, managing policies, and integrating with external systems.</p>
+                    </article>
+
+                    <article class="feature-card" role="listitem">
+                        <div class="feature-icon" aria-hidden="true">
+                            <img src="images/icons/observability.svg" alt="">
+                        </div>
+                        <h3>Observability</h3>
+                        <p>Built-in metrics, structured logging, and health checks for monitoring and troubleshooting deployments.</p>
+                    </article>
+
+                    <article class="feature-card" role="listitem">
+                        <div class="feature-icon" aria-hidden="true">
+                            <img src="images/icons/airgap.svg" alt="">
+                        </div>
+                        <h3>Air-Gap Compatible</h3>
+                        <p>Deploy suppline in air-gapped environments with pre-downloaded images and offline policy configurations.</p>
+                    </article>
+                </div>
+            </div>
+        </section>
+
+        <!-- Benefits Section -->
+        <section id="benefits" class="benefits" aria-label="Benefits of image mirroring">
+            <div class="container">
+                <h2>Why Mirror Images?</h2>
+                <div class="benefits-grid" role="list">
+                    <div class="benefit-item" role="listitem">
+                        <h3>Increased Availability</h3>
+                        <p>Reduce dependency on external registries and ensure images are always available for your deployments.</p>
+                    </div>
+                    <div class="benefit-item" role="listitem">
+                        <h3>Decreased Vendor Dependency</h3>
+                        <p>Mitigate risks from registry outages, rate limiting, or vendor policy changes.</p>
+                    </div>
+                    <div class="benefit-item" role="listitem">
+                        <h3>Improved Supply Chain Security</h3>
+                        <p>Scan and validate images before they enter your cluster with comprehensive vulnerability detection.</p>
+                    </div>
+                    <div class="benefit-item" role="listitem">
+                        <h3>Air-Gap Deployments</h3>
+                        <p>Support disconnected environments with pre-mirrored images and offline policy enforcement.</p>
+                    </div>
+                    <div class="benefit-item" role="listitem">
+                        <h3>Compliance & Audit</h3>
+                        <p>Maintain audit trails of all mirrored images, scan results, and policy decisions for compliance requirements.</p>
+                    </div>
+                    <div class="benefit-item" role="listitem">
+                        <h3>Cost Optimization</h3>
+                        <p>Reduce bandwidth costs and registry API calls by caching images locally.</p>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- Screenshots Section -->
+        <section id="screenshots" class="screenshots" aria-label="Dashboard preview gallery">
+            <div class="container">
+                <h2>Dashboard Preview</h2>
+                <div class="gallery" role="region" aria-label="Image gallery">
+                    <div class="gallery-column">
+                        <figure class="gallery-item" data-index="0">
+                            <img 
+                                data-src="suppline-Dashboard-11-23-2025_06_13_PM.png" 
+                                src="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 400 300'%3E%3Crect fill='%23f3f4f6' width='400' height='300'/%3E%3C/svg%3E"
+                                alt="suppline Dashboard - Overview showing repositories and scan status"
+                                class="gallery-image"
+                                role="button"
+                                tabindex="0"
+                                aria-label="Dashboard Overview - click to view full size">
+                            <figcaption>Dashboard Overview</figcaption>
+                        </figure>
+                        <figure class="gallery-item" data-index="1">
+                            <img 
+                                data-src="suppline-Dashboard-11-23-2025_06_15_PM.png" 
+                                src="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 400 300'%3E%3Crect fill='%23f3f4f6' width='400' height='300'/%3E%3C/svg%3E"
+                                alt="suppline Dashboard - Detailed scan results and vulnerability information"
+                                class="gallery-image"
+                                role="button"
+                                tabindex="0"
+                                aria-label="Scan Results - click to view full size">
+                            <figcaption>Scan Results</figcaption>
+                        </figure>
+                    </div>
+                    <figure class="gallery-item gallery-item-tall" data-index="2">
+                        <img 
+                            data-src="suppline-Dashboard-11-23-2025_06_20_PM.png" 
+                            src="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 400 300'%3E%3Crect fill='%23f3f4f6' width='400' height='300'/%3E%3C/svg%3E"
+                            alt="suppline Dashboard - Policy configuration and enforcement settings"
+                            class="gallery-image"
+                            role="button"
+                            tabindex="0"
+                            aria-label="Policy Configuration - click to view full size">
+                        <figcaption>Policy Configuration</figcaption>
+                    </figure>
+                </div>
+            </div>
+        </section>
+
+        <!-- Lightbox Modal -->
+        <div id="lightbox" class="lightbox" role="dialog" aria-label="Image viewer" aria-hidden="true" aria-modal="true">
+            <div class="lightbox-content">
+                <button class="lightbox-close" aria-label="Close image viewer">&times;</button>
+                <button class="lightbox-prev" aria-label="Previous image">&#10094;</button>
+                <img id="lightbox-image" src="" alt="" class="lightbox-image">
+                <button class="lightbox-next" aria-label="Next image">&#10095;</button>
+                <div class="lightbox-caption" id="lightbox-caption" aria-live="polite"></div>
+                <div class="lightbox-counter" id="lightbox-counter" aria-live="polite"></div>
+            </div>
+        </div>
+
+        <!-- Architecture Section -->
+        <section id="architecture" class="architecture" aria-label="System architecture">
+            <div class="container">
+                <h2>Architecture</h2>
+                <div class="architecture-content">
+                    <pre class="architecture-diagram" role="img" aria-label="suppline pipeline architecture diagram showing flow from remote registries through mirroring, scanning, policy engine, and attestation to local registry"><code>
+┌─────────────────────────────────────────────────────────────┐
+│                    Remote Registries                         │
+│  (Docker Hub, Quay, ECR, GCR, Private Registries, etc.)    │
+└────────────────────────┬────────────────────────────────────┘
+                         │
+                         ▼
+┌─────────────────────────────────────────────────────────────┐
+│                   suppline Mirroring                         │
+│  ┌──────────────┐  ┌──────────────┐  ┌──────────────┐      │
+│  │   Watcher    │→ │    Queue     │→ │   Worker     │      │
+│  └──────────────┘  └──────────────┘  └──────────────┘      │
+└────────────────────────┬────────────────────────────────────┘
+                         │
+                         ▼
+┌─────────────────────────────────────────────────────────────┐
+│                   Local Registry                             │
+│              (Docker Registry, Harbor, etc.)                │
+└────────────────────────┬────────────────────────────────────┘
+                         │
+        ┌────────────────┼────────────────┐
+        ▼                ▼                ▼
+┌──────────────┐ ┌──────────────┐ ┌──────────────┐
+│   Scanner    │ │ Policy Engine│ │  Attestor    │
+│   (Trivy)    │ │  (Kyverno)   │ │  (Sigstore)  │
+└──────────────┘ └──────────────┘ └──────────────┘
+        │                │                │
+        └────────────────┼────────────────┘
+                         ▼
+                  ┌──────────────┐
+                  │ State Store  │
+                  │   (SQLite)   │
+                  └──────────────┘
+                         │
+                         ▼
+                  ┌──────────────┐
+                  │  REST API    │
+                  │  Dashboard   │
+                  └──────────────┘
+                    </code></pre>
+                    <div class="architecture-description">
+                        <h3>Pipeline Components</h3>
+                        <ul role="list">
+                            <li role="listitem"><strong>Watcher:</strong> Monitors configured registries for new or updated images</li>
+                            <li role="listitem"><strong>Queue:</strong> Manages work items for processing</li>
+                            <li role="listitem"><strong>Worker:</strong> Pulls images from remote registries and pushes to local registry</li>
+                            <li role="listitem"><strong>Scanner:</strong> Scans images for vulnerabilities using Trivy</li>
+                            <li role="listitem"><strong>Policy Engine:</strong> Enforces policies using Kyverno</li>
+                            <li role="listitem"><strong>Attestor:</strong> Generates Sigstore attestations for supply chain security</li>
+                            <li role="listitem"><strong>State Store:</strong> Persists scan results and policy decisions</li>
+                            <li role="listitem"><strong>REST API:</strong> Provides access to scan results and system status</li>
+                        </ul>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- Getting Started Section -->
+        <section id="getting-started" class="getting-started" aria-label="Getting started guide">
+            <div class="container">
+                <h2>Getting Started</h2>
+                <div class="getting-started-content">
+                    <ol class="steps" role="list">
+                        <li role="listitem">
+                            <h3>Configure suppline</h3>
+                            <p>Create a configuration file specifying your registries and policies:</p>
+                            <pre><code>creds:
+  - registry: docker.io
+    user: '{{ env "DOCKER_USERNAME" }}'
+    pass: '{{ env "DOCKER_PASSWORD" }}'
+sync:
+  - source: nginx
+    target: myprivateregistry/nginx
+    type: repository
+</code></pre>
+                        </li>
+                        <li role="listitem">
+                            <h3>Generate Keys</h3>
+                            <p>Generate Sigstore keys for attestations and encode the key for config:</p>
+                            <pre><code>cosign generate-key-pair
+cat cosign.key | base64 -w0</code></pre>
+                        </li>
+                        <li role="listitem">
+                            <h3>Setup Environment</h3>
+                            <p>copy the environment template and edit</p>
+                            <pre><code>cp env.template .env 
+vim .env</code></pre>
+                        </li>
+                        <li role="listitem">
+                            <h3>Start suppline</h3>
+                            <p>Deploy using Docker or Kubernetes:</p>
+                            <pre><code>docker compose up</code></pre>
+                        </li>
+                        <li role="listitem">
+                            <h3>Verify</h3>
+                            <p>Access the dashboard and verify images are being mirrored and scanned.</p>
+                            <pre><code>http://localhost:3000</code></pre>
+                        </li>
+                    </ol>
+                    <div class="getting-started-cta">
+                        <p>For detailed documentation and advanced configuration, visit the GitHub repository:</p>
+                        <a href="https://github.com/daimoniac/suppline" class="cta-button cta-primary" target="_blank" rel="noopener noreferrer">View Full Documentation <span aria-label="opens in new window">(opens in new window)</span></a>
+                    </div>
+                </div>
+            </div>
+        </section>
+    </main>
+
+    <!-- Footer -->
+    <footer class="footer" role="contentinfo">
+        <div class="container">
+            <div class="footer-content">
+                <div class="footer-section">
+                    <h4>suppline</h4>
+                    <p>Self-hosted image intake gateway for Kubernetes</p>
+                </div>
+                <div class="footer-section">
+                    <h4>Resources</h4>
+                    <ul role="list">
+                        <li role="listitem"><a href="https://github.com/daimoniac/suppline" target="_blank" rel="noopener noreferrer">GitHub Repository <span aria-label="opens in new window">(opens in new window)</span></a></li>
+                        <li role="listitem"><a href="https://github.com/daimoniac/suppline/issues" target="_blank" rel="noopener noreferrer">Issue Tracker <span aria-label="opens in new window">(opens in new window)</span></a></li>
+                        <li role="listitem"><a href="https://github.com/daimoniac/suppline/discussions" target="_blank" rel="noopener noreferrer">Discussions <span aria-label="opens in new window">(opens in new window)</span></a></li>
+                    </ul>
+                </div>
+                <div class="footer-section">
+                    <h4>Documentation</h4>
+                    <ul role="list">
+                        <li role="listitem"><a href="https://github.com/daimoniac/suppline#readme" target="_blank" rel="noopener noreferrer">README <span aria-label="opens in new window">(opens in new window)</span></a></li>
+                        <li role="listitem"><a href="https://github.com/daimoniac/suppline/blob/main/docs/CONFIGURATION.md" target="_blank" rel="noopener noreferrer">Configuration Guide <span aria-label="opens in new window">(opens in new window)</span></a></li>
+                        <li role="listitem"><a href="https://github.com/daimoniac/suppline/blob/main/docs/POLICY.md" target="_blank" rel="noopener noreferrer">Policy Guide <span aria-label="opens in new window">(opens in new window)</span></a></li>
+                    </ul>
+                </div>
+            </div>
+            <div class="footer-bottom">
+                <p>&copy; 2025 suppline. Licensed under Apache License 2.0.</p>
+            </div>
+        </div>
+    </footer>
+
+    <script src="js/main.js" defer></script>
+</body>
+</html>

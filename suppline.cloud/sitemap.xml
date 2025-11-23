@@ -1,0 +1,26 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9"
+        xmlns:image="http://www.google.com/schemas/sitemap-image/1.1">
+    <url>
+        <loc>https://suppline.cloud/</loc>
+        <lastmod>2025-11-23</lastmod>
+        <changefreq>weekly</changefreq>
+        <priority>1.0</priority>
+        <image:image>
+            <image:loc>https://suppline.cloud/suppline-icon-only.png</image:loc>
+            <image:title>suppline Logo</image:title>
+        </image:image>
+        <image:image>
+            <image:loc>https://suppline.cloud/suppline-Dashboard-11-23-2025_06_13_PM.png</image:loc>
+            <image:title>suppline Dashboard Overview</image:title>
+        </image:image>
+        <image:image>
+            <image:loc>https://suppline.cloud/suppline-Dashboard-11-23-2025_06_15_PM.png</image:loc>
+            <image:title>suppline Scan Results</image:title>
+        </image:image>
+        <image:image>
+            <image:loc>https://suppline.cloud/suppline-Dashboard-11-23-2025_06_20_PM.png</image:loc>
+            <image:title>suppline Policy Configuration</image:title>
+        </image:image>
+    </url>
+</urlset>

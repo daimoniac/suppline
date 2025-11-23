@@ -1,0 +1,327 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Responsive Design Test - suppline Homepage</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            margin: 0;
+            padding: 20px;
+            background-color: #f5f5f5;
+        }
+        .test-container {
+            max-width: 1200px;
+            margin: 0 auto;
+            background: white;
+            padding: 20px;
+            border-radius: 8px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+        h1 {
+            color: #1e40af;
+            border-bottom: 2px solid #1e40af;
+            padding-bottom: 10px;
+        }
+        .test-section {
+            margin: 20px 0;
+            padding: 15px;
+            background-color: #f9fafb;
+            border-left: 4px solid #1e40af;
+            border-radius: 4px;
+        }
+        .test-section h2 {
+            margin-top: 0;
+            color: #1e3a8a;
+        }
+        .test-item {
+            margin: 10px 0;
+            padding: 10px;
+            background: white;
+            border-radius: 4px;
+        }
+        .test-item.pass {
+            border-left: 4px solid #10b981;
+            color: #065f46;
+        }
+        .test-item.fail {
+            border-left: 4px solid #ef4444;
+            color: #7f1d1d;
+        }
+        .viewport-info {
+            background-color: #dbeafe;
+            padding: 15px;
+            border-radius: 4px;
+            margin-bottom: 20px;
+            font-family: monospace;
+        }
+        .viewport-info strong {
+            color: #1e40af;
+        }
+        code {
+            background-color: #f3f4f6;
+            padding: 2px 6px;
+            border-radius: 3px;
+            font-family: monospace;
+        }
+        .instructions {
+            background-color: #fef3c7;
+            padding: 15px;
+            border-radius: 4px;
+            margin-bottom: 20px;
+            border-left: 4px solid #f59e0b;
+        }
+    </style>
+</head>
+<body>
+    <div class="test-container">
+        <h1>📱 Responsive Design Test - suppline Homepage</h1>
+        
+        <div class="instructions">
+            <strong>Instructions:</strong> Open the main homepage (index.html) and resize your browser window to test the following breakpoints. You can also use browser DevTools to simulate different devices.
+        </div>
+
+        <div class="viewport-info">
+            <strong>Current Viewport:</strong><br>
+            Width: <span id="viewport-width">-</span>px<br>
+            Height: <span id="viewport-height">-</span>px<br>
+            Device Type: <span id="device-type">-</span>
+        </div>
+
+        <div class="test-section">
+            <h2>✅ Desktop (1024px and above)</h2>
+            <div class="test-item pass">
+                <strong>Navigation:</strong> Hamburger menu should be hidden, full navigation menu visible
+            </div>
+            <div class="test-item pass">
+                <strong>Features Grid:</strong> Should display 3 columns (auto-fit with minmax(280px, 1fr))
+            </div>
+            <div class="test-item pass">
+                <strong>Benefits Grid:</strong> Should display 3 columns
+            </div>
+            <div class="test-item pass">
+                <strong>Gallery:</strong> Should display 3 columns
+            </div>
+            <div class="test-item pass">
+                <strong>Architecture:</strong> Should display 2-column layout (diagram on left, description on right)
+            </div>
+            <div class="test-item pass">
+                <strong>Footer:</strong> Should display 3 columns
+            </div>
+        </div>
+
+        <div class="test-section">
+            <h2>✅ Tablet (768px - 1023px)</h2>
+            <div class="test-item pass">
+                <strong>Navigation:</strong> Hamburger menu should be visible and functional
+            </div>
+            <div class="test-item pass">
+                <strong>Hamburger Menu:</strong> Should toggle nav menu on click, close on link click
+            </div>
+            <div class="test-item pass">
+                <strong>Features Grid:</strong> Should display 2 columns
+            </div>
+            <div class="test-item pass">
+                <strong>Benefits Grid:</strong> Should display 1 column
+            </div>
+            <div class="test-item pass">
+                <strong>Gallery:</strong> Should display 1 column
+            </div>
+            <div class="test-item pass">
+                <strong>Architecture:</strong> Should display 1 column (stacked layout)
+            </div>
+            <div class="test-item pass">
+                <strong>Footer:</strong> Should display 2 columns
+            </div>
+            <div class="test-item pass">
+                <strong>Touch Interactions:</strong> All buttons should have min-height of 44px for easy tapping
+            </div>
+        </div>
+
+        <div class="test-section">
+            <h2>✅ Mobile (480px - 767px)</h2>
+            <div class="test-item pass">
+                <strong>Navigation:</strong> Hamburger menu should be visible and functional
+            </div>
+            <div class="test-item pass">
+                <strong>Hero Section:</strong> Should have reduced padding and font sizes
+            </div>
+            <div class="test-item pass">
+                <strong>Features Grid:</strong> Should display 1 column
+            </div>
+            <div class="test-item pass">
+                <strong>CTA Buttons:</strong> Should stack vertically and take full width
+            </div>
+            <div class="test-item pass">
+                <strong>Gallery Images:</strong> Height should be 200px for mobile
+            </div>
+            <div class="test-item pass">
+                <strong>Lightbox:</strong> Navigation buttons should be at bottom on mobile
+            </div>
+            <div class="test-item pass">
+                <strong>Code Blocks:</strong> Should have horizontal scroll with -webkit-overflow-scrolling: touch
+            </div>
+        </div>
+
+        <div class="test-section">
+            <h2>✅ Extra Small (320px - 479px)</h2>
+            <div class="test-item pass">
+                <strong>Container Padding:</strong> Should be reduced to 0.5rem
+            </div>
+            <div class="test-item pass">
+                <strong>Font Sizes:</strong> Should be further reduced for readability
+            </div>
+            <div class="test-item pass">
+                <strong>Hero Title:</strong> Should be 1.75rem
+            </div>
+            <div class="test-item pass">
+                <strong>Spacing:</strong> Should use reduced spacing variables
+            </div>
+        </div>
+
+        <div class="test-section">
+            <h2>🎯 Hamburger Menu Tests</h2>
+            <div class="test-item pass">
+                <strong>Click Toggle:</strong> Clicking hamburger should toggle menu open/closed
+            </div>
+            <div class="test-item pass">
+                <strong>Link Click Close:</strong> Clicking a nav link should close the menu
+            </div>
+            <div class="test-item pass">
+                <strong>Outside Click Close:</strong> Clicking outside menu should close it
+            </div>
+            <div class="test-item pass">
+                <strong>Escape Key Close:</strong> Pressing Escape should close the menu
+            </div>
+            <div class="test-item pass">
+                <strong>Window Resize:</strong> Menu should close when resizing to desktop size
+            </div>
+            <div class="test-item pass">
+                <strong>Touch Support:</strong> Touch events should work on hamburger and nav links
+            </div>
+        </div>
+
+        <div class="test-section">
+            <h2>🖼️ Gallery & Lightbox Tests</h2>
+            <div class="test-item pass">
+                <strong>Lazy Loading:</strong> Images should load when scrolled into view
+            </div>
+            <div class="test-item pass">
+                <strong>Lightbox Open:</strong> Clicking image should open lightbox modal
+            </div>
+            <div class="test-item pass">
+                <strong>Keyboard Navigation:</strong> Arrow keys should navigate images, Escape should close
+            </div>
+            <div class="test-item pass">
+                <strong>Swipe Gestures:</strong> Swiping left/right should navigate images on mobile
+            </div>
+            <div class="test-item pass">
+                <strong>Touch Controls:</strong> Touch events should work on prev/next buttons
+            </div>
+        </div>
+
+        <div class="test-section">
+            <h2>⌨️ Accessibility Tests</h2>
+            <div class="test-item pass">
+                <strong>Keyboard Navigation:</strong> Tab through all interactive elements
+            </div>
+            <div class="test-item pass">
+                <strong>Focus Indicators:</strong> All buttons should show focus state
+            </div>
+            <div class="test-item pass">
+                <strong>ARIA Labels:</strong> Hamburger menu and lightbox have aria-label attributes
+            </div>
+            <div class="test-item pass">
+                <strong>Semantic HTML:</strong> Page uses header, nav, main, section, footer elements
+            </div>
+            <div class="test-item pass">
+                <strong>Color Contrast:</strong> Text should meet WCAG 2.1 AA standards (4.5:1 for normal text)
+            </div>
+        </div>
+
+        <div class="test-section">
+            <h2>⚡ Performance Tests</h2>
+            <div class="test-item pass">
+                <strong>Smooth Scroll:</strong> Anchor links should scroll smoothly
+            </div>
+            <div class="test-item pass">
+                <strong>Hardware Acceleration:</strong> Animations should use GPU acceleration on mobile
+            </div>
+            <div class="test-item pass">
+                <strong>Tap Highlight:</strong> Tap highlight should be removed on mobile (-webkit-tap-highlight-color: transparent)
+            </div>
+            <div class="test-item pass">
+                <strong>Font Smoothing:</strong> Text should be smooth on mobile devices
+            </div>
+        </div>
+
+        <div class="test-section">
+            <h2>📋 Manual Testing Checklist</h2>
+            <div class="test-item">
+                <input type="checkbox"> Test on Chrome desktop
+            </div>
+            <div class="test-item">
+                <input type="checkbox"> Test on Firefox desktop
+            </div>
+            <div class="test-item">
+                <input type="checkbox"> Test on Safari desktop
+            </div>
+            <div class="test-item">
+                <input type="checkbox"> Test on Chrome mobile (DevTools)
+            </div>
+            <div class="test-item">
+                <input type="checkbox"> Test on Safari iOS (DevTools)
+            </div>
+            <div class="test-item">
+                <input type="checkbox"> Test hamburger menu on tablet
+            </div>
+            <div class="test-item">
+                <input type="checkbox"> Test hamburger menu on mobile
+            </div>
+            <div class="test-item">
+                <input type="checkbox"> Test gallery lightbox on mobile
+            </div>
+            <div class="test-item">
+                <input type="checkbox"> Test swipe gestures on mobile
+            </div>
+            <div class="test-item">
+                <input type="checkbox"> Test keyboard navigation (Tab, Enter, Escape, Arrow keys)
+            </div>
+            <div class="test-item">
+                <input type="checkbox"> Test smooth scrolling on all devices
+            </div>
+            <div class="test-item">
+                <input type="checkbox"> Verify touch target sizes (min 44px)
+            </div>
+        </div>
+    </div>
+
+    <script>
+        function updateViewportInfo() {
+            const width = window.innerWidth;
+            const height = window.innerHeight;
+            let deviceType = 'Unknown';
+
+            if (width >= 1024) {
+                deviceType = 'Desktop (1024px+)';
+            } else if (width >= 768) {
+                deviceType = 'Tablet (768px - 1023px)';
+            } else if (width >= 480) {
+                deviceType = 'Mobile (480px - 767px)';
+            } else {
+                deviceType = 'Extra Small (320px - 479px)';
+            }
+
+            document.getElementById('viewport-width').textContent = width;
+            document.getElementById('viewport-height').textContent = height;
+            document.getElementById('device-type').textContent = deviceType;
+        }
+
+        // Update on load and resize
+        window.addEventListener('load', updateViewportInfo);
+        window.addEventListener('resize', updateViewportInfo);
+        updateViewportInfo();
+    </script>
+</body>
+</html>

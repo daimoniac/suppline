@@ -1,0 +1,22 @@
+# robots.txt for suppline.cloud
+# Allow all search engines to crawl the site
+
+User-agent: *
+Allow: /
+Disallow: /test-responsive.html
+
+# Specific rules for common search engines
+User-agent: Googlebot
+Allow: /
+
+User-agent: Bingbot
+Allow: /
+
+User-agent: Slurp
+Allow: /
+
+# Crawl delay (optional - adjust based on server capacity)
+Crawl-delay: 1
+
+# Sitemap location
+Sitemap: https://suppline.cloud/sitemap.xml
