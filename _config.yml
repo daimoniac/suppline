@@ -1,0 +1,42 @@
+title: suppline
+description: Self-hosted image intake gateway for Kubernetes
+theme: jekyll-theme-minimal
+logo: docs/suppline-fullsize.png
+show_downloads: true
+github:
+  repository_url: https://github.com/daimoniac/suppline
+  is_project_page: true
+  is_user_page: false
+
+# Build settings
+markdown: kramdown
+plugins:
+  - jekyll-seo-tag
+  - jekyll-sitemap
+
+# Exclude from processing
+exclude:
+  - .git
+  - .github
+  - .gitignore
+  - .dockerignore
+  - Dockerfile
+  - docker-compose.yml
+  - Makefile
+  - go.mod
+  - go.sum
+  - coverage.txt
+  - keys
+  - build
+  - test
+  - cmd
+  - internal
+  - ui
+  - charts
+  - data
+  - .kiro
+  - .vscode
+  - env.example
+  - suppline.yml
+  - suppline.yml.example
+  - helm-deploy.sh
