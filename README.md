@@ -4,22 +4,23 @@
 
 
 *“Self-hosted image intake gateway for Kubernetes.”*
+
+
 Continuously mirrors remote registries, scans, policy-gates, and attests images before they reach your cluster.
 
 suppline mirrors images from public registries into your local registry, continuously scans them with Trivy, evaluates CEL-based security policies, and publishes Sigstore attestations. Clusters then pull only from the local mirror and can enforce “verified-only” deployments via Kyverno/OPA.
 
 Mirror → Scan → Gate → Attest → Run.
-One binary, one service, no SaaS dependency — air-gap compatible by design. Increased availability, decreased vendor dependency, improved supply chain security. 
+cloud native, one service, no SaaS dependency — air-gap compatible by design. Increase availability, decrease vendor dependency, improve supply chain security, all in one go. 
 
 ## Overview
 
-suppline automates the complete container supply chain workflow:
+suppline automates the complete container supply chain workflow for third party images:
 
 1. **Mirror** - Continuously syncs images from remote registries to your local registry using regsync
-2. **Watch** - Monitors for new/updated images in your local mirror
-3. **Scan** - Runs Trivy to identify vulnerabilities and generate SBOMs
-4. **Evaluate** - Applies CEL-based policies with CVE toleration support
-5. **Attest** - Creates signed attestations (SBOM, vulnerabilities, SCAI) via Sigstore
+2. **Scan** - Runs Trivy to identify vulnerabilities and generate SBOMs
+3. **Evaluate** - Applies CEL-based policies with CVE toleration support per repository
+4. **Attest** - Creates signed attestations (SBOM, vulnerabilities, SCAI) via Sigstore
 
 Runs as a single Go binary with built-in state persistence, REST API, and observability. Clusters pull only from your local mirror — no external registry dependencies. Integrates with Kyverno/OPA policies to enforce only scanned, compliant images in your cluster.
 
@@ -234,6 +235,8 @@ See [Policy Guide](docs/POLICY.md) for more examples and CEL reference.
 
 ## API
 
+The API is mainly used for the UI. For details, see the swagger documentation included in the binary at http://localhost:8080/swagger.
+
 ### Query Endpoints
 
 ```bash
@@ -308,7 +311,8 @@ helm install --upgrade -f charts/suppline/values.yaml -f charts/suppline/values-
 make build
 trivy server --listen localhost:4954 &
 export SUPPLINE_CONFIG=suppline.yml
-export ATTESTATION_KEY_PATH=keys/cosign.key
+export ATTESTATION_KEY=<base64-encoded cosign private key>
+export ATTESTATION_KEY_PASSWORD=<cosign password>
 ./suppline
 ```
 
@@ -378,12 +382,14 @@ Returns status of: config, queue, worker, trivy, database, watcher
 ## Troubleshooting
 
 **Trivy connection failed**
+
 ```bash
 curl http://localhost:4954/healthz
 docker compose logs trivy
 ```
 
 **Authentication errors**
+
 ```bash
 # Verify credentials in suppline.yml
 cosign login docker.io -u [username] -p [password]
@@ -437,6 +443,7 @@ The following checks were performed on each of these signatures:
 You can also check the attestations of type `cyclonedx` and `vuln` that suppline also generates for each digest.
 
 **Database locked**
+
 SQLite has limited concurrent write support
 Use PostgreSQL for high-throughput or multiple instances
 
