@@ -1,0 +1,103 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 900 1000" class="architecture-diagram-svg">
+  <defs>
+    <style>
+      .box { fill: #f0f9ff; stroke: #1e40af; stroke-width: 2.5; }
+      .box-large { fill: #f0f9ff; stroke: #1e40af; stroke-width: 2.5; }
+      .box-title { font-weight: 600; font-size: 18px; fill: #1e40af; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; }
+      .box-title-small { font-weight: 600; font-size: 15px; fill: #1e40af; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; }
+      .box-text { font-size: 13px; fill: #4b5563; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; }
+      .box-text-small { font-size: 12px; fill: #6b7280; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; }
+      .arrow { stroke: #1e40af; stroke-width: 2.5; fill: none; marker-end: url(#arrowhead); }
+      .section-label { font-size: 14px; fill: #1f2937; font-weight: 600; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; }
+      .legend-text { font-size: 13px; fill: #4b5563; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; }
+    </style>
+    <marker id="arrowhead" markerWidth="10" markerHeight="10" refX="9" refY="3" orient="auto">
+      <polygon points="0 0, 10 3, 0 6" fill="#1e40af" />
+    </marker>
+  </defs>
+
+  <!-- Remote Registries -->
+  <rect x="60" y="30" width="780" height="100" class="box-large" rx="10"/>
+  <text x="450" y="65" text-anchor="middle" class="box-title">Remote Registries</text>
+  <text x="450" y="90" text-anchor="middle" class="box-text">(Docker Hub, Quay, ECR, GCR, Private Registries, etc.)</text>
+
+  <!-- Arrow down -->
+  <path d="M 450 130 L 450 170" class="arrow"/>
+
+  <!-- suppline Mirroring Section -->
+  <rect x="60" y="170" width="780" height="140" class="box-large" rx="10"/>
+  <text x="450" y="200" text-anchor="middle" class="box-title">suppline Mirroring</text>
+  
+  <!-- Watcher box -->
+  <rect x="100" y="220" width="160" height="70" class="box" rx="8"/>
+  <text x="180" y="250" text-anchor="middle" class="box-title-small">Watcher</text>
+  
+  <!-- Arrow right -->
+  <path d="M 260 255 L 310 255" class="arrow"/>
+  
+  <!-- Queue box -->
+  <rect x="310" y="220" width="160" height="70" class="box" rx="8"/>
+  <text x="390" y="250" text-anchor="middle" class="box-title-small">Queue</text>
+  
+  <!-- Arrow right -->
+  <path d="M 470 255 L 520 255" class="arrow"/>
+  
+  <!-- Worker box -->
+  <rect x="520" y="220" width="160" height="70" class="box" rx="8"/>
+  <text x="600" y="250" text-anchor="middle" class="box-title-small">Worker</text>
+
+  <!-- Arrow down -->
+  <path d="M 450 310 L 450 350" class="arrow"/>
+
+  <!-- Local Registry -->
+  <rect x="60" y="350" width="780" height="100" class="box-large" rx="10"/>
+  <text x="450" y="385" text-anchor="middle" class="box-title">Local Registry</text>
+  <text x="450" y="410" text-anchor="middle" class="box-text">(Docker Registry, Harbor, etc.)</text>
+
+  <!-- Arrow down -->
+  <path d="M 450 450 L 450 490" class="arrow"/>
+
+  <!-- Processing Components -->
+  <!-- Scanner -->
+  <rect x="100" y="490" width="170" height="100" class="box" rx="8"/>
+  <text x="185" y="525" text-anchor="middle" class="box-title-small">Scanner</text>
+  <text x="185" y="550" text-anchor="middle" class="box-text-small">(Trivy)</text>
+
+  <!-- Policy Engine -->
+  <rect x="365" y="490" width="170" height="100" class="box" rx="8"/>
+  <text x="450" y="525" text-anchor="middle" class="box-title-small">Policy Engine</text>
+  <text x="450" y="550" text-anchor="middle" class="box-text-small">(Kyverno)</text>
+
+  <!-- Attestor -->
+  <rect x="630" y="490" width="170" height="100" class="box" rx="8"/>
+  <text x="715" y="525" text-anchor="middle" class="box-title-small">Attestor</text>
+  <text x="715" y="550" text-anchor="middle" class="box-text-small">(Sigstore)</text>
+
+  <!-- Arrows from Local Registry to components -->
+  <path d="M 320 450 L 185 490" class="arrow"/>
+  <path d="M 450 450 L 450 490" class="arrow"/>
+  <path d="M 580 450 L 715 490" class="arrow"/>
+
+  <!-- Arrows from components to State Store -->
+  <path d="M 185 590 L 350 650" class="arrow"/>
+  <path d="M 450 590 L 450 650" class="arrow"/>
+  <path d="M 715 590 L 550 650" class="arrow"/>
+
+  <!-- State Store -->
+  <rect x="310" y="650" width="280" height="100" class="box-large" rx="10"/>
+  <text x="450" y="685" text-anchor="middle" class="box-title">State Store</text>
+  <text x="450" y="710" text-anchor="middle" class="box-text">(SQLite)</text>
+
+  <!-- Arrow down -->
+  <path d="M 450 750 L 450 790" class="arrow"/>
+
+  <!-- REST API & Dashboard -->
+  <rect x="310" y="790" width="280" height="100" class="box-large" rx="10"/>
+  <text x="450" y="825" text-anchor="middle" class="box-title">REST API</text>
+  <text x="450" y="850" text-anchor="middle" class="box-text">Dashboard</text>
+
+  <!-- Legend -->
+  <text x="60" y="930" class="section-label">Pipeline Components:</text>
+  <text x="60" y="960" class="legend-text">• Watcher: Monitors configured registries for new or updated images</text>
+  <text x="60" y="985" class="legend-text">• Queue: Manages work items for processing  •  Worker: Pulls images from remote registries and pushes to local registry</text>
+</svg>
