@@ -288,46 +288,7 @@
             <div class="container">
                 <h2>Architecture</h2>
                 <div class="architecture-content">
-                    <pre class="architecture-diagram" role="img" aria-label="suppline pipeline architecture diagram showing flow from remote registries through mirroring, scanning, policy engine, and attestation to local registry"><code>
-┌─────────────────────────────────────────────────────────────┐
-│                    Remote Registries                         │
-│  (Docker Hub, Quay, ECR, GCR, Private Registries, etc.)    │
-└────────────────────────┬────────────────────────────────────┘
-                         │
-                         ▼
-┌─────────────────────────────────────────────────────────────┐
-│                   suppline Mirroring                         │
-│  ┌──────────────┐  ┌──────────────┐  ┌──────────────┐      │
-│  │   Watcher    │→ │    Queue     │→ │   Worker     │      │
-│  └──────────────┘  └──────────────┘  └──────────────┘      │
-└────────────────────────┬────────────────────────────────────┘
-                         │
-                         ▼
-┌─────────────────────────────────────────────────────────────┐
-│                   Local Registry                             │
-│              (Docker Registry, Harbor, etc.)                │
-└────────────────────────┬────────────────────────────────────┘
-                         │
-        ┌────────────────┼────────────────┐
-        ▼                ▼                ▼
-┌──────────────┐ ┌──────────────┐ ┌──────────────┐
-│   Scanner    │ │ Policy Engine│ │  Attestor    │
-│   (Trivy)    │ │  (Kyverno)   │ │  (Sigstore)  │
-└──────────────┘ └──────────────┘ └──────────────┘
-        │                │                │
-        └────────────────┼────────────────┘
-                         ▼
-                  ┌──────────────┐
-                  │ State Store  │
-                  │   (SQLite)   │
-                  └──────────────┘
-                         │
-                         ▼
-                  ┌──────────────┐
-                  │  REST API    │
-                  │  Dashboard   │
-                  └──────────────┘
-                    </code></pre>
+                    <img src="images/architecture-diagram.svg" alt="suppline pipeline architecture diagram showing flow from remote registries through mirroring, scanning, policy engine, and attestation to local registry" class="architecture-diagram">
                     <div class="architecture-description">
                         <h3>Pipeline Components</h3>
                         <ul role="list">
