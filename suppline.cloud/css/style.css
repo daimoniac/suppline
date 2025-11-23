@@ -272,6 +272,30 @@ section {
     max-width: 800px;
 }
 
+.hero-icon-wrapper {
+    margin-bottom: var(--spacing-lg);
+    display: flex;
+    justify-content: center;
+    align-items: center;
+}
+
+.hero-icon {
+    width: 180px;
+    height: 180px;
+    object-fit: contain;
+    filter: brightness(0) invert(1) drop-shadow(0 4px 6px rgba(0, 0, 0, 0.2));
+    animation: float 3s ease-in-out infinite;
+}
+
+@keyframes float {
+    0%, 100% {
+        transform: translateY(0px);
+    }
+    50% {
+        transform: translateY(-10px);
+    }
+}
+
 .hero-title {
     font-size: 3.5rem;
     margin-bottom: var(--spacing-md);
@@ -936,6 +960,11 @@ section {
         padding: var(--spacing-xl) var(--spacing-md);
     }
 
+    .hero-icon {
+        width: 140px;
+        height: 140px;
+    }
+
     .hero-title {
         font-size: 2.5rem;
     }
@@ -1064,6 +1093,11 @@ section {
     .hero {
         min-height: 400px;
         padding: var(--spacing-xl) var(--spacing-sm);
+    }
+
+    .hero-icon {
+        width: 120px;
+        height: 120px;
     }
 
     .hero-title {
