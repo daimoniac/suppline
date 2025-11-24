@@ -55,7 +55,7 @@ func waitForServices() error {
 
 	fmt.Println("Waiting for Trivy server to be ready...")
 	startTime := time.Now()
-	
+
 	for {
 		select {
 		case <-ctx.Done():
@@ -84,25 +84,25 @@ func cleanup() {
 func setupLocalRegistryImage(ctx context.Context, sourceImage, localTag string) (string, error) {
 	localRegistry := "localhost:5000"
 	localImage := fmt.Sprintf("%s/%s", localRegistry, localTag)
-	
+
 	// Pull the source image
 	pullCmd := exec.CommandContext(ctx, "docker", "pull", sourceImage)
 	if err := pullCmd.Run(); err != nil {
 		return "", fmt.Errorf("failed to pull %s: %w", sourceImage, err)
 	}
-	
+
 	// Tag for local registry
 	tagCmd := exec.CommandContext(ctx, "docker", "tag", sourceImage, localImage)
 	if err := tagCmd.Run(); err != nil {
 		return "", fmt.Errorf("failed to tag image: %w", err)
 	}
-	
+
 	// Push to local registry
 	pushCmd := exec.CommandContext(ctx, "docker", "push", localImage)
 	if err := pushCmd.Run(); err != nil {
 		return "", fmt.Errorf("failed to push to local registry: %w", err)
 	}
-	
+
 	// Get the digest of the pushed image
 	return getImageDigest(ctx, localImage)
 }
@@ -147,7 +147,7 @@ func getImageDigest(ctx context.Context, imageRef string) (string, error) {
 		if pullErr := pullCmd.Run(); pullErr != nil {
 			return "", fmt.Errorf("failed to pull image %s: %w", imageRef, pullErr)
 		}
-		
+
 		// Try inspect again
 		cmd = exec.CommandContext(ctx, "docker", "inspect", "--format={{index .RepoDigests 0}}", imageRef)
 		output, err = cmd.CombinedOutput()
@@ -161,11 +161,11 @@ func getImageDigest(ctx context.Context, imageRef string) (string, error) {
 	if len(digestRef) > 0 && digestRef[len(digestRef)-1] == '\n' {
 		digestRef = digestRef[:len(digestRef)-1]
 	}
-	
+
 	if digestRef == "" || digestRef == "<no value>" {
 		return "", fmt.Errorf("no digest found for image %s", imageRef)
 	}
-	
+
 	return digestRef, nil
 }
 
@@ -173,7 +173,7 @@ func getImageDigest(ctx context.Context, imageRef string) (string, error) {
 func TestTrivyScanner(t *testing.T) {
 	// Check if suppline.yml exists for authentication tests
 	regsyncPath := getEnv("SUPPLINE_CONFIG", "../../suppline.yml")
-	
+
 	cfg := config.ScannerConfig{
 		ServerAddr:  getEnv("TRIVY_SERVER_ADDR", "localhost:4954"),
 		Timeout:     5 * time.Minute,
@@ -193,7 +193,7 @@ func TestTrivyScanner(t *testing.T) {
 			t.Errorf("Health check failed: %v", err)
 		}
 	})
-	
+
 	t.Run("DockerConfigGeneration", func(t *testing.T) {
 		// Verify Docker config was generated if suppline.yml exists
 		if _, err := os.Stat(regsyncPath); err == nil {
@@ -265,14 +265,14 @@ func TestTrivyScanner(t *testing.T) {
 
 		t.Logf("Generated SBOM for %s: %d bytes", imageRef, len(sbom.Data))
 	})
-	
+
 	t.Run("PrivateRegistryAuthentication", func(t *testing.T) {
 		// Test scanning a private image from the configured registry
 		// This verifies that Docker config authentication is working
 		privateImage := getEnv("TEST_PRIVATE_IMAGE", "myprivateregistry/nginx:1.27.1")
-		
+
 		t.Logf("Testing private image authentication: %s", privateImage)
-		
+
 		// Try to scan the private image
 		result, err := scanner.ScanVulnerabilities(ctx, privateImage)
 		if err != nil {
@@ -280,13 +280,13 @@ func TestTrivyScanner(t *testing.T) {
 			t.Logf("Private image scan failed (may indicate auth issue): %v", err)
 			t.Skip("Skipping private image test - authentication may not be configured")
 		}
-		
+
 		if result == nil {
 			t.Fatal("Expected scan result for private image, got nil")
 		}
-		
+
 		t.Logf("Successfully scanned private image: found %d vulnerabilities", len(result.Vulnerabilities))
-		
+
 		// Also test SBOM generation for private image
 		sbom, err := scanner.GenerateSBOM(ctx, privateImage)
 		if err != nil {
@@ -316,7 +316,7 @@ func TestStateStore(t *testing.T) {
 			Digest:            "sha256:test123",
 			Repository:        "test/image",
 			Tag:               "latest",
-			CreatedAt:         time.Now(),
+			CreatedAt:         time.Now().Unix(),
 			CriticalVulnCount: 0,
 			HighVulnCount:     1,
 			MediumVulnCount:   0,
@@ -400,7 +400,7 @@ func TestStateStore(t *testing.T) {
 			Digest:            "sha256:old123",
 			Repository:        "test/old",
 			Tag:               "v1",
-			CreatedAt:         time.Now().Add(-48 * time.Hour), // 2 days ago
+			CreatedAt:         time.Now().Add(-48 * time.Hour).Unix(), // 2 days ago
 			CriticalVulnCount: 0,
 			HighVulnCount:     0,
 			MediumVulnCount:   0,
@@ -627,7 +627,7 @@ func TestEndToEndWorkflow(t *testing.T) {
 		highCount := 0
 		mediumCount := 0
 		lowCount := 0
-		
+
 		for _, vuln := range scanResult.Vulnerabilities {
 			vulnRecords = append(vulnRecords, types.VulnerabilityRecord{
 				CVEID:            vuln.ID,
@@ -638,7 +638,7 @@ func TestEndToEndWorkflow(t *testing.T) {
 				Description:      vuln.Description,
 				PrimaryURL:       vuln.PrimaryURL,
 			})
-			
+
 			switch vuln.Severity {
 			case "CRITICAL":
 				criticalCount++
@@ -655,7 +655,7 @@ func TestEndToEndWorkflow(t *testing.T) {
 			Digest:            dequeuedTask.Digest,
 			Repository:        dequeuedTask.Repository,
 			Tag:               dequeuedTask.Tag,
-			CreatedAt:         time.Now(),
+			CreatedAt:         time.Now().Unix(),
 			CriticalVulnCount: criticalCount,
 			HighVulnCount:     highCount,
 			MediumVulnCount:   mediumCount,
@@ -911,75 +911,75 @@ func TestRegistryClient(t *testing.T) {
 	// Note: The following tests require actual images in the registry
 	// They are commented out but can be enabled for full integration testing
 	/*
-	t.Run("ListTags", func(t *testing.T) {
-		repo := fmt.Sprintf("%s/nginx", os.Getenv("REGISTRY_HOST"))
-		tags, err := client.ListTags(ctx, repo)
-		if err != nil {
-			t.Fatalf("Failed to list tags: %v", err)
-		}
+		t.Run("ListTags", func(t *testing.T) {
+			repo := fmt.Sprintf("%s/nginx", os.Getenv("REGISTRY_HOST"))
+			tags, err := client.ListTags(ctx, repo)
+			if err != nil {
+				t.Fatalf("Failed to list tags: %v", err)
+			}
 
-		if len(tags) == 0 {
-			t.Error("Expected at least one tag")
-		}
+			if len(tags) == 0 {
+				t.Error("Expected at least one tag")
+			}
 
-		t.Logf("Found %d tags for %s", len(tags), repo)
-	})
+			t.Logf("Found %d tags for %s", len(tags), repo)
+		})
 
-	t.Run("GetDigest", func(t *testing.T) {
-		repo := fmt.Sprintf("%s/nginx", os.Getenv("REGISTRY_HOST"))
-		tag := "latest"
+		t.Run("GetDigest", func(t *testing.T) {
+			repo := fmt.Sprintf("%s/nginx", os.Getenv("REGISTRY_HOST"))
+			tag := "latest"
 
-		digest, err := client.GetDigest(ctx, repo, tag)
-		if err != nil {
-			t.Fatalf("Failed to get digest: %v", err)
-		}
+			digest, err := client.GetDigest(ctx, repo, tag)
+			if err != nil {
+				t.Fatalf("Failed to get digest: %v", err)
+			}
 
-		if digest == "" {
-			t.Error("Expected non-empty digest")
-		}
+			if digest == "" {
+				t.Error("Expected non-empty digest")
+			}
 
-		if !strings.HasPrefix(digest, "sha256:") {
-			t.Errorf("Expected digest to start with 'sha256:', got %s", digest)
-		}
+			if !strings.HasPrefix(digest, "sha256:") {
+				t.Errorf("Expected digest to start with 'sha256:', got %s", digest)
+			}
 
-		t.Logf("Digest for %s:%s is %s", repo, tag, digest)
-	})
+			t.Logf("Digest for %s:%s is %s", repo, tag, digest)
+		})
 
-	t.Run("GetManifest", func(t *testing.T) {
-		repo := fmt.Sprintf("%s/nginx", os.Getenv("REGISTRY_HOST"))
-		tag := "latest"
+		t.Run("GetManifest", func(t *testing.T) {
+			repo := fmt.Sprintf("%s/nginx", os.Getenv("REGISTRY_HOST"))
+			tag := "latest"
 
-		digest, err := client.GetDigest(ctx, repo, tag)
-		if err != nil {
-			t.Fatalf("Failed to get digest: %v", err)
-		}
+			digest, err := client.GetDigest(ctx, repo, tag)
+			if err != nil {
+				t.Fatalf("Failed to get digest: %v", err)
+			}
 
-		manifest, err := client.GetManifest(ctx, repo, digest)
-		if err != nil {
-			t.Fatalf("Failed to get manifest: %v", err)
-		}
+			manifest, err := client.GetManifest(ctx, repo, digest)
+			if err != nil {
+				t.Fatalf("Failed to get manifest: %v", err)
+			}
 
-		if manifest.Digest != digest {
-			t.Errorf("Expected digest %s, got %s", digest, manifest.Digest)
-		}
+			if manifest.Digest != digest {
+				t.Errorf("Expected digest %s, got %s", digest, manifest.Digest)
+			}
 
-		if manifest.Architecture == "" {
-			t.Error("Expected non-empty architecture")
-		}
+			if manifest.Architecture == "" {
+				t.Error("Expected non-empty architecture")
+			}
 
-		if manifest.OS == "" {
-			t.Error("Expected non-empty OS")
-		}
+			if manifest.OS == "" {
+				t.Error("Expected non-empty OS")
+			}
 
-		if len(manifest.Layers) == 0 {
-			t.Error("Expected at least one layer")
-		}
+			if len(manifest.Layers) == 0 {
+				t.Error("Expected at least one layer")
+			}
 
-		t.Logf("Manifest for %s@%s:", repo, digest)
-		t.Logf("  Architecture: %s", manifest.Architecture)
-		t.Logf("  OS: %s", manifest.OS)
-		t.Logf("  Layers: %d", len(manifest.Layers))
-	})
+			t.Logf("Manifest for %s@%s:", repo, digest)
+			t.Logf("  Architecture: %s", manifest.Architecture)
+			t.Logf("  OS: %s", manifest.OS)
+			t.Logf("  Layers: %d", len(manifest.Layers))
+		})
 	*/
 }
 
@@ -1006,7 +1006,7 @@ func TestAttestation(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Failed to create attestor: %v", err)
 	}
-	
+
 	// Note: Registry authentication should be done separately in production
 	// For tests, we assume cosign is already authenticated or using local registry
 
@@ -1190,7 +1190,7 @@ func TestOptimizedAttestationFlow(t *testing.T) {
 			t.Fatalf("Failed to setup local registry image: %v", err)
 		}
 		t.Logf("Using local registry image: %s", imageRef)
-		
+
 		// Step 1: Generate SBOM using Trivy (ONCE)
 		t.Log("Step 1: Generating SBOM with Trivy...")
 		sbomStartTime := time.Now()
@@ -1199,36 +1199,36 @@ func TestOptimizedAttestationFlow(t *testing.T) {
 			t.Fatalf("Failed to generate SBOM: %v", err)
 		}
 		sbomDuration := time.Since(sbomStartTime)
-		
+
 		if sbom == nil {
 			t.Fatal("Expected SBOM, got nil")
 		}
-		
+
 		if sbom.Format != "cyclonedx" {
 			t.Errorf("Expected format 'cyclonedx', got %s", sbom.Format)
 		}
-		
+
 		if len(sbom.Data) == 0 {
 			t.Error("SBOM data should not be empty")
 		}
-		
+
 		t.Logf("SBOM generated: format=%s, version=%s, size=%d bytes, duration=%v",
 			sbom.Format, sbom.Version, len(sbom.Data), sbomDuration)
-		
+
 		// Step 2: Create attestation using pre-generated SBOM
 		// This should NOT invoke Trivy again
 		t.Log("Step 2: Creating SBOM attestation with pre-generated data...")
 		attestStartTime := time.Now()
 		err = attestor.AttestSBOM(ctx, imageRef, sbom)
 		attestDuration := time.Since(attestStartTime)
-		
+
 		if err != nil {
 			t.Logf("SBOM attestation failed (may be expected in test environment): %v", err)
 			// Don't fail the test as this requires actual registry access
 			// The important part is that we're using pre-generated SBOM data
 		} else {
 			t.Logf("SBOM attestation created successfully in %v", attestDuration)
-			
+
 			// Verify attestation duration is significantly less than SBOM generation
 			// (since we're not regenerating the SBOM)
 			if attestDuration > sbomDuration {
@@ -1237,7 +1237,7 @@ func TestOptimizedAttestationFlow(t *testing.T) {
 				t.Logf("  Attestation: %v", attestDuration)
 			}
 		}
-		
+
 		// Step 3: Verify attestation can be retrieved (if attestation succeeded)
 		if err == nil {
 			t.Log("Step 3: Verifying attestation...")
@@ -1249,7 +1249,7 @@ func TestOptimizedAttestationFlow(t *testing.T) {
 				pubKeyPath = keyPath + ".pub"
 			}
 			t.Logf("Using public key: %s", pubKeyPath)
-			
+
 			// Use cosign to verify the attestation
 			verifyCmd := exec.CommandContext(ctx, "cosign", "verify-attestation",
 				"--key", pubKeyPath,
@@ -1257,14 +1257,14 @@ func TestOptimizedAttestationFlow(t *testing.T) {
 				"--insecure-ignore-tlog",
 				imageRef,
 			)
-			
+
 			verifyOutput, verifyErr := verifyCmd.CombinedOutput()
 			if verifyErr != nil {
 				t.Logf("Attestation verification failed (may be expected in test environment): %v", verifyErr)
 				t.Logf("Output: %s", string(verifyOutput))
 			} else {
 				t.Log("Attestation verified successfully")
-				
+
 				// Verify the attestation contains the SBOM data
 				if len(verifyOutput) == 0 {
 					t.Error("Expected attestation output, got empty")
@@ -1273,13 +1273,13 @@ func TestOptimizedAttestationFlow(t *testing.T) {
 				}
 			}
 		}
-		
+
 		t.Logf("Optimized attestation flow completed:")
 		t.Logf("  - SBOM generation: %v (Trivy invoked ONCE)", sbomDuration)
 		t.Logf("  - Attestation creation: %v (using pre-generated SBOM)", attestDuration)
 		t.Logf("  - Total time: %v", sbomDuration+attestDuration)
 	})
-	
+
 	t.Run("ValidateSBOMDataFormat", func(t *testing.T) {
 		t.Log("Setting up test image in local registry...")
 		imageRef, err := setupLocalRegistryImage(ctx, "alpine:latest", "test/alpine:validate")
@@ -1287,14 +1287,14 @@ func TestOptimizedAttestationFlow(t *testing.T) {
 			t.Fatalf("Failed to setup local registry image: %v", err)
 		}
 		t.Logf("Using local registry image: %s", imageRef)
-		
+
 		// Generate SBOM
 		t.Log("Generating SBOM...")
 		sbom, err := trivyScanner.GenerateSBOM(ctx, imageRef)
 		if err != nil {
 			t.Fatalf("Failed to generate SBOM: %v", err)
 		}
-		
+
 		// Validate SBOM data is valid JSON
 		t.Log("Validating SBOM data format...")
 		var jsonCheck interface{}
@@ -1303,7 +1303,7 @@ func TestOptimizedAttestationFlow(t *testing.T) {
 		} else {
 			t.Log("SBOM data is valid JSON")
 		}
-		
+
 		// Verify it's CycloneDX format
 		var cyclonedxCheck map[string]interface{}
 		if err := json.Unmarshal(sbom.Data, &cyclonedxCheck); err == nil {
@@ -1317,7 +1317,7 @@ func TestOptimizedAttestationFlow(t *testing.T) {
 				t.Error("SBOM missing 'bomFormat' field")
 			}
 		}
-		
+
 		// Test attestation with valid SBOM
 		t.Log("Testing attestation with valid SBOM data...")
 		err = attestor.AttestSBOM(ctx, imageRef, sbom)
@@ -1327,7 +1327,7 @@ func TestOptimizedAttestationFlow(t *testing.T) {
 			t.Log("Attestation succeeded with valid SBOM data")
 		}
 	})
-	
+
 	t.Run("ErrorHandlingForMalformedSBOM", func(t *testing.T) {
 		t.Log("Setting up test image in local registry...")
 		imageRef, err := setupLocalRegistryImage(ctx, "alpine:latest", "test/alpine:error")
@@ -1335,7 +1335,7 @@ func TestOptimizedAttestationFlow(t *testing.T) {
 			t.Fatalf("Failed to setup local registry image: %v", err)
 		}
 		t.Logf("Using local registry image: %s", imageRef)
-		
+
 		// Test with nil SBOM
 		t.Log("Testing with nil SBOM...")
 		err = attestor.AttestSBOM(ctx, imageRef, nil)
@@ -1344,7 +1344,7 @@ func TestOptimizedAttestationFlow(t *testing.T) {
 		} else {
 			t.Logf("Correctly rejected nil SBOM: %v", err)
 		}
-		
+
 		// Test with empty SBOM data
 		t.Log("Testing with empty SBOM data...")
 		emptySBOM := &scanner.SBOM{
@@ -1358,7 +1358,7 @@ func TestOptimizedAttestationFlow(t *testing.T) {
 		} else {
 			t.Logf("Correctly rejected empty SBOM data: %v", err)
 		}
-		
+
 		// Test with malformed JSON
 		t.Log("Testing with malformed JSON...")
 		malformedSBOM := &scanner.SBOM{
@@ -1373,7 +1373,7 @@ func TestOptimizedAttestationFlow(t *testing.T) {
 			t.Logf("Correctly rejected malformed JSON: %v", err)
 		}
 	})
-	
+
 	t.Run("EndToEndWithVulnerabilityAttestation", func(t *testing.T) {
 		t.Log("Setting up test image in local registry...")
 		imageRef, err := setupLocalRegistryImage(ctx, "alpine:3.7", "test/alpine:3.7")
@@ -1381,7 +1381,7 @@ func TestOptimizedAttestationFlow(t *testing.T) {
 			t.Fatalf("Failed to setup local registry image: %v", err)
 		}
 		t.Logf("Using local registry image: %s", imageRef)
-		
+
 		// Step 1: Generate SBOM (once)
 		t.Log("Step 1: Generating SBOM...")
 		sbomStartTime := time.Now()
@@ -1391,7 +1391,7 @@ func TestOptimizedAttestationFlow(t *testing.T) {
 		}
 		sbomDuration := time.Since(sbomStartTime)
 		t.Logf("SBOM generated in %v", sbomDuration)
-		
+
 		// Step 2: Scan vulnerabilities (once)
 		t.Log("Step 2: Scanning vulnerabilities...")
 		scanStartTime := time.Now()
@@ -1401,7 +1401,7 @@ func TestOptimizedAttestationFlow(t *testing.T) {
 		}
 		scanDuration := time.Since(scanStartTime)
 		t.Logf("Vulnerability scan completed in %v, found %d vulnerabilities", scanDuration, len(scanResult.Vulnerabilities))
-		
+
 		// Step 3: Create SBOM attestation (using pre-generated SBOM)
 		t.Log("Step 3: Creating SBOM attestation...")
 		sbomAttestStartTime := time.Now()
@@ -1412,7 +1412,7 @@ func TestOptimizedAttestationFlow(t *testing.T) {
 		} else {
 			t.Logf("SBOM attestation created in %v", sbomAttestDuration)
 		}
-		
+
 		// Step 4: Create vulnerability attestation (using pre-generated scan results)
 		t.Log("Step 4: Creating vulnerability attestation...")
 		vulnAttestStartTime := time.Now()
@@ -1423,7 +1423,7 @@ func TestOptimizedAttestationFlow(t *testing.T) {
 		} else {
 			t.Logf("Vulnerability attestation created in %v", vulnAttestDuration)
 		}
-		
+
 		totalDuration := sbomDuration + scanDuration + sbomAttestDuration + vulnAttestDuration
 		t.Logf("End-to-end optimized flow completed:")
 		t.Logf("  - SBOM generation: %v", sbomDuration)
@@ -1551,7 +1551,7 @@ func TestCompleteWorkerWorkflow(t *testing.T) {
 			Digest:            digest,
 			Repository:        "library/alpine",
 			Tag:               "latest",
-			CreatedAt:         time.Now(),
+			CreatedAt:         time.Now().Unix(),
 			CriticalVulnCount: criticalCount,
 			HighVulnCount:     highCount,
 			MediumVulnCount:   mediumCount,
@@ -1658,7 +1658,7 @@ func TestCompleteWorkerWorkflow(t *testing.T) {
 			Digest:            digest,
 			Repository:        "library/alpine",
 			Tag:               "3.7",
-			CreatedAt:         time.Now(),
+			CreatedAt:         time.Now().Unix(),
 			CriticalVulnCount: criticalCount,
 			HighVulnCount:     highCount,
 			MediumVulnCount:   mediumCount,
@@ -1693,7 +1693,6 @@ func TestCompleteWorkerWorkflow(t *testing.T) {
 		if !retrieved.VulnAttested {
 			t.Error("Expected vulnerabilities to be attested")
 		}
-
 
 		t.Logf("Workflow completed successfully:")
 		t.Logf("  - Image: %s", imageRef)
@@ -1817,7 +1816,7 @@ func TestCompleteWorkerWorkflow(t *testing.T) {
 			Digest:            digest,
 			Repository:        "library/alpine",
 			Tag:               "3.7",
-			CreatedAt:         time.Now(),
+			CreatedAt:         time.Now().Unix(),
 			CriticalVulnCount: criticalCount,
 			HighVulnCount:     highCount,
 			MediumVulnCount:   mediumCount,
@@ -1901,8 +1900,8 @@ func TestCompleteWorkerWorkflow(t *testing.T) {
 			Digest:            digest,
 			Repository:        "library/alpine",
 			Tag:               "3.7",
-			CreatedAt:         time.Now().Add(-24 * time.Hour), // Yesterday
-			CriticalVulnCount: 0, // Tolerated
+			CreatedAt:         time.Now().Add(-24 * time.Hour).Unix(), // Yesterday
+			CriticalVulnCount: 0,                                      // Tolerated
 			PolicyPassed:      true,
 			SBOMAttested:      true,
 			VulnAttested:      true,
@@ -1925,7 +1924,7 @@ func TestCompleteWorkerWorkflow(t *testing.T) {
 			Digest:            digest,
 			Repository:        "library/alpine",
 			Tag:               "3.7",
-			CreatedAt:         time.Now(),
+			CreatedAt:         time.Now().Unix(),
 			CriticalVulnCount: decision2.CriticalVulnCount,
 			PolicyPassed:      decision2.Passed,
 			SBOMAttested:      true,
@@ -1942,7 +1941,6 @@ func TestCompleteWorkerWorkflow(t *testing.T) {
 		if err != nil {
 			t.Fatalf("Failed to retrieve scan: %v", err)
 		}
-
 
 		if retrieved.PolicyPassed {
 			t.Error("Expected policy to fail on rescan without toleration")
