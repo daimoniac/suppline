@@ -21,3 +21,26 @@
 .idea/
 *.tmproj
 .vscode/
+# Database files
+*.db
+# Ignore everything from root except what we need
+build/
+cmd/
+coverage.txt
+data/
+docker-compose.yml
+Dockerfile
+docs/
+env.example
+go.mod
+internal/
+keys/
+LICENSE
+Makefile
+README.md
+suppline
+suppline.cloud/
+test/
+ui/
+_config.yml
+helm-deploy.sh

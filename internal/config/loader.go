@@ -11,11 +11,11 @@ import (
 // Load loads configuration from environment variables and suppline.yml defaults
 func Load() (*Config, error) {
 	regsyncPath := getEnv("SUPPLINE_CONFIG", "suppline.yml")
-	
+
 	// Parse regsync config to get defaults
 	var workerPollInterval time.Duration
 	var rescanInterval time.Duration
-	
+
 	// Try to load regsync config for defaults
 	if regsyncCfg, err := ParseRegsync(regsyncPath); err == nil {
 		if interval, err := regsyncCfg.GetWorkerPollInterval(); err == nil {
@@ -25,7 +25,7 @@ func Load() (*Config, error) {
 			rescanInterval = interval
 		}
 	}
-	
+
 	// Use defaults from suppline.yml, or fall back to hardcoded defaults
 	if workerPollInterval == 0 {
 		workerPollInterval = 5 * time.Second
@@ -33,7 +33,7 @@ func Load() (*Config, error) {
 	if rescanInterval == 0 {
 		rescanInterval = 24 * time.Hour
 	}
-	
+
 	cfg := &Config{
 		RegsyncPath: regsyncPath,
 		Queue: QueueConfig{

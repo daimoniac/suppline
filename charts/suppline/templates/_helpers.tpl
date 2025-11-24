@@ -79,3 +79,32 @@ Frontend selector labels
 app.kubernetes.io/name: {{ include "suppline.name" . }}-ui
 app.kubernetes.io/instance: {{ .Release.Name }}
 {{- end }}
+
+{{/*
+Generate registry URL based on release name
+*/}}
+{{- define "suppline.registryURL" -}}
+{{- printf "%s-registry:%d" .Release.Name (.Values.registry.service.port | int) }}
+{{- end }}
+
+{{/*
+Generate or use registry username
+*/}}
+{{- define "suppline.registryUsername" -}}
+{{- if and .Values.registry.credentials .Values.registry.credentials.username }}
+{{- .Values.registry.credentials.username }}
+{{- else }}
+{{- "suppline" }}
+{{- end }}
+{{- end }}
+
+{{/*
+Generate or use registry password
+*/}}
+{{- define "suppline.registryPassword" -}}
+{{- if and .Values.registry.credentials .Values.registry.credentials.password }}
+{{- .Values.registry.credentials.password }}
+{{- else }}
+{{- randAlphaNum 32 }}
+{{- end }}
+{{- end }}

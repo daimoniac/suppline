@@ -243,6 +243,55 @@ podAnnotations:
 # Image pull secrets
 imagePullSecrets: []
 
+# Private Docker Registry
+# Deploys a self-contained Docker registry for storing scanned images
+registry:
+  enabled: true
+  
+  # Image configuration
+  image:
+    repository: registry
+    tag: 2.8.3
+    pullPolicy: IfNotPresent
+  
+  # Service configuration
+  service:
+    type: ClusterIP
+    port: 5000
+  
+  # Persistence for registry data
+  persistence:
+    enabled: true
+    accessMode: ReadWriteOnce
+    size: 10Gi
+    storageClass: ""
+  
+  # Registry credentials
+  # If not provided, username defaults to "suppline" and password is auto-generated
+  credentials:
+    username: ""  # Leave empty for default "suppline"
+    password: ""  # Leave empty for auto-generated password
+  
+  # Registry secrets
+  # htpasswd will be automatically generated from credentials
+  secrets:
+    haSharedSecret: ""  # Optional: shared secret for registry security
+  
+  # Resources
+  resources:
+    requests:
+      memory: "256Mi"
+      cpu: "250m"
+    limits:
+      memory: "512Mi"
+      cpu: "500m"
+  
+  # Security context
+  securityContext:
+    enabled: true
+    runAsUser: 1000
+    fsGroup: 1000
+
 # Node selector
 nodeSelector: {}
 

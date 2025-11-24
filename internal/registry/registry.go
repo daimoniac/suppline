@@ -2,7 +2,12 @@ package registry
 
 import (
 	"context"
+	"crypto/tls"
+	"crypto/x509"
 	"fmt"
+	"log/slog"
+	"net/http"
+	"os"
 	"strings"
 
 	"github.com/google/go-containerregistry/pkg/authn"
@@ -57,6 +62,7 @@ type clientImpl struct {
 	regsyncConfig *config.RegsyncConfig
 	authConfig    map[string]authn.Authenticator
 	remoteOpts    []remote.Option
+	logger        *slog.Logger
 }
 
 // NewClient creates a new registry client configured with credentials from regsync config
@@ -65,10 +71,30 @@ func NewClient(regsyncConfig *config.RegsyncConfig) (Client, error) {
 		return nil, errors.NewPermanentf("regsync config is required")
 	}
 
+	// Setup custom TLS configuration if SSL_CERT_FILE is set
+	var transportOpts []remote.Option
+	if certFile := os.Getenv("SSL_CERT_FILE"); certFile != "" {
+		// Load CA cert from file
+		caCert, err := os.ReadFile(certFile)
+		if err == nil {
+			caCertPool := x509.NewCertPool()
+			if caCertPool.AppendCertsFromPEM(caCert) {
+				tlsConfig := &tls.Config{
+					RootCAs: caCertPool,
+				}
+				transport := &http.Transport{
+					TLSClientConfig: tlsConfig,
+				}
+				transportOpts = append(transportOpts, remote.WithTransport(transport))
+			}
+		}
+	}
+
 	client := &clientImpl{
 		regsyncConfig: regsyncConfig,
 		authConfig:    make(map[string]authn.Authenticator),
-		remoteOpts:    []remote.Option{},
+		remoteOpts:    transportOpts,
+		logger:        slog.Default(),
 	}
 
 	for _, cred := range regsyncConfig.Creds {
@@ -77,6 +103,7 @@ func NewClient(regsyncConfig *config.RegsyncConfig) (Client, error) {
 				Username: cred.User,
 				Password: cred.Pass,
 			}
+			client.logger.Debug("registered credentials", "registry", cred.Registry, "user", cred.User)
 		}
 	}
 
@@ -95,9 +122,17 @@ func normalizeRegistry(registry string) []string {
 func (c *clientImpl) getAuthForRegistry(registry string) authn.Authenticator {
 	for _, normalizedReg := range normalizeRegistry(registry) {
 		if auth, ok := c.authConfig[normalizedReg]; ok {
+			c.logger.Debug("found credentials for registry", "registry", registry, "normalized", normalizedReg)
 			return auth
 		}
 	}
+	c.logger.Warn("no credentials found for registry, using anonymous", "registry", registry, "available_registries", func() []string {
+		var regs []string
+		for r := range c.authConfig {
+			regs = append(regs, r)
+		}
+		return regs
+	}())
 	return authn.Anonymous
 }
 
@@ -144,7 +179,8 @@ func (c *clientImpl) ListTags(ctx context.Context, repo string) ([]string, error
 
 	auth := c.getAuthForRegistry(registry)
 
-	tags, err := remote.List(ref, remote.WithAuth(auth), remote.WithContext(ctx))
+	opts := append([]remote.Option{remote.WithAuth(auth), remote.WithContext(ctx)}, c.remoteOpts...)
+	tags, err := remote.List(ref, opts...)
 	if err != nil {
 		// Network/registry errors are typically transient
 		return nil, errors.NewTransientf("failed to list tags for %s: %w", repo, err)
@@ -175,7 +211,8 @@ func (c *clientImpl) GetDigest(ctx context.Context, repo, tag string) (string, e
 
 	auth := c.getAuthForRegistry(registry)
 
-	desc, err := remote.Get(ref, remote.WithAuth(auth), remote.WithContext(ctx))
+	opts := append([]remote.Option{remote.WithAuth(auth), remote.WithContext(ctx)}, c.remoteOpts...)
+	desc, err := remote.Get(ref, opts...)
 	if err != nil {
 		// Network/registry errors are typically transient
 		return "", errors.NewTransientf("failed to get image descriptor for %s: %w", imageRef, err)
@@ -199,7 +236,8 @@ func (c *clientImpl) GetManifest(ctx context.Context, repo, digest string) (*Man
 
 	auth := c.getAuthForRegistry(registry)
 
-	desc, err := remote.Get(ref, remote.WithAuth(auth), remote.WithContext(ctx))
+	opts := append([]remote.Option{remote.WithAuth(auth), remote.WithContext(ctx)}, c.remoteOpts...)
+	desc, err := remote.Get(ref, opts...)
 	if err != nil {
 		// Network/registry errors are typically transient
 		return nil, errors.NewTransientf("failed to get image descriptor for %s: %w", imageRef, err)

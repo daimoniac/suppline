@@ -1,0 +1,201 @@
+{{- if .Values.registry.enabled }}
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: {{ include "suppline.fullname" . }}-registry
+  labels:
+    {{- include "suppline.labels" . | nindent 4 }}
+    app.kubernetes.io/component: registry
+spec:
+  serviceName: {{ include "suppline.fullname" . }}-registry
+  replicas: 1
+  selector:
+    matchLabels:
+      {{- include "suppline.selectorLabels" . | nindent 6 }}
+      app.kubernetes.io/component: registry
+  template:
+    metadata:
+      labels:
+        {{- include "suppline.selectorLabels" . | nindent 8 }}
+        app.kubernetes.io/component: registry
+    spec:
+      {{- with .Values.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      serviceAccountName: {{ include "suppline.serviceAccountName" . }}
+      securityContext:
+        {{- if .Values.registry.securityContext.enabled }}
+        runAsUser: {{ .Values.registry.securityContext.runAsUser }}
+        fsGroup: {{ .Values.registry.securityContext.fsGroup }}
+        runAsNonRoot: true
+        {{- end }}
+      initContainers:
+        - name: generate-tls-cert
+          image: alpine/openssl:latest
+          imagePullPolicy: IfNotPresent
+          command:
+            - /bin/sh
+            - -c
+            - |
+              cd /certs
+              if [ ! -f tls.crt ]; then
+                openssl req -x509 -newkey rsa:4096 -nodes \
+                  -keyout tls.key -out tls.crt -days 365 \
+                  -subj "/CN={{ include "suppline.fullname" . }}-registry" \
+                  -addext "subjectAltName=DNS:{{ include "suppline.fullname" . }}-registry,DNS:{{ include "suppline.fullname" . }}-registry.{{ .Release.Namespace }}.svc,DNS:{{ include "suppline.fullname" . }}-registry.{{ .Release.Namespace }}.svc.cluster.local"
+                chmod 644 tls.crt
+                chmod 600 tls.key
+                echo "TLS certificate generated successfully"
+              else
+                echo "TLS certificate already exists"
+              fi
+              
+              # Create CA bundle with system certs + registry cert
+              if [ -f /etc/ssl/certs/ca-certificates.crt ]; then
+                cat /etc/ssl/certs/ca-certificates.crt > /certs/ca-bundle.crt
+              elif [ -d /etc/ssl/certs ]; then
+                cat /etc/ssl/certs/*.pem > /certs/ca-bundle.crt 2>/dev/null || touch /certs/ca-bundle.crt
+              else
+                touch /certs/ca-bundle.crt
+              fi
+              cat /certs/tls.crt >> /certs/ca-bundle.crt
+              echo "CA bundle created"
+          volumeMounts:
+            - name: certs
+              mountPath: /certs
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: false
+            capabilities:
+              drop:
+                - ALL
+        - name: generate-htpasswd
+          image: httpd:2.4-alpine
+          imagePullPolicy: IfNotPresent
+          command:
+            - /bin/sh
+            - -c
+            - |
+              htpasswd -Bbn "$SUPPLINE_REGISTRY_USERNAME" "$SUPPLINE_REGISTRY_PASSWORD" > /auth/htpasswd
+              echo "htpasswd generated successfully for user: $SUPPLINE_REGISTRY_USERNAME"
+          env:
+            - name: SUPPLINE_REGISTRY_USERNAME
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "suppline.fullname" . }}-secrets
+                  key: SUPPLINE_REGISTRY_USERNAME
+            - name: SUPPLINE_REGISTRY_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "suppline.fullname" . }}-secrets
+                  key: SUPPLINE_REGISTRY_PASSWORD
+          volumeMounts:
+            - name: auth
+              mountPath: /auth
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: false
+            capabilities:
+              drop:
+                - ALL
+      containers:
+        - name: registry
+          image: "{{ .Values.registry.image.repository }}:{{ .Values.registry.image.tag }}"
+          imagePullPolicy: {{ .Values.registry.image.pullPolicy }}
+          ports:
+            - name: registry
+              containerPort: 5000
+              protocol: TCP
+          env:
+            - name: REGISTRY_HTTP_ADDR
+              value: ":5000"
+            - name: REGISTRY_HTTP_TLS_CERTIFICATE
+              value: /certs/tls.crt
+            - name: REGISTRY_HTTP_TLS_KEY
+              value: /certs/tls.key
+            - name: REGISTRY_STORAGE_FILESYSTEM_ROOTDIRECTORY
+              value: /var/lib/registry
+            - name: REGISTRY_AUTH
+              value: htpasswd
+            - name: REGISTRY_AUTH_HTPASSWD_REALM
+              value: Registry Realm
+            - name: REGISTRY_AUTH_HTPASSWD_PATH
+              value: /auth/htpasswd
+            {{- if .Values.registry.secrets.haSharedSecret }}
+            - name: REGISTRY_HTTP_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "suppline.fullname" . }}-registry-secret
+                  key: haSharedSecret
+            {{- end }}
+          volumeMounts:
+            - name: data
+              mountPath: /var/lib/registry
+            - name: auth
+              mountPath: /auth
+              readOnly: true
+            - name: certs
+              mountPath: /certs
+              readOnly: true
+          livenessProbe:
+            httpGet:
+              path: /
+              port: registry
+              scheme: HTTPS
+            initialDelaySeconds: 30
+            periodSeconds: 30
+            timeoutSeconds: 5
+            failureThreshold: 3
+          readinessProbe:
+            httpGet:
+              path: /
+              port: registry
+              scheme: HTTPS
+            initialDelaySeconds: 10
+            periodSeconds: 10
+            timeoutSeconds: 3
+            failureThreshold: 3
+          resources:
+            {{- toYaml .Values.registry.resources | nindent 12 }}
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: false
+            capabilities:
+              drop:
+                - ALL
+      volumes:
+        - name: auth
+          emptyDir: {}
+        - name: certs
+          emptyDir: {}
+      {{- with .Values.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.affinity }}
+      affinity:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+  {{- if .Values.registry.persistence.enabled }}
+  volumeClaimTemplates:
+    - metadata:
+        name: data
+        labels:
+          {{- include "suppline.labels" . | nindent 10 }}
+          app.kubernetes.io/component: registry
+      spec:
+        accessModes:
+          - {{ .Values.registry.persistence.accessMode }}
+        {{- if .Values.registry.persistence.storageClass }}
+        storageClassName: {{ .Values.registry.persistence.storageClass }}
+        {{- end }}
+        resources:
+          requests:
+            storage: {{ .Values.registry.persistence.size }}
+  {{- end }}
+{{- end }}

@@ -24,23 +24,31 @@ func ParseRegsync(path string) (*RegsyncConfig, error) {
 		return nil, errors.NewPermanentf("failed to parse regsync YAML: %w", err)
 	}
 
-	// Expand environment variables in credentials
-	if err := expandCredentials(&config); err != nil {
-		return nil, errors.NewPermanentf("failed to expand credentials: %w", err)
+	// Expand environment variables throughout the configuration
+	if err := expandConfig(&config); err != nil {
+		return nil, errors.NewPermanentf("failed to expand configuration: %w", err)
 	}
 
 	return &config, nil
 }
 
-// expandCredentials processes credential fields and expands Go template expressions
+// expandConfig processes all configuration fields and expands Go template expressions
 // Supports {{ env "VAR_NAME" }} syntax for environment variable expansion
-func expandCredentials(config *RegsyncConfig) error {
+func expandConfig(config *RegsyncConfig) error {
 	funcMap := template.FuncMap{
 		"env": os.Getenv,
 	}
 
+	// Expand credential fields
 	for i := range config.Creds {
 		cred := &config.Creds[i]
+
+		// Expand registry field
+		if expanded, err := expandTemplate(cred.Registry, funcMap); err != nil {
+			return errors.NewPermanentf("failed to expand registry field: %w", err)
+		} else {
+			cred.Registry = expanded
+		}
 
 		// Expand user field
 		if expanded, err := expandTemplate(cred.User, funcMap); err != nil {
@@ -54,6 +62,25 @@ func expandCredentials(config *RegsyncConfig) error {
 			return errors.NewPermanentf("failed to expand pass for registry %s: %w", cred.Registry, err)
 		} else {
 			cred.Pass = expanded
+		}
+	}
+
+	// Expand sync entry fields
+	for i := range config.Sync {
+		sync := &config.Sync[i]
+
+		// Expand source field
+		if expanded, err := expandTemplate(sync.Source, funcMap); err != nil {
+			return errors.NewPermanentf("failed to expand source field: %w", err)
+		} else {
+			sync.Source = expanded
+		}
+
+		// Expand target field
+		if expanded, err := expandTemplate(sync.Target, funcMap); err != nil {
+			return errors.NewPermanentf("failed to expand target field: %w", err)
+		} else {
+			sync.Target = expanded
 		}
 	}
 
@@ -94,22 +121,22 @@ func (c *RegsyncConfig) GetCredentialForRegistry(registry string) *RegistryCrede
 // Handles both type=repository (exact match) and type=image (strips tag for matching)
 func (c *RegsyncConfig) GetTolerationsForTarget(target string) []types.CVEToleration {
 	var allTolerations []types.CVEToleration
-	
+
 	for _, sync := range c.Sync {
 		syncTarget := sync.Target
-		
+
 		// For type=image, strip the tag for comparison
 		if sync.Type == "image" {
 			if idx := strings.LastIndex(syncTarget, ":"); idx != -1 {
 				syncTarget = syncTarget[:idx]
 			}
 		}
-		
+
 		if syncTarget == target {
 			allTolerations = append(allTolerations, sync.Tolerate...)
 		}
 	}
-	
+
 	return allTolerations
 }
 
@@ -118,10 +145,10 @@ func (c *RegsyncConfig) GetTolerationsForTarget(target string) []types.CVETolera
 func (c *RegsyncConfig) GetTargetRepositories() []string {
 	seen := make(map[string]bool)
 	targets := make([]string, 0, len(c.Sync))
-	
+
 	for _, sync := range c.Sync {
 		target := sync.Target
-		
+
 		// For type=image, strip the tag from the target
 		if sync.Type == "image" {
 			// Split on last colon to separate repo from tag
@@ -129,14 +156,14 @@ func (c *RegsyncConfig) GetTargetRepositories() []string {
 				target = target[:idx]
 			}
 		}
-		
+
 		// Deduplicate repositories
 		if !seen[target] {
 			seen[target] = true
 			targets = append(targets, target)
 		}
 	}
-	
+
 	return targets
 }
 
@@ -186,14 +213,14 @@ func (c *RegsyncConfig) GetRescanInterval(target string) (time.Duration, error) 
 	// Check sync entry first
 	for _, sync := range c.Sync {
 		syncTarget := sync.Target
-		
+
 		// For type=image, strip the tag for comparison
 		if sync.Type == "image" {
 			if idx := strings.LastIndex(syncTarget, ":"); idx != -1 {
 				syncTarget = syncTarget[:idx]
 			}
 		}
-		
+
 		if syncTarget == target && sync.RescanInterval != "" {
 			return parseInterval(sync.RescanInterval)
 		}
@@ -216,14 +243,14 @@ func (c *RegsyncConfig) GetSCAIValidityExtension(target string) (time.Duration, 
 	// Check sync entry first
 	for _, sync := range c.Sync {
 		syncTarget := sync.Target
-		
+
 		// For type=image, strip the tag for comparison
 		if sync.Type == "image" {
 			if idx := strings.LastIndex(syncTarget, ":"); idx != -1 {
 				syncTarget = syncTarget[:idx]
 			}
 		}
-		
+
 		if syncTarget == target && sync.SCAIValidityExtension != "" {
 			return parseInterval(sync.SCAIValidityExtension)
 		}
@@ -243,7 +270,7 @@ func (c *RegsyncConfig) GetSCAIValidityExtension(target string) (time.Duration, 
 // For type=image entries, returns the specific tag from the target
 func (c *RegsyncConfig) GetTagsForRepository(repo string) []string {
 	var tags []string
-	
+
 	for _, sync := range c.Sync {
 		if sync.Type == "image" {
 			// Extract repository from target (strip tag)
@@ -251,14 +278,14 @@ func (c *RegsyncConfig) GetTagsForRepository(repo string) []string {
 			if idx := strings.LastIndex(targetRepo, ":"); idx != -1 {
 				repoWithoutTag := targetRepo[:idx]
 				tag := targetRepo[idx+1:]
-				
+
 				if repoWithoutTag == repo {
 					tags = append(tags, tag)
 				}
 			}
 		}
 	}
-	
+
 	return tags
 }
 
@@ -269,14 +296,14 @@ func (c *RegsyncConfig) GetPolicyForTarget(target string) *PolicyConfig {
 	// Check sync entry first
 	for _, sync := range c.Sync {
 		syncTarget := sync.Target
-		
+
 		// For type=image, strip the tag for comparison
 		if sync.Type == "image" {
 			if idx := strings.LastIndex(syncTarget, ":"); idx != -1 {
 				syncTarget = syncTarget[:idx]
 			}
 		}
-		
+
 		if syncTarget == target && sync.Policy != nil {
 			return sync.Policy
 		}
