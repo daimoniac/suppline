@@ -268,14 +268,14 @@ registry:
   
   # Registry credentials
   # If not provided, username defaults to "suppline" and password is auto-generated
-  credentials:
-    username: ""  # Leave empty for default "suppline"
-    password: ""  # Leave empty for auto-generated password
+  # credentials:
+  #   username: ""  # Leave empty for default "suppline"
+  #   password: ""  # Leave empty for auto-generated password
   
   # Registry secrets
   # htpasswd will be automatically generated from credentials
-  secrets:
-    haSharedSecret: ""  # Optional: shared secret for registry security
+  # secrets:
+  #   haSharedSecret: ""  # Optional: shared secret for registry security
   
   # Resources
   resources:
