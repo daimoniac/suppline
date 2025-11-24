@@ -59,13 +59,14 @@ data:
             add_header Cache-Control "public, immutable";
         }
 
-        # Don't cache HTML and config.js
+        # Don't cache HTML and config.json
         location ~* \.(html)$ {
             add_header Cache-Control "no-cache, no-store, must-revalidate";
         }
 
-        location = /config.js {
+        location = /config.json {
             add_header Cache-Control "no-cache, no-store, must-revalidate";
+            add_header Content-Type "application/json";
         }
     }
 {{- end }}

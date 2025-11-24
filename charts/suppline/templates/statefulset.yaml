@@ -1,13 +1,12 @@
 apiVersion: apps/v1
-kind: Deployment
+kind: StatefulSet
 metadata:
   name: {{ include "suppline.fullname" . }}
   labels:
     {{- include "suppline.labels" . | nindent 4 }}
 spec:
-  replicas: {{ .Values.backend.replicaCount }}
-  strategy:
-    type: Recreate  # Use Recreate to avoid multiple instances with SQLite
+  serviceName: {{ include "suppline.fullname" . }}
+  replicas: 1
   selector:
     matchLabels:
       {{- include "suppline.selectorLabels" . | nindent 6 }}
