@@ -8,6 +8,7 @@ import (
 	"os"
 	"os/exec"
 	"os/signal"
+	"strings"
 	"sync"
 	"syscall"
 	"time"
@@ -345,9 +346,12 @@ func authenticateCosignRegistries(ctx context.Context, regsyncCfg *config.Regsyn
 			continue
 		}
 
-		logger.Debug("authenticating cosign with registry", "registry", cred.Registry)
+		// Extract just the registry host (in case registry contains a repository path)
+		registryHost := strings.Split(cred.Registry, "/")[0]
 
-		cmd := exec.CommandContext(ctx, "cosign", "login", cred.Registry,
+		logger.Debug("authenticating cosign with registry", "registry", registryHost)
+
+		cmd := exec.CommandContext(ctx, "cosign", "login", registryHost,
 			"--username", cred.User,
 			"--password", cred.Pass)
 

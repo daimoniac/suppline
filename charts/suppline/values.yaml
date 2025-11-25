@@ -244,7 +244,12 @@ podAnnotations:
 imagePullSecrets: []
 
 # Private Docker Registry
-# Deploys a self-contained Docker registry for storing scanned images
+# Deploys a self-contained Docker registry for storing scanned images..
+# the helm chart will auto-generate credentials for accessing the registry.
+# if you bring your own registry,
+# you can disable this and provide registry credentials via values-secrets.yaml
+# and set the SUPPLINE_REGISTRY_* secrets accordingly.
+# these are then available in suppline.yml via {{ env}}
 registry:
   enabled: true
   
