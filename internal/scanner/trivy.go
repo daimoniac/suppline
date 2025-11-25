@@ -79,11 +79,7 @@ func (s *TrivyScanner) GenerateSBOM(ctx context.Context, imageRef string) (*SBOM
 		"image",
 		"--format", "cyclonedx",
 		"--image-src", "remote", // Force remote registry access instead of local Docker daemon
-	}
-
-	// Add server address if configured
-	if s.serverAddr != "" {
-		args = append(args, "--server", fmt.Sprintf("http://%s", s.serverAddr))
+		"--server", fmt.Sprintf("http://%s", s.serverAddr), // Trivy server is mandatory
 	}
 
 	// Add token if configured
@@ -175,11 +171,7 @@ func (s *TrivyScanner) ScanVulnerabilities(ctx context.Context, imageRef string)
 		"--quiet",
 		"--scanners", "vuln",
 		"--image-src", "remote", // Force remote registry access instead of local Docker daemon
-	}
-
-	// Add server address if configured
-	if s.serverAddr != "" {
-		args = append(args, "--server", fmt.Sprintf("http://%s", s.serverAddr))
+		"--server", fmt.Sprintf("http://%s", s.serverAddr), // Trivy server is mandatory
 	}
 
 	// Add token if configured
@@ -240,26 +232,23 @@ func (s *TrivyScanner) ScanVulnerabilities(ctx context.Context, imageRef string)
 	}
 
 	// Now generate cosign-vuln format (reuses cached scan data from Trivy)
-	cosignArgs := []string{
+	trivyArgs := []string{
 		"image",
 		"--format", "cosign-vuln",
 		"--output", tmpFile.Name(),
 		"--quiet",
 		"--scanners", "vuln",
 		"--image-src", "remote",
-	}
-
-	if s.serverAddr != "" {
-		cosignArgs = append(cosignArgs, "--server", fmt.Sprintf("http://%s", s.serverAddr))
+		"--server", fmt.Sprintf("http://%s", s.serverAddr), // Trivy server is mandatory
 	}
 
 	if s.token != "" {
-		cosignArgs = append(cosignArgs, "--token", s.token)
+		trivyArgs = append(trivyArgs, "--token", s.token)
 	}
 
-	cosignArgs = append(cosignArgs, imageRef)
+	trivyArgs = append(trivyArgs, imageRef)
 
-	cosignCmd := exec.CommandContext(ctx, "trivy", cosignArgs...)
+	cosignCmd := exec.CommandContext(ctx, "trivy", trivyArgs...)
 	var cosignStderr bytes.Buffer
 	cosignCmd.Stderr = &cosignStderr
 

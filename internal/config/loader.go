@@ -97,7 +97,7 @@ func (c *Config) Validate() error {
 	}
 
 	if c.Scanner.ServerAddr == "" {
-		return errors.NewPermanentf("trivy server address is required")
+		return errors.NewPermanentf("TRIVY_SERVER_ADDR environment variable is required (e.g., localhost:4954 or trivy:4954)")
 	}
 
 	if c.StateStore.Type != "sqlite" && c.StateStore.Type != "postgres" && c.StateStore.Type != "memory" {

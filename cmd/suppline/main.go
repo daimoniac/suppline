@@ -137,12 +137,11 @@ func run() error {
 
 	if err := trivyScanner.HealthCheck(ctx); err != nil {
 		healthChecker.UpdateComponentHealth("trivy", observability.StatusUnhealthy, err.Error())
-		logger.Warn("trivy server not reachable",
-			"error", err.Error())
-	} else {
-		healthChecker.UpdateComponentHealth("trivy", observability.StatusHealthy, "")
-		logger.Debug("trivy scanner initialized and connected")
+		return fmt.Errorf("trivy server not reachable at %s: %w", cfg.Scanner.ServerAddr, err)
 	}
+	healthChecker.UpdateComponentHealth("trivy", observability.StatusHealthy, "")
+	logger.Debug("trivy scanner initialized and connected",
+		"server_addr", cfg.Scanner.ServerAddr)
 
 	logger.Debug("initializing attestor",
 		"key_configured", cfg.Attestation.KeyBased.Key != "")
