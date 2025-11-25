@@ -122,7 +122,7 @@ spec:
               value: Registry Realm
             - name: REGISTRY_AUTH_HTPASSWD_PATH
               value: /auth/htpasswd
-            {{- if .Values.registry.secrets.haSharedSecret }}
+            {{- if and .Values.registry.secrets .Values.registry.secrets.haSharedSecret }}
             - name: REGISTRY_HTTP_SECRET
               valueFrom:
                 secretKeyRef:
