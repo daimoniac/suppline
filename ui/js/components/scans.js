@@ -277,7 +277,7 @@ export class ScansList extends BaseComponent {
         const statusClass = scan.PolicyPassed ? 'status-success' : 'status-danger';
         const statusText = scan.PolicyPassed ? 'Passed' : 'Failed';
         const truncatedDigest = truncateDigest(scan.Digest);
-        const scanTime = formatRelativeTime(scan.ScannedAt);
+        const scanTime = formatRelativeTime(scan.CreatedAt);
 
         const vulnCounts = [
             { severity: 'critical', count: scan.CriticalVulnCount || 0 },
@@ -291,7 +291,7 @@ export class ScansList extends BaseComponent {
                 <td>${this.escapeHtml(scan.Repository || 'N/A')}</td>
                 <td>${this.escapeHtml(scan.Tag || 'N/A')}</td>
                 <td class="digest-cell" title="${this.escapeHtml(scan.Digest)}">${this.escapeHtml(truncatedDigest)}</td>
-                <td title="${formatDate(scan.ScannedAt)}">${scanTime}</td>
+                <td title="${formatDate(scan.CreatedAt)}">${scanTime}</td>
                 <td><span class="status-badge ${statusClass}">${statusText}</span></td>
                 <td class="vulnerabilities-cell">
                     ${vulnCounts.length > 0 

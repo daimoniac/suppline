@@ -134,7 +134,7 @@ export class FailedImages extends ScansList {
      */
     renderFailedImageRow(scan) {
         const truncatedDigest = truncateDigest(scan.Digest);
-        const scanTime = formatRelativeTime(scan.ScannedAt);
+        const scanTime = formatRelativeTime(scan.CreatedAt);
 
         // Build vulnerability breakdown
         const vulnBreakdown = this.renderVulnerabilityBreakdown(scan);
@@ -147,7 +147,7 @@ export class FailedImages extends ScansList {
                 <td>${this.escapeHtml(scan.Repository || 'N/A')}</td>
                 <td>${this.escapeHtml(scan.Tag || 'N/A')}</td>
                 <td class="digest-cell" title="${this.escapeHtml(scan.Digest)}">${this.escapeHtml(truncatedDigest)}</td>
-                <td title="${formatDate(scan.ScannedAt)}">${scanTime}</td>
+                <td title="${formatDate(scan.CreatedAt)}">${scanTime}</td>
                 <td class="vulnerability-breakdown-cell">
                     ${vulnBreakdown}
                 </td>
