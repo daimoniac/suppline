@@ -339,8 +339,12 @@ vim .env</code></pre>
                         </li>
                         <li role="listitem">
                             <h3>Start suppline</h3>
-                            <p>Deploy using Docker or Kubernetes:</p>
+                            <p>Deploy using Docker:</p>
                             <pre><code>docker compose up</code></pre>
+                            <p>or using Helm into your k8s cluster:</p>
+                            <pre><code>helm upgrade --install -f charts/suppline/values.yaml -f charts/suppline/values-secrets.yaml suppline charts/suppline
+                                kubectl port-forward svc/suppline-ui 3000:80
+                            </code></pre>
                         </li>
                         <li role="listitem">
                             <h3>Verify</h3>

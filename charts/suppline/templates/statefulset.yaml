@@ -184,7 +184,6 @@ spec:
         {{- include "suppline.labels" . | nindent 8 }}
         component: trivy
       annotations:
-        "helm.sh/resource-policy": keep
       {{- with .Values.persistence.trivyCache.annotations }}
         {{- toYaml . | nindent 8 }}
       {{- end }}
