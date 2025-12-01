@@ -9,6 +9,7 @@ import { AuthManager } from './auth.js';
 import { Dashboard } from './components/dashboard.js';
 import { ScansList } from './components/scans.js';
 import { ScanDetail } from './components/scan-detail.js';
+import { TagDetail } from './components/tag-detail.js';
 import { RepositoriesList } from './components/repositories-list.js';
 import { RepositoryDetail } from './components/repository-detail.js';
 import { Tolerations } from './components/tolerations.js';
@@ -128,6 +129,11 @@ class Application {
         });
 
         // More specific routes first (with dynamic segments)
+        // Tag detail within repository (most specific)
+        this.router.addRoute('/repositories/:name/tags/:digest', async (params) => {
+            await this.renderTagDetail(params.name, params.digest);
+        });
+
         // Scan detail (more specific)
         this.router.addRoute('/scans/:digest', async (params) => {
             await this.renderScanDetail(params.digest);
@@ -263,6 +269,35 @@ class Application {
             
             this.currentView = scanDetail;
             this.updateActiveNavLink('/scans');
+        } catch (error) {
+            this.handleViewError(error);
+        }
+    }
+
+    /**
+     * Render tag detail view
+     */
+    async renderTagDetail(repositoryName, digest) {
+        if (!this.authManager.isAuthenticated()) {
+            this.showAuthRequired();
+            return;
+        }
+
+        try {
+            this.showLoading();
+            // Decode the parameters from URL encoding
+            const decodedName = decodeURIComponent(repositoryName);
+            const decodedDigest = decodeURIComponent(digest);
+            const tagDetail = new TagDetail(this.apiClient);
+            tagDetail.setRepository(decodedName);
+            await tagDetail.loadScan(decodedDigest);
+            
+            const content = document.getElementById('content');
+            content.innerHTML = tagDetail.render();
+            tagDetail.attachEventListeners();
+            
+            this.currentView = tagDetail;
+            this.updateActiveNavLink('/repositories');
         } catch (error) {
             this.handleViewError(error);
         }

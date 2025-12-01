@@ -5,7 +5,7 @@ metadata:
   labels:
     {{- include "suppline.labels" . | nindent 4 }}
 data:
-  SCANNER_SERVER_ADDR: "localhost:4954"
+  TRIVY_SERVER_ADDR: "localhost:4954"
   STATE_STORE_TYPE: "sqlite"
   SQLITE_PATH: "/data/suppline.db"
   SUPPLINE_CONFIG: "/config/suppline.yml"

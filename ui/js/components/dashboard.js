@@ -48,7 +48,6 @@ export class Dashboard extends BaseComponent {
 
             // Process recent scans (API returns array directly)
             this.data.recentScans = Array.isArray(recentScans) ? recentScans : [];
-            this.data.totalScans = this.data.recentScans.length;
 
             // Process failed images (API returns array directly)
             const failedScansArray = Array.isArray(failedScans) ? failedScans : [];
@@ -127,19 +126,6 @@ export class Dashboard extends BaseComponent {
     renderSummaryCards() {
         return `
             <div class="summary-cards">
-                <div class="summary-card">
-                    <div class="summary-card-icon">
-                        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                            <path d="M9 11l3 3L22 4"></path>
-                            <path d="M21 12v7a2 2 0 01-2 2H5a2 2 0 01-2-2V5a2 2 0 012-2h11"></path>
-                        </svg>
-                    </div>
-                    <div class="summary-card-content">
-                        <div class="summary-card-value">${this.data.totalScans.toLocaleString()}</div>
-                        <div class="summary-card-label">Total Scans</div>
-                    </div>
-                </div>
-
                 <div class="summary-card summary-card-danger">
                     <div class="summary-card-icon">
                         <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
@@ -350,7 +336,7 @@ export class Dashboard extends BaseComponent {
         const statusClass = scan.PolicyPassed ? 'status-success' : 'status-danger';
         const statusText = scan.PolicyPassed ? 'Passed' : 'Failed';
         const truncatedDigest = scan.Digest ? scan.Digest.substring(0, 19) + '...' : 'N/A';
-        const scanTime = formatRelativeTime(scan.ScannedAt);
+        const scanTime = formatRelativeTime(scan.CreatedAt);
 
         const vulnCounts = [
             { severity: 'critical', count: scan.CriticalVulnCount || 0 },

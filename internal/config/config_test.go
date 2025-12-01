@@ -4,7 +4,6 @@ import (
 	"os"
 	"strings"
 	"testing"
-	"text/template"
 	"time"
 )
 
@@ -327,14 +326,14 @@ func TestGetEnvBool(t *testing.T) {
 	}
 }
 
-func TestExpandCredentials(t *testing.T) {
+func TestExpandConfig(t *testing.T) {
 	tests := []struct {
-		name        string
-		config      *RegsyncConfig
-		envVars     map[string]string
-		wantUser    string
-		wantPass    string
-		wantErr     bool
+		name     string
+		config   *RegsyncConfig
+		envVars  map[string]string
+		wantUser string
+		wantPass string
+		wantErr  bool
 	}{
 		{
 			name: "expand environment variables",
@@ -421,9 +420,9 @@ func TestExpandCredentials(t *testing.T) {
 				defer os.Unsetenv(k)
 			}
 
-			err := expandCredentials(tt.config)
+			err := expandConfig(tt.config)
 			if (err != nil) != tt.wantErr {
-				t.Errorf("expandCredentials() error = %v, wantErr %v", err, tt.wantErr)
+				t.Errorf("expandConfig() error = %v, wantErr %v", err, tt.wantErr)
 				return
 			}
 
@@ -434,68 +433,6 @@ func TestExpandCredentials(t *testing.T) {
 				if tt.config.Creds[0].Pass != tt.wantPass {
 					t.Errorf("Pass = %v, want %v", tt.config.Creds[0].Pass, tt.wantPass)
 				}
-			}
-		})
-	}
-}
-
-func TestExpandTemplate(t *testing.T) {
-	tests := []struct {
-		name     string
-		template string
-		envVars  map[string]string
-		want     string
-		wantErr  bool
-	}{
-		{
-			name:     "simple env expansion",
-			template: `{{ env "TEST_VAR" }}`,
-			envVars:  map[string]string{"TEST_VAR": "value"},
-			want:     "value",
-			wantErr:  false,
-		},
-		{
-			name:     "no template syntax",
-			template: "plain text",
-			envVars:  map[string]string{},
-			want:     "plain text",
-			wantErr:  false,
-		},
-		{
-			name:     "empty env var",
-			template: `{{ env "MISSING" }}`,
-			envVars:  map[string]string{},
-			want:     "",
-			wantErr:  false,
-		},
-		{
-			name:     "template with text",
-			template: `prefix-{{ env "VAR" }}-suffix`,
-			envVars:  map[string]string{"VAR": "middle"},
-			want:     "prefix-middle-suffix",
-			wantErr:  false,
-		},
-	}
-
-	funcMap := template.FuncMap{
-		"env": os.Getenv,
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			// Set environment variables
-			for k, v := range tt.envVars {
-				os.Setenv(k, v)
-				defer os.Unsetenv(k)
-			}
-
-			got, err := expandTemplate(tt.template, funcMap)
-			if (err != nil) != tt.wantErr {
-				t.Errorf("expandTemplate() error = %v, wantErr %v", err, tt.wantErr)
-				return
-			}
-			if got != tt.want {
-				t.Errorf("expandTemplate() = %v, want %v", got, tt.want)
 			}
 		})
 	}

@@ -429,12 +429,12 @@ export class RepositoryDetail extends BaseComponent {
             });
         });
 
-        // Tag name click handlers - navigate to scan detail view
+        // Tag name click handlers - navigate to tag detail view
         document.querySelectorAll('.tag-name-cell').forEach(cell => {
             cell.addEventListener('click', () => {
                 const digest = cell.dataset.digest;
                 if (digest) {
-                    window.router.navigate(`/scans/${encodeURIComponent(digest)}`);
+                    window.router.navigate(`/repositories/${encodeURIComponent(this.repositoryName)}/tags/${encodeURIComponent(digest)}`);
                 }
             });
         });

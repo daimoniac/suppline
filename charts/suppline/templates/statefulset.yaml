@@ -1,13 +1,12 @@
 apiVersion: apps/v1
-kind: Deployment
+kind: StatefulSet
 metadata:
   name: {{ include "suppline.fullname" . }}
   labels:
     {{- include "suppline.labels" . | nindent 4 }}
 spec:
-  replicas: {{ .Values.backend.replicaCount }}
-  strategy:
-    type: Recreate  # Use Recreate to avoid multiple instances with SQLite
+  serviceName: {{ include "suppline.fullname" . }}
+  replicas: 1
   selector:
     matchLabels:
       {{- include "suppline.selectorLabels" . | nindent 6 }}
@@ -32,6 +31,10 @@ spec:
         runAsUser: {{ .Values.backend.securityContext.runAsUser }}
         runAsGroup: {{ .Values.backend.securityContext.runAsGroup }}
         fsGroup: {{ .Values.backend.securityContext.fsGroup }}
+      {{- if .Values.registry.enabled }}
+      initContainers:
+      {{- include "suppline.registryCertInitContainer" . | nindent 6 }}
+      {{- end }}
       containers:
       # Main application container
       - name: suppline
@@ -52,6 +55,15 @@ spec:
             name: {{ include "suppline.fullname" . }}-config
         - secretRef:
             name: {{ include "suppline.fullname" . }}-secrets
+        {{- if .Values.registry.enabled }}
+        env:
+        - name: SSL_CERT_FILE
+          value: /registry-certs/ca-bundle.crt
+        - name: REQUESTS_CA_BUNDLE
+          value: /registry-certs/ca-bundle.crt
+        - name: CURL_CA_BUNDLE
+          value: /registry-certs/ca-bundle.crt
+        {{- end }}
         volumeMounts:
         - name: data
           mountPath: /data
@@ -60,6 +72,11 @@ spec:
           readOnly: true
         - name: cache
           mountPath: /home/suppline/.cache
+        {{- if .Values.registry.enabled }}
+        - name: registry-cert
+          mountPath: /registry-certs
+          readOnly: true
+        {{- end }}
         resources:
           {{- toYaml .Values.backend.resources | nindent 10 }}
         startupProbe:
@@ -107,22 +124,20 @@ spec:
         securityContext:
           {{- toYaml .Values.trivy.securityContext | nindent 10 }}
       volumes:
+      {{- if not .Values.persistence.data.enabled }}
       - name: data
-        {{- if .Values.persistence.data.enabled }}
-        persistentVolumeClaim:
-          claimName: {{ include "suppline.fullname" . }}-data
-        {{- else }}
         emptyDir: {}
-        {{- end }}
+      {{- end }}
+      {{- if not .Values.persistence.trivyCache.enabled }}
       - name: trivy-cache
-        {{- if .Values.persistence.trivyCache.enabled }}
-        persistentVolumeClaim:
-          claimName: {{ include "suppline.fullname" . }}-trivy-cache
-        {{- else }}
         emptyDir: {}
-        {{- end }}
+      {{- end }}
       - name: cache
         emptyDir: {}
+      {{- if .Values.registry.enabled }}
+      - name: registry-cert
+        emptyDir: {}
+      {{- end }}
       - name: config
         configMap:
           name: {{ include "suppline.fullname" . }}-config
@@ -141,3 +156,44 @@ spec:
       tolerations:
         {{- toYaml . | nindent 8 }}
       {{- end }}
+  volumeClaimTemplates:
+  {{- if .Values.persistence.data.enabled }}
+  - metadata:
+      name: data
+      labels:
+        {{- include "suppline.labels" . | nindent 8 }}
+      annotations:
+        "helm.sh/resource-policy": keep
+      {{- with .Values.persistence.data.annotations }}
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+    spec:
+      accessModes:
+        - {{ .Values.persistence.data.accessMode }}
+      {{- if .Values.persistence.data.storageClassName }}
+      storageClassName: {{ .Values.persistence.data.storageClassName }}
+      {{- end }}
+      resources:
+        requests:
+          storage: {{ .Values.persistence.data.size }}
+  {{- end }}
+  {{- if .Values.persistence.trivyCache.enabled }}
+  - metadata:
+      name: trivy-cache
+      labels:
+        {{- include "suppline.labels" . | nindent 8 }}
+        component: trivy
+      annotations:
+      {{- with .Values.persistence.trivyCache.annotations }}
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+    spec:
+      accessModes:
+        - {{ .Values.persistence.trivyCache.accessMode }}
+      {{- if .Values.persistence.trivyCache.storageClassName }}
+      storageClassName: {{ .Values.persistence.trivyCache.storageClassName }}
+      {{- end }}
+      resources:
+        requests:
+          storage: {{ .Values.persistence.trivyCache.size }}
+  {{- end }}

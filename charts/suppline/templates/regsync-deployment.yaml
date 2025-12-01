@@ -27,6 +27,10 @@ spec:
         runAsUser: {{ .Values.regsync.securityContext.runAsUser }}
         runAsGroup: {{ .Values.regsync.securityContext.runAsGroup }}
         fsGroup: {{ .Values.regsync.securityContext.fsGroup }}
+      {{- if .Values.registry.enabled }}
+      initContainers:
+      {{- include "suppline.registryCertInitContainer" . | nindent 6 }}
+      {{- end }}
       containers:
       - name: regsync
         image: "{{ .Values.regsync.image.repository }}:{{ .Values.regsync.image.tag }}"
@@ -35,11 +39,22 @@ spec:
           - server
           - -c
           - /config/suppline.yml
+          - -v
+          - debug
         envFrom:
         - configMapRef:
             name: {{ include "suppline.fullname" . }}-config
         - secretRef:
             name: {{ include "suppline.fullname" . }}-secrets
+        {{- if .Values.registry.enabled }}
+        env:
+        - name: SSL_CERT_FILE
+          value: /registry-certs/ca-bundle.crt
+        - name: REQUESTS_CA_BUNDLE
+          value: /registry-certs/ca-bundle.crt
+        - name: CURL_CA_BUNDLE
+          value: /registry-certs/ca-bundle.crt
+        {{- end }}
         securityContext:
           allowPrivilegeEscalation: {{ .Values.regsync.securityContext.allowPrivilegeEscalation }}
           readOnlyRootFilesystem: {{ .Values.regsync.securityContext.readOnlyRootFilesystem }}
@@ -50,12 +65,21 @@ spec:
         - name: config
           mountPath: /config
           readOnly: true
+        {{- if .Values.registry.enabled }}
+        - name: registry-cert
+          mountPath: /registry-certs
+          readOnly: true
+        {{- end }}
         resources:
           {{- toYaml .Values.regsync.resources | nindent 10 }}
       volumes:
       - name: config
         configMap:
           name: {{ include "suppline.fullname" . }}-config
+      {{- if .Values.registry.enabled }}
+      - name: registry-cert
+        emptyDir: {}
+      {{- end }}
       {{- with .Values.nodeSelector }}
       nodeSelector:
         {{- toYaml . | nindent 8 }}
