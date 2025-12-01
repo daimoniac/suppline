@@ -47,14 +47,24 @@ services:
   # Web UI
   ui:
     image: daimoniac/suppline-ui
-    build:
-      context: ui
-      dockerfile: Dockerfile
+    # build:
+    #   context: ui
+    #   dockerfile: Dockerfile
     container_name: suppline-ui
     ports:
-      - "3000:80"
+      - "3000:3000"
     environment:
-      - API_BASE_URL=http://localhost:3000
+      # Core configuration
+      - NODE_ENV=production
+      # Network
+      - PORT=3000
+      - HOSTNAME=0.0.0.0
+      # API Configuration (Required)
+      - NEXT_PUBLIC_API_BASE_URL=http://suppline:8080
+      # API Authentication (Optional)
+      - NEXT_PUBLIC_API_KEY=dev-secret-key
+      # API Timeout (Optional)
+      # - API_TIMEOUT=30000
     depends_on:
       - suppline
     networks:

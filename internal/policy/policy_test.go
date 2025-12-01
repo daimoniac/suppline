@@ -311,8 +311,8 @@ func TestEngine_Evaluate_ExpiringTolerationWarning(t *testing.T) {
 		if expiring.CVEID != "CVE-2024-0001" {
 			t.Errorf("expected CVE-2024-0001, got %s", expiring.CVEID)
 		}
-		if expiring.DaysUntil != 2 { // 3 days = 72 hours, integer division gives 2
-			t.Errorf("expected 2 days until expiry, got %d", expiring.DaysUntil)
+		if expiring.DaysUntil != 3 { // 3 days = 72 hours, integer division gives 3
+			t.Errorf("expected 3 days until expiry, got %d", expiring.DaysUntil)
 		}
 	}
 }

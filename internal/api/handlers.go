@@ -61,7 +61,9 @@ func (s *APIServer) handleGetScan(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	s.respondJSON(w, http.StatusOK, record)
+	// Convert to response DTO with ISO8601 timestamps
+	response := toScanRecordResponse(record)
+	s.respondJSON(w, http.StatusOK, response)
 }
 
 // handleListScans lists scan records with optional filters
@@ -74,7 +76,7 @@ func (s *APIServer) handleGetScan(w http.ResponseWriter, r *http.Request) {
 // @Param policy_passed query boolean false "Filter by policy status"
 // @Param limit query int false "Maximum number of results" default(100)
 // @Param offset query int false "Pagination offset" default(0)
-// @Success 200 {array} statestore.ScanRecord
+// @Success 200 {array} ScanRecordResponse
 // @Failure 401 {object} map[string]string "Unauthorized"
 // @Failure 500 {object} map[string]string "Internal server error"
 // @Security BearerAuth
@@ -100,11 +102,17 @@ func (s *APIServer) handleListScans(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Convert to response DTOs with ISO8601 timestamps
+	responses := make([]*ScanRecordResponse, len(records))
+	for i, record := range records {
+		responses[i] = toScanRecordResponse(record)
+	}
+
 	// Stream JSON response to avoid buffering large payloads
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
 	encoder := json.NewEncoder(w)
-	if err := encoder.Encode(records); err != nil {
+	if err := encoder.Encode(responses); err != nil {
 		s.logger.Error("error encoding JSON response",
 			"error", err.Error())
 	}
@@ -121,7 +129,7 @@ func (s *APIServer) handleListScans(w http.ResponseWriter, r *http.Request) {
 // @Param package_name query string false "Filter by package name"
 // @Param repository query string false "Filter by repository"
 // @Param limit query int false "Maximum number of results" default(100)
-// @Success 200 {array} types.VulnerabilityRecord
+// @Success 200 {array} VulnerabilityRecordResponse
 // @Failure 401 {object} map[string]string "Unauthorized"
 // @Failure 500 {object} map[string]string "Internal server error"
 // @Security BearerAuth
@@ -148,11 +156,17 @@ func (s *APIServer) handleQueryVulnerabilities(w http.ResponseWriter, r *http.Re
 		return
 	}
 
+	// Convert to response DTOs with ISO8601 timestamps
+	responses := make([]VulnerabilityRecordResponse, len(vulnerabilities))
+	for i, vuln := range vulnerabilities {
+		responses[i] = toVulnerabilityRecordResponse(*vuln)
+	}
+
 	// Stream JSON response to avoid buffering large payloads
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
 	encoder := json.NewEncoder(w)
-	if err := encoder.Encode(vulnerabilities); err != nil {
+	if err := encoder.Encode(responses); err != nil {
 		s.logger.Error("error encoding JSON response",
 			"error", err.Error())
 	}
@@ -196,11 +210,17 @@ func (s *APIServer) handleListTolerations(w http.ResponseWriter, r *http.Request
 		return
 	}
 
+	// Convert to response DTOs with ISO8601 timestamps
+	responses := make([]TolerationInfoResponse, len(tolerations))
+	for i, toleration := range tolerations {
+		responses[i] = toTolerationInfoResponse(*toleration)
+	}
+
 	// Stream JSON response to avoid buffering large payloads
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
 	encoder := json.NewEncoder(w)
-	if err := encoder.Encode(tolerations); err != nil {
+	if err := encoder.Encode(responses); err != nil {
 		s.logger.Error("error encoding JSON response",
 			"error", err.Error())
 	}
@@ -213,7 +233,7 @@ func (s *APIServer) handleListTolerations(w http.ResponseWriter, r *http.Request
 // @Accept json
 // @Produce json
 // @Param limit query int false "Maximum number of results" default(100)
-// @Success 200 {array} statestore.ScanRecord
+// @Success 200 {array} ScanRecordResponse
 // @Failure 401 {object} map[string]string "Unauthorized"
 // @Failure 500 {object} map[string]string "Internal server error"
 // @Security BearerAuth
@@ -240,11 +260,17 @@ func (s *APIServer) handleListFailedImages(w http.ResponseWriter, r *http.Reques
 		return
 	}
 
+	// Convert to response DTOs with ISO8601 timestamps
+	responses := make([]*ScanRecordResponse, len(records))
+	for i, record := range records {
+		responses[i] = toScanRecordResponse(record)
+	}
+
 	// Stream JSON response to avoid buffering large payloads
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
 	encoder := json.NewEncoder(w)
-	if err := encoder.Encode(records); err != nil {
+	if err := encoder.Encode(responses); err != nil {
 		s.logger.Error("error encoding JSON response",
 			"error", err.Error())
 	}
@@ -670,7 +696,7 @@ func (s *APIServer) handleGenerateKyvernoPolicy(w http.ResponseWriter, r *http.R
 // @Param search query string false "Filter by repository name"
 // @Param limit query int false "Maximum number of results" default(100)
 // @Param offset query int false "Pagination offset" default(0)
-// @Success 200 {object} map[string]interface{} "List of repositories with aggregated data"
+// @Success 200 {object} RepositoriesListResponse "List of repositories with aggregated data"
 // @Failure 401 {object} map[string]string "Unauthorized"
 // @Failure 500 {object} map[string]string "Internal server error"
 // @Security BearerAuth
@@ -695,7 +721,9 @@ func (s *APIServer) handleListRepositories(w http.ResponseWriter, r *http.Reques
 		return
 	}
 
-	s.respondJSON(w, http.StatusOK, response)
+	// Convert to response DTO with ISO8601 timestamps
+	responseDTO := toRepositoriesListResponse(response)
+	s.respondJSON(w, http.StatusOK, responseDTO)
 }
 
 // handleGetRepository retrieves a repository with all its tags
@@ -755,7 +783,9 @@ func (s *APIServer) handleGetRepository(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
-	s.respondJSON(w, http.StatusOK, detail)
+	// Convert to response DTO with ISO8601 timestamps
+	responseDTO := toRepositoryDetailResponse(detail)
+	s.respondJSON(w, http.StatusOK, responseDTO)
 }
 
 // handleRescanRepository triggers a rescan for all tags in a repository

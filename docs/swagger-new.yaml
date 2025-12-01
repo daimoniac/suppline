@@ -1,0 +1,1673 @@
+basePath: /api/v1
+definitions:
+  github_com_daimoniac_suppline_internal_statestore.RepositoryDetail:
+    properties:
+      name:
+        type: string
+      tags:
+        items:
+          $ref: '#/definitions/github_com_daimoniac_suppline_internal_statestore.TagInfo'
+        type: array
+      total:
+        type: integer
+    type: object
+  github_com_daimoniac_suppline_internal_statestore.ScanRecord:
+    properties:
+      artifactID:
+        format: int64
+        type: integer
+      createdAt:
+        description: ISO 8601 datetime string
+        format: date-time
+        type: string
+      criticalVulnCount:
+        type: integer
+      digest:
+        description: Denormalized for convenience (loaded via joins)
+        type: string
+      errorMessage:
+        type: string
+      highVulnCount:
+        type: integer
+      id:
+        format: int64
+        type: integer
+      lowVulnCount:
+        type: integer
+      mediumVulnCount:
+        type: integer
+      policyPassed:
+        type: boolean
+      repository:
+        type: string
+      sbomattested:
+        type: boolean
+      scaiattested:
+        type: boolean
+      scanDurationMs:
+        type: integer
+      tag:
+        type: string
+      toleratedCVEs:
+        description: Using canonical type
+        items:
+          $ref: '#/definitions/github_com_daimoniac_suppline_internal_types.ToleratedCVE'
+        type: array
+      vulnAttested:
+        type: boolean
+      vulnerabilities:
+        description: Using canonical type
+        items:
+          $ref: '#/definitions/github_com_daimoniac_suppline_internal_types.VulnerabilityRecord'
+        type: array
+    type: object
+  github_com_daimoniac_suppline_internal_statestore.TagInfo:
+    properties:
+      digest:
+        type: string
+      lastScanTime:
+        description: ISO 8601 datetime string
+        format: date-time
+        type: string
+      name:
+        type: string
+      nextScanTime:
+        description: ISO 8601 datetime string
+        format: date-time
+        type: string
+      policyPassed:
+        type: boolean
+      vulnerabilityCount:
+        $ref: '#/definitions/github_com_daimoniac_suppline_internal_statestore.VulnerabilityCountSummary'
+    type: object
+  github_com_daimoniac_suppline_internal_statestore.VulnerabilityCountSummary:
+    properties:
+      critical:
+        type: integer
+      high:
+        type: integer
+      low:
+        type: integer
+      medium:
+        type: integer
+      tolerated:
+        type: integer
+    type: object
+  github_com_daimoniac_suppline_internal_types.ToleratedCVE:
+    properties:
+      cveid:
+        type: string
+      expiresAt:
+        description: ISO 8601 datetime string, null means no expiry
+        format: date-time
+        type: string
+      statement:
+        type: string
+      toleratedAt:
+        description: ISO 8601 datetime string
+        format: date-time
+        type: string
+    type: object
+  github_com_daimoniac_suppline_internal_types.TolerationInfo:
+    properties:
+      cveid:
+        type: string
+      expiresAt:
+        description: ISO 8601 datetime string, null means no expiry
+        format: date-time
+        type: string
+      repository:
+        type: string
+      statement:
+        type: string
+      toleratedAt:
+        description: ISO 8601 datetime string
+        format: date-time
+        type: string
+    type: object
+  github_com_daimoniac_suppline_internal_types.VulnerabilityRecord:
+    properties:
+      cveid:
+        description: CVE ID
+        type: string
+      description:
+        type: string
+      digest:
+        type: string
+      fixedVersion:
+        description: Version with fix (empty if no fix available)
+        type: string
+      installedVersion:
+        description: Installed version
+        type: string
+      packageName:
+        type: string
+      primaryURL:
+        description: Reference URL
+        type: string
+      repository:
+        description: Image context
+        type: string
+      scannedAt:
+        description: ISO 8601 datetime string
+        format: date-time
+        type: string
+      severity:
+        description: CRITICAL, HIGH, MEDIUM, LOW
+        type: string
+      tag:
+        type: string
+      title:
+        type: string
+    type: object
+  internal_api.AuditLogEntry:
+    properties:
+      action:
+        description: Action performed (e.g., scan_triggered, policy_reevaluated, toleration_added)
+        type: string
+      details:
+        additionalProperties: true
+        description: Additional context about the action
+        type: object
+      id:
+        format: int64
+        type: integer
+      repository:
+        description: Repository affected (if applicable)
+        type: string
+      timestamp:
+        description: ISO 8601 datetime string
+        format: date-time
+        type: string
+      user:
+        description: User or system that performed the action
+        type: string
+    type: object
+  internal_api.ConfigResponse:
+    properties:
+      apiMode:
+        description: API mode (read-only or read-write)
+        type: string
+      features:
+        additionalProperties:
+          type: boolean
+        description: Enabled features
+        type: object
+      scanInterval:
+        description: Default scan interval in hours
+        type: integer
+      version:
+        description: Application version
+        type: string
+    type: object
+  internal_api.VersionResponse:
+    properties:
+      buildDate:
+        description: Build date (ISO 8601 datetime string)
+        format: date-time
+        type: string
+      commit:
+        description: Git commit hash
+        type: string
+      version:
+        description: Application version
+        type: string
+    type: object
+  internal_api.PatchAnalysisRequest:
+    properties:
+      digest:
+        description: Image digest to analyze
+        type: string
+      repository:
+        description: Repository name
+        type: string
+      tag:
+        description: Tag name
+        type: string
+    type: object
+  internal_api.PatchAnalysisResponse:
+    properties:
+      analysisId:
+        description: Unique identifier for this analysis
+        type: string
+      patchableVulnerabilities:
+        description: List of vulnerabilities that can be patched
+        items:
+          type: string
+        type: array
+      totalVulnerabilities:
+        description: Total number of vulnerabilities found
+        type: integer
+    type: object
+  internal_api.PatchExecutionRequest:
+    properties:
+      analysisId:
+        description: Analysis ID from previous analysis
+        type: string
+      cveIds:
+        description: Specific CVE IDs to patch (optional, patches all if not specified)
+        items:
+          type: string
+        type: array
+    type: object
+  internal_api.PatchExecutionResponse:
+    properties:
+      patchId:
+        description: Unique identifier for this patch operation
+        type: string
+      status:
+        description: Initial status (e.g., queued, in_progress)
+        type: string
+    type: object
+  internal_api.PatchHistoryEntry:
+    properties:
+      completedAt:
+        description: Completion timestamp (ISO 8601 datetime string)
+        format: date-time
+        type: string
+      digest:
+        description: Original image digest
+        type: string
+      errorMessage:
+        description: Error message if patch failed
+        type: string
+      patchId:
+        description: Unique identifier for this patch operation
+        type: string
+      patchedCVEs:
+        description: List of CVEs that were patched
+        items:
+          type: string
+        type: array
+      patchedDigest:
+        description: Digest of the patched image
+        type: string
+      repository:
+        description: Repository name
+        type: string
+      startedAt:
+        description: Start timestamp (ISO 8601 datetime string)
+        format: date-time
+        type: string
+      status:
+        description: Status (completed, failed, in_progress)
+        type: string
+      tag:
+        description: Tag name
+        type: string
+    type: object
+  internal_api.PatchStatusResponse:
+    properties:
+      completedAt:
+        description: Completion timestamp (ISO 8601 datetime string)
+        format: date-time
+        type: string
+      errorMessage:
+        description: Error message if patch failed
+        type: string
+      patchId:
+        description: Unique identifier for this patch operation
+        type: string
+      patchedCVEs:
+        description: List of CVEs that were patched
+        items:
+          type: string
+        type: array
+      patchedDigest:
+        description: Digest of the patched image
+        type: string
+      progress:
+        description: Progress percentage (0-100)
+        type: integer
+      startedAt:
+        description: Start timestamp (ISO 8601 datetime string)
+        format: date-time
+        type: string
+      status:
+        description: Status (queued, in_progress, completed, failed)
+        type: string
+    type: object
+  internal_api.ScanFindings:
+    properties:
+      digest:
+        description: Image digest
+        type: string
+      packages:
+        description: List of packages found in the image
+        items:
+          $ref: '#/definitions/internal_api.PackageInfo'
+        type: array
+      repository:
+        description: Repository name
+        type: string
+      scanId:
+        description: Scan ID
+        format: int64
+        type: integer
+      tag:
+        description: Tag name
+        type: string
+      vulnerabilities:
+        description: List of vulnerabilities found
+        items:
+          $ref: '#/definitions/github_com_daimoniac_suppline_internal_types.VulnerabilityRecord'
+        type: array
+    type: object
+  internal_api.PackageInfo:
+    properties:
+      installedVersion:
+        description: Installed version
+        type: string
+      name:
+        description: Package name
+        type: string
+      type:
+        description: Package type (e.g., deb, rpm, apk, npm)
+        type: string
+    type: object
+  internal_api.ScannerResults:
+    properties:
+      digest:
+        description: Image digest
+        type: string
+      rawOutput:
+        description: Raw scanner output (JSON or text)
+        type: string
+      scanId:
+        description: Scan ID
+        format: int64
+        type: integer
+      scannerName:
+        description: Name of the scanner used (e.g., trivy, grype)
+        type: string
+      scannerVersion:
+        description: Version of the scanner
+        type: string
+    type: object
+  internal_api.CVEClassification:
+    properties:
+      classification:
+        description: Classification type (e.g., false_positive, accepted_risk, mitigated)
+        type: string
+      classifiedAt:
+        description: Classification timestamp (ISO 8601 datetime string)
+        format: date-time
+        type: string
+      classifiedBy:
+        description: User who classified the CVE
+        type: string
+      cveid:
+        description: CVE ID
+        type: string
+      notes:
+        description: Additional notes about the classification
+        type: string
+      scanId:
+        description: Scan ID
+        format: int64
+        type: integer
+    type: object
+  internal_api.UpdateCVEClassificationRequest:
+    properties:
+      classification:
+        description: Classification type (e.g., false_positive, accepted_risk, mitigated)
+        type: string
+      notes:
+        description: Additional notes about the classification
+        type: string
+    type: object
+  internal_api.ReevaluatePolicyRequest:
+    properties:
+      repository:
+        type: string
+    type: object
+  internal_api.ReevaluatePolicyResponse:
+    properties:
+      queued:
+        type: integer
+      repository:
+        type: string
+    type: object
+  internal_api.TriggerScanRequest:
+    properties:
+      digest:
+        type: string
+      repository:
+        type: string
+    type: object
+  internal_api.TriggerScanResponse:
+    properties:
+      queued:
+        type: integer
+      task_id:
+        type: string
+    type: object
+host: localhost:8080
+info:
+  contact:
+    name: suppline
+  description: |-
+    REST API for querying container image scan results, managing CVE tolerations, and triggering security operations.
+
+    ## Features
+    - Query scan results and vulnerability data
+    - List failed images and policy violations
+    - Manage CVE tolerations
+    - Trigger rescans and policy re-evaluations
+    - Health checks and metrics
+  license:
+    name: Apache 2.0
+    url: https://www.apache.org/licenses/LICENSE-2.0.html
+  title: suppline API
+  version: "1.0"
+paths:
+  /audit-logs:
+    get:
+      consumes:
+      - application/json
+      description: List audit log entries with optional filtering and pagination
+      parameters:
+      - description: Filter by action type
+        in: query
+        name: action
+        type: string
+      - description: Filter by repository name
+        in: query
+        name: repository
+        type: string
+      - description: Filter by user
+        in: query
+        name: user
+        type: string
+      - description: Filter by start date (ISO 8601 format)
+        in: query
+        name: start_date
+        type: string
+      - description: Filter by end date (ISO 8601 format)
+        in: query
+        name: end_date
+        type: string
+      - default: 100
+        description: Maximum number of results
+        in: query
+        name: limit
+        type: integer
+      - default: 0
+        description: Pagination offset
+        in: query
+        name: offset
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            items:
+              $ref: '#/definitions/internal_api.AuditLogEntry'
+            type: array
+        "401":
+          description: Unauthorized
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "500":
+          description: Internal server error
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: List audit logs
+      tags:
+      - Audit
+  /config:
+    get:
+      description: Retrieve current application configuration and feature flags
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/internal_api.ConfigResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "500":
+          description: Internal server error
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Get configuration
+      tags:
+      - Configuration
+  /health:
+    get:
+      description: Check the health status of the API server
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      summary: Health check
+      tags:
+      - Health
+  /images/failed:
+    get:
+      consumes:
+      - application/json
+      description: List all images that failed policy evaluation
+      parameters:
+      - default: 100
+        description: Maximum number of results
+        in: query
+        name: limit
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            items:
+              $ref: '#/definitions/github_com_daimoniac_suppline_internal_statestore.ScanRecord'
+            type: array
+        "401":
+          description: Unauthorized
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "500":
+          description: Internal server error
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: List failed images
+      tags:
+      - Scans
+  /integration/kyverno/policy:
+    get:
+      description: Generate a Kyverno ClusterPolicy YAML for verifying SCAI attestations
+        with the configured public key
+      produces:
+      - text/plain
+      responses:
+        "200":
+          description: Kyverno ClusterPolicy YAML
+          schema:
+            type: string
+        "500":
+          description: Internal server error
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      summary: Generate Kyverno ClusterPolicy
+      tags:
+      - Integration
+  /integration/publickey:
+    get:
+      description: Retrieve the public key used for image signing and attestation
+        verification
+      produces:
+      - text/plain
+      responses:
+        "200":
+          description: PEM-encoded public key
+          schema:
+            type: string
+        "500":
+          description: Internal server error
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      summary: Get cosign public key
+      tags:
+      - Integration
+  /metrics:
+    get:
+      description: Expose Prometheus-compatible metrics
+      produces:
+      - text/plain
+      responses:
+        "200":
+          description: Prometheus metrics
+          schema:
+            type: string
+      summary: Prometheus metrics
+      tags:
+      - Health
+  /patches/analyze:
+    post:
+      consumes:
+      - application/json
+      description: Analyze an image to identify patchable vulnerabilities
+      parameters:
+      - description: Patch analysis request
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/internal_api.PatchAnalysisRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/internal_api.PatchAnalysisResponse'
+        "400":
+          description: Invalid request
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "401":
+          description: Unauthorized
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "403":
+          description: API is in read-only mode
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "404":
+          description: Image not found
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "500":
+          description: Internal server error
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Analyze image for patching
+      tags:
+      - Patches
+  /patches/execute:
+    post:
+      consumes:
+      - application/json
+      description: Execute patch operations on an analyzed image
+      parameters:
+      - description: Patch execution request
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/internal_api.PatchExecutionRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/internal_api.PatchExecutionResponse'
+        "400":
+          description: Invalid request
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "401":
+          description: Unauthorized
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "403":
+          description: API is in read-only mode
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "404":
+          description: Analysis not found
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "500":
+          description: Internal server error
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Execute patch operations
+      tags:
+      - Patches
+  /patches/history:
+    get:
+      consumes:
+      - application/json
+      description: List patch execution history with optional filtering
+      parameters:
+      - description: Filter by repository name
+        in: query
+        name: repository
+        type: string
+      - description: Filter by status
+        in: query
+        name: status
+        type: string
+      - default: 100
+        description: Maximum number of results
+        in: query
+        name: limit
+        type: integer
+      - default: 0
+        description: Pagination offset
+        in: query
+        name: offset
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            items:
+              $ref: '#/definitions/internal_api.PatchHistoryEntry'
+            type: array
+        "401":
+          description: Unauthorized
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "500":
+          description: Internal server error
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Get patch history
+      tags:
+      - Patches
+  /patches/{id}/download:
+    get:
+      description: Download the patched image as a tarball
+      parameters:
+      - description: Patch ID
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/octet-stream
+      responses:
+        "200":
+          description: Patched image tarball
+          schema:
+            type: file
+        "401":
+          description: Unauthorized
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "404":
+          description: Patch not found or not completed
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "500":
+          description: Internal server error
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Download patched image
+      tags:
+      - Patches
+  /patches/{id}/status:
+    get:
+      description: Get the current status of a patch operation
+      parameters:
+      - description: Patch ID
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/internal_api.PatchStatusResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "404":
+          description: Patch not found
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "500":
+          description: Internal server error
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Get patch status
+      tags:
+      - Patches
+  /policy/reevaluate:
+    post:
+      consumes:
+      - application/json
+      description: Reload suppline.yml configuration and re-evaluate policy for all
+        images or a specific repository
+      parameters:
+      - description: Optional repository filter
+        in: body
+        name: request
+        schema:
+          $ref: '#/definitions/internal_api.ReevaluatePolicyRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/internal_api.ReevaluatePolicyResponse'
+        "400":
+          description: Invalid request
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "401":
+          description: Unauthorized
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "403":
+          description: API is in read-only mode
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "404":
+          description: No scans found to re-evaluate
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "500":
+          description: Internal server error
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Re-evaluate policy
+      tags:
+      - Policy
+  /repositories:
+    get:
+      consumes:
+      - application/json
+      description: List all repositories with aggregated vulnerability and policy
+        status
+      parameters:
+      - description: Filter by repository name
+        in: query
+        name: search
+        type: string
+      - default: 100
+        description: Maximum number of results
+        in: query
+        name: limit
+        type: integer
+      - default: 0
+        description: Pagination offset
+        in: query
+        name: offset
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: List of repositories with aggregated data
+          schema:
+            additionalProperties: true
+            type: object
+        "401":
+          description: Unauthorized
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "500":
+          description: Internal server error
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: List repositories
+      tags:
+      - Repositories
+  /repositories/{name}:
+    get:
+      consumes:
+      - application/json
+      description: Get a repository with all its tags and their scan results
+      parameters:
+      - description: Repository name
+        in: path
+        name: name
+        required: true
+        type: string
+      - description: Filter by tag name
+        in: query
+        name: search
+        type: string
+      - default: 100
+        description: Maximum number of results
+        in: query
+        name: limit
+        type: integer
+      - default: 0
+        description: Pagination offset
+        in: query
+        name: offset
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/github_com_daimoniac_suppline_internal_statestore.RepositoryDetail'
+        "401":
+          description: Unauthorized
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "404":
+          description: Repository not found
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "500":
+          description: Internal server error
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Get repository details
+      tags:
+      - Repositories
+  /repositories/{name}/rescan:
+    post:
+      consumes:
+      - application/json
+      description: Trigger a rescan for all tags in a repository
+      parameters:
+      - description: Repository name
+        in: path
+        name: name
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/internal_api.TriggerScanResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "403":
+          description: API is in read-only mode
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "404":
+          description: Repository not found
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "500":
+          description: Internal server error
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Rescan repository
+      tags:
+      - Repositories
+  /repositories/{name}/tags/{tag}/rescan:
+    post:
+      consumes:
+      - application/json
+      description: Trigger a rescan for a specific tag in a repository
+      parameters:
+      - description: Repository name
+        in: path
+        name: name
+        required: true
+        type: string
+      - description: Tag name
+        in: path
+        name: tag
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/internal_api.TriggerScanResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "403":
+          description: API is in read-only mode
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "404":
+          description: Tag not found
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "500":
+          description: Internal server error
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Rescan tag
+      tags:
+      - Repositories
+  /scans:
+    get:
+      consumes:
+      - application/json
+      description: List all scans with optional filtering and pagination
+      parameters:
+      - description: Filter by repository name
+        in: query
+        name: repository
+        type: string
+      - description: Filter by policy status
+        in: query
+        name: policy_passed
+        type: boolean
+      - default: 100
+        description: Maximum number of results
+        in: query
+        name: limit
+        type: integer
+      - default: 0
+        description: Pagination offset
+        in: query
+        name: offset
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            items:
+              $ref: '#/definitions/github_com_daimoniac_suppline_internal_statestore.ScanRecord'
+            type: array
+        "401":
+          description: Unauthorized
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "500":
+          description: Internal server error
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: List scans
+      tags:
+      - Scans
+  /scans/{digest}:
+    get:
+      consumes:
+      - application/json
+      description: Retrieve detailed scan information for a specific image digest
+      parameters:
+      - description: Image digest (e.g., sha256:abc123...)
+        in: path
+        name: digest
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/github_com_daimoniac_suppline_internal_statestore.ScanRecord'
+        "400":
+          description: Invalid digest format
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "401":
+          description: Unauthorized
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "404":
+          description: Scan not found
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "500":
+          description: Internal server error
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Get scan by digest
+      tags:
+      - Scans
+  /scans/{id}/findings:
+    get:
+      consumes:
+      - application/json
+      description: Get detailed findings including packages and vulnerabilities for
+        a specific scan
+      parameters:
+      - description: Scan ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/internal_api.ScanFindings'
+        "401":
+          description: Unauthorized
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "404":
+          description: Scan not found
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "500":
+          description: Internal server error
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Get scan findings
+      tags:
+      - Scans
+  /scans/{id}/findings/vulnerabilities:
+    get:
+      consumes:
+      - application/json
+      description: Get only vulnerability findings for a specific scan
+      parameters:
+      - description: Scan ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      - description: Filter by severity (CRITICAL, HIGH, MEDIUM, LOW)
+        in: query
+        name: severity
+        type: string
+      - description: Filter by package name
+        in: query
+        name: package_name
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            items:
+              $ref: '#/definitions/github_com_daimoniac_suppline_internal_types.VulnerabilityRecord'
+            type: array
+        "401":
+          description: Unauthorized
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "404":
+          description: Scan not found
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "500":
+          description: Internal server error
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Get scan vulnerability findings
+      tags:
+      - Scans
+  /scans/{id}/cve-classifications:
+    get:
+      consumes:
+      - application/json
+      description: Get CVE classifications for a specific scan
+      parameters:
+      - description: Scan ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            items:
+              $ref: '#/definitions/internal_api.CVEClassification'
+            type: array
+        "401":
+          description: Unauthorized
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "404":
+          description: Scan not found
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "500":
+          description: Internal server error
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Get CVE classifications
+      tags:
+      - Scans
+  /scans/{id}/cve-classifications/{cveId}:
+    put:
+      consumes:
+      - application/json
+      description: Update or create a CVE classification for a specific scan
+      parameters:
+      - description: Scan ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      - description: CVE ID
+        in: path
+        name: cveId
+        required: true
+        type: string
+      - description: Classification update request
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/internal_api.UpdateCVEClassificationRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/internal_api.CVEClassification'
+        "400":
+          description: Invalid request
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "401":
+          description: Unauthorized
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "403":
+          description: API is in read-only mode
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "404":
+          description: Scan or CVE not found
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "500":
+          description: Internal server error
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Update CVE classification
+      tags:
+      - Scans
+  /scans/{id}/scanner-results:
+    get:
+      consumes:
+      - application/json
+      description: Get raw scanner output for a specific scan
+      parameters:
+      - description: Scan ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/internal_api.ScannerResults'
+        "401":
+          description: Unauthorized
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "404":
+          description: Scan not found
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "500":
+          description: Internal server error
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Get raw scanner results
+      tags:
+      - Scans
+  /scans/trigger:
+    post:
+      consumes:
+      - application/json
+      description: Trigger a rescan of a specific image digest or all images in a
+        repository
+      parameters:
+      - description: Trigger scan request (specify either digest or repository)
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/internal_api.TriggerScanRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/internal_api.TriggerScanResponse'
+        "400":
+          description: Invalid request
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "401":
+          description: Unauthorized
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "403":
+          description: API is in read-only mode
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "404":
+          description: Digest or repository not found
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "500":
+          description: Internal server error
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Trigger rescan
+      tags:
+      - Scans
+  /tolerations:
+    get:
+      consumes:
+      - application/json
+      description: List all CVE tolerations with optional filtering. Returns one entry
+        per unique repository + CVE ID combination.
+      parameters:
+      - description: Filter by CVE ID
+        in: query
+        name: cve_id
+        type: string
+      - description: Filter by repository name
+        in: query
+        name: repository
+        type: string
+      - description: Filter by expiration status
+        in: query
+        name: expired
+        type: boolean
+      - description: Show tolerations expiring within 7 days
+        in: query
+        name: expiring_soon
+        type: boolean
+      - default: 100
+        description: Maximum number of results
+        in: query
+        name: limit
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            items:
+              $ref: '#/definitions/github_com_daimoniac_suppline_internal_types.TolerationInfo'
+            type: array
+        "401":
+          description: Unauthorized
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "500":
+          description: Internal server error
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: List tolerations
+      tags:
+      - Tolerations
+  /version:
+    get:
+      description: Retrieve application version information including build details
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/internal_api.VersionResponse'
+        "500":
+          description: Internal server error
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      summary: Get version
+      tags:
+      - Configuration
+  /vulnerabilities:
+    get:
+      consumes:
+      - application/json
+      description: Search for vulnerabilities across all scans with filtering
+      parameters:
+      - description: Filter by CVE ID
+        in: query
+        name: cve_id
+        type: string
+      - description: Filter by severity (CRITICAL, HIGH, MEDIUM, LOW)
+        in: query
+        name: severity
+        type: string
+      - description: Filter by package name
+        in: query
+        name: package_name
+        type: string
+      - description: Filter by repository
+        in: query
+        name: repository
+        type: string
+      - default: 100
+        description: Maximum number of results
+        in: query
+        name: limit
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            items:
+              $ref: '#/definitions/github_com_daimoniac_suppline_internal_types.VulnerabilityRecord'
+            type: array
+        "401":
+          description: Unauthorized
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "500":
+          description: Internal server error
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Query vulnerabilities
+      tags:
+      - Vulnerabilities
+securityDefinitions:
+  BearerAuth:
+    description: Enter your API key (with or without "Bearer " prefix)
+    in: header
+    name: Authorization
+    type: apiKey
+swagger: "2.0"
