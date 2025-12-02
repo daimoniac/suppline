@@ -17,18 +17,18 @@ class AuthManager {
     }
 
     /**
-     * Get stored API key from sessionStorage
+     * Get stored API key from localStorage
      */
     getAPIKey() {
-        return sessionStorage.getItem(this.storageKey);
+        return localStorage.getItem(this.storageKey);
     }
 
     /**
-     * Store API key in sessionStorage
+     * Store API key in localStorage
      * @param {string} apiKey - API key to store
      */
     setAPIKey(apiKey) {
-        sessionStorage.setItem(this.storageKey, apiKey);
+        localStorage.setItem(this.storageKey, apiKey);
         this.apiClient.setAPIKey(apiKey);
         this.notifyAuthChange(true);
     }
@@ -37,7 +37,7 @@ class AuthManager {
      * Clear stored API key
      */
     clearAPIKey() {
-        sessionStorage.removeItem(this.storageKey);
+        localStorage.removeItem(this.storageKey);
         this.apiClient.clearAPIKey();
         this.notifyAuthChange(false);
     }
@@ -60,10 +60,11 @@ class AuthManager {
         if (modal) {
             modal.classList.add('active');
             
-            // Focus on input field
+            // Focus on input field and pre-fill if available
             const input = modal.querySelector('#api-key-input');
             if (input) {
-                input.value = '';
+                const storedKey = this.getAPIKey();
+                input.value = storedKey || '';
                 input.focus();
             }
             
@@ -234,6 +235,18 @@ class AuthManager {
                     <h2>Authentication Required</h2>
                     <p>Please enter your API key to access the dashboard.</p>
                     <form id="auth-form">
+                        <div class="form-group" style="display: none;">
+                            <label for="api-username">Username:</label>
+                            <input 
+                                type="text" 
+                                id="api-username" 
+                                name="username"
+                                class="form-control" 
+                                value="suppline-api"
+                                autocomplete="username"
+                                readonly
+                            />
+                        </div>
                         <div class="form-group">
                             <label for="api-key-input">API Key:</label>
                             <input 
@@ -241,7 +254,7 @@ class AuthManager {
                                 id="api-key-input" 
                                 class="form-control" 
                                 placeholder="Enter your API key"
-                                autocomplete="off"
+                                autocomplete="current-password"
                                 required
                             />
                         </div>
