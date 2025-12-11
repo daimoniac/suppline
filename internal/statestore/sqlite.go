@@ -803,6 +803,8 @@ func (s *SQLiteStore) ListRepositories(ctx context.Context, filter RepositoryFil
 	countQuery := `
 		SELECT COUNT(DISTINCT r.id)
 		FROM repositories r
+		LEFT JOIN artifacts a ON r.id = a.repository_id
+		LEFT JOIN scan_records sr ON a.last_scan_id = sr.id
 		WHERE 1=1
 	`
 	countArgs := []interface{}{}
@@ -810,6 +812,11 @@ func (s *SQLiteStore) ListRepositories(ctx context.Context, filter RepositoryFil
 	if filter.Search != "" {
 		countQuery += " AND r.name LIKE ?"
 		countArgs = append(countArgs, "%"+filter.Search+"%")
+	}
+
+	if filter.MaxAge > 0 {
+		countQuery += " AND (SELECT MAX(sr2.created_at) FROM scan_records sr2 JOIN artifacts a2 ON sr2.artifact_id = a2.id WHERE a2.repository_id = r.id) >= ?"
+		countArgs = append(countArgs, time.Now().Unix()-int64(filter.MaxAge))
 	}
 
 	var total int
@@ -844,8 +851,34 @@ func (s *SQLiteStore) ListRepositories(ctx context.Context, filter RepositoryFil
 		args = append(args, "%"+filter.Search+"%")
 	}
 
+	if filter.MaxAge > 0 {
+		query += " AND (SELECT MAX(sr2.created_at) FROM scan_records sr2 JOIN artifacts a2 ON sr2.artifact_id = a2.id WHERE a2.repository_id = r.id) >= ?"
+		args = append(args, time.Now().Unix()-int64(filter.MaxAge))
+	}
+
 	query += " GROUP BY r.id, r.name"
-	query += " ORDER BY r.name ASC"
+
+	// Add sorting
+	switch filter.SortBy {
+	case "name_asc":
+		query += " ORDER BY r.name ASC"
+	case "name_desc":
+		query += " ORDER BY r.name DESC"
+	case "age_desc", "":
+		// Default: most recently scanned first
+		query += " ORDER BY last_scan_time DESC NULLS LAST"
+	case "age_asc":
+		// Oldest scanned first
+		query += " ORDER BY last_scan_time ASC NULLS FIRST"
+	case "status_asc":
+		// Failed first (0), then passed (1)
+		query += " ORDER BY policy_passed ASC, r.name ASC"
+	case "status_desc":
+		// Passed first (1), then failed (0)
+		query += " ORDER BY policy_passed DESC, r.name ASC"
+	default:
+		query += " ORDER BY r.name ASC"
+	}
 
 	if filter.Limit > 0 {
 		query += " LIMIT ?"

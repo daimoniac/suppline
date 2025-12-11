@@ -272,6 +272,8 @@ class APIClient {
      * Get repositories with optional filters
      * @param {Object} filters - Filter parameters
      * @param {string} filters.search - Filter by repository name
+     * @param {number} filters.max_age - Maximum age in seconds
+     * @param {string} filters.sort_by - Sort order (age_desc, age_asc, name_asc, name_desc, status_asc, status_desc)
      * @param {number} filters.limit - Limit number of results
      * @param {number} filters.offset - Offset for pagination
      */
@@ -279,6 +281,8 @@ class APIClient {
         const params = new URLSearchParams();
         
         if (filters.search) params.append('search', filters.search);
+        if (filters.max_age) params.append('max_age', filters.max_age);
+        if (filters.sort_by) params.append('sort_by', filters.sort_by);
         if (filters.limit) params.append('limit', filters.limit);
         if (filters.offset) params.append('offset', filters.offset);
 

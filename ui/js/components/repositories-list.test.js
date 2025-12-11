@@ -57,8 +57,8 @@ test('RepositoriesList initializes with correct default state', () => {
     assertEqual(component.total, 0, 'total should be 0');
     assertEqual(component.currentPage, 1, 'currentPage should be 1');
     assertEqual(component.pageSize, 10, 'pageSize should be 10');
-    assertEqual(component.sortColumn, 'name', 'sortColumn should be name');
-    assertEqual(component.sortDirection, 'asc', 'sortDirection should be asc');
+    assertEqual(component.sortColumn, 'lastScanTime', 'sortColumn should be lastScanTime');
+    assertEqual(component.sortDirection, 'desc', 'sortDirection should be desc');
     assertDeepEqual(component.filters, { search: '' }, 'filters should have empty search');
 });
 
@@ -112,77 +112,22 @@ test('RepositoriesList setSort resets direction when different column clicked', 
     assertEqual(component.sortDirection, 'asc', 'sortDirection should reset to asc');
 });
 
-// Test: Sorting logic
-test('RepositoriesList sorts repositories by name ascending', () => {
+test('RepositoriesList setSort toggles direction for lastScanTime', () => {
     const apiClient = new MockApiClient();
     const component = new RepositoriesList(apiClient);
 
-    component.repositories = [
-        { Name: 'zebra' },
-        { Name: 'apple' },
-        { Name: 'banana' }
-    ];
-    component.sortColumn = 'name';
-    component.sortDirection = 'asc';
-    component.sortRepositories();
-
-    assertEqual(component.repositories[0].Name, 'apple', 'first should be apple');
-    assertEqual(component.repositories[1].Name, 'banana', 'second should be banana');
-    assertEqual(component.repositories[2].Name, 'zebra', 'third should be zebra');
+    component.setSort('lastScanTime', 'desc');
+    assertEqual(component.sortColumn, 'lastScanTime', 'sortColumn should be lastScanTime');
+    assertEqual(component.sortDirection, 'desc', 'sortDirection should be desc');
+    
+    component.setSort('lastScanTime'); // Toggle
+    assertEqual(component.sortDirection, 'asc', 'sortDirection should toggle to asc');
+    
+    component.setSort('lastScanTime'); // Toggle again
+    assertEqual(component.sortDirection, 'desc', 'sortDirection should toggle back to desc');
 });
 
-test('RepositoriesList sorts repositories by name descending', () => {
-    const apiClient = new MockApiClient();
-    const component = new RepositoriesList(apiClient);
-
-    component.repositories = [
-        { Name: 'apple' },
-        { Name: 'zebra' },
-        { Name: 'banana' }
-    ];
-    component.sortColumn = 'name';
-    component.sortDirection = 'desc';
-    component.sortRepositories();
-
-    assertEqual(component.repositories[0].Name, 'zebra', 'first should be zebra');
-    assertEqual(component.repositories[1].Name, 'banana', 'second should be banana');
-    assertEqual(component.repositories[2].Name, 'apple', 'third should be apple');
-});
-
-test('RepositoriesList sorts repositories by date ascending', () => {
-    const apiClient = new MockApiClient();
-    const component = new RepositoriesList(apiClient);
-
-    component.repositories = [
-        { Name: 'repo1', LastScanTime: '2024-01-15T10:00:00Z' },
-        { Name: 'repo2', LastScanTime: '2024-01-10T10:00:00Z' },
-        { Name: 'repo3', LastScanTime: '2024-01-20T10:00:00Z' }
-    ];
-    component.sortColumn = 'lastScanTime';
-    component.sortDirection = 'asc';
-    component.sortRepositories();
-
-    assertEqual(component.repositories[0].Name, 'repo2', 'first should be repo2 (earliest)');
-    assertEqual(component.repositories[1].Name, 'repo1', 'second should be repo1');
-    assertEqual(component.repositories[2].Name, 'repo3', 'third should be repo3 (latest)');
-});
-
-test('RepositoriesList handles null dates in sorting', () => {
-    const apiClient = new MockApiClient();
-    const component = new RepositoriesList(apiClient);
-
-    component.repositories = [
-        { Name: 'repo1', LastScanTime: '2024-01-15T10:00:00Z' },
-        { Name: 'repo2', LastScanTime: null },
-        { Name: 'repo3', LastScanTime: '2024-01-10T10:00:00Z' }
-    ];
-    component.sortColumn = 'lastScanTime';
-    component.sortDirection = 'asc';
-    component.sortRepositories();
-
-    // Null values should sort to the beginning
-    assertEqual(component.repositories[0].Name, 'repo2', 'null date should be first');
-});
+// Note: Client-side sorting tests removed since we now use server-side sorting
 
 // Test: Pagination logic
 test('RepositoriesList goToPage updates currentPage', () => {
@@ -241,6 +186,121 @@ test('RepositoriesList calculates correct total pages', () => {
     component.total = 5;
     totalPages = Math.ceil(component.total / component.pageSize);
     assertEqual(totalPages, 1, 'total pages should be 1');
+});
+
+// Test: Server-side sorting parameters
+test('RepositoriesList sends correct sort_by parameter for name ascending', () => {
+    const apiClient = new MockApiClient();
+    const component = new RepositoriesList(apiClient);
+
+    component.sortColumn = 'name';
+    component.sortDirection = 'asc';
+    const sortBy = component.getSortByParam();
+    assertEqual(sortBy, 'name_asc', 'should return name_asc for name ascending');
+});
+
+test('RepositoriesList sends correct sort_by parameter for name descending', () => {
+    const apiClient = new MockApiClient();
+    const component = new RepositoriesList(apiClient);
+
+    component.sortColumn = 'name';
+    component.sortDirection = 'desc';
+    const sortBy = component.getSortByParam();
+    assertEqual(sortBy, 'name_desc', 'should return name_desc for name descending');
+});
+
+test('RepositoriesList sends correct sort_by parameter for lastScanTime desc', () => {
+    const apiClient = new MockApiClient();
+    const component = new RepositoriesList(apiClient);
+
+    component.sortColumn = 'lastScanTime';
+    component.sortDirection = 'desc';
+    const sortBy = component.getSortByParam();
+    assertEqual(sortBy, 'age_desc', 'should return age_desc for lastScanTime desc');
+});
+
+test('RepositoriesList sends correct sort_by parameter for lastScanTime asc', () => {
+    const apiClient = new MockApiClient();
+    const component = new RepositoriesList(apiClient);
+
+    component.sortColumn = 'lastScanTime';
+    component.sortDirection = 'asc';
+    const sortBy = component.getSortByParam();
+    assertEqual(sortBy, 'age_asc', 'should return age_asc for lastScanTime asc');
+});
+
+test('RepositoriesList sends correct sort_by parameter for status asc', () => {
+    const apiClient = new MockApiClient();
+    const component = new RepositoriesList(apiClient);
+
+    component.sortColumn = 'status';
+    component.sortDirection = 'asc';
+    const sortBy = component.getSortByParam();
+    assertEqual(sortBy, 'status_asc', 'should return status_asc for status asc');
+});
+
+test('RepositoriesList sends correct sort_by parameter for status desc', () => {
+    const apiClient = new MockApiClient();
+    const component = new RepositoriesList(apiClient);
+
+    component.sortColumn = 'status';
+    component.sortDirection = 'desc';
+    const sortBy = component.getSortByParam();
+    assertEqual(sortBy, 'status_desc', 'should return status_desc for status desc');
+});
+
+test('RepositoriesList sends correct API parameters on loadRepositories', async () => {
+    const apiClient = new MockApiClient();
+    const component = new RepositoriesList(apiClient);
+
+    component.currentPage = 2;
+    component.pageSize = 20;
+    component.sortColumn = 'name';
+    component.sortDirection = 'asc';
+    component.filters.search = 'test';
+
+    await component.loadRepositories();
+
+    assertEqual(apiClient.callHistory.length, 1, 'should make one API call');
+    const call = apiClient.callHistory[0];
+    assertEqual(call.method, 'getRepositories', 'should call getRepositories');
+    
+    const expectedFilters = {
+        limit: 20,
+        offset: 20, // (page 2 - 1) * 20
+        search: 'test',
+        sort_by: 'name_asc'
+    };
+    
+    assertDeepEqual(call.filters, expectedFilters, 'should send correct filters');
+});
+
+test('RepositoriesList sends age_asc parameter for lastScanTime ascending', async () => {
+    const apiClient = new MockApiClient();
+    const component = new RepositoriesList(apiClient);
+
+    component.sortColumn = 'lastScanTime';
+    component.sortDirection = 'asc';
+
+    await component.loadRepositories();
+
+    assertEqual(apiClient.callHistory.length, 1, 'should make one API call');
+    const call = apiClient.callHistory[0];
+    assertEqual(call.filters.sort_by, 'age_asc', 'should send age_asc for lastScanTime asc');
+});
+
+test('RepositoriesList sends status_desc parameter for status descending', async () => {
+    const apiClient = new MockApiClient();
+    const component = new RepositoriesList(apiClient);
+
+    component.sortColumn = 'status';
+    component.sortDirection = 'desc';
+
+    await component.loadRepositories();
+
+    assertEqual(apiClient.callHistory.length, 1, 'should make one API call');
+    const call = apiClient.callHistory[0];
+    assertEqual(call.filters.sort_by, 'status_desc', 'should send status_desc for status desc');
 });
 
 // Test: Combined state operations

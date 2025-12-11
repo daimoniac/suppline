@@ -649,3 +649,64 @@ func TestHandleGetRepository_WithSearch(t *testing.T) {
 		t.Errorf("Expected status 200, got %d", w.Code)
 	}
 }
+func TestHandleListRepositories_WithNewFilters(t *testing.T) {
+	cfg := &config.APIConfig{
+		Enabled:  true,
+		Port:     8080,
+		APIKey:   "",
+		ReadOnly: false,
+	}
+
+	// Create a mock state store that returns repositories
+	mockStore := &mockStateStore{}
+	server := NewAPIServer(cfg, mockAttestationConfig(), mockStore, queue.NewInMemoryQueue(100), "suppline.yml", observability.NewLogger("error"))
+
+	// Test with new query parameters: max_age and sort_by
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/repositories?max_age=3600&sort_by=name_desc&search=test&limit=50&offset=10", nil)
+	w := httptest.NewRecorder()
+
+	server.router.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Errorf("Expected status 200, got %d", w.Code)
+	}
+
+	// Verify response is valid JSON with correct structure
+	body := w.Body.String()
+	if !strings.Contains(body, "Repositories") || !strings.Contains(body, "Total") {
+		t.Errorf("Expected response to contain repositories list structure, got: %s", body)
+	}
+}
+
+func TestHandleListRepositories_StatusSorting(t *testing.T) {
+	cfg := &config.APIConfig{
+		Enabled:  true,
+		Port:     8080,
+		APIKey:   "",
+		ReadOnly: false,
+	}
+
+	// Create a mock state store that returns repositories
+	mockStore := &mockStateStore{}
+	server := NewAPIServer(cfg, mockAttestationConfig(), mockStore, queue.NewInMemoryQueue(100), "suppline.yml", observability.NewLogger("error"))
+
+	// Test status sorting ascending (failed first)
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/repositories?sort_by=status_asc", nil)
+	w := httptest.NewRecorder()
+
+	server.router.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Errorf("Expected status 200 for status_asc, got %d", w.Code)
+	}
+
+	// Test status sorting descending (passed first)
+	req = httptest.NewRequest(http.MethodGet, "/api/v1/repositories?sort_by=status_desc", nil)
+	w = httptest.NewRecorder()
+
+	server.router.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Errorf("Expected status 200 for status_desc, got %d", w.Code)
+	}
+}

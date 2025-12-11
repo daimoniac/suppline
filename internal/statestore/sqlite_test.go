@@ -2071,4 +2071,111 @@ func TestRepositoryAggregation(t *testing.T) {
 			t.Errorf("Expected total count of 2, got %d", response.Total)
 		}
 	})
+
+	// Test 11: MaxAge filtering
+	t.Run("MaxAge filtering works correctly", func(t *testing.T) {
+		// First, get baseline count without MaxAge filter
+		baselineFilter := RepositoryFilter{
+			Limit:  100,
+			Offset: 0,
+		}
+
+		baselineResponse, err := store.ListRepositories(ctx, baselineFilter)
+		if err != nil {
+			t.Fatalf("Failed to get baseline repository count: %v", err)
+		}
+		baselineCount := len(baselineResponse.Repositories)
+
+		// Test with large MaxAge (should include all recent scans)
+		filter := RepositoryFilter{
+			MaxAge: 86400, // 24 hours
+			Limit:  100,
+			Offset: 0,
+		}
+
+		response, err := store.ListRepositories(ctx, filter)
+		if err != nil {
+			t.Fatalf("Failed to list repositories with large MaxAge: %v", err)
+		}
+
+		// Should return same count as baseline since test data is recent
+		if len(response.Repositories) != baselineCount {
+			t.Errorf("Expected %d repositories with MaxAge=86400, got %d", baselineCount, len(response.Repositories))
+		}
+
+		// Test with MaxAge=0 (no age limit, should be same as baseline)
+		filter.MaxAge = 0
+		response, err = store.ListRepositories(ctx, filter)
+		if err != nil {
+			t.Fatalf("Failed to list repositories with MaxAge=0: %v", err)
+		}
+
+		if len(response.Repositories) != baselineCount {
+			t.Errorf("Expected %d repositories with MaxAge=0, got %d", baselineCount, len(response.Repositories))
+		}
+	})
+
+	// Test 12: SortBy functionality
+	t.Run("SortBy name_asc and name_desc", func(t *testing.T) {
+		// Test ascending sort
+		filter := RepositoryFilter{
+			SortBy: "name_asc",
+			Limit:  100,
+			Offset: 0,
+		}
+
+		response, err := store.ListRepositories(ctx, filter)
+		if err != nil {
+			t.Fatalf("Failed to list repositories with name_asc sort: %v", err)
+		}
+
+		if len(response.Repositories) < 2 {
+			t.Fatalf("Expected at least 2 repositories for sort test")
+		}
+
+		// Should be sorted alphabetically
+		if response.Repositories[0].Name > response.Repositories[1].Name {
+			t.Errorf("Repositories not sorted ascending: %s > %s", 
+				response.Repositories[0].Name, response.Repositories[1].Name)
+		}
+
+		// Test descending sort
+		filter.SortBy = "name_desc"
+		response, err = store.ListRepositories(ctx, filter)
+		if err != nil {
+			t.Fatalf("Failed to list repositories with name_desc sort: %v", err)
+		}
+
+		// Should be sorted reverse alphabetically
+		if response.Repositories[0].Name < response.Repositories[1].Name {
+			t.Errorf("Repositories not sorted descending: %s < %s", 
+				response.Repositories[0].Name, response.Repositories[1].Name)
+		}
+	})
+
+	// Test 13: Default sort (age_desc)
+	t.Run("Default sort by age_desc", func(t *testing.T) {
+		filter := RepositoryFilter{
+			SortBy: "age_desc", // explicit
+			Limit:  100,
+			Offset: 0,
+		}
+
+		response, err := store.ListRepositories(ctx, filter)
+		if err != nil {
+			t.Fatalf("Failed to list repositories with age_desc sort: %v", err)
+		}
+
+		// Test with empty SortBy (should default to age_desc)
+		filter.SortBy = ""
+		response2, err := store.ListRepositories(ctx, filter)
+		if err != nil {
+			t.Fatalf("Failed to list repositories with default sort: %v", err)
+		}
+
+		// Results should be the same
+		if len(response.Repositories) != len(response2.Repositories) {
+			t.Errorf("Default sort should match age_desc")
+		}
+	})
 }

@@ -17,8 +17,8 @@ export class RepositoriesList extends BaseComponent {
         this.filters = {
             search: '',
         };
-        this.sortColumn = 'name';
-        this.sortDirection = 'asc';
+        this.sortColumn = 'lastScanTime';
+        this.sortDirection = 'desc';
     }
 
     /**
@@ -37,11 +37,15 @@ export class RepositoriesList extends BaseComponent {
             const apiFilters = {
                 limit: this.pageSize,
                 offset: offset,
+                max_age: 86400, // Only show repositories scanned in the last 24 hours (86400 seconds)
             };
 
             if (this.filters.search) {
                 apiFilters.search = this.filters.search;
             }
+
+            // Add server-side sorting
+            apiFilters.sort_by = this.getSortByParam();
 
             // API returns repositories with aggregated data
             const response = await this.apiClient.getRepositories(apiFilters);
@@ -62,9 +66,6 @@ export class RepositoriesList extends BaseComponent {
                 this.total = 0;
             }
 
-            // Apply client-side sorting
-            this.sortRepositories();
-
             return { repositories: this.repositories, total: this.total };
         } catch (error) {
             console.error('Failed to load repositories:', error);
@@ -73,41 +74,17 @@ export class RepositoriesList extends BaseComponent {
     }
 
     /**
-     * Sort repositories by current sort column and direction
+     * Get the sort_by parameter for the API based on current sort settings
      */
-    sortRepositories() {
-        // Map camelCase column names to PascalCase API property names
-        const columnMap = {
-            'name': 'Name',
-            'lastScanTime': 'LastScanTime'
+    getSortByParam() {
+        // Map frontend sort columns to API sort_by values
+        const sortMap = {
+            'name': this.sortDirection === 'asc' ? 'name_asc' : 'name_desc',
+            'lastScanTime': this.sortDirection === 'asc' ? 'age_asc' : 'age_desc',
+            'status': this.sortDirection === 'asc' ? 'status_asc' : 'status_desc'
         };
 
-        const apiColumn = columnMap[this.sortColumn] || this.sortColumn;
-
-        this.repositories.sort((a, b) => {
-            let aVal = a[apiColumn];
-            let bVal = b[apiColumn];
-
-            // Handle null/undefined values
-            if (aVal === null || aVal === undefined) aVal = '';
-            if (bVal === null || bVal === undefined) bVal = '';
-
-            // Handle date sorting (Unix timestamps in seconds)
-            if (this.sortColumn === 'lastScanTime') {
-                // Unix timestamps are already numbers, just ensure they're treated as such
-                aVal = typeof aVal === 'number' ? aVal : (new Date(aVal).getTime() / 1000);
-                bVal = typeof bVal === 'number' ? bVal : (new Date(bVal).getTime() / 1000);
-            }
-
-            // Handle numeric sorting
-            if (typeof aVal === 'number' && typeof bVal === 'number') {
-                return this.sortDirection === 'asc' ? aVal - bVal : bVal - aVal;
-            }
-
-            // Handle string sorting
-            const comparison = String(aVal).localeCompare(String(bVal));
-            return this.sortDirection === 'asc' ? comparison : -comparison;
-        });
+        return sortMap[this.sortColumn] || 'age_desc';
     }
 
     /**
@@ -129,7 +106,7 @@ export class RepositoriesList extends BaseComponent {
             this.sortColumn = column;
             this.sortDirection = direction || 'asc';
         }
-        this.sortRepositories();
+        // No need to sort locally - will be handled by API on next load
     }
 
     /**
@@ -198,7 +175,7 @@ export class RepositoriesList extends BaseComponent {
                         <line x1="12" y1="16" x2="12.01" y2="16"></line>
                     </svg>
                     <h3>No repositories found</h3>
-                    <p>Try adjusting your filters or check back later</p>
+                    <p>No repositories match your current filters. Try adjusting your search criteria.</p>
                 </div>
             `;
         }
@@ -211,7 +188,7 @@ export class RepositoriesList extends BaseComponent {
                             ${this.renderTableHeader('name', 'Name')}
                             ${this.renderTableHeader('lastScanTime', 'Last Scan')}
                             <th>Vulnerabilities</th>
-                            <th>Status</th>
+                            ${this.renderTableHeader('status', 'Status')}
                             <th>Action</th>
                         </tr>
                     </thead>
@@ -345,10 +322,8 @@ export class RepositoriesList extends BaseComponent {
         if (this.currentPage > 1) {
             queryParams.page = this.currentPage;
         }
-        if (this.sortColumn !== 'name') {
+        if (this.sortColumn !== 'lastScanTime' || this.sortDirection !== 'desc') {
             queryParams.sort = this.sortColumn;
-        }
-        if (this.sortDirection !== 'asc') {
             queryParams.order = this.sortDirection;
         }
         
@@ -370,7 +345,7 @@ export class RepositoriesList extends BaseComponent {
                 this.setFilters({ search });
                 this.currentPage = 1;
                 this.updateURL();
-                await this.loadAndRender();
+                // Don't call loadAndRender() - let the router handle the reload
             });
         }
 
@@ -379,7 +354,7 @@ export class RepositoriesList extends BaseComponent {
                 this.setFilters({ search: '' });
                 this.currentPage = 1;
                 this.updateURL();
-                await this.loadAndRender();
+                // Don't call loadAndRender() - let the router handle the reload
             });
         }
 
@@ -399,7 +374,7 @@ export class RepositoriesList extends BaseComponent {
                 this.setSort(column);
                 this.currentPage = 1;
                 this.updateURL();
-                this.renderAndAttach();
+                // Don't call loadAndRender() - let the router handle the reload
             });
         });
 
@@ -435,7 +410,7 @@ export class RepositoriesList extends BaseComponent {
             firstPageBtn.addEventListener('click', async () => {
                 this.goToPage(1);
                 this.updateURL();
-                await this.loadAndRender();
+                // Don't call loadAndRender() - let the router handle the reload
             });
         }
 
@@ -443,7 +418,7 @@ export class RepositoriesList extends BaseComponent {
             prevPageBtn.addEventListener('click', async () => {
                 this.goToPage(this.currentPage - 1);
                 this.updateURL();
-                await this.loadAndRender();
+                // Don't call loadAndRender() - let the router handle the reload
             });
         }
 
@@ -451,7 +426,7 @@ export class RepositoriesList extends BaseComponent {
             nextPageBtn.addEventListener('click', async () => {
                 this.goToPage(this.currentPage + 1);
                 this.updateURL();
-                await this.loadAndRender();
+                // Don't call loadAndRender() - let the router handle the reload
             });
         }
 
@@ -460,7 +435,7 @@ export class RepositoriesList extends BaseComponent {
                 const totalPages = Math.ceil(this.total / this.pageSize);
                 this.goToPage(totalPages);
                 this.updateURL();
-                await this.loadAndRender();
+                // Don't call loadAndRender() - let the router handle the reload
             });
         }
     }

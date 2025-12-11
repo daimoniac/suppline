@@ -672,6 +672,8 @@ func (s *APIServer) handleGenerateKyvernoPolicy(w http.ResponseWriter, r *http.R
 // @Accept json
 // @Produce json
 // @Param search query string false "Filter by repository name"
+// @Param max_age query int false "Maximum age of last scan in seconds (e.g., 86400 for last 24 hours)"
+// @Param sort_by query string false "Sort order: age_desc (default), age_asc, name_asc, name_desc, status_asc, status_desc" Enums(age_desc,age_asc,name_asc,name_desc,status_asc,status_desc)
 // @Param limit query int false "Maximum number of results" default(100)
 // @Param offset query int false "Pagination offset" default(0)
 // @Success 200 {object} map[string]interface{} "List of repositories with aggregated data"
@@ -688,6 +690,8 @@ func (s *APIServer) handleListRepositories(w http.ResponseWriter, r *http.Reques
 	// Parse query parameters
 	filter := statestore.RepositoryFilter{
 		Search: parseQueryParam(r, "search"),
+		MaxAge: parseQueryParamInt(r, "max_age", 0),
+		SortBy: parseQueryParam(r, "sort_by"),
 		Limit:  parseQueryParamInt(r, "limit", 100),
 		Offset: parseQueryParamInt(r, "offset", 0),
 	}

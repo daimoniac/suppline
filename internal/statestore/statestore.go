@@ -114,6 +114,8 @@ type StateStoreQuery interface {
 // RepositoryFilter defines criteria for listing repositories
 type RepositoryFilter struct {
 	Search string
+	MaxAge int    // Maximum age of last scan in seconds (0 = no limit)
+	SortBy string // Sorting option: "age_desc" (default), "name_asc", "name_desc"
 	Limit  int
 	Offset int
 }
