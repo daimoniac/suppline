@@ -29,6 +29,7 @@ type WorkerConfig struct {
 	PollInterval  time.Duration
 	RetryAttempts int
 	RetryBackoff  time.Duration
+	Concurrency   int
 }
 
 // ScannerConfig configures the Trivy scanner connection
@@ -100,6 +101,10 @@ type Defaults struct {
 	Parallel              int           `yaml:"parallel"`
 	RescanInterval        string        `yaml:"x-rescanInterval,omitempty"`
 	WorkerPollInterval    string        `yaml:"x-worker-poll-interval,omitempty"`
+	WorkerConcurrency     int           `yaml:"x-worker-concurrency,omitempty"`
+	WorkerRetryAttempts   int           `yaml:"x-worker-retry-attempts,omitempty"`
+	WorkerRetryBackoff    string        `yaml:"x-worker-retry-backoff,omitempty"`
+	QueueBufferSize       int           `yaml:"x-queue-buffer-size,omitempty"`
 	SCAIValidityExtension string        `yaml:"x-scaiValidityExtension,omitempty"`
 	Policy                *PolicyConfig `yaml:"x-policy,omitempty"`
 }

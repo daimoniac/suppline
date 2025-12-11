@@ -15,8 +15,19 @@ creds:
     reqConcurrent: 10
 
 defaults:
-  parallel: 2
-  x-rescanInterval: 7d        # Default rescan interval for all sync entries (optional)
+  parallel: 4
+  interval: 60m
+  cleanupTags: true
+  cleanupTagsExclude:
+  - ".*\\.sig$"
+  - ".*\\.att$"
+  x-rescanInterval: 1d
+  x-worker-poll-interval: 5m
+  x-worker-concurrency: 3
+  x-worker-retry-attempts: 3
+  x-worker-retry-backoff: 10s
+  x-queue-buffer-size: 1000
+  x-scaiValidityExtension: 7d
   x-policy:                   # Default policy for all sync entries (optional)
     expression: "criticalCount == 0"
     failureMessage: "critical vulnerabilities found"

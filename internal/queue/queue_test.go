@@ -18,8 +18,12 @@ func TestNewInMemoryQueue(t *testing.T) {
 		t.Errorf("expected buffer size 100, got %d", q.bufferSize)
 	}
 
-	if q.tasks == nil {
-		t.Error("expected non-nil tasks channel")
+	if q.highPriorityTasks == nil {
+		t.Error("expected non-nil high priority tasks channel")
+	}
+
+	if q.normalTasks == nil {
+		t.Error("expected non-nil normal tasks channel")
 	}
 
 	if q.pending == nil {
@@ -474,5 +478,121 @@ func TestMetricsAccuracy(t *testing.T) {
 	}
 	if metrics.Failed != 2 {
 		t.Errorf("expected 2 failed, got %d", metrics.Failed)
+	}
+}
+func TestHasPendingTask(t *testing.T) {
+	q := NewInMemoryQueue(10)
+	defer q.Close()
+
+	ctx := context.Background()
+	digest := "sha256:abc123"
+
+	// Test with empty digest
+	_, err := q.HasPendingTask(ctx, "")
+	if err == nil {
+		t.Error("expected error for empty digest")
+	}
+
+	// Test with no pending tasks
+	hasPending, err := q.HasPendingTask(ctx, digest)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if hasPending {
+		t.Error("expected no pending task")
+	}
+
+	// Enqueue a task
+	task := &ScanTask{
+		ID:         "task-1",
+		Repository: "test/repo",
+		Digest:     digest,
+		Tag:        "v1.0.0",
+		EnqueuedAt: time.Now(),
+	}
+
+	err = q.Enqueue(ctx, task)
+	if err != nil {
+		t.Fatalf("failed to enqueue task: %v", err)
+	}
+
+	// Test with pending task
+	hasPending, err = q.HasPendingTask(ctx, digest)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if !hasPending {
+		t.Error("expected pending task")
+	}
+
+	// Dequeue the task
+	_, err = q.Dequeue(ctx)
+	if err != nil {
+		t.Fatalf("failed to dequeue task: %v", err)
+	}
+
+	// Test after dequeue - should not be pending anymore
+	hasPending, err = q.HasPendingTask(ctx, digest)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if hasPending {
+		t.Error("expected no pending task after dequeue")
+	}
+}
+func TestRescanPriority(t *testing.T) {
+	q := NewInMemoryQueue(10)
+	defer q.Close()
+
+	ctx := context.Background()
+
+	// Enqueue a normal task first
+	normalTask := &ScanTask{
+		ID:         "normal-1",
+		Repository: "test/repo",
+		Digest:     "sha256:normal",
+		EnqueuedAt: time.Now(),
+		IsRescan:   false,
+	}
+	err := q.Enqueue(ctx, normalTask)
+	if err != nil {
+		t.Fatalf("failed to enqueue normal task: %v", err)
+	}
+
+	// Enqueue a rescan task after the normal task
+	rescanTask := &ScanTask{
+		ID:         "rescan-1",
+		Repository: "test/repo",
+		Digest:     "sha256:rescan",
+		EnqueuedAt: time.Now(),
+		IsRescan:   true,
+	}
+	err = q.Enqueue(ctx, rescanTask)
+	if err != nil {
+		t.Fatalf("failed to enqueue rescan task: %v", err)
+	}
+
+	// Dequeue should return the rescan task first (higher priority)
+	task1, err := q.Dequeue(ctx)
+	if err != nil {
+		t.Fatalf("failed to dequeue first task: %v", err)
+	}
+	if task1.ID != "rescan-1" {
+		t.Errorf("expected rescan task first, got %s", task1.ID)
+	}
+	if task1.Priority != PriorityHigh {
+		t.Errorf("expected high priority for rescan task, got %v", task1.Priority)
+	}
+
+	// Dequeue should return the normal task second
+	task2, err := q.Dequeue(ctx)
+	if err != nil {
+		t.Fatalf("failed to dequeue second task: %v", err)
+	}
+	if task2.ID != "normal-1" {
+		t.Errorf("expected normal task second, got %s", task2.ID)
+	}
+	if task2.Priority != PriorityNormal {
+		t.Errorf("expected normal priority for regular task, got %v", task2.Priority)
 	}
 }

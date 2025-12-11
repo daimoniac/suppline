@@ -65,6 +65,11 @@ func (m *mockQueue) GetQueueDepth(ctx context.Context) (int, error) {
 	return len(m.tasks), nil
 }
 
+func (m *mockQueue) HasPendingTask(ctx context.Context, digest string) (bool, error) {
+	// For testing purposes, always return false (no pending tasks)
+	return false, nil
+}
+
 func (m *mockQueue) Close() error {
 	if m.closed {
 		return errors.New("already closed")

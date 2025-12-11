@@ -204,7 +204,18 @@ func (w *watcherImpl) shouldScanImage(
 		return true, fmt.Sprintf("rescan interval elapsed (%v since last scan)", timeSinceLastScan), true, nil
 	}
 
-	// Step 4: Skip - already scanned and up to date
+	// Step 4: Check for pending manual rescan tasks before skipping
+	// Only check this when we would otherwise skip due to rescan interval
+	hasPendingRescan, err := w.taskQueue.HasPendingTask(ctx, currentDigest)
+	if err != nil {
+		w.logger.Warn("failed to check for pending rescan tasks, proceeding with skip decision",
+			"digest", currentDigest,
+			"error", err.Error())
+	} else if hasPendingRescan {
+		return false, "manual rescan already queued", false, nil
+	}
+
+	// Step 5: Skip - already scanned and up to date
 	return false, fmt.Sprintf("already scanned %v ago, no changes", timeSinceLastScan), false, nil
 }
 

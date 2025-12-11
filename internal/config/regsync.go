@@ -328,3 +328,38 @@ func (c *RegsyncConfig) GetWorkerPollInterval() (time.Duration, error) {
 	// Fall back to hardcoded default
 	return 5 * time.Second, nil
 }
+// GetWorkerConcurrency returns the worker concurrency from defaults
+// Returns the default if specified, otherwise 3
+func (c *RegsyncConfig) GetWorkerConcurrency() int {
+	if c.Defaults.WorkerConcurrency > 0 {
+		return c.Defaults.WorkerConcurrency
+	}
+	return 3 // Default concurrency
+}
+
+// GetWorkerRetryAttempts returns the worker retry attempts from defaults
+// Returns the default if specified, otherwise 3
+func (c *RegsyncConfig) GetWorkerRetryAttempts() int {
+	if c.Defaults.WorkerRetryAttempts > 0 {
+		return c.Defaults.WorkerRetryAttempts
+	}
+	return 3 // Default retry attempts
+}
+
+// GetWorkerRetryBackoff returns the worker retry backoff from defaults
+// Returns the default if specified, otherwise 10 seconds
+func (c *RegsyncConfig) GetWorkerRetryBackoff() (time.Duration, error) {
+	if c.Defaults.WorkerRetryBackoff != "" {
+		return parseInterval(c.Defaults.WorkerRetryBackoff)
+	}
+	return 10 * time.Second, nil // Default backoff
+}
+
+// GetQueueBufferSize returns the queue buffer size from defaults
+// Returns the default if specified, otherwise 1000
+func (c *RegsyncConfig) GetQueueBufferSize() int {
+	if c.Defaults.QueueBufferSize > 0 {
+		return c.Defaults.QueueBufferSize
+	}
+	return 1000 // Default buffer size
+}

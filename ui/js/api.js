@@ -97,6 +97,8 @@ class APIClient {
      * @param {Object} filters - Filter parameters
      * @param {string} filters.repository - Filter by repository name
      * @param {boolean} filters.policy_passed - Filter by policy status
+     * @param {number} filters.max_age - Maximum age of scans in seconds
+     * @param {string} filters.sort_by - Sort order (e.g., 'age_desc')
      * @param {number} filters.limit - Limit number of results
      * @param {number} filters.offset - Offset for pagination
      */
@@ -105,6 +107,8 @@ class APIClient {
         
         if (filters.repository) params.append('repository', filters.repository);
         if (filters.policy_passed !== undefined) params.append('policy_passed', filters.policy_passed);
+        if (filters.max_age) params.append('max_age', filters.max_age);
+        if (filters.sort_by) params.append('sort_by', filters.sort_by);
         if (filters.limit) params.append('limit', filters.limit);
         if (filters.offset) params.append('offset', filters.offset);
 

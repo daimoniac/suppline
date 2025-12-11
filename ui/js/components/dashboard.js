@@ -36,12 +36,12 @@ export class Dashboard extends BaseComponent {
             // API returns arrays directly, not wrapped objects
             const [
                 recentScans,
-                failedScans,
+                failedScansLast24h,
                 allTolerations,
                 expiringTolerations
             ] = await Promise.all([
                 this.apiClient.getScans({ limit: 10 }),
-                this.apiClient.getScans({ policy_passed: false }),
+                this.apiClient.getScans({ policy_passed: false, max_age: 86400 }), // Last 24 hours
                 this.apiClient.getTolerations({}),
                 this.apiClient.getTolerations({ expiring_soon: true })
             ]);
@@ -49,10 +49,10 @@ export class Dashboard extends BaseComponent {
             // Process recent scans (API returns array directly)
             this.data.recentScans = Array.isArray(recentScans) ? recentScans : [];
 
-            // Process failed images (API returns array directly)
-            const failedScansArray = Array.isArray(failedScans) ? failedScans : [];
-            this.data.failedImages = failedScansArray.length;
-            this.processFailedByRepository(failedScansArray);
+            // Process failed images from last 24h
+            const failedScansLast24hArray = Array.isArray(failedScansLast24h) ? failedScansLast24h : [];
+            this.data.failedImages = failedScansLast24hArray.length;
+            this.processFailedByRepository(failedScansLast24hArray);
 
             // Process tolerations (API returns array directly)
             this.data.activeTolerations = Array.isArray(allTolerations) ? allTolerations.length : 0;
@@ -136,7 +136,7 @@ export class Dashboard extends BaseComponent {
                     </div>
                     <div class="summary-card-content">
                         <div class="summary-card-value">${this.data.failedImages.toLocaleString()}</div>
-                        <div class="summary-card-label">Failed Images</div>
+                        <div class="summary-card-label">Failed Scans (24h)</div>
                     </div>
                 </div>
 
@@ -264,7 +264,7 @@ export class Dashboard extends BaseComponent {
 
         return `
             <div class="dashboard-section">
-                <h2>Failed Images by Repository</h2>
+                <h2>Failed Images by Repository <span class="section-subtitle">(Last 24 Hours)</span></h2>
                 <div class="repository-chart">
                     ${repos.map(([repo, count]) => this.renderRepositoryBar(repo, count)).join('')}
                 </div>
@@ -281,7 +281,7 @@ export class Dashboard extends BaseComponent {
 
         return `
             <div class="repository-bar-item">
-                <div class="repository-bar-label">${this.escapeHtml(repo)}</div>
+                <div class="repository-bar-label repository-link" data-repository="${this.escapeHtml(repo)}">${this.escapeHtml(repo)}</div>
                 <div class="repository-bar-container">
                     <div class="repository-bar-fill" data-width="${percentage}"></div>
                     <div class="repository-bar-count">${count}</div>
@@ -372,6 +372,17 @@ export class Dashboard extends BaseComponent {
                 const digest = row.dataset.digest;
                 if (digest) {
                     window.router.navigate(`/scans/${digest}`);
+                }
+            });
+        });
+
+        // Add click handlers for repository names in failed scans chart
+        document.querySelectorAll('.repository-link').forEach(link => {
+            link.addEventListener('click', (e) => {
+                e.stopPropagation();
+                const repository = link.dataset.repository;
+                if (repository) {
+                    window.router.navigate(`/repositories/${encodeURIComponent(repository)}`);
                 }
             });
         });

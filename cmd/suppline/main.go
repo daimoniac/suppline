@@ -199,10 +199,12 @@ func run() error {
 
 	logger.Debug("initializing worker",
 		"retry_attempts", cfg.Worker.RetryAttempts,
-		"retry_backoff", cfg.Worker.RetryBackoff)
+		"retry_backoff", cfg.Worker.RetryBackoff,
+		"concurrency", cfg.Worker.Concurrency)
 	workerConfig := worker.Config{
 		RetryAttempts: cfg.Worker.RetryAttempts,
 		RetryBackoff:  cfg.Worker.RetryBackoff,
+		Concurrency:   cfg.Worker.Concurrency,
 	}
 	workerInstance := worker.NewImageWorker(
 		taskQueue,

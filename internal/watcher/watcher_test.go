@@ -717,3 +717,99 @@ func TestProcessTag_FailSafeBehavior(t *testing.T) {
 		t.Error("Expected IsRescan to be false for fail-safe enqueue")
 	}
 }
+func TestWatcher_Discover_SkipWhenManualRescanPending(t *testing.T) {
+	ctx := context.Background()
+
+	// Setup mock registry
+	mockRegistry := &mockRegistryClient{
+		repositories: []string{"myorg/app1"},
+		tags: map[string][]string{
+			"myorg/app1": {"v1.0"},
+		},
+		digests: map[string]string{
+			"myorg/app1:v1.0": "sha256:digest1",
+		},
+	}
+
+	// Setup mock state store with a recent scan
+	mockStore := &mockStateStore{
+		scans: map[string]*statestore.ScanRecord{
+			"sha256:digest1": {
+				Repository: "myorg/app1",
+				Tag:        "v1.0",
+				Digest:     "sha256:digest1",
+				CreatedAt:  time.Now().Unix() - 3600, // 1 hour ago
+			},
+		},
+	}
+
+	// Setup real queue (not mock) to test pending task detection
+	realQueue := queue.NewInMemoryQueue(100)
+	defer realQueue.Close()
+
+	// Setup regsync config
+	regsyncCfg := &config.RegsyncConfig{
+		Sync: []config.SyncEntry{
+			{Target: "myorg/app1"},
+		},
+	}
+
+	// Create watcher with long rescan interval
+	logger := observability.NewLogger("error") // Use error level to reduce test output
+	w := NewWatcher(mockRegistry, regsyncCfg, mockStore, realQueue, Config{
+		PollInterval:   5 * time.Second,
+		RescanInterval: 24 * time.Hour, // Long interval to ensure normal discovery would skip
+	}, logger)
+
+	// First discovery should skip due to recent scan
+	err := w.Discover(ctx)
+	if err != nil {
+		t.Fatalf("Discover failed: %v", err)
+	}
+
+	queueDepth, _ := realQueue.GetQueueDepth(ctx)
+	if queueDepth != 0 {
+		t.Errorf("Expected 0 tasks after normal discovery, got %d", queueDepth)
+	}
+
+	// Enqueue a manual rescan task
+	manualTask := &queue.ScanTask{
+		ID:         "manual-rescan-1",
+		Repository: "myorg/app1",
+		Digest:     "sha256:digest1",
+		Tag:        "v1.0",
+		EnqueuedAt: time.Now(),
+		Attempts:   0,
+		IsRescan:   true,
+	}
+
+	err = realQueue.Enqueue(ctx, manualTask)
+	if err != nil {
+		t.Fatalf("Failed to enqueue manual task: %v", err)
+	}
+
+	// Second discovery should detect pending task and skip
+	err = w.Discover(ctx)
+	if err != nil {
+		t.Fatalf("Discover failed: %v", err)
+	}
+
+	queueDepth, _ = realQueue.GetQueueDepth(ctx)
+	if queueDepth != 1 {
+		t.Errorf("Expected 1 task after discovery with pending manual rescan, got %d", queueDepth)
+	}
+
+	// Verify the task is still the manual one
+	task, err := realQueue.Dequeue(ctx)
+	if err != nil {
+		t.Fatalf("Failed to dequeue task: %v", err)
+	}
+
+	if task.ID != "manual-rescan-1" {
+		t.Errorf("Expected manual task ID 'manual-rescan-1', got %s", task.ID)
+	}
+
+	if !task.IsRescan {
+		t.Error("Expected IsRescan to be true for manual task")
+	}
+}

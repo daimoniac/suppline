@@ -1,0 +1,113 @@
+<mxfile host="app.diagrams.net" agent="Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/142.0.0.0 Safari/537.36" version="29.1.0">
+  <diagram name="Suppline Supply Chain" id="r0gjKpczl2hHhCvAwWAU">
+    <mxGraphModel dx="1606" dy="1139" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1169" pageHeight="827" math="0" shadow="0">
+      <root>
+        <mxCell id="0" />
+        <mxCell id="1" parent="0" />
+        <mxCell id="zFd6CkcNNh1L-_P9VyZs-1" parent="1" style="text;html=1;fontSize=22;fontStyle=1;align=center;verticalAlign=middle;whiteSpace=wrap;rounded=0;" value="Suppline workflow" vertex="1">
+          <mxGeometry height="40" width="780" x="360" y="310" as="geometry" />
+        </mxCell>
+        <mxCell id="zFd6CkcNNh1L-_P9VyZs-4" parent="1" style="swimlane;html=1;rounded=0;horizontal=0;startSize=30;fillColor=#d5e8d4;strokeColor=#82b366;fontStyle=1;" value="Private Repository (Suppline)" vertex="1">
+          <mxGeometry height="380" width="770" x="400" y="420" as="geometry" />
+        </mxCell>
+        <mxCell id="zFd6CkcNNh1L-_P9VyZs-6" parent="zFd6CkcNNh1L-_P9VyZs-4" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#e9ffe9;strokeColor=#333333;" value="2) Scan images for vulnerabilities" vertex="1">
+          <mxGeometry height="60" width="260" x="70" y="178" as="geometry" />
+        </mxCell>
+        <mxCell id="zFd6CkcNNh1L-_P9VyZs-7" parent="zFd6CkcNNh1L-_P9VyZs-4" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fff1f1;strokeColor=#333333;" value="3) Create attestations in private repo:\n• Vulnerabilities\n• SBOMs\n• SCAI attributes" vertex="1">
+          <mxGeometry height="90" width="320" x="40" y="268" as="geometry" />
+        </mxCell>
+        <mxCell id="HTWb-hQ2shF_DW2LDiDQ-11" edge="1" parent="zFd6CkcNNh1L-_P9VyZs-4" source="zFd6CkcNNh1L-_P9VyZs-5" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;entryX=-0.01;entryY=0.35;entryDx=0;entryDy=0;entryPerimeter=0;" target="zFd6CkcNNh1L-_P9VyZs-8">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="HTWb-hQ2shF_DW2LDiDQ-12" connectable="0" parent="HTWb-hQ2shF_DW2LDiDQ-11" style="edgeLabel;html=1;align=center;verticalAlign=middle;resizable=0;points=[];" value="image synced" vertex="1">
+          <mxGeometry relative="1" x="-0.3577" y="1" as="geometry">
+            <mxPoint x="1" as="offset" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="zFd6CkcNNh1L-_P9VyZs-5" parent="zFd6CkcNNh1L-_P9VyZs-4" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dfefff;strokeColor=#333333;" value="1) Sync remote → private repository" vertex="1">
+          <mxGeometry height="60" width="260" x="70" y="98" as="geometry" />
+        </mxCell>
+        <mxCell id="zFd6CkcNNh1L-_P9VyZs-16" edge="1" parent="zFd6CkcNNh1L-_P9VyZs-4" source="zFd6CkcNNh1L-_P9VyZs-5" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;endArrow=block;strokeColor=#333333;" target="zFd6CkcNNh1L-_P9VyZs-6">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="zFd6CkcNNh1L-_P9VyZs-8" parent="zFd6CkcNNh1L-_P9VyZs-4" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#333333;dashed=1;" value="Private registry stores:&lt;br&gt;• Mirrored images&lt;br&gt;• Attestations" vertex="1">
+          <mxGeometry height="165" width="300" x="440" y="73" as="geometry" />
+        </mxCell>
+        <mxCell id="zFd6CkcNNh1L-_P9VyZs-18" edge="1" parent="zFd6CkcNNh1L-_P9VyZs-4" source="zFd6CkcNNh1L-_P9VyZs-7" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;endArrow=block;strokeColor=#333333;" target="zFd6CkcNNh1L-_P9VyZs-8" value="metadata attested">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="460" y="313" />
+              <mxPoint x="460" y="153" />
+            </Array>
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="HTWb-hQ2shF_DW2LDiDQ-6" edge="1" parent="zFd6CkcNNh1L-_P9VyZs-4" source="HTWb-hQ2shF_DW2LDiDQ-3" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;" target="zFd6CkcNNh1L-_P9VyZs-5">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="HTWb-hQ2shF_DW2LDiDQ-3" parent="zFd6CkcNNh1L-_P9VyZs-4" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f8cecc;strokeColor=#b85450;" value="Sync rules / filters" vertex="1">
+          <mxGeometry height="60" width="260" x="70" y="22" as="geometry" />
+        </mxCell>
+        <mxCell id="zFd6CkcNNh1L-_P9VyZs-9" parent="1" style="swimlane;html=1;rounded=0;horizontal=1;startSize=30;fillColor=#fff7e6;strokeColor=#999999;fontStyle=1;" value="Admin Actions" vertex="1">
+          <mxGeometry height="219" width="260" x="360" y="821" as="geometry" />
+        </mxCell>
+        <mxCell id="zFd6CkcNNh1L-_P9VyZs-10" parent="zFd6CkcNNh1L-_P9VyZs-9" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffe3b3;strokeColor=#333333;" value="updates / patches images" vertex="1">
+          <mxGeometry height="60" width="230" x="10" y="129.5" as="geometry" />
+        </mxCell>
+        <mxCell id="zFd6CkcNNh1L-_P9VyZs-11" parent="zFd6CkcNNh1L-_P9VyZs-9" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffe3b3;strokeColor=#333333;" value="create tolerations &lt;br&gt;for accepted vulnerabilities" vertex="1">
+          <mxGeometry height="60" width="230" x="10" y="49" as="geometry" />
+        </mxCell>
+        <mxCell id="zFd6CkcNNh1L-_P9VyZs-12" parent="1" style="swimlane;html=1;rounded=0;horizontal=0;startSize=30;fillColor=#e8f3ff;strokeColor=#999999;fontStyle=1;" value="Kubernetes Cluster" vertex="1">
+          <mxGeometry height="219" width="520" x="650" y="821" as="geometry" />
+        </mxCell>
+        <mxCell id="zFd6CkcNNh1L-_P9VyZs-13" parent="zFd6CkcNNh1L-_P9VyZs-12" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#cfe4ff;strokeColor=#333333;" value="5) Before running an image:&lt;br&gt;Kubernetes checks attestations for compliance" vertex="1">
+          <mxGeometry height="70" width="420" x="60" y="30" as="geometry" />
+        </mxCell>
+        <mxCell id="zFd6CkcNNh1L-_P9VyZs-14" parent="zFd6CkcNNh1L-_P9VyZs-12" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#cfe4ff;strokeColor=#333333;" value="Compliant image allowed to run" vertex="1">
+          <mxGeometry height="50" width="260" x="140" y="139" as="geometry" />
+        </mxCell>
+        <mxCell id="zFd6CkcNNh1L-_P9VyZs-15" edge="1" parent="1" source="zFd6CkcNNh1L-_P9VyZs-3" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;endArrow=block;strokeColor=#333333;" target="HTWb-hQ2shF_DW2LDiDQ-3">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="zFd6CkcNNh1L-_P9VyZs-17" edge="1" parent="1" source="zFd6CkcNNh1L-_P9VyZs-6" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;endArrow=block;strokeColor=#333333;" target="zFd6CkcNNh1L-_P9VyZs-7">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="zFd6CkcNNh1L-_P9VyZs-21" edge="1" parent="1" source="zFd6CkcNNh1L-_P9VyZs-8" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;endArrow=block;strokeColor=#333333;" target="zFd6CkcNNh1L-_P9VyZs-13">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="zFd6CkcNNh1L-_P9VyZs-22" edge="1" parent="1" source="zFd6CkcNNh1L-_P9VyZs-13" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;endArrow=block;strokeColor=#333333;" target="zFd6CkcNNh1L-_P9VyZs-14" value="If compliant">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="zFd6CkcNNh1L-_P9VyZs-3" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#333333;" value="Third-party container images" vertex="1">
+          <mxGeometry height="51" width="220" x="490" y="350" as="geometry" />
+        </mxCell>
+        <mxCell id="HTWb-hQ2shF_DW2LDiDQ-2" edge="1" parent="1" source="zFd6CkcNNh1L-_P9VyZs-10" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;entryX=0;entryY=0.5;entryDx=0;entryDy=0;dashed=1;" target="HTWb-hQ2shF_DW2LDiDQ-3">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="300" y="981" />
+              <mxPoint x="300" y="472" />
+            </Array>
+            <mxPoint x="110" y="610" as="targetPoint" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="HTWb-hQ2shF_DW2LDiDQ-10" connectable="0" parent="HTWb-hQ2shF_DW2LDiDQ-2" style="edgeLabel;html=1;align=center;verticalAlign=middle;resizable=0;points=[];" value="sync rules / filters" vertex="1">
+          <mxGeometry relative="1" x="-0.3306" y="-3" as="geometry">
+            <mxPoint x="27" y="-240" as="offset" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="HTWb-hQ2shF_DW2LDiDQ-7" edge="1" parent="1" source="zFd6CkcNNh1L-_P9VyZs-11" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;entryX=0;entryY=0.5;entryDx=0;entryDy=0;dashed=1;" target="zFd6CkcNNh1L-_P9VyZs-6">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="330" y="900" />
+              <mxPoint x="330" y="628" />
+            </Array>
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="HTWb-hQ2shF_DW2LDiDQ-9" connectable="0" parent="HTWb-hQ2shF_DW2LDiDQ-7" style="edgeLabel;html=1;align=center;verticalAlign=middle;resizable=0;points=[];" value="Policy exceptions /&lt;br&gt;tolerations" vertex="1">
+          <mxGeometry relative="1" x="-0.1818" y="2" as="geometry">
+            <mxPoint as="offset" />
+          </mxGeometry>
+        </mxCell>
+      </root>
+    </mxGraphModel>
+  </diagram>
+</mxfile>

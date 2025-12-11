@@ -26,9 +26,20 @@ type TaskQueue interface {
 	// GetQueueDepth returns current queue size
 	GetQueueDepth(ctx context.Context) (int, error)
 
+	// HasPendingTask checks if there's a pending task for the given digest
+	HasPendingTask(ctx context.Context, digest string) (bool, error)
+
 	// Close shuts down the queue gracefully
 	Close() error
 }
+
+// TaskPriority defines task priority levels
+type TaskPriority int
+
+const (
+	PriorityNormal TaskPriority = iota
+	PriorityHigh   // For rescans and urgent tasks
+)
 
 // ScanTask represents a container image scanning task
 type ScanTask struct {
@@ -39,19 +50,21 @@ type ScanTask struct {
 	EnqueuedAt  time.Time
 	Attempts    int
 	IsRescan    bool
+	Priority    TaskPriority
 	Tolerations []types.CVEToleration // Using canonical type from internal/types
 }
 
-// InMemoryQueue implements TaskQueue using Go channels
+// InMemoryQueue implements TaskQueue using priority queues
 type InMemoryQueue struct {
-	tasks       chan *ScanTask
-	pending     map[string]bool // Deduplication map: digest -> exists
-	pendingMu   sync.RWMutex
-	metrics     *QueueMetrics
-	metricsMu   sync.RWMutex
-	closed      bool
-	closedMu    sync.RWMutex
-	bufferSize  int
+	highPriorityTasks chan *ScanTask // For rescans and urgent tasks
+	normalTasks       chan *ScanTask // For regular scans
+	pending           map[string]bool // Deduplication map: digest -> exists
+	pendingMu         sync.RWMutex
+	metrics           *QueueMetrics
+	metricsMu         sync.RWMutex
+	closed            bool
+	closedMu          sync.RWMutex
+	bufferSize        int
 }
 
 // QueueMetrics tracks queue operation statistics
@@ -65,11 +78,22 @@ type QueueMetrics struct {
 
 // NewInMemoryQueue creates a new in-memory task queue
 func NewInMemoryQueue(bufferSize int) *InMemoryQueue {
+	// Ensure minimum buffer size of 1 for each queue
+	highPriorityBuffer := bufferSize / 2
+	normalBuffer := bufferSize / 2
+	if highPriorityBuffer < 1 {
+		highPriorityBuffer = 1
+	}
+	if normalBuffer < 1 {
+		normalBuffer = 1
+	}
+	
 	return &InMemoryQueue{
-		tasks:      make(chan *ScanTask, bufferSize),
-		pending:    make(map[string]bool),
-		metrics:    &QueueMetrics{},
-		bufferSize: bufferSize,
+		highPriorityTasks: make(chan *ScanTask, highPriorityBuffer),
+		normalTasks:       make(chan *ScanTask, normalBuffer),
+		pending:           make(map[string]bool),
+		metrics:           &QueueMetrics{},
+		bufferSize:        bufferSize,
 	}
 }
 
@@ -99,8 +123,23 @@ func (q *InMemoryQueue) Enqueue(ctx context.Context, task *ScanTask) error {
 	q.pending[task.Digest] = true
 	q.pendingMu.Unlock()
 
+	// Set priority based on task type
+	if task.IsRescan {
+		task.Priority = PriorityHigh
+	} else {
+		task.Priority = PriorityNormal
+	}
+
+	// Enqueue to appropriate priority queue
+	var targetQueue chan *ScanTask
+	if task.Priority == PriorityHigh {
+		targetQueue = q.highPriorityTasks
+	} else {
+		targetQueue = q.normalTasks
+	}
+
 	select {
-	case q.tasks <- task:
+	case targetQueue <- task:
 		q.incrementMetric("enqueued")
 		return nil
 	case <-ctx.Done():
@@ -112,6 +151,7 @@ func (q *InMemoryQueue) Enqueue(ctx context.Context, task *ScanTask) error {
 }
 
 // Dequeue retrieves a task for processing (blocking)
+// High priority tasks are always processed first
 func (q *InMemoryQueue) Dequeue(ctx context.Context) (*ScanTask, error) {
 	q.closedMu.RLock()
 	if q.closed {
@@ -120,20 +160,47 @@ func (q *InMemoryQueue) Dequeue(ctx context.Context) (*ScanTask, error) {
 	}
 	q.closedMu.RUnlock()
 
-	select {
-	case task, ok := <-q.tasks:
-		if !ok {
-			return nil, errors.NewPermanentf("queue is closed")
+	for {
+		// Always check high priority queue first
+		select {
+		case task, ok := <-q.highPriorityTasks:
+			if !ok {
+				// High priority channel closed, fall through to normal tasks
+				break
+			}
+			q.pendingMu.Lock()
+			delete(q.pending, task.Digest)
+			q.pendingMu.Unlock()
+			q.incrementMetric("dequeued")
+			return task, nil
+		default:
+			// No high priority tasks available, check normal tasks
 		}
 
-		q.pendingMu.Lock()
-		delete(q.pending, task.Digest)
-		q.pendingMu.Unlock()
-
-		q.incrementMetric("dequeued")
-		return task, nil
-	case <-ctx.Done():
-		return nil, ctx.Err()
+		// If no high priority tasks, check normal tasks
+		select {
+		case task, ok := <-q.highPriorityTasks:
+			if !ok {
+				// High priority channel closed, continue to normal tasks
+			} else {
+				q.pendingMu.Lock()
+				delete(q.pending, task.Digest)
+				q.pendingMu.Unlock()
+				q.incrementMetric("dequeued")
+				return task, nil
+			}
+		case task, ok := <-q.normalTasks:
+			if !ok {
+				return nil, errors.NewPermanentf("queue is closed")
+			}
+			q.pendingMu.Lock()
+			delete(q.pending, task.Digest)
+			q.pendingMu.Unlock()
+			q.incrementMetric("dequeued")
+			return task, nil
+		case <-ctx.Done():
+			return nil, ctx.Err()
+		}
 	}
 }
 
@@ -151,7 +218,19 @@ func (q *InMemoryQueue) Fail(ctx context.Context, taskID string, err error) erro
 
 // GetQueueDepth returns current queue size
 func (q *InMemoryQueue) GetQueueDepth(ctx context.Context) (int, error) {
-	return len(q.tasks), nil
+	return len(q.highPriorityTasks) + len(q.normalTasks), nil
+}
+
+// HasPendingTask checks if there's a pending task for the given digest
+func (q *InMemoryQueue) HasPendingTask(ctx context.Context, digest string) (bool, error) {
+	if digest == "" {
+		return false, errors.NewPermanentf("digest cannot be empty")
+	}
+
+	q.pendingMu.RLock()
+	defer q.pendingMu.RUnlock()
+	
+	return q.pending[digest], nil
 }
 
 // Close shuts down the queue gracefully
@@ -164,7 +243,8 @@ func (q *InMemoryQueue) Close() error {
 	}
 
 	q.closed = true
-	close(q.tasks)
+	close(q.highPriorityTasks)
+	close(q.normalTasks)
 	return nil
 }
 

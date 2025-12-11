@@ -72,6 +72,8 @@ func (s *APIServer) handleGetScan(w http.ResponseWriter, r *http.Request) {
 // @Produce json
 // @Param repository query string false "Filter by repository name"
 // @Param policy_passed query boolean false "Filter by policy status"
+// @Param max_age query int false "Maximum age of scans in seconds (e.g., 86400 for last 24 hours)"
+// @Param sort_by query string false "Sort order: age_desc (default)" Enums(age_desc)
 // @Param limit query int false "Maximum number of results" default(100)
 // @Param offset query int false "Pagination offset" default(0)
 // @Success 200 {array} statestore.ScanRecord
@@ -89,6 +91,8 @@ func (s *APIServer) handleListScans(w http.ResponseWriter, r *http.Request) {
 	filter := statestore.ScanFilter{
 		Repository:   parseQueryParam(r, "repository"),
 		PolicyPassed: parseQueryParamBool(r, "policy_passed"),
+		MaxAge:       parseQueryParamInt(r, "max_age", 0),
+		SortBy:       parseQueryParam(r, "sort_by"),
 		Limit:        parseQueryParamInt(r, "limit", 100),
 		Offset:       parseQueryParamInt(r, "offset", 0),
 	}

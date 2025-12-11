@@ -362,6 +362,75 @@ func TestSQLiteStore(t *testing.T) {
 		}
 	})
 
+	// Test ListScans with max_age filter
+	t.Run("ListScans with max_age filter", func(t *testing.T) {
+		// First, get all scans to establish baseline
+		allFilter := ScanFilter{Limit: 10}
+		allScans, err := store.ListScans(ctx, allFilter)
+		if err != nil {
+			t.Fatalf("Failed to list all scans: %v", err)
+		}
+		if len(allScans) == 0 {
+			t.Skip("No scans available for max_age test")
+		}
+
+		// Test with a large max_age (1 day) - should return all results
+		filter := ScanFilter{
+			MaxAge: 86400, // 24 hours
+			Limit:  10,
+		}
+		scans, err := store.ListScans(ctx, filter)
+		if err != nil {
+			t.Fatalf("Failed to list scans with max_age=86400: %v", err)
+		}
+		if len(scans) != len(allScans) {
+			t.Errorf("Expected %d scans with max_age=86400, got %d", len(allScans), len(scans))
+		}
+
+		// Test with zero max_age (no filter) - should return all results
+		filter.MaxAge = 0
+		scans, err = store.ListScans(ctx, filter)
+		if err != nil {
+			t.Fatalf("Failed to list scans with max_age=0: %v", err)
+		}
+		if len(scans) != len(allScans) {
+			t.Errorf("Expected %d scans with max_age=0, got %d", len(allScans), len(scans))
+		}
+	})
+
+	// Test ListScans with sort_by parameter
+	t.Run("ListScans with sort_by parameter", func(t *testing.T) {
+		// Test default sorting (age_desc)
+		filter := ScanFilter{
+			SortBy: "age_desc",
+			Limit:  10,
+		}
+		scans, err := store.ListScans(ctx, filter)
+		if err != nil {
+			t.Fatalf("Failed to list scans with sort_by=age_desc: %v", err)
+		}
+		if len(scans) < 2 {
+			t.Skip("Need at least 2 scans to test sorting")
+		}
+		// Verify scans are sorted by created_at DESC (newest first)
+		for i := 1; i < len(scans); i++ {
+			if scans[i-1].CreatedAt < scans[i].CreatedAt {
+				t.Errorf("Scans not sorted by age descending: %d should be after %d", 
+					scans[i-1].CreatedAt, scans[i].CreatedAt)
+			}
+		}
+
+		// Test with empty sort_by (should default to age_desc)
+		filter.SortBy = ""
+		scans2, err := store.ListScans(ctx, filter)
+		if err != nil {
+			t.Fatalf("Failed to list scans with empty sort_by: %v", err)
+		}
+		if len(scans2) != len(scans) {
+			t.Errorf("Expected same number of scans with empty sort_by, got %d vs %d", len(scans2), len(scans))
+		}
+	})
+
 	// Test ListTolerations with no filters
 	t.Run("ListTolerations with no filters", func(t *testing.T) {
 		filter := TolerationFilter{

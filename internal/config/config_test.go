@@ -74,6 +74,9 @@ func TestLoadWithCustomValues(t *testing.T) {
 	defer os.Remove(tmpfile.Name())
 
 	content := `version: 1
+defaults:
+  x-queue-buffer-size: 2000
+  x-worker-retry-attempts: 5
 sync:
   - source: nginx
     target: myprivateregistry/nginx
@@ -88,16 +91,12 @@ sync:
 
 	// Set custom environment variables
 	os.Setenv("SUPPLINE_CONFIG", tmpfile.Name())
-	os.Setenv("QUEUE_BUFFER_SIZE", "2000")
-	os.Setenv("WORKER_RETRY_ATTEMPTS", "5")
 	os.Setenv("TRIVY_SERVER_ADDR", "trivy:4954")
 	os.Setenv("ATTESTATION_KEY", "dGVzdC1rZXk=")
 	os.Setenv("API_PORT", "9000")
 	os.Setenv("LOG_LEVEL", "debug")
 	defer func() {
 		os.Unsetenv("SUPPLINE_CONFIG")
-		os.Unsetenv("QUEUE_BUFFER_SIZE")
-		os.Unsetenv("WORKER_RETRY_ATTEMPTS")
 		os.Unsetenv("TRIVY_SERVER_ADDR")
 		os.Unsetenv("ATTESTATION_KEY")
 		os.Unsetenv("API_PORT")

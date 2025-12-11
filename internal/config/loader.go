@@ -15,6 +15,10 @@ func Load() (*Config, error) {
 	// Parse regsync config to get defaults
 	var workerPollInterval time.Duration
 	var rescanInterval time.Duration
+	var workerConcurrency int
+	var workerRetryAttempts int
+	var workerRetryBackoff time.Duration
+	var queueBufferSize int
 
 	// Try to load regsync config for defaults
 	if regsyncCfg, err := ParseRegsync(regsyncPath); err == nil {
@@ -24,6 +28,12 @@ func Load() (*Config, error) {
 		if interval, err := regsyncCfg.GetRescanInterval(""); err == nil {
 			rescanInterval = interval
 		}
+		workerConcurrency = regsyncCfg.GetWorkerConcurrency()
+		workerRetryAttempts = regsyncCfg.GetWorkerRetryAttempts()
+		if backoff, err := regsyncCfg.GetWorkerRetryBackoff(); err == nil {
+			workerRetryBackoff = backoff
+		}
+		queueBufferSize = regsyncCfg.GetQueueBufferSize()
 	}
 
 	// Use defaults from suppline.yml, or fall back to hardcoded defaults
@@ -33,16 +43,29 @@ func Load() (*Config, error) {
 	if rescanInterval == 0 {
 		rescanInterval = 24 * time.Hour
 	}
+	if workerConcurrency == 0 {
+		workerConcurrency = 3
+	}
+	if workerRetryAttempts == 0 {
+		workerRetryAttempts = 3
+	}
+	if workerRetryBackoff == 0 {
+		workerRetryBackoff = 10 * time.Second
+	}
+	if queueBufferSize == 0 {
+		queueBufferSize = 1000
+	}
 
 	cfg := &Config{
 		RegsyncPath: regsyncPath,
 		Queue: QueueConfig{
-			BufferSize: getEnvInt("QUEUE_BUFFER_SIZE", 1000),
+			BufferSize: queueBufferSize,
 		},
 		Worker: WorkerConfig{
 			PollInterval:  workerPollInterval,
-			RetryAttempts: getEnvInt("WORKER_RETRY_ATTEMPTS", 3),
-			RetryBackoff:  getEnvDuration("WORKER_RETRY_BACKOFF", 10*time.Second),
+			RetryAttempts: workerRetryAttempts,
+			RetryBackoff:  workerRetryBackoff,
+			Concurrency:   workerConcurrency,
 		},
 		Scanner: ScannerConfig{
 			ServerAddr:    getEnv("TRIVY_SERVER_ADDR", "localhost:4954"),

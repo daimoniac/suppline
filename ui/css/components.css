@@ -670,12 +670,25 @@ tr:hover {
     display: flex;
     flex-direction: column;
     gap: var(--spacing-sm);
+    cursor: pointer;
+    padding: var(--spacing-sm);
+    border-radius: 4px;
+    transition: background-color 0.2s;
+}
+
+.repository-bar-item:hover {
+    background-color: var(--bg-color);
 }
 
 .repository-bar-label {
     font-size: 0.875rem;
     font-weight: 500;
     color: var(--text-primary);
+}
+
+.repository-bar-label.repository-link {
+    color: var(--primary-color);
+    font-weight: 500;
 }
 
 .repository-bar-container {

@@ -167,6 +167,8 @@ type VulnFilter struct {
 type ScanFilter struct {
 	Repository   string
 	PolicyPassed *bool
+	MaxAge       int    // Maximum age of scans in seconds (0 = no limit)
+	SortBy       string // Sorting option: "age_desc" (default)
 	Limit        int
 	Offset       int
 }

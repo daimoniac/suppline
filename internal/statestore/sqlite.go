@@ -648,7 +648,20 @@ func (s *SQLiteStore) ListScans(ctx context.Context, filter ScanFilter) ([]*Scan
 		args = append(args, *filter.PolicyPassed)
 	}
 
-	query += " ORDER BY sr.created_at DESC"
+	// Add age filter if specified
+	if filter.MaxAge > 0 {
+		query += " AND sr.created_at >= strftime('%s', 'now', '-' || ? || ' seconds')"
+		args = append(args, filter.MaxAge)
+	}
+
+	// Add sorting - currently only age_desc is supported (and is the default)
+	switch filter.SortBy {
+	case "age_desc", "":
+		query += " ORDER BY sr.created_at DESC"
+	default:
+		// Default to age_desc for any unrecognized sort option
+		query += " ORDER BY sr.created_at DESC"
+	}
 
 	if filter.Limit > 0 {
 		query += " LIMIT ?"

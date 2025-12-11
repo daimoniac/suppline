@@ -30,6 +30,7 @@ type Worker interface {
 type Config struct {
 	RetryAttempts int
 	RetryBackoff  time.Duration
+	Concurrency   int // Number of concurrent workers
 }
 
 // DefaultConfig returns default worker configuration
@@ -37,6 +38,7 @@ func DefaultConfig() Config {
 	return Config{
 		RetryAttempts: 3,
 		RetryBackoff:  10 * time.Second,
+		Concurrency:   3, // Default to 3 concurrent workers
 	}
 }
 
@@ -98,18 +100,25 @@ func NewImageWorker(
 
 // Start begins processing tasks from the queue
 func (w *ImageWorker) Start(ctx context.Context) error {
-	w.logger.Info("worker starting")
+	concurrency := w.config.Concurrency
+	if concurrency <= 0 {
+		concurrency = 1
+	}
+
+	w.logger.Info("worker starting", "concurrency", concurrency)
 
 	// Create a cancellable context for the worker
 	workerCtx, cancel := context.WithCancel(ctx)
 	defer cancel()
 
-	// Start the main processing loop
-	w.wg.Add(1)
-	go func() {
-		defer w.wg.Done()
-		w.processLoop(workerCtx)
-	}()
+	// Start multiple processing loops for concurrent processing
+	for i := 0; i < concurrency; i++ {
+		w.wg.Add(1)
+		go func(workerID int) {
+			defer w.wg.Done()
+			w.processLoop(workerCtx, workerID)
+		}(i)
+	}
 
 	// Wait for context cancellation
 	<-workerCtx.Done()
@@ -134,13 +143,13 @@ func (w *ImageWorker) Start(ctx context.Context) error {
 }
 
 // processLoop is the main task processing loop
-func (w *ImageWorker) processLoop(ctx context.Context) {
-	w.logger.Info("worker processing loop started")
+func (w *ImageWorker) processLoop(ctx context.Context, workerID int) {
+	w.logger.Info("worker processing loop started", "worker_id", workerID)
 
 	for {
 		select {
 		case <-ctx.Done():
-			w.logger.Info("worker processing loop stopping")
+			w.logger.Info("worker processing loop stopping", "worker_id", workerID)
 			return
 		default:
 			// Dequeue a task (blocking with context)
@@ -148,10 +157,10 @@ func (w *ImageWorker) processLoop(ctx context.Context) {
 			if err != nil {
 				if ctx.Err() != nil {
 					// Context cancelled, exit gracefully
-					w.logger.Info("worker dequeue cancelled", "error", err)
+					w.logger.Info("worker dequeue cancelled", "worker_id", workerID, "error", err)
 					return
 				}
-				w.logger.Error("failed to dequeue task", "error", err)
+				w.logger.Error("failed to dequeue task", "worker_id", workerID, "error", err)
 				// Brief sleep to avoid tight loop on persistent errors
 				time.Sleep(time.Second)
 				continue
@@ -159,6 +168,7 @@ func (w *ImageWorker) processLoop(ctx context.Context) {
 
 			// Process the task
 			w.logger.Info("processing task",
+				"worker_id", workerID,
 				"task_id", task.ID,
 				"digest", task.Digest,
 				"repository", task.Repository,
@@ -168,6 +178,7 @@ func (w *ImageWorker) processLoop(ctx context.Context) {
 			if err := w.ProcessTask(ctx, task); err != nil {
 				// Log once here with full context
 				w.logger.Error("task processing failed",
+					"worker_id", workerID,
 					"task_id", task.ID,
 					"digest", task.Digest,
 					"repository", task.Repository,
@@ -175,6 +186,7 @@ func (w *ImageWorker) processLoop(ctx context.Context) {
 				_ = w.queue.Fail(ctx, task.ID, err)
 			} else {
 				w.logger.Info("task processing completed",
+					"worker_id", workerID,
 					"task_id", task.ID,
 					"digest", task.Digest,
 					"repository", task.Repository)
