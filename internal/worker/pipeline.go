@@ -45,6 +45,25 @@ func (p *Pipeline) Execute(ctx context.Context, task *queue.ScanTask) error {
 	// Phase 1: Scan (SBOM + Vulnerabilities)
 	sbom, scanResult, scanDurations, err := p.scanPhase(ctx, imageRef)
 	if err != nil {
+		// Check if this is a MANIFEST_UNKNOWN error that requires cleanup
+		if errors.IsManifestNotFound(err) {
+			p.logger.Info("manifest not found, performing cleanup", 
+				"image_ref", imageRef, 
+				"digest", task.Digest)
+			
+			// Perform cleanup before returning error
+			if cleanupErr := p.performManifestCleanup(ctx, task.Digest); cleanupErr != nil {
+				// If cleanup fails with transient error, return cleanup error for retry
+				if errors.IsTransient(cleanupErr) {
+					p.logger.Error("transient cleanup error after manifest not found", 
+						"image_ref", imageRef, 
+						"digest", task.Digest, 
+						"cleanup_error", cleanupErr)
+					return cleanupErr
+				}
+				// Permanent cleanup errors are already logged in performManifestCleanup
+			}
+		}
 		return err
 	}
 
@@ -62,8 +81,13 @@ func (p *Pipeline) Execute(ctx context.Context, task *queue.ScanTask) error {
 
 	// Phase 4: Persistence
 	if err := p.persistencePhase(ctx, task, scanResult, policyDecision, startTime); err != nil {
-		// Log error but don't fail - attestations and signatures are already created
-		p.logger.Error("failed to persist scan results", "image_ref", imageRef, "error", err)
+		// Check if persistence or cleanup failed with transient error
+		if errors.IsTransient(err) {
+			// Return transient errors to allow retry
+			return err
+		}
+		// Log permanent errors but don't fail - attestations and signatures are already created
+		p.logger.Error("permanent error during persistence phase", "image_ref", imageRef, "error", err)
 	}
 
 	// Log completion
@@ -101,8 +125,9 @@ func (p *Pipeline) scanPhase(ctx context.Context, imageRef string) (*scanner.SBO
 	p.logger.Debug("fetching image metadata", "image_ref", imageRef)
 	manifest, err := p.worker.registry.GetManifest(ctx, extractRepository(imageRef), extractDigest(imageRef))
 	if err != nil {
-		// Error already classified in registry package
-		return nil, nil, nil, fmt.Errorf("failed to fetch image metadata: %w", err)
+		// Classify registry errors to detect MANIFEST_UNKNOWN
+		classifiedErr := errors.ClassifyRegistryError(err)
+		return nil, nil, nil, fmt.Errorf("failed to fetch image metadata: %w", classifiedErr)
 	}
 	p.logger.Debug("image metadata fetched",
 		"digest", manifest.Digest,
@@ -114,8 +139,9 @@ func (p *Pipeline) scanPhase(ctx context.Context, imageRef string) (*scanner.SBO
 	p.logger.Debug("generating SBOM", "image_ref", imageRef)
 	sbom, err := p.worker.scanner.GenerateSBOM(ctx, imageRef)
 	if err != nil {
-		// Error already classified in scanner package
-		return nil, nil, nil, fmt.Errorf("failed to generate SBOM: %w", err)
+		// Classify scanner errors to detect MANIFEST_UNKNOWN
+		classifiedErr := errors.ClassifyRegistryError(err)
+		return nil, nil, nil, fmt.Errorf("failed to generate SBOM: %w", classifiedErr)
 	}
 	durations["sbom"] = time.Since(sbomStart)
 	p.logger.Info("SBOM generated",
@@ -130,8 +156,9 @@ func (p *Pipeline) scanPhase(ctx context.Context, imageRef string) (*scanner.SBO
 	p.logger.Debug("scanning vulnerabilities", "image_ref", imageRef)
 	scanResult, err := p.worker.scanner.ScanVulnerabilities(ctx, imageRef)
 	if err != nil {
-		// Error already classified in scanner package
-		return nil, nil, nil, fmt.Errorf("failed to scan vulnerabilities: %w", err)
+		// Classify scanner errors to detect MANIFEST_UNKNOWN
+		classifiedErr := errors.ClassifyRegistryError(err)
+		return nil, nil, nil, fmt.Errorf("failed to scan vulnerabilities: %w", classifiedErr)
 	}
 	durations["vuln_scan"] = time.Since(vulnStart)
 	p.logger.Info("vulnerability scan completed",
@@ -236,6 +263,19 @@ func (p *Pipeline) persistencePhase(ctx context.Context, task *queue.ScanTask, s
 
 	p.logger.Info("scan results recorded", "image_ref", fmt.Sprintf("%s@%s", task.Repository, task.Digest))
 
+	// Perform cleanup of previous scans after successful recording
+	if err := p.performSuccessfulScanCleanup(ctx, task.Digest); err != nil {
+		// If cleanup fails with transient error, return error for retry
+		if errors.IsTransient(err) {
+			p.logger.Error("transient cleanup error after successful scan", 
+				"image_ref", fmt.Sprintf("%s@%s", task.Repository, task.Digest),
+				"digest", task.Digest, 
+				"cleanup_error", err)
+			return err
+		}
+		// Permanent cleanup errors are already logged in performSuccessfulScanCleanup
+	}
+
 	// Check for policy failures and alerts
 	p.checkPolicyFailures(ctx, task, policyDecision)
 
@@ -287,6 +327,127 @@ func (p *Pipeline) logCompletion(task *queue.ScanTask, imageRef string, startTim
 		"scai_attestation_duration", attestDurations["scai_attest"],
 		"scai_attested", scaiAttested,
 		"policy_passed", policyDecision.Passed)
+}
+
+// performManifestCleanup handles cleanup when MANIFEST_UNKNOWN errors occur
+func (p *Pipeline) performManifestCleanup(ctx context.Context, digest string) error {
+	// Cast to cleanup interface
+	cleanupStore, ok := p.worker.stateStore.(statestore.StateStoreCleanup)
+	if !ok {
+		p.logger.Warn("state store does not support cleanup operations", "digest", digest)
+		return nil // Not an error - just log and continue
+	}
+
+	p.logger.Info("cleaning up artifact scans due to manifest not found", "digest", digest)
+	
+	// Cleanup all scans for this artifact
+	if err := cleanupStore.CleanupArtifactScans(ctx, digest); err != nil {
+		// Classify cleanup error for proper retry behavior
+		if errors.IsTransient(err) {
+			// Transient cleanup errors should allow retry
+			return fmt.Errorf("failed to cleanup artifact scans: %w", err)
+		}
+		// Permanent cleanup errors should be logged but not fail the pipeline
+		p.logger.Error("permanent error during artifact cleanup", 
+			"digest", digest, 
+			"error", err)
+		// Continue with repository cleanup despite permanent error
+	} else {
+		p.logger.Info("artifact cleanup completed", "digest", digest)
+	}
+
+	// Cleanup orphaned repositories after artifact cleanup
+	if err := p.performRepositoryCleanup(ctx, cleanupStore); err != nil {
+		// Repository cleanup errors are handled within performRepositoryCleanup
+		// Transient errors are returned, permanent errors are logged
+		if errors.IsTransient(err) {
+			return fmt.Errorf("repository cleanup failed: %w", err)
+		}
+	}
+
+	return nil
+}
+
+// performSuccessfulScanCleanup handles cleanup after successful scan recording
+func (p *Pipeline) performSuccessfulScanCleanup(ctx context.Context, digest string) error {
+	// Cast to cleanup interface
+	cleanupStore, ok := p.worker.stateStore.(statestore.StateStoreCleanup)
+	if !ok {
+		p.logger.Warn("state store does not support cleanup operations", "digest", digest)
+		return nil // Not an error - just log and continue
+	}
+
+	// Get the most recent scan to use as the keepScanID
+	lastScan, err := p.worker.stateStore.GetLastScan(ctx, digest)
+	if err != nil {
+		// Classify GetLastScan error for proper retry behavior
+		if errors.IsTransient(err) {
+			return fmt.Errorf("failed to get last scan for cleanup: %w", err)
+		}
+		// Permanent errors should be logged but not fail the pipeline
+		p.logger.Error("permanent error getting last scan for cleanup", 
+			"digest", digest, 
+			"error", err)
+		return nil
+	}
+
+	p.logger.Info("cleaning up previous scans after successful scan", 
+		"digest", digest, 
+		"keep_scan_id", lastScan.ID)
+	
+	// Cleanup previous scans, keeping the most recent one
+	if err := cleanupStore.CleanupPreviousScans(ctx, digest, lastScan.ID); err != nil {
+		// Classify cleanup error for proper retry behavior
+		if errors.IsTransient(err) {
+			// Transient cleanup errors should allow retry
+			return fmt.Errorf("failed to cleanup previous scans: %w", err)
+		}
+		// Permanent cleanup errors should be logged but not fail the pipeline
+		p.logger.Error("permanent error during previous scan cleanup", 
+			"digest", digest, 
+			"error", err)
+		// Continue with repository cleanup despite permanent error
+	} else {
+		p.logger.Info("previous scan cleanup completed", "digest", digest)
+	}
+
+	// Cleanup orphaned repositories after scan cleanup
+	if err := p.performRepositoryCleanup(ctx, cleanupStore); err != nil {
+		// Repository cleanup errors are handled within performRepositoryCleanup
+		// Transient errors are returned, permanent errors are logged
+		if errors.IsTransient(err) {
+			return fmt.Errorf("repository cleanup failed: %w", err)
+		}
+	}
+
+	return nil
+}
+
+// performRepositoryCleanup handles cleanup of orphaned repositories
+func (p *Pipeline) performRepositoryCleanup(ctx context.Context, cleanupStore statestore.StateStoreCleanup) error {
+	p.logger.Debug("cleaning up orphaned repositories")
+	
+	deletedRepos, err := cleanupStore.CleanupOrphanedRepositories(ctx)
+	if err != nil {
+		// Classify cleanup errors appropriately
+		if errors.IsTransient(err) {
+			// Return transient errors to allow retry
+			return fmt.Errorf("transient error during repository cleanup: %w", err)
+		}
+		// Log permanent errors but don't fail the pipeline
+		p.logger.Error("permanent error during repository cleanup", "error", err)
+		return nil
+	}
+
+	if len(deletedRepos) > 0 {
+		p.logger.Info("orphaned repositories cleaned up", 
+			"deleted_count", len(deletedRepos), 
+			"repositories", deletedRepos)
+	} else {
+		p.logger.Debug("no orphaned repositories found")
+	}
+
+	return nil
 }
 
 // getPolicyEngineForRepository returns a policy engine for the given repository

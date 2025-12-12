@@ -8,6 +8,7 @@ require (
 	github.com/google/cel-go v0.26.1
 	github.com/google/go-containerregistry v0.20.6
 	github.com/joho/godotenv v1.5.1
+	github.com/leanovate/gopter v0.2.11
 	github.com/mattn/go-sqlite3 v1.14.28
 	github.com/prometheus/client_golang v1.22.0
 	github.com/swaggo/http-swagger v1.3.4

@@ -48,6 +48,26 @@ type StateStore interface {
 	ListDueForRescan(ctx context.Context, interval time.Duration) ([]string, error)
 }
 
+// StateStoreCleanup extends StateStore with cleanup operations for managing
+// scan data lifecycle and maintaining database integrity.
+type StateStoreCleanup interface {
+	StateStore
+
+	// CleanupArtifactScans removes all scan records for an artifact (MANIFEST_UNKNOWN case).
+	// Also removes the artifact and repository if they become empty.
+	// This is used when a manifest is no longer available in the registry.
+	CleanupArtifactScans(ctx context.Context, digest string) error
+
+	// CleanupPreviousScans removes scans older than the specified scan, keeping the specified scan and any newer ones.
+	// This preserves the specified scan and any newer scans to avoid race conditions.
+	// Used after successful scans to maintain only the latest scan per artifact.
+	CleanupPreviousScans(ctx context.Context, digest string, keepScanID int64) error
+
+	// CleanupOrphanedRepositories removes repositories with no remaining artifacts.
+	// Returns a list of deleted repository names for logging purposes.
+	CleanupOrphanedRepositories(ctx context.Context) ([]string, error)
+}
+
 // RepositoryInfo represents a repository with aggregated metadata
 type RepositoryInfo struct {
 	Name                 string

@@ -182,8 +182,8 @@ func (c *clientImpl) ListTags(ctx context.Context, repo string) ([]string, error
 	opts := append([]remote.Option{remote.WithAuth(auth), remote.WithContext(ctx)}, c.remoteOpts...)
 	tags, err := remote.List(ref, opts...)
 	if err != nil {
-		// Network/registry errors are typically transient
-		return nil, errors.NewTransientf("failed to list tags for %s: %w", repo, err)
+		// Classify registry errors to detect MANIFEST_UNKNOWN
+		return nil, errors.ClassifyRegistryError(fmt.Errorf("failed to list tags for %s: %w", repo, err))
 	}
 
 	filteredTags := make([]string, 0, len(tags))
@@ -214,8 +214,8 @@ func (c *clientImpl) GetDigest(ctx context.Context, repo, tag string) (string, e
 	opts := append([]remote.Option{remote.WithAuth(auth), remote.WithContext(ctx)}, c.remoteOpts...)
 	desc, err := remote.Get(ref, opts...)
 	if err != nil {
-		// Network/registry errors are typically transient
-		return "", errors.NewTransientf("failed to get image descriptor for %s: %w", imageRef, err)
+		// Classify registry errors to detect MANIFEST_UNKNOWN
+		return "", errors.ClassifyRegistryError(fmt.Errorf("failed to get image descriptor for %s: %w", imageRef, err))
 	}
 
 	return desc.Digest.String(), nil
@@ -239,29 +239,29 @@ func (c *clientImpl) GetManifest(ctx context.Context, repo, digest string) (*Man
 	opts := append([]remote.Option{remote.WithAuth(auth), remote.WithContext(ctx)}, c.remoteOpts...)
 	desc, err := remote.Get(ref, opts...)
 	if err != nil {
-		// Network/registry errors are typically transient
-		return nil, errors.NewTransientf("failed to get image descriptor for %s: %w", imageRef, err)
+		// Classify registry errors to detect MANIFEST_UNKNOWN
+		return nil, errors.ClassifyRegistryError(fmt.Errorf("failed to get image descriptor for %s: %w", imageRef, err))
 	}
 
 	img, err := desc.Image()
 	if err != nil {
-		// Descriptor conversion errors are typically transient
-		return nil, errors.NewTransientf("failed to get image from descriptor: %w", err)
+		// Classify registry errors to detect MANIFEST_UNKNOWN
+		return nil, errors.ClassifyRegistryError(fmt.Errorf("failed to get image from descriptor: %w", err))
 	}
 
 	configFile, err := img.ConfigFile()
 	if err != nil {
-		return nil, errors.NewTransientf("failed to get config file: %w", err)
+		return nil, errors.ClassifyRegistryError(fmt.Errorf("failed to get config file: %w", err))
 	}
 
 	rawManifest, err := img.RawManifest()
 	if err != nil {
-		return nil, errors.NewTransientf("failed to get raw manifest: %w", err)
+		return nil, errors.ClassifyRegistryError(fmt.Errorf("failed to get raw manifest: %w", err))
 	}
 
 	layers, err := img.Layers()
 	if err != nil {
-		return nil, errors.NewTransientf("failed to get layers: %w", err)
+		return nil, errors.ClassifyRegistryError(fmt.Errorf("failed to get layers: %w", err))
 	}
 
 	layerDescs := make([]LayerDescriptor, 0, len(layers))
@@ -288,7 +288,7 @@ func (c *clientImpl) GetManifest(ctx context.Context, repo, digest string) (*Man
 
 	configHash, err := img.ConfigName()
 	if err != nil {
-		return nil, errors.NewTransientf("failed to get config hash: %w", err)
+		return nil, errors.ClassifyRegistryError(fmt.Errorf("failed to get config hash: %w", err))
 	}
 
 	manifest := &Manifest{

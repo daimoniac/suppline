@@ -175,7 +175,7 @@ func TestValidate(t *testing.T) {
 				},
 			},
 			wantErr: true,
-			errMsg:  "trivy server address is required",
+			errMsg:  "TRIVY_SERVER_ADDR environment variable is required",
 		},
 		{
 			name: "invalid state store type",

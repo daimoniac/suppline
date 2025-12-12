@@ -300,7 +300,7 @@ func (s *SQLiteStore) GetLastScan(ctx context.Context, digest string) (*ScanReco
 		JOIN artifacts a ON sr.artifact_id = a.id
 		JOIN repositories r ON a.repository_id = r.id
 		WHERE a.digest = ?
-		ORDER BY sr.created_at DESC
+		ORDER BY sr.created_at DESC, sr.id DESC
 		LIMIT 1
 	`, digest).Scan(
 		&record.ID, &record.ArtifactID, &record.ScanDurationMs,
@@ -1065,4 +1065,191 @@ func (s *SQLiteStore) GetRepository(ctx context.Context, name string, filter Rep
 	}
 
 	return detail, nil
+}
+
+// CleanupArtifactScans removes all scan records for an artifact (MANIFEST_UNKNOWN case).
+// Also removes the artifact and repository if they become empty.
+// This is used when a manifest is no longer available in the registry.
+func (s *SQLiteStore) CleanupArtifactScans(ctx context.Context, digest string) error {
+	return s.executeCleanup(ctx, func(tx *sql.Tx) error {
+		// First, get the artifact ID and repository ID
+		var artifactID, repositoryID int64
+		err := tx.QueryRowContext(ctx, `
+			SELECT a.id, a.repository_id 
+			FROM artifacts a 
+			WHERE a.digest = ?
+		`, digest).Scan(&artifactID, &repositoryID)
+		if err == sql.ErrNoRows {
+			// Artifact doesn't exist, nothing to clean up
+			return nil
+		}
+		if err != nil {
+			return errors.NewTransientf("failed to query artifact for cleanup: %w", err)
+		}
+
+		// First, clear the last_scan_id reference to avoid foreign key constraint issues
+		_, err = tx.ExecContext(ctx, `
+			UPDATE artifacts SET last_scan_id = NULL WHERE id = ?
+		`, artifactID)
+		if err != nil {
+			return errors.NewTransientf("failed to clear last_scan_id reference: %w", err)
+		}
+
+		// Delete all scan records for this artifact (vulnerabilities will cascade delete)
+		_, err = tx.ExecContext(ctx, `
+			DELETE FROM scan_records WHERE artifact_id = ?
+		`, artifactID)
+		if err != nil {
+			return errors.NewTransientf("failed to delete scan records: %w", err)
+		}
+
+		// Delete the artifact itself
+		_, err = tx.ExecContext(ctx, `
+			DELETE FROM artifacts WHERE id = ?
+		`, artifactID)
+		if err != nil {
+			return errors.NewTransientf("failed to delete artifact: %w", err)
+		}
+
+		// Check if repository has any remaining artifacts
+		var remainingArtifacts int
+		err = tx.QueryRowContext(ctx, `
+			SELECT COUNT(*) FROM artifacts WHERE repository_id = ?
+		`, repositoryID).Scan(&remainingArtifacts)
+		if err != nil {
+			return errors.NewTransientf("failed to count remaining artifacts: %w", err)
+		}
+
+		// If no artifacts remain, delete the repository
+		if remainingArtifacts == 0 {
+			_, err = tx.ExecContext(ctx, `
+				DELETE FROM repositories WHERE id = ?
+			`, repositoryID)
+			if err != nil {
+				return errors.NewTransientf("failed to delete empty repository: %w", err)
+			}
+		}
+
+		return nil
+	})
+}
+
+// executeCleanup is a helper method for transaction management in cleanup operations
+func (s *SQLiteStore) executeCleanup(ctx context.Context, operation func(*sql.Tx) error) error {
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return errors.NewTransientf("failed to begin cleanup transaction: %w", err)
+	}
+	defer tx.Rollback()
+
+	if err := operation(tx); err != nil {
+		return err // Error already classified by operation
+	}
+
+	if err := tx.Commit(); err != nil {
+		return errors.NewTransientf("failed to commit cleanup transaction: %w", err)
+	}
+
+	return nil
+}
+
+// CleanupPreviousScans removes scans older than the specified scan, keeping the specified scan and any newer ones.
+// This preserves the specified scan and any newer scans to avoid race conditions.
+// Used after successful scans to maintain only the latest scan per artifact.
+func (s *SQLiteStore) CleanupPreviousScans(ctx context.Context, digest string, keepScanID int64) error {
+	return s.executeCleanup(ctx, func(tx *sql.Tx) error {
+		// First, get the artifact ID
+		var artifactID int64
+		err := tx.QueryRowContext(ctx, `
+			SELECT id FROM artifacts WHERE digest = ?
+		`, digest).Scan(&artifactID)
+		if err == sql.ErrNoRows {
+			// Artifact doesn't exist, nothing to clean up
+			return nil
+		}
+		if err != nil {
+			return errors.NewTransientf("failed to query artifact for cleanup: %w", err)
+		}
+
+		// Delete scan records older than the specified scan ID
+		// This preserves the specified scan and any newer scans (higher IDs)
+		_, err = tx.ExecContext(ctx, `
+			DELETE FROM scan_records 
+			WHERE artifact_id = ? AND id < ?
+		`, artifactID, keepScanID)
+		if err != nil {
+			return errors.NewTransientf("failed to delete previous scan records: %w", err)
+		}
+
+		// Update artifact's last_scan_id to point to the most recent remaining scan
+		// This handles the case where concurrent scans might have created newer records
+		_, err = tx.ExecContext(ctx, `
+			UPDATE artifacts 
+			SET last_scan_id = (
+				SELECT id FROM scan_records 
+				WHERE artifact_id = ? 
+				ORDER BY created_at DESC, id DESC 
+				LIMIT 1
+			)
+			WHERE id = ?
+		`, artifactID, artifactID)
+		if err != nil {
+			return errors.NewTransientf("failed to update artifact last_scan_id: %w", err)
+		}
+
+		return nil
+	})
+}
+
+// CleanupOrphanedRepositories removes repositories with no remaining artifacts.
+// Returns a list of deleted repository names for logging purposes.
+func (s *SQLiteStore) CleanupOrphanedRepositories(ctx context.Context) ([]string, error) {
+	var deletedRepos []string
+
+	err := s.executeCleanup(ctx, func(tx *sql.Tx) error {
+		// Find repositories with no artifacts
+		rows, err := tx.QueryContext(ctx, `
+			SELECT r.id, r.name 
+			FROM repositories r 
+			LEFT JOIN artifacts a ON r.id = a.repository_id 
+			WHERE a.id IS NULL
+		`)
+		if err != nil {
+			return errors.NewTransientf("failed to query orphaned repositories: %w", err)
+		}
+		defer rows.Close()
+
+		var repoIDs []int64
+		for rows.Next() {
+			var repoID int64
+			var repoName string
+			if err := rows.Scan(&repoID, &repoName); err != nil {
+				return errors.NewTransientf("failed to scan orphaned repository: %w", err)
+			}
+			repoIDs = append(repoIDs, repoID)
+			deletedRepos = append(deletedRepos, repoName)
+		}
+
+		if err := rows.Err(); err != nil {
+			return errors.NewTransientf("error iterating orphaned repositories: %w", err)
+		}
+
+		// Delete the orphaned repositories
+		for _, repoID := range repoIDs {
+			_, err := tx.ExecContext(ctx, `
+				DELETE FROM repositories WHERE id = ?
+			`, repoID)
+			if err != nil {
+				return errors.NewTransientf("failed to delete orphaned repository: %w", err)
+			}
+		}
+
+		return nil
+	})
+
+	if err != nil {
+		return nil, err
+	}
+
+	return deletedRepos, nil
 }

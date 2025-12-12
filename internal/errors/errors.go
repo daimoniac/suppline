@@ -3,6 +3,7 @@ package errors
 import (
 	"errors"
 	"fmt"
+	"strings"
 )
 
 // Sentinel errors for common cases
@@ -30,6 +31,9 @@ var (
 
 	// ErrRateLimit indicates rate limiting
 	ErrRateLimit = errors.New("rate limit exceeded")
+
+	// ErrManifestNotFound indicates a manifest was not found (MANIFEST_UNKNOWN)
+	ErrManifestNotFound = errors.New("manifest not found")
 )
 
 // TransientError wraps an error to mark it as transient (retryable)
@@ -90,6 +94,35 @@ func NewPermanentf(format string, args ...interface{}) error {
 	return &PermanentError{Cause: fmt.Errorf(format, args...)}
 }
 
+// ManifestNotFoundError represents a MANIFEST_UNKNOWN error from registry
+type ManifestNotFoundError struct {
+	Cause error
+}
+
+func (e *ManifestNotFoundError) Error() string {
+	if e.Cause != nil {
+		return fmt.Sprintf("manifest not found: %v", e.Cause)
+	}
+	return "manifest not found"
+}
+
+func (e *ManifestNotFoundError) Unwrap() error {
+	return e.Cause
+}
+
+// NewManifestNotFound creates a new manifest not found error
+func NewManifestNotFound(err error) error {
+	if err == nil {
+		return nil
+	}
+	return &ManifestNotFoundError{Cause: err}
+}
+
+// NewManifestNotFoundf creates a new manifest not found error with formatting
+func NewManifestNotFoundf(format string, args ...interface{}) error {
+	return &ManifestNotFoundError{Cause: fmt.Errorf(format, args...)}
+}
+
 // IsTransient checks if an error is transient using errors.As
 func IsTransient(err error) bool {
 	if err == nil {
@@ -106,10 +139,16 @@ func IsTransient(err error) bool {
 		return false
 	}
 
+	var manifestErr *ManifestNotFoundError
+	if errors.As(err, &manifestErr) {
+		return false
+	}
+
 	if errors.Is(err, ErrNotFound) ||
 		errors.Is(err, ErrUnauthorized) ||
 		errors.Is(err, ErrForbidden) ||
-		errors.Is(err, ErrInvalidInput) {
+		errors.Is(err, ErrInvalidInput) ||
+		errors.Is(err, ErrManifestNotFound) {
 		return false
 	}
 
@@ -129,4 +168,37 @@ func IsPermanent(err error) bool {
 
 	var permanentErr *PermanentError
 	return errors.As(err, &permanentErr)
+}
+
+// IsManifestNotFound checks if an error is a manifest not found error
+func IsManifestNotFound(err error) bool {
+	if err == nil {
+		return false
+	}
+
+	var manifestErr *ManifestNotFoundError
+	if errors.As(err, &manifestErr) {
+		return true
+	}
+
+	return errors.Is(err, ErrManifestNotFound)
+}
+
+// ClassifyRegistryError classifies registry errors, specifically detecting MANIFEST_UNKNOWN
+func ClassifyRegistryError(err error) error {
+	if err == nil {
+		return nil
+	}
+
+	errStr := err.Error()
+	
+	// Check for MANIFEST_UNKNOWN error patterns
+	if strings.Contains(errStr, "MANIFEST_UNKNOWN") ||
+		strings.Contains(errStr, "manifest unknown") ||
+		strings.Contains(errStr, "not found") && strings.Contains(errStr, "manifest") {
+		return NewManifestNotFound(err)
+	}
+
+	// Default to transient for other registry errors
+	return NewTransientf("registry error: %w", err)
 }

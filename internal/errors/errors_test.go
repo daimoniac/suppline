@@ -225,4 +225,182 @@ func TestErrorUnwrap(t *testing.T) {
 			t.Errorf("Unwrap() = %v, want %v", unwrapped, cause)
 		}
 	})
+
+	t.Run("manifest not found error unwrap", func(t *testing.T) {
+		cause := errors.New("original error")
+		err := NewManifestNotFound(cause)
+
+		unwrapped := errors.Unwrap(err)
+		if unwrapped != cause {
+			t.Errorf("Unwrap() = %v, want %v", unwrapped, cause)
+		}
+	})
+}
+
+func TestManifestNotFoundError(t *testing.T) {
+	tests := []struct {
+		name    string
+		err     error
+		wantMsg string
+	}{
+		{
+			name:    "with cause",
+			err:     NewManifestNotFound(errors.New("MANIFEST_UNKNOWN")),
+			wantMsg: "manifest not found: MANIFEST_UNKNOWN",
+		},
+		{
+			name:    "with nil cause",
+			err:     NewManifestNotFound(nil),
+			wantMsg: "",
+		},
+		{
+			name:    "with formatted error",
+			err:     NewManifestNotFoundf("manifest error: %s", "not found"),
+			wantMsg: "manifest not found: manifest error: not found",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if tt.err == nil {
+				return
+			}
+			if got := tt.err.Error(); got != tt.wantMsg {
+				t.Errorf("Error() = %v, want %v", got, tt.wantMsg)
+			}
+		})
+	}
+}
+
+func TestIsManifestNotFound(t *testing.T) {
+	tests := []struct {
+		name string
+		err  error
+		want bool
+	}{
+		{
+			name: "nil error",
+			err:  nil,
+			want: false,
+		},
+		{
+			name: "explicit manifest not found error",
+			err:  NewManifestNotFound(errors.New("MANIFEST_UNKNOWN")),
+			want: true,
+		},
+		{
+			name: "wrapped manifest not found error",
+			err:  fmt.Errorf("failed: %w", NewManifestNotFound(errors.New("MANIFEST_UNKNOWN"))),
+			want: true,
+		},
+		{
+			name: "manifest not found sentinel",
+			err:  ErrManifestNotFound,
+			want: true,
+		},
+		{
+			name: "wrapped manifest not found sentinel",
+			err:  fmt.Errorf("registry error: %w", ErrManifestNotFound),
+			want: true,
+		},
+		{
+			name: "other error",
+			err:  errors.New("other error"),
+			want: false,
+		},
+		{
+			name: "transient error",
+			err:  NewTransient(errors.New("timeout")),
+			want: false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := IsManifestNotFound(tt.err); got != tt.want {
+				t.Errorf("IsManifestNotFound() = %v, want %v", got, tt.want)
+			}
+		})
+	}
+}
+
+func TestClassifyRegistryError(t *testing.T) {
+	tests := []struct {
+		name           string
+		err            error
+		wantType       string
+		wantManifest   bool
+		wantTransient  bool
+	}{
+		{
+			name:          "nil error",
+			err:           nil,
+			wantType:      "nil",
+			wantManifest:  false,
+			wantTransient: false,
+		},
+		{
+			name:          "MANIFEST_UNKNOWN error",
+			err:           errors.New("MANIFEST_UNKNOWN: manifest not found"),
+			wantType:      "manifest",
+			wantManifest:  true,
+			wantTransient: false,
+		},
+		{
+			name:          "manifest unknown lowercase",
+			err:           errors.New("manifest unknown"),
+			wantType:      "manifest",
+			wantManifest:  true,
+			wantTransient: false,
+		},
+		{
+			name:          "manifest not found",
+			err:           errors.New("manifest not found"),
+			wantType:      "manifest",
+			wantManifest:  true,
+			wantTransient: false,
+		},
+		{
+			name:          "other registry error",
+			err:           errors.New("connection timeout"),
+			wantType:      "transient",
+			wantManifest:  false,
+			wantTransient: true,
+		},
+		{
+			name:          "network error",
+			err:           errors.New("network unreachable"),
+			wantType:      "transient",
+			wantManifest:  false,
+			wantTransient: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result := ClassifyRegistryError(tt.err)
+			
+			if tt.wantType == "nil" {
+				if result != nil {
+					t.Errorf("ClassifyRegistryError() = %v, want nil", result)
+				}
+				return
+			}
+
+			if result == nil {
+				t.Errorf("ClassifyRegistryError() = nil, want non-nil")
+				return
+			}
+
+			gotManifest := IsManifestNotFound(result)
+			if gotManifest != tt.wantManifest {
+				t.Errorf("IsManifestNotFound() = %v, want %v", gotManifest, tt.wantManifest)
+			}
+
+			gotTransient := IsTransient(result)
+			if gotTransient != tt.wantTransient {
+				t.Errorf("IsTransient() = %v, want %v", gotTransient, tt.wantTransient)
+			}
+		})
+	}
 }
