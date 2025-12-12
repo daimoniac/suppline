@@ -141,13 +141,7 @@ func (m *mockStateStore) CleanupArtifactScans(ctx context.Context, digest string
 	return nil
 }
 
-func (m *mockStateStore) CleanupPreviousScans(ctx context.Context, digest string, keepScanID int64) error {
-	m.cleanupCalled["previous_"+digest] = true
-	if err, exists := m.cleanupErrors["previous_"+digest]; exists {
-		return err
-	}
-	return nil
-}
+
 
 func (m *mockStateStore) CleanupOrphanedRepositories(ctx context.Context) ([]string, error) {
 	m.cleanupCalled["repositories"] = true
@@ -155,6 +149,14 @@ func (m *mockStateStore) CleanupOrphanedRepositories(ctx context.Context) ([]str
 		return nil, err
 	}
 	return []string{}, nil
+}
+
+func (m *mockStateStore) CleanupExcessScans(ctx context.Context, digest string, maxScansToKeep int) error {
+	m.cleanupCalled["excess_"+digest] = true
+	if err, exists := m.cleanupErrors["excess_"+digest]; exists {
+		return err
+	}
+	return nil
 }
 
 // Pipeline integration tests
@@ -240,8 +242,8 @@ func TestPipeline_SuccessfulScanCleanup(t *testing.T) {
 	}
 
 	// Verify cleanup was called
-	if !mockStore.cleanupCalled["previous_"+task.Digest] {
-		t.Error("expected previous scan cleanup to be called")
+	if !mockStore.cleanupCalled["excess_"+task.Digest] {
+		t.Error("expected excess scan cleanup to be called")
 	}
 
 	if !mockStore.cleanupCalled["repositories"] {
@@ -307,8 +309,8 @@ func TestPipeline_SuccessfulScanCleanupError(t *testing.T) {
 	mockAtt := &mockAttestor{}
 	mockStore := newMockStateStore()
 
-	// Set previous scan cleanup to fail
-	mockStore.cleanupErrors["previous_sha256:abc123"] = errors.New("cleanup failed")
+	// Set excess scan cleanup to fail
+	mockStore.cleanupErrors["excess_sha256:abc123"] = errors.New("cleanup failed")
 
 	logger := slog.Default()
 	config := worker.DefaultConfig()
@@ -332,8 +334,8 @@ func TestPipeline_SuccessfulScanCleanupError(t *testing.T) {
 	}
 
 	// Verify cleanup was attempted
-	if !mockStore.cleanupCalled["previous_"+task.Digest] {
-		t.Error("expected previous scan cleanup to be attempted")
+	if !mockStore.cleanupCalled["excess_"+task.Digest] {
+		t.Error("expected excess scan cleanup to be attempted")
 	}
 }
 
@@ -452,8 +454,8 @@ func TestProcessTask_SuccessfulScanTransientCleanupError(t *testing.T) {
 	mockAtt := &mockAttestor{}
 	mockStore := newMockStateStore()
 
-	// Set previous scan cleanup to fail with transient error
-	mockStore.cleanupErrors["previous_sha256:abc123"] = supplineErrors.NewTransientf("database timeout")
+	// Set excess scan cleanup to fail with transient error
+	mockStore.cleanupErrors["excess_sha256:abc123"] = supplineErrors.NewTransientf("database timeout")
 
 	logger := slog.Default()
 	config := worker.Config{
@@ -485,8 +487,8 @@ func TestProcessTask_SuccessfulScanTransientCleanupError(t *testing.T) {
 	}
 
 	// Verify cleanup was attempted
-	if !mockStore.cleanupCalled["previous_"+task.Digest] {
-		t.Error("expected previous scan cleanup to be attempted")
+	if !mockStore.cleanupCalled["excess_"+task.Digest] {
+		t.Error("expected excess scan cleanup to be attempted")
 	}
 }
 
@@ -501,8 +503,8 @@ func TestProcessTask_SuccessfulScanPermanentCleanupError(t *testing.T) {
 	mockAtt := &mockAttestor{}
 	mockStore := newMockStateStore()
 
-	// Set previous scan cleanup to fail with permanent error
-	mockStore.cleanupErrors["previous_sha256:abc123"] = supplineErrors.NewPermanentf("invalid scan ID")
+	// Set excess scan cleanup to fail with permanent error
+	mockStore.cleanupErrors["excess_sha256:abc123"] = supplineErrors.NewPermanentf("invalid scan ID")
 
 	logger := slog.Default()
 	config := worker.Config{
@@ -530,8 +532,8 @@ func TestProcessTask_SuccessfulScanPermanentCleanupError(t *testing.T) {
 	}
 
 	// Verify cleanup was attempted
-	if !mockStore.cleanupCalled["previous_"+task.Digest] {
-		t.Error("expected previous scan cleanup to be attempted")
+	if !mockStore.cleanupCalled["excess_"+task.Digest] {
+		t.Error("expected excess scan cleanup to be attempted")
 	}
 }
 

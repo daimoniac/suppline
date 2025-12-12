@@ -2076,13 +2076,7 @@ func (m *mockWorkerStateStore) CleanupArtifactScans(ctx context.Context, digest 
 	return nil
 }
 
-func (m *mockWorkerStateStore) CleanupPreviousScans(ctx context.Context, digest string, keepScanID int64) error {
-	m.cleanupCalled["previous_"+digest] = true
-	if err, exists := m.cleanupErrors["previous_"+digest]; exists {
-		return err
-	}
-	return nil
-}
+
 
 func (m *mockWorkerStateStore) CleanupOrphanedRepositories(ctx context.Context) ([]string, error) {
 	m.cleanupCalled["repositories"] = true

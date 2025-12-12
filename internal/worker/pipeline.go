@@ -255,6 +255,10 @@ func (p *Pipeline) attestationPhase(ctx context.Context, task *queue.ScanTask, i
 func (p *Pipeline) persistencePhase(ctx context.Context, task *queue.ScanTask, scanResult *scanner.ScanResult, policyDecision *policy.PolicyDecision, scannedAt time.Time) error {
 	// Build scan record from workflow results
 	scanRecord := buildScanRecord(task, scanResult, policyDecision, scannedAt)
+	
+	// Calculate and update scan duration
+	scanDuration := time.Since(scannedAt)
+	updateScanRecordWithDuration(scanRecord, scanDuration)
 
 	p.logger.Debug("recording scan results", "image_ref", fmt.Sprintf("%s@%s", task.Repository, task.Digest))
 	if err := p.worker.stateStore.RecordScan(ctx, scanRecord); err != nil {
@@ -263,17 +267,17 @@ func (p *Pipeline) persistencePhase(ctx context.Context, task *queue.ScanTask, s
 
 	p.logger.Info("scan results recorded", "image_ref", fmt.Sprintf("%s@%s", task.Repository, task.Digest))
 
-	// Perform cleanup of previous scans after successful recording
-	if err := p.performSuccessfulScanCleanup(ctx, task.Digest); err != nil {
+	// Perform cleanup of excess scans after recording (regardless of success/failure)
+	if err := p.performScanCleanup(ctx, task.Digest); err != nil {
 		// If cleanup fails with transient error, return error for retry
 		if errors.IsTransient(err) {
-			p.logger.Error("transient cleanup error after successful scan", 
+			p.logger.Error("transient cleanup error after scan recording", 
 				"image_ref", fmt.Sprintf("%s@%s", task.Repository, task.Digest),
 				"digest", task.Digest, 
 				"cleanup_error", err)
 			return err
 		}
-		// Permanent cleanup errors are already logged in performSuccessfulScanCleanup
+		// Permanent cleanup errors are already logged in performScanCleanup
 	}
 
 	// Check for policy failures and alerts
@@ -368,8 +372,8 @@ func (p *Pipeline) performManifestCleanup(ctx context.Context, digest string) er
 	return nil
 }
 
-// performSuccessfulScanCleanup handles cleanup after successful scan recording
-func (p *Pipeline) performSuccessfulScanCleanup(ctx context.Context, digest string) error {
+// performScanCleanup handles cleanup after scan recording (success or failure)
+func (p *Pipeline) performScanCleanup(ctx context.Context, digest string) error {
 	// Cast to cleanup interface
 	cleanupStore, ok := p.worker.stateStore.(statestore.StateStoreCleanup)
 	if !ok {
@@ -391,24 +395,24 @@ func (p *Pipeline) performSuccessfulScanCleanup(ctx context.Context, digest stri
 		return nil
 	}
 
-	p.logger.Info("cleaning up previous scans after successful scan", 
+	p.logger.Info("cleaning up excess scans after scan recording", 
 		"digest", digest, 
 		"keep_scan_id", lastScan.ID)
 	
-	// Cleanup previous scans, keeping the most recent one
-	if err := cleanupStore.CleanupPreviousScans(ctx, digest, lastScan.ID); err != nil {
+	// Cleanup excess scans, keeping only the most recent scan (maxScansToKeep = 1)
+	if err := cleanupStore.CleanupExcessScans(ctx, digest, 1); err != nil {
 		// Classify cleanup error for proper retry behavior
 		if errors.IsTransient(err) {
 			// Transient cleanup errors should allow retry
-			return fmt.Errorf("failed to cleanup previous scans: %w", err)
+			return fmt.Errorf("failed to cleanup excess scans: %w", err)
 		}
 		// Permanent cleanup errors should be logged but not fail the pipeline
-		p.logger.Error("permanent error during previous scan cleanup", 
+		p.logger.Error("permanent error during excess scan cleanup", 
 			"digest", digest, 
 			"error", err)
 		// Continue with repository cleanup despite permanent error
 	} else {
-		p.logger.Info("previous scan cleanup completed", "digest", digest)
+		p.logger.Info("excess scan cleanup completed", "digest", digest)
 	}
 
 	// Cleanup orphaned repositories after scan cleanup
@@ -422,6 +426,8 @@ func (p *Pipeline) performSuccessfulScanCleanup(ctx context.Context, digest stri
 
 	return nil
 }
+
+
 
 // performRepositoryCleanup handles cleanup of orphaned repositories
 func (p *Pipeline) performRepositoryCleanup(ctx context.Context, cleanupStore statestore.StateStoreCleanup) error {

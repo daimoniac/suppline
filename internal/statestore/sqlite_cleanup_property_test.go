@@ -227,16 +227,22 @@ func countVulnerabilities(store *SQLiteStore, digest string) int {
 	return count
 }
 
-// TestOlderScanCleanupProperty tests the property that older scan cleanup preservation works
-// **Feature: scan-cleanup-management, Property 3: Older scan cleanup preservation**
+// TestExcessScanCleanupProperty tests the property that excess scan cleanup works correctly
+// **Feature: scan-cleanup-management, Property 3: Excess scan cleanup**
 // **Validates: Requirements 2.1, 2.3**
-func TestOlderScanCleanupProperty(t *testing.T) {
+func TestExcessScanCleanupProperty(t *testing.T) {
 	properties := gopter.NewProperties(nil)
 
-	properties.Property("After cleanup, only the specified scan and newer scans are preserved", prop.ForAll(
-		func(digest string, repoName string, tag string, scanCount int) bool {
+	properties.Property("After cleanup, only the most recent N scans are preserved", prop.ForAll(
+		func(digest string, repoName string, tag string, scanCount int, maxScansToKeep int) bool {
 			if scanCount < 2 {
 				return true // Skip cases with less than 2 scans
+			}
+			if maxScansToKeep < 1 {
+				maxScansToKeep = 1 // Must keep at least 1 scan
+			}
+			if maxScansToKeep >= scanCount {
+				return true // Skip cases where we keep all scans
 			}
 
 			// Create a temporary database
@@ -246,7 +252,6 @@ func TestOlderScanCleanupProperty(t *testing.T) {
 			ctx := context.Background()
 
 			// Create multiple scan records for the same digest
-			var scanIDs []int64
 			for i := 0; i < scanCount; i++ {
 				record := &ScanRecord{
 					Repository:        repoName,
@@ -269,22 +274,10 @@ func TestOlderScanCleanupProperty(t *testing.T) {
 					t.Logf("Failed to record scan %d: %v", i, err)
 					return false
 				}
-
-				// Get the scan ID that was just created
-				lastScan, err := store.GetLastScan(ctx, digest)
-				if err != nil {
-					t.Logf("Failed to get last scan: %v", err)
-					return false
-				}
-				scanIDs = append(scanIDs, lastScan.ID)
 			}
 
-			// Choose a scan ID to keep (not the first or last to test properly)
-			keepScanIndex := scanCount / 2
-			keepScanID := scanIDs[keepScanIndex]
-
 			// Perform cleanup
-			err := store.CleanupPreviousScans(ctx, digest, keepScanID)
+			err := store.CleanupExcessScans(ctx, digest, maxScansToKeep)
 			if err != nil {
 				t.Logf("Cleanup failed: %v", err)
 				return false
@@ -292,14 +285,14 @@ func TestOlderScanCleanupProperty(t *testing.T) {
 
 			// Count remaining scans
 			remainingScans := countScanRecords(store.(*SQLiteStore), digest)
-			expectedRemaining := scanCount - keepScanIndex
 
-			return remainingScans == expectedRemaining
+			return remainingScans == maxScansToKeep
 		},
 		genValidDigest(),
 		genValidRepoName(),
 		genValidTag(),
 		gen.IntRange(2, 5), // At least 2 scans to test cleanup
+		gen.IntRange(1, 3), // Keep 1-3 scans
 	))
 
 	properties.TestingRun(t, gopter.ConsoleReporter(false))
@@ -312,9 +305,15 @@ func TestArtifactReferenceConsistencyProperty(t *testing.T) {
 	properties := gopter.NewProperties(nil)
 
 	properties.Property("After cleanup, artifact's last_scan_id points to the most recent remaining scan", prop.ForAll(
-		func(digest string, repoName string, tag string, scanCount int) bool {
+		func(digest string, repoName string, tag string, scanCount int, maxScansToKeep int) bool {
 			if scanCount < 2 {
 				return true // Skip cases with less than 2 scans
+			}
+			if maxScansToKeep < 1 {
+				maxScansToKeep = 1 // Must keep at least 1 scan
+			}
+			if maxScansToKeep >= scanCount {
+				return true // Skip cases where we keep all scans
 			}
 
 			// Create a temporary database
@@ -357,12 +356,8 @@ func TestArtifactReferenceConsistencyProperty(t *testing.T) {
 				scanIDs = append(scanIDs, lastScan.ID)
 			}
 
-			// Choose a scan ID to keep (not the last one to test the update logic)
-			keepScanIndex := scanCount / 2
-			keepScanID := scanIDs[keepScanIndex]
-
 			// Perform cleanup
-			err := store.CleanupPreviousScans(ctx, digest, keepScanID)
+			err := store.CleanupExcessScans(ctx, digest, maxScansToKeep)
 			if err != nil {
 				t.Logf("Cleanup failed: %v", err)
 				return false
@@ -375,7 +370,7 @@ func TestArtifactReferenceConsistencyProperty(t *testing.T) {
 				return false
 			}
 
-			// The last_scan_id should be the highest remaining scan ID
+			// The last_scan_id should be the highest remaining scan ID (most recent)
 			expectedLastScanID := scanIDs[scanCount-1] // The last (highest) scan ID should remain
 			return lastScanID == expectedLastScanID
 		},
@@ -383,6 +378,7 @@ func TestArtifactReferenceConsistencyProperty(t *testing.T) {
 		genValidRepoName(),
 		genValidTag(),
 		gen.IntRange(2, 5), // At least 2 scans to test cleanup
+		gen.IntRange(1, 3), // Keep 1-3 scans
 	))
 
 	properties.TestingRun(t, gopter.ConsoleReporter(false))
@@ -715,91 +711,7 @@ func TestCleanupIdempotencyProperty(t *testing.T) {
 		gen.IntRange(2, 5),
 	))
 
-	// Test idempotency for CleanupPreviousScans as well
-	properties.Property("CleanupPreviousScans is idempotent", prop.ForAll(
-		func(digest string, repoName string, tag string, scanCount int, executionCount int) bool {
-			if scanCount < 2 {
-				scanCount = 2 // Need at least 2 scans
-			}
-			if scanCount > 5 {
-				scanCount = 5 // Limit to reasonable number
-			}
-			if executionCount < 2 {
-				executionCount = 2 // Ensure at least 2 executions
-			}
-			if executionCount > 5 {
-				executionCount = 5 // Limit to reasonable number
-			}
 
-			// Create a temporary database
-			store, cleanup := createTestStore(t)
-			defer cleanup()
-
-			ctx := context.Background()
-
-			// Create multiple scan records for the same digest
-			var scanIDs []int64
-			for i := 0; i < scanCount; i++ {
-				record := &ScanRecord{
-					Repository:        repoName,
-					Digest:           digest,
-					Tag:              tag,
-					ScanDurationMs:   1000 + i*100,
-					CriticalVulnCount: i,
-					HighVulnCount:    i,
-					MediumVulnCount:  i,
-					LowVulnCount:     i,
-					PolicyPassed:     true,
-					SBOMAttested:     true,
-					VulnAttested:     true,
-					SCAIAttested:     true,
-					Vulnerabilities:  generateVulnerabilities(1),
-				}
-
-				err := store.RecordScan(ctx, record)
-				if err != nil {
-					t.Logf("Failed to record scan %d: %v", i, err)
-					return false
-				}
-
-				// Get the scan ID that was just created
-				lastScan, err := store.GetLastScan(ctx, digest)
-				if err != nil {
-					t.Logf("Failed to get last scan: %v", err)
-					return false
-				}
-				scanIDs = append(scanIDs, lastScan.ID)
-			}
-
-			// Choose a scan ID to keep
-			keepScanIndex := scanCount / 2
-			keepScanID := scanIDs[keepScanIndex]
-
-			// Execute cleanup operation multiple times
-			for i := 0; i < executionCount; i++ {
-				err := store.CleanupPreviousScans(ctx, digest, keepScanID)
-				if err != nil {
-					t.Logf("CleanupPreviousScans failed on execution %d: %v", i+1, err)
-					return false
-				}
-			}
-
-			// Verify final state - should be the same regardless of execution count
-			finalScanCount := countScanRecords(store.(*SQLiteStore), digest)
-			finalLastScanID := getArtifactLastScanID(store.(*SQLiteStore), digest)
-
-			// Should have the expected number of remaining scans and consistent last_scan_id
-			expectedRemaining := scanCount - keepScanIndex
-			expectedLastScanID := scanIDs[scanCount-1] // The last (highest) scan ID should remain
-
-			return finalScanCount == expectedRemaining && finalLastScanID == expectedLastScanID
-		},
-		genValidDigest(),
-		genValidRepoName(),
-		genValidTag(),
-		gen.IntRange(2, 5),
-		gen.IntRange(2, 5),
-	))
 
 	properties.TestingRun(t, gopter.ConsoleReporter(false))
 }

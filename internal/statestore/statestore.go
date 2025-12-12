@@ -58,14 +58,15 @@ type StateStoreCleanup interface {
 	// This is used when a manifest is no longer available in the registry.
 	CleanupArtifactScans(ctx context.Context, digest string) error
 
-	// CleanupPreviousScans removes scans older than the specified scan, keeping the specified scan and any newer ones.
-	// This preserves the specified scan and any newer scans to avoid race conditions.
-	// Used after successful scans to maintain only the latest scan per artifact.
-	CleanupPreviousScans(ctx context.Context, digest string, keepScanID int64) error
+
 
 	// CleanupOrphanedRepositories removes repositories with no remaining artifacts.
 	// Returns a list of deleted repository names for logging purposes.
 	CleanupOrphanedRepositories(ctx context.Context) ([]string, error)
+
+	// CleanupExcessScans removes excess scan records for an artifact, keeping only the most recent N scans.
+	// This provides a more robust cleanup that handles concurrent scans and ensures a maximum number of scans per artifact.
+	CleanupExcessScans(ctx context.Context, digest string, maxScansToKeep int) error
 }
 
 // RepositoryInfo represents a repository with aggregated metadata

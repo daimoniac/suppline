@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
+	"strings"
 	"time"
 
 	_ "github.com/mattn/go-sqlite3"
@@ -1111,8 +1112,8 @@ func (s *SQLiteStore) CleanupArtifactScans(ctx context.Context, digest string) e
 			return errors.NewTransientf("failed to delete artifact: %w", err)
 		}
 
-		// Check if repository has any remaining artifacts
-		var remainingArtifacts int
+		// Check if repository has any remaining artifacts or tolerated CVEs
+		var remainingArtifacts, remainingToleratedCVEs int
 		err = tx.QueryRowContext(ctx, `
 			SELECT COUNT(*) FROM artifacts WHERE repository_id = ?
 		`, repositoryID).Scan(&remainingArtifacts)
@@ -1120,8 +1121,15 @@ func (s *SQLiteStore) CleanupArtifactScans(ctx context.Context, digest string) e
 			return errors.NewTransientf("failed to count remaining artifacts: %w", err)
 		}
 
-		// If no artifacts remain, delete the repository
-		if remainingArtifacts == 0 {
+		err = tx.QueryRowContext(ctx, `
+			SELECT COUNT(*) FROM tolerated_cves WHERE repository_id = ?
+		`, repositoryID).Scan(&remainingToleratedCVEs)
+		if err != nil {
+			return errors.NewTransientf("failed to count remaining tolerated CVEs: %w", err)
+		}
+
+		// If no artifacts and no tolerated CVEs remain, delete the repository
+		if remainingArtifacts == 0 && remainingToleratedCVEs == 0 {
 			_, err = tx.ExecContext(ctx, `
 				DELETE FROM repositories WHERE id = ?
 			`, repositoryID)
@@ -1153,53 +1161,7 @@ func (s *SQLiteStore) executeCleanup(ctx context.Context, operation func(*sql.Tx
 	return nil
 }
 
-// CleanupPreviousScans removes scans older than the specified scan, keeping the specified scan and any newer ones.
-// This preserves the specified scan and any newer scans to avoid race conditions.
-// Used after successful scans to maintain only the latest scan per artifact.
-func (s *SQLiteStore) CleanupPreviousScans(ctx context.Context, digest string, keepScanID int64) error {
-	return s.executeCleanup(ctx, func(tx *sql.Tx) error {
-		// First, get the artifact ID
-		var artifactID int64
-		err := tx.QueryRowContext(ctx, `
-			SELECT id FROM artifacts WHERE digest = ?
-		`, digest).Scan(&artifactID)
-		if err == sql.ErrNoRows {
-			// Artifact doesn't exist, nothing to clean up
-			return nil
-		}
-		if err != nil {
-			return errors.NewTransientf("failed to query artifact for cleanup: %w", err)
-		}
 
-		// Delete scan records older than the specified scan ID
-		// This preserves the specified scan and any newer scans (higher IDs)
-		_, err = tx.ExecContext(ctx, `
-			DELETE FROM scan_records 
-			WHERE artifact_id = ? AND id < ?
-		`, artifactID, keepScanID)
-		if err != nil {
-			return errors.NewTransientf("failed to delete previous scan records: %w", err)
-		}
-
-		// Update artifact's last_scan_id to point to the most recent remaining scan
-		// This handles the case where concurrent scans might have created newer records
-		_, err = tx.ExecContext(ctx, `
-			UPDATE artifacts 
-			SET last_scan_id = (
-				SELECT id FROM scan_records 
-				WHERE artifact_id = ? 
-				ORDER BY created_at DESC, id DESC 
-				LIMIT 1
-			)
-			WHERE id = ?
-		`, artifactID, artifactID)
-		if err != nil {
-			return errors.NewTransientf("failed to update artifact last_scan_id: %w", err)
-		}
-
-		return nil
-	})
-}
 
 // CleanupOrphanedRepositories removes repositories with no remaining artifacts.
 // Returns a list of deleted repository names for logging purposes.
@@ -1207,12 +1169,13 @@ func (s *SQLiteStore) CleanupOrphanedRepositories(ctx context.Context) ([]string
 	var deletedRepos []string
 
 	err := s.executeCleanup(ctx, func(tx *sql.Tx) error {
-		// Find repositories with no artifacts
+		// Find repositories with no artifacts and no tolerated CVEs
 		rows, err := tx.QueryContext(ctx, `
 			SELECT r.id, r.name 
 			FROM repositories r 
 			LEFT JOIN artifacts a ON r.id = a.repository_id 
-			WHERE a.id IS NULL
+			LEFT JOIN tolerated_cves tc ON r.id = tc.repository_id
+			WHERE a.id IS NULL AND tc.id IS NULL
 		`)
 		if err != nil {
 			return errors.NewTransientf("failed to query orphaned repositories: %w", err)
@@ -1252,4 +1215,98 @@ func (s *SQLiteStore) CleanupOrphanedRepositories(ctx context.Context) ([]string
 	}
 
 	return deletedRepos, nil
+}
+
+// CleanupExcessScans removes excess scan records for an artifact, keeping only the most recent N scans.
+// This provides a more robust cleanup that handles concurrent scans and ensures a maximum number of scans per artifact.
+func (s *SQLiteStore) CleanupExcessScans(ctx context.Context, digest string, maxScansToKeep int) error {
+	if maxScansToKeep <= 0 {
+		return errors.NewPermanentf("maxScansToKeep must be positive, got %d", maxScansToKeep)
+	}
+
+	return s.executeCleanup(ctx, func(tx *sql.Tx) error {
+		// First, get the artifact ID
+		var artifactID int64
+		err := tx.QueryRowContext(ctx, `
+			SELECT id FROM artifacts WHERE digest = ?
+		`, digest).Scan(&artifactID)
+		if err == sql.ErrNoRows {
+			// Artifact doesn't exist, nothing to clean up
+			return nil
+		}
+		if err != nil {
+			return errors.NewTransientf("failed to query artifact for cleanup: %w", err)
+		}
+
+		// Get scan IDs to keep (most recent N scans)
+		rows, err := tx.QueryContext(ctx, `
+			SELECT id FROM scan_records 
+			WHERE artifact_id = ? 
+			ORDER BY created_at DESC, id DESC 
+			LIMIT ?
+		`, artifactID, maxScansToKeep)
+		if err != nil {
+			return errors.NewTransientf("failed to query scans to keep: %w", err)
+		}
+		defer rows.Close()
+
+		var keepScanIDs []int64
+		for rows.Next() {
+			var scanID int64
+			if err := rows.Scan(&scanID); err != nil {
+				return errors.NewTransientf("failed to scan keep scan ID: %w", err)
+			}
+			keepScanIDs = append(keepScanIDs, scanID)
+		}
+
+		if err := rows.Err(); err != nil {
+			return errors.NewTransientf("error iterating keep scan IDs: %w", err)
+		}
+
+		// If we have fewer scans than the limit, nothing to clean up
+		if len(keepScanIDs) < maxScansToKeep {
+			return nil
+		}
+
+		// Build placeholders for the IN clause
+		placeholders := make([]string, len(keepScanIDs))
+		args := make([]interface{}, len(keepScanIDs)+1)
+		args[0] = artifactID
+		for i, scanID := range keepScanIDs {
+			placeholders[i] = "?"
+			args[i+1] = scanID
+		}
+
+		// Delete scan records not in the keep list
+		deleteQuery := fmt.Sprintf(`
+			DELETE FROM scan_records 
+			WHERE artifact_id = ? AND id NOT IN (%s)
+		`, strings.Join(placeholders, ","))
+
+		result, err := tx.ExecContext(ctx, deleteQuery, args...)
+		if err != nil {
+			return errors.NewTransientf("failed to delete excess scan records: %w", err)
+		}
+
+		deletedCount, err := result.RowsAffected()
+		if err != nil {
+			return errors.NewTransientf("failed to get deleted rows count: %w", err)
+		}
+
+		if deletedCount > 0 {
+			// Update artifact's last_scan_id to point to the most recent remaining scan
+			if len(keepScanIDs) > 0 {
+				_, err = tx.ExecContext(ctx, `
+					UPDATE artifacts 
+					SET last_scan_id = ?
+					WHERE id = ?
+				`, keepScanIDs[0], artifactID) // keepScanIDs[0] is the most recent
+				if err != nil {
+					return errors.NewTransientf("failed to update artifact last_scan_id: %w", err)
+				}
+			}
+		}
+
+		return nil
+	})
 }
