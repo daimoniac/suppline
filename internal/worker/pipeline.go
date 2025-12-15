@@ -9,6 +9,7 @@ import (
 	"github.com/daimoniac/suppline/internal/errors"
 	"github.com/daimoniac/suppline/internal/policy"
 	"github.com/daimoniac/suppline/internal/queue"
+	"github.com/daimoniac/suppline/internal/registry"
 	"github.com/daimoniac/suppline/internal/scanner"
 	"github.com/daimoniac/suppline/internal/statestore"
 )
@@ -43,7 +44,7 @@ func (p *Pipeline) Execute(ctx context.Context, task *queue.ScanTask) error {
 	}
 
 	// Phase 1: Scan (SBOM + Vulnerabilities)
-	sbom, scanResult, scanDurations, err := p.scanPhase(ctx, imageRef)
+	sbom, scanResult, scanDurations, err := p.scanPhase(ctx, task, imageRef)
 	if err != nil {
 		// Check if this is a MANIFEST_UNKNOWN error that requires cleanup
 		if errors.IsManifestNotFound(err) {
@@ -118,16 +119,14 @@ func (p *Pipeline) validateDependencies() error {
 }
 
 // scanPhase performs SBOM generation and vulnerability scanning
-func (p *Pipeline) scanPhase(ctx context.Context, imageRef string) (*scanner.SBOM, *scanner.ScanResult, map[string]time.Duration, error) {
+func (p *Pipeline) scanPhase(ctx context.Context, task *queue.ScanTask, imageRef string) (*scanner.SBOM, *scanner.ScanResult, map[string]time.Duration, error) {
 	durations := make(map[string]time.Duration)
 
-	// Fetch image metadata
+	// Fetch image metadata with tag verification if available
 	p.logger.Debug("fetching image metadata", "image_ref", imageRef)
-	manifest, err := p.worker.registry.GetManifest(ctx, extractRepository(imageRef), extractDigest(imageRef))
+	manifest, err := p.fetchImageMetadata(ctx, task, imageRef)
 	if err != nil {
-		// Classify registry errors to detect MANIFEST_UNKNOWN
-		classifiedErr := errors.ClassifyRegistryError(err)
-		return nil, nil, nil, fmt.Errorf("failed to fetch image metadata: %w", classifiedErr)
+		return nil, nil, nil, fmt.Errorf("failed to fetch image metadata: %w", err)
 	}
 	p.logger.Debug("image metadata fetched",
 		"digest", manifest.Digest,
@@ -454,6 +453,40 @@ func (p *Pipeline) performRepositoryCleanup(ctx context.Context, cleanupStore st
 	}
 
 	return nil
+}
+
+// fetchImageMetadata retrieves image metadata with optional tag verification
+func (p *Pipeline) fetchImageMetadata(ctx context.Context, task *queue.ScanTask, imageRef string) (*registry.Manifest, error) {
+	repo := extractRepository(imageRef)
+	digest := extractDigest(imageRef)
+
+	// If we have both tag and digest, use verification to detect deleted tags
+	if task.Tag != "" && task.Tag != "latest" {
+		p.logger.Debug("fetching image metadata with tag verification", 
+			"image_ref", imageRef, 
+			"tag", task.Tag, 
+			"digest", digest)
+		
+		manifest, err := p.worker.registry.GetManifestWithTagVerification(ctx, repo, task.Tag, digest)
+		if err != nil {
+			// Error is already classified in registry client
+			return nil, err
+		}
+		return manifest, nil
+	}
+
+	// Fallback to digest-only fetch (for latest tags or when tag is unavailable)
+	p.logger.Debug("fetching image metadata by digest only", 
+		"image_ref", imageRef, 
+		"digest", digest)
+	
+	manifest, err := p.worker.registry.GetManifest(ctx, repo, digest)
+	if err != nil {
+		// Classify registry errors to detect MANIFEST_UNKNOWN
+		classifiedErr := errors.ClassifyRegistryError(err)
+		return nil, classifiedErr
+	}
+	return manifest, nil
 }
 
 // getPolicyEngineForRepository returns a policy engine for the given repository

@@ -30,6 +30,12 @@ type Client interface {
 
 	// GetManifest retrieves image manifest by digest
 	GetManifest(ctx context.Context, repo, digest string) (*Manifest, error)
+
+	// VerifyTagExists checks if a tag still exists in the registry
+	VerifyTagExists(ctx context.Context, repo, tag string) error
+
+	// GetManifestWithTagVerification verifies tag exists then retrieves manifest by digest
+	GetManifestWithTagVerification(ctx context.Context, repo, tag, digest string) (*Manifest, error)
 }
 
 // Manifest represents a container image manifest
@@ -306,4 +312,40 @@ func (c *clientImpl) GetManifest(ctx context.Context, repo, digest string) (*Man
 	}
 
 	return manifest, nil
+}
+
+// VerifyTagExists checks if a tag still exists in the registry
+func (c *clientImpl) VerifyTagExists(ctx context.Context, repo, tag string) error {
+	registry, repository, err := parseImageRef(repo)
+	if err != nil {
+		return errors.NewPermanentf("failed to parse repository: %w", err)
+	}
+
+	imageRef := fmt.Sprintf("%s/%s:%s", registry, repository, tag)
+	ref, err := name.ParseReference(imageRef)
+	if err != nil {
+		return errors.NewPermanentf("failed to parse image reference: %w", err)
+	}
+
+	auth := c.getAuthForRegistry(registry)
+
+	opts := append([]remote.Option{remote.WithAuth(auth), remote.WithContext(ctx)}, c.remoteOpts...)
+	_, err = remote.Get(ref, opts...)
+	if err != nil {
+		// Classify registry errors to detect MANIFEST_UNKNOWN
+		return errors.ClassifyRegistryError(fmt.Errorf("failed to verify tag exists for %s: %w", imageRef, err))
+	}
+
+	return nil
+}
+
+// GetManifestWithTagVerification verifies tag exists then retrieves manifest by digest
+func (c *clientImpl) GetManifestWithTagVerification(ctx context.Context, repo, tag, digest string) (*Manifest, error) {
+	// Step 1: Verify tag still exists (will trigger MANIFEST_UNKNOWN if tag is deleted)
+	if err := c.VerifyTagExists(ctx, repo, tag); err != nil {
+		return nil, fmt.Errorf("tag verification failed: %w", err)
+	}
+
+	// Step 2: Pull by digest (more reliable and immutable)
+	return c.GetManifest(ctx, repo, digest)
 }

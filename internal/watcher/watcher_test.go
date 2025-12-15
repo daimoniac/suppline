@@ -55,6 +55,30 @@ func (m *mockRegistryClient) GetManifest(ctx context.Context, repo, digest strin
 	return nil, fmt.Errorf("not implemented")
 }
 
+func (m *mockRegistryClient) VerifyTagExists(ctx context.Context, repo, tag string) error {
+	if m.err != nil {
+		return m.err
+	}
+	// Mock implementation - just check if we have tags for this repo
+	if tags, ok := m.tags[repo]; ok {
+		for _, t := range tags {
+			if t == tag {
+				return nil
+			}
+		}
+	}
+	return fmt.Errorf("tag not found")
+}
+
+func (m *mockRegistryClient) GetManifestWithTagVerification(ctx context.Context, repo, tag, digest string) (*registry.Manifest, error) {
+	// First verify tag exists
+	if err := m.VerifyTagExists(ctx, repo, tag); err != nil {
+		return nil, fmt.Errorf("tag verification failed: %w", err)
+	}
+	// Then get manifest
+	return m.GetManifest(ctx, repo, digest)
+}
+
 type mockStateStore struct {
 	scans        map[string]*statestore.ScanRecord
 	dueForRescan []string
