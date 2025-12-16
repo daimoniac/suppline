@@ -434,6 +434,45 @@ tr:hover {
     color: var(--text-primary);
 }
 
+/* Success State */
+.success-state {
+    text-align: center;
+    padding: 3rem;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: var(--spacing-lg);
+}
+
+.success-state .success-icon {
+    font-size: 4rem;
+    line-height: 1;
+    animation: celebration 2s ease-in-out infinite;
+}
+
+.success-state h3 {
+    margin: 0;
+    font-size: 1.5rem;
+    font-weight: 700;
+    color: var(--success-color);
+}
+
+.success-state p {
+    margin: 0;
+    font-size: 1rem;
+    color: var(--text-secondary);
+    font-weight: 500;
+}
+
+@keyframes celebration {
+    0%, 100% {
+        transform: scale(1);
+    }
+    50% {
+        transform: scale(1.1);
+    }
+}
+
 /* Forms & Filters */
 .filters-container {
     padding: var(--spacing-xl);

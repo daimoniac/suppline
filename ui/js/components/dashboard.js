@@ -36,12 +36,12 @@ export class Dashboard extends BaseComponent {
             // API returns arrays directly, not wrapped objects
             const [
                 recentScans,
-                failedScansLast24h,
+                failedScans,
                 allTolerations,
                 expiringTolerations
             ] = await Promise.all([
-                this.apiClient.getScans({ limit: 10 }),
-                this.apiClient.getScans({ policy_passed: false, max_age: 86400 }), // Last 24 hours
+                this.apiClient.getScans({ limit: 20 }),
+                this.apiClient.getScans({ policy_passed: false }), 
                 this.apiClient.getTolerations({}),
                 this.apiClient.getTolerations({ expiring_soon: true })
             ]);
@@ -49,10 +49,10 @@ export class Dashboard extends BaseComponent {
             // Process recent scans (API returns array directly)
             this.data.recentScans = Array.isArray(recentScans) ? recentScans : [];
 
-            // Process failed images from last 24h
-            const failedScansLast24hArray = Array.isArray(failedScansLast24h) ? failedScansLast24h : [];
-            this.data.failedImages = failedScansLast24hArray.length;
-            this.processFailedByRepository(failedScansLast24hArray);
+            // Process failed images
+            const failedScansArray = Array.isArray(failedScans) ? failedScans : [];
+            this.data.failedImages = failedScansArray.length;
+            this.processFailedByRepository(failedScansArray);
 
             // Process tolerations (API returns array directly)
             this.data.activeTolerations = Array.isArray(allTolerations) ? allTolerations.length : 0;
@@ -259,12 +259,21 @@ export class Dashboard extends BaseComponent {
             .slice(0, 5);
 
         if (repos.length === 0) {
-            return '';
+            return `
+                <div class="dashboard-section">
+                    <h2>Policy Compliance Status</h2>
+                    <div class="success-state">
+                        <div class="success-icon">🎆</div>
+                        <h3>Great Success!</h3>
+                        <p>All images are compliant to policy.</p>
+                    </div>
+                </div>
+            `;
         }
 
         return `
             <div class="dashboard-section">
-                <h2>Failed Images by Repository <span class="section-subtitle">(Last 24 Hours)</span></h2>
+                <h2>Policy Compliance Status</h2>
                 <div class="repository-chart">
                     ${repos.map(([repo, count]) => this.renderRepositoryBar(repo, count)).join('')}
                 </div>
