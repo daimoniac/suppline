@@ -13,7 +13,6 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/joho/godotenv"
 	"github.com/daimoniac/suppline/internal/api"
 	"github.com/daimoniac/suppline/internal/attestation"
 	"github.com/daimoniac/suppline/internal/config"
@@ -25,6 +24,7 @@ import (
 	"github.com/daimoniac/suppline/internal/statestore"
 	"github.com/daimoniac/suppline/internal/watcher"
 	"github.com/daimoniac/suppline/internal/worker"
+	"github.com/joho/godotenv"
 )
 
 func main() {
@@ -150,7 +150,7 @@ func run() error {
 			Key: cfg.Attestation.KeyBased.Key,
 		},
 	}
-	
+
 	attestor, err := attestation.NewSigstoreAttestor(attestorConfig, logger)
 	if err != nil {
 		return fmt.Errorf("failed to initialize attestor: %w", err)

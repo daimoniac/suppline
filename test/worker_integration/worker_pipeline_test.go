@@ -100,11 +100,11 @@ func (m *mockAttestor) AttestSCAI(ctx context.Context, imageRef string, scai *at
 }
 
 type mockStateStore struct {
-	recordScanError    error
-	getLastScanError   error
-	lastScanID         int64
-	cleanupCalled      map[string]bool
-	cleanupErrors      map[string]error
+	recordScanError  error
+	getLastScanError error
+	lastScanID       int64
+	cleanupCalled    map[string]bool
+	cleanupErrors    map[string]error
 }
 
 func newMockStateStore() *mockStateStore {
@@ -141,8 +141,6 @@ func (m *mockStateStore) CleanupArtifactScans(ctx context.Context, digest string
 	return nil
 }
 
-
-
 func (m *mockStateStore) CleanupOrphanedRepositories(ctx context.Context) ([]string, error) {
 	m.cleanupCalled["repositories"] = true
 	if err, exists := m.cleanupErrors["repositories"]; exists {
@@ -165,7 +163,7 @@ func TestPipeline_ManifestNotFoundCleanup(t *testing.T) {
 	// Setup mocks
 	mockQ := queue.NewInMemoryQueue(10)
 	defer mockQ.Close()
-	
+
 	mockReg := &mockRegistry{
 		manifestError: supplineErrors.NewManifestNotFound(errors.New("MANIFEST_UNKNOWN")),
 	}
@@ -213,7 +211,7 @@ func TestPipeline_SuccessfulScanCleanup(t *testing.T) {
 	// Setup mocks
 	mockQ := queue.NewInMemoryQueue(10)
 	defer mockQ.Close()
-	
+
 	mockReg := &mockRegistry{}
 	mockScan := &mockScanner{}
 	mockPol := &mockPolicyEngine{}
@@ -255,7 +253,7 @@ func TestPipeline_CleanupErrorHandling(t *testing.T) {
 	// Setup mocks with cleanup errors
 	mockQ := queue.NewInMemoryQueue(10)
 	defer mockQ.Close()
-	
+
 	mockReg := &mockRegistry{
 		manifestError: supplineErrors.NewManifestNotFound(errors.New("MANIFEST_UNKNOWN")),
 	}
@@ -302,7 +300,7 @@ func TestPipeline_SuccessfulScanCleanupError(t *testing.T) {
 	// Setup mocks
 	mockQ := queue.NewInMemoryQueue(10)
 	defer mockQ.Close()
-	
+
 	mockReg := &mockRegistry{}
 	mockScan := &mockScanner{}
 	mockPol := &mockPolicyEngine{}
@@ -345,7 +343,7 @@ func TestProcessTask_TransientCleanupErrorRetry(t *testing.T) {
 	// Setup mocks
 	mockQ := queue.NewInMemoryQueue(10)
 	defer mockQ.Close()
-	
+
 	mockReg := &mockRegistry{
 		manifestError: supplineErrors.NewManifestNotFound(errors.New("MANIFEST_UNKNOWN")),
 	}
@@ -396,7 +394,7 @@ func TestProcessTask_PermanentCleanupErrorNoRetry(t *testing.T) {
 	// Setup mocks
 	mockQ := queue.NewInMemoryQueue(10)
 	defer mockQ.Close()
-	
+
 	mockReg := &mockRegistry{
 		manifestError: supplineErrors.NewManifestNotFound(errors.New("MANIFEST_UNKNOWN")),
 	}
@@ -447,7 +445,7 @@ func TestProcessTask_SuccessfulScanTransientCleanupError(t *testing.T) {
 	// Setup mocks for successful scan with transient cleanup error
 	mockQ := queue.NewInMemoryQueue(10)
 	defer mockQ.Close()
-	
+
 	mockReg := &mockRegistry{}
 	mockScan := &mockScanner{}
 	mockPol := &mockPolicyEngine{}
@@ -496,7 +494,7 @@ func TestProcessTask_SuccessfulScanPermanentCleanupError(t *testing.T) {
 	// Setup mocks for successful scan with permanent cleanup error
 	mockQ := queue.NewInMemoryQueue(10)
 	defer mockQ.Close()
-	
+
 	mockReg := &mockRegistry{}
 	mockScan := &mockScanner{}
 	mockPol := &mockPolicyEngine{}
@@ -569,7 +567,7 @@ func TestProcessTask_ErrorClassificationIntegration(t *testing.T) {
 			// Setup mocks
 			mockQ := queue.NewInMemoryQueue(10)
 			defer mockQ.Close()
-			
+
 			mockReg := &mockRegistry{
 				manifestError: supplineErrors.NewManifestNotFound(errors.New("MANIFEST_UNKNOWN")),
 			}

@@ -58,8 +58,6 @@ type StateStoreCleanup interface {
 	// This is used when a manifest is no longer available in the registry.
 	CleanupArtifactScans(ctx context.Context, digest string) error
 
-
-
 	// CleanupOrphanedRepositories removes repositories with no remaining artifacts.
 	// Returns a list of deleted repository names for logging purposes.
 	CleanupOrphanedRepositories(ctx context.Context) ([]string, error)
@@ -71,19 +69,19 @@ type StateStoreCleanup interface {
 
 // RepositoryInfo represents a repository with aggregated metadata
 type RepositoryInfo struct {
-	Name                 string
-	TagCount             int
-	LastScanTime         *int64 // Unix timestamp in seconds
-	VulnerabilityCount   VulnerabilityCountSummary
-	PolicyPassed         bool
+	Name               string
+	TagCount           int
+	LastScanTime       *int64 // Unix timestamp in seconds
+	VulnerabilityCount VulnerabilityCountSummary
+	PolicyPassed       bool
 }
 
 // VulnerabilityCountSummary represents aggregated vulnerability counts
 type VulnerabilityCountSummary struct {
-	Critical int
-	High     int
-	Medium   int
-	Low      int
+	Critical  int
+	High      int
+	Medium    int
+	Low       int
 	Tolerated int
 }
 
@@ -96,12 +94,12 @@ type RepositoryDetail struct {
 
 // TagInfo represents a tag within a repository
 type TagInfo struct {
-	Name                 string
-	Digest               string
-	LastScanTime         *int64 // Unix timestamp in seconds
-	NextScanTime         *int64 // Unix timestamp in seconds
-	VulnerabilityCount   VulnerabilityCountSummary
-	PolicyPassed         bool
+	Name               string
+	Digest             string
+	LastScanTime       *int64 // Unix timestamp in seconds
+	NextScanTime       *int64 // Unix timestamp in seconds
+	VulnerabilityCount VulnerabilityCountSummary
+	PolicyPassed       bool
 }
 
 // StateStoreQuery defines the extended interface for querying scan data.
@@ -170,11 +168,11 @@ type ScanRecord struct {
 	ErrorMessage      string
 	CreatedAt         int64 // Unix timestamp in seconds
 	// Denormalized for convenience (loaded via joins)
-	Digest            string
-	Repository        string
-	Tag               string
-	Vulnerabilities   []types.VulnerabilityRecord // Using canonical type
-	ToleratedCVEs     []types.ToleratedCVE        // Using canonical type
+	Digest          string
+	Repository      string
+	Tag             string
+	Vulnerabilities []types.VulnerabilityRecord // Using canonical type
+	ToleratedCVEs   []types.ToleratedCVE        // Using canonical type
 }
 
 // VulnFilter defines criteria for querying vulnerabilities
@@ -204,5 +202,3 @@ type TolerationFilter struct {
 	ExpiringSoon *bool // Within 7 days
 	Limit        int
 }
-
-

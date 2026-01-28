@@ -7,9 +7,9 @@ import (
 	"strings"
 	"time"
 
-	_ "github.com/mattn/go-sqlite3"
 	"github.com/daimoniac/suppline/internal/errors"
 	"github.com/daimoniac/suppline/internal/types"
+	_ "github.com/mattn/go-sqlite3"
 )
 
 // SQLiteStore implements StateStore using SQLite
@@ -19,15 +19,24 @@ type SQLiteStore struct {
 
 // NewSQLiteStore creates a new SQLite state store
 func NewSQLiteStore(dbPath string) (*SQLiteStore, error) {
-	db, err := sql.Open("sqlite3", dbPath)
+	// Add foreign_keys pragma to connection string to ensure it's enabled for all connections
+	// This is critical for CASCADE DELETE to work properly
+	connStr := dbPath + "?_foreign_keys=1"
+
+	db, err := sql.Open("sqlite3", connStr)
 	if err != nil {
 		return nil, errors.NewTransientf("failed to open sqlite database: %w", err)
 	}
 
-	// Enable foreign keys
-	if _, err := db.Exec("PRAGMA foreign_keys = ON"); err != nil {
+	// Verify foreign keys are enabled
+	var fkEnabled int
+	if err := db.QueryRow("PRAGMA foreign_keys").Scan(&fkEnabled); err != nil {
 		db.Close()
-		return nil, errors.NewTransientf("failed to enable foreign keys: %w", err)
+		return nil, errors.NewTransientf("failed to check foreign keys status: %w", err)
+	}
+	if fkEnabled != 1 {
+		db.Close()
+		return nil, errors.NewTransientf("foreign keys are not enabled (got %d, expected 1)", fkEnabled)
 	}
 
 	store := &SQLiteStore{db: db}
@@ -1160,8 +1169,6 @@ func (s *SQLiteStore) executeCleanup(ctx context.Context, operation func(*sql.Tx
 
 	return nil
 }
-
-
 
 // CleanupOrphanedRepositories removes repositories with no remaining artifacts.
 // Returns a list of deleted repository names for logging purposes.
