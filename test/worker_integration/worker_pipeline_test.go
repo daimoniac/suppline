@@ -46,6 +46,20 @@ func (m *mockRegistry) GetManifest(ctx context.Context, repository, digest strin
 	}, nil
 }
 
+func (m *mockRegistry) VerifyTagExists(ctx context.Context, repo, tag string) error {
+	return nil
+}
+
+func (m *mockRegistry) GetManifestWithTagVerification(ctx context.Context, repo, tag, digest string) (*registry.Manifest, error) {
+	if m.manifestError != nil {
+		return nil, m.manifestError
+	}
+	return &registry.Manifest{
+		Digest:    digest,
+		MediaType: "application/vnd.docker.distribution.manifest.v2+json",
+	}, nil
+}
+
 type mockScanner struct {
 	sbomError error
 	vulnError error
