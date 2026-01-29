@@ -177,6 +177,10 @@ defaults:
   x-policy:
     expression: "criticalCount == 0"
     failureMessage: "critical vulnerabilities found"
+  x-tolerate:                         # Default tolerations for all targets
+    - id: CVE-2024-00001
+      statement: "Known false positive"
+      expires_at: 2025-12-31T23:59:59Z
 
 sync:
   - source: nginx
@@ -185,7 +189,7 @@ sync:
     x-rescanInterval: 3d              # Override default
     x-policy:                         # Override default
       expression: "criticalCount == 0 && highCount <= 5"
-    x-tolerate:
+    x-tolerate:                       # Merged with default tolerations
       - id: CVE-2024-56171
         statement: "Accepted risk"
         expires_at: 2025-12-31T23:59:59Z
@@ -197,7 +201,7 @@ sync:
 - `type` - `repository` (all tags) or `image` (specific tag)
 - `x-rescanInterval` - How often to rescan unchanged images (default: 24h)
 - `x-policy` - CEL-based security policy for this mirror
-- `x-tolerate` - CVE tolerations with expiry dates
+- `x-tolerate` - CVE tolerations with expiry dates (merged with defaults)
 
 Images are continuously mirrored from source to target, then scanned and evaluated against policies. Kubernetes clusters pull only from the target registry.
 

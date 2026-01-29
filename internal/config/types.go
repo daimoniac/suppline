@@ -39,7 +39,7 @@ type ScannerConfig struct {
 	CustomHeaders map[string]string
 	Timeout       time.Duration
 	Insecure      bool
-	RegsyncPath   string // Path to suppline.yml for registry credentials
+	RegsyncPath   string       // Path to suppline.yml for registry credentials
 	Logger        *slog.Logger // Logger instance for structured logging
 }
 
@@ -98,15 +98,16 @@ type RegistryCredential struct {
 
 // Defaults contains default configuration values
 type Defaults struct {
-	Parallel              int           `yaml:"parallel"`
-	RescanInterval        string        `yaml:"x-rescanInterval,omitempty"`
-	WorkerPollInterval    string        `yaml:"x-worker-poll-interval,omitempty"`
-	WorkerConcurrency     int           `yaml:"x-worker-concurrency,omitempty"`
-	WorkerRetryAttempts   int           `yaml:"x-worker-retry-attempts,omitempty"`
-	WorkerRetryBackoff    string        `yaml:"x-worker-retry-backoff,omitempty"`
-	QueueBufferSize       int           `yaml:"x-queue-buffer-size,omitempty"`
-	SCAIValidityExtension string        `yaml:"x-scaiValidityExtension,omitempty"`
-	Policy                *PolicyConfig `yaml:"x-policy,omitempty"`
+	Parallel              int                   `yaml:"parallel"`
+	RescanInterval        string                `yaml:"x-rescanInterval,omitempty"`
+	WorkerPollInterval    string                `yaml:"x-worker-poll-interval,omitempty"`
+	WorkerConcurrency     int                   `yaml:"x-worker-concurrency,omitempty"`
+	WorkerRetryAttempts   int                   `yaml:"x-worker-retry-attempts,omitempty"`
+	WorkerRetryBackoff    string                `yaml:"x-worker-retry-backoff,omitempty"`
+	QueueBufferSize       int                   `yaml:"x-queue-buffer-size,omitempty"`
+	SCAIValidityExtension string                `yaml:"x-scaiValidityExtension,omitempty"`
+	Policy                *PolicyConfig         `yaml:"x-policy,omitempty"`
+	Tolerate              []types.CVEToleration `yaml:"x-tolerate,omitempty"` // Default tolerations merged with sync-specific ones
 }
 
 // SyncEntry represents a single sync configuration

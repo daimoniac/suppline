@@ -118,10 +118,14 @@ func (c *RegsyncConfig) GetCredentialForRegistry(registry string) *RegistryCrede
 }
 
 // GetTolerationsForTarget returns CVE tolerations for a specific target repository
+// Merges default tolerations with sync-specific tolerations
 // Handles both type=repository (exact match) and type=image (strips tag for matching)
 func (c *RegsyncConfig) GetTolerationsForTarget(target string) []types.CVEToleration {
-	var allTolerations []types.CVEToleration
+	// Start with default tolerations
+	allTolerations := make([]types.CVEToleration, 0, len(c.Defaults.Tolerate))
+	allTolerations = append(allTolerations, c.Defaults.Tolerate...)
 
+	// Add sync-specific tolerations
 	for _, sync := range c.Sync {
 		syncTarget := sync.Target
 
@@ -188,11 +192,22 @@ func (c *RegsyncConfig) IsToleratedCVE(target, cveID string) (bool, *types.CVETo
 }
 
 // GetExpiringTolerations returns tolerations that will expire within the specified duration
+// Includes both default tolerations and sync-specific tolerations
 func (c *RegsyncConfig) GetExpiringTolerations(within time.Duration) []types.CVEToleration {
 	var expiring []types.CVEToleration
 	nowUnix := time.Now().Unix()
 	thresholdUnix := time.Now().Add(within).Unix()
 
+	// Check default tolerations
+	for _, toleration := range c.Defaults.Tolerate {
+		if toleration.ExpiresAt != nil {
+			if *toleration.ExpiresAt > nowUnix && *toleration.ExpiresAt < thresholdUnix {
+				expiring = append(expiring, toleration)
+			}
+		}
+	}
+
+	// Check sync-specific tolerations
 	for _, sync := range c.Sync {
 		for _, toleration := range sync.Tolerate {
 			if toleration.ExpiresAt != nil {
@@ -328,6 +343,7 @@ func (c *RegsyncConfig) GetWorkerPollInterval() (time.Duration, error) {
 	// Fall back to hardcoded default
 	return 5 * time.Second, nil
 }
+
 // GetWorkerConcurrency returns the worker concurrency from defaults
 // Returns the default if specified, otherwise 3
 func (c *RegsyncConfig) GetWorkerConcurrency() int {

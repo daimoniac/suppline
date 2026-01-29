@@ -5,6 +5,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/daimoniac/suppline/internal/types"
 )
 
 func TestLoad(t *testing.T) {
@@ -508,5 +510,176 @@ sync:
 	}
 	if config.Creds[1].Pass != "testpass" {
 		t.Errorf("Expected pass testpass, got %s", config.Creds[1].Pass)
+	}
+}
+
+func TestGetTolerationsForTarget_WithDefaults(t *testing.T) {
+	defaultExpiresAt := time.Now().Add(60 * 24 * time.Hour).Unix()
+	syncExpiresAt := time.Now().Add(30 * 24 * time.Hour).Unix()
+
+	config := &RegsyncConfig{
+		Version: 1,
+		Defaults: Defaults{
+			Tolerate: []types.CVEToleration{
+				{
+					ID:        "CVE-2024-00001",
+					Statement: "Default toleration for all targets",
+					ExpiresAt: &defaultExpiresAt,
+				},
+				{
+					ID:        "CVE-2024-00002",
+					Statement: "Another default toleration",
+					ExpiresAt: nil, // No expiry
+				},
+			},
+		},
+		Sync: []SyncEntry{
+			{
+				Source: "nginx",
+				Target: "myregistry.com/nginx",
+				Type:   "repository",
+				Tolerate: []types.CVEToleration{
+					{
+						ID:        "CVE-2024-12345",
+						Statement: "Sync-specific toleration",
+						ExpiresAt: &syncExpiresAt,
+					},
+				},
+			},
+			{
+				Source: "alpine",
+				Target: "myregistry.com/alpine",
+				Type:   "repository",
+				// No sync-specific tolerations, should only get defaults
+			},
+		},
+	}
+
+	// Test nginx target - should have both default and sync-specific tolerations
+	tolerations := config.GetTolerationsForTarget("myregistry.com/nginx")
+	if len(tolerations) != 3 {
+		t.Errorf("expected 3 tolerations (2 default + 1 sync-specific) but got %d", len(tolerations))
+	}
+
+	// Verify default tolerations are included
+	foundDefault1 := false
+	foundDefault2 := false
+	foundSync := false
+	for _, tol := range tolerations {
+		if tol.ID == "CVE-2024-00001" {
+			foundDefault1 = true
+		}
+		if tol.ID == "CVE-2024-00002" {
+			foundDefault2 = true
+		}
+		if tol.ID == "CVE-2024-12345" {
+			foundSync = true
+		}
+	}
+
+	if !foundDefault1 {
+		t.Error("expected to find default toleration CVE-2024-00001")
+	}
+	if !foundDefault2 {
+		t.Error("expected to find default toleration CVE-2024-00002")
+	}
+	if !foundSync {
+		t.Error("expected to find sync-specific toleration CVE-2024-12345")
+	}
+
+	// Test alpine target - should only have default tolerations
+	tolerations = config.GetTolerationsForTarget("myregistry.com/alpine")
+	if len(tolerations) != 2 {
+		t.Errorf("expected 2 tolerations (defaults only) but got %d", len(tolerations))
+	}
+
+	// Verify only default tolerations are present
+	foundDefault1 = false
+	foundDefault2 = false
+	for _, tol := range tolerations {
+		if tol.ID == "CVE-2024-00001" {
+			foundDefault1 = true
+		}
+		if tol.ID == "CVE-2024-00002" {
+			foundDefault2 = true
+		}
+	}
+
+	if !foundDefault1 {
+		t.Error("expected to find default toleration CVE-2024-00001 for alpine")
+	}
+	if !foundDefault2 {
+		t.Error("expected to find default toleration CVE-2024-00002 for alpine")
+	}
+}
+
+func TestGetExpiringTolerations_WithDefaults(t *testing.T) {
+	// Create tolerations with various expiration times
+	within7Days := time.Now().Add(5 * 24 * time.Hour).Unix()     // Expires in 5 days (within 7 days)
+	beyond7Days := time.Now().Add(10 * 24 * time.Hour).Unix()    // Expires in 10 days (beyond 7 days)
+	syncWithin7Days := time.Now().Add(3 * 24 * time.Hour).Unix() // Expires in 3 days (within 7 days)
+
+	config := &RegsyncConfig{
+		Version: 1,
+		Defaults: Defaults{
+			Tolerate: []types.CVEToleration{
+				{
+					ID:        "CVE-2024-00001",
+					Statement: "Expiring soon default",
+					ExpiresAt: &within7Days,
+				},
+				{
+					ID:        "CVE-2024-00002",
+					Statement: "Expiring later default",
+					ExpiresAt: &beyond7Days,
+				},
+				{
+					ID:        "CVE-2024-00003",
+					Statement: "Permanent default",
+					ExpiresAt: nil,
+				},
+			},
+		},
+		Sync: []SyncEntry{
+			{
+				Source: "nginx",
+				Target: "myregistry.com/nginx",
+				Type:   "repository",
+				Tolerate: []types.CVEToleration{
+					{
+						ID:        "CVE-2024-12345",
+						Statement: "Expiring soon sync-specific",
+						ExpiresAt: &syncWithin7Days,
+					},
+				},
+			},
+		},
+	}
+
+	// Get tolerations expiring within 7 days
+	expiring := config.GetExpiringTolerations(7 * 24 * time.Hour)
+
+	// Should include: CVE-2024-00001 (5 days) and CVE-2024-12345 (3 days)
+	// Should NOT include: CVE-2024-00002 (10 days) and CVE-2024-00003 (permanent)
+	if len(expiring) != 2 {
+		t.Errorf("expected 2 expiring tolerations but got %d", len(expiring))
+	}
+
+	foundDefault := false
+	foundSync := false
+	for _, tol := range expiring {
+		if tol.ID == "CVE-2024-00001" {
+			foundDefault = true
+		}
+		if tol.ID == "CVE-2024-12345" {
+			foundSync = true
+		}
+	}
+
+	if !foundDefault {
+		t.Error("expected to find expiring default toleration CVE-2024-00001")
+	}
+	if !foundSync {
+		t.Error("expected to find expiring sync-specific toleration CVE-2024-12345")
 	}
 }

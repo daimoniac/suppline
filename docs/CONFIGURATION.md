@@ -102,6 +102,10 @@ defaults:
   x-policy:                   # Default policy
     expression: string        # CEL expression
     failureMessage: string    # Custom failure message
+  x-tolerate:                 # Default CVE tolerations (optional)
+    - id: string              # CVE identifier
+      statement: string       # Reason for toleration
+      expires_at: string      # RFC3339 timestamp (optional)
 
 # Sync entries
 sync:
@@ -267,6 +271,44 @@ sync:
 
 ### CVE Tolerations
 
+CVE tolerations can be defined at two levels:
+
+1. **Default Level** - Applied to all sync targets
+2. **Sync Entry Level** - Applied to specific repositories
+
+Tolerations from both levels are **merged together**, with sync-specific tolerations added to the default ones.
+
+**Default Tolerations Example:**
+
+```yaml
+defaults:
+  x-tolerate:
+    # These tolerations apply to ALL sync targets
+    - id: CVE-2024-00001
+      statement: "Known false positive across all images"
+      expires_at: 2025-12-31T23:59:59Z
+    
+    - id: CVE-2024-00002
+      statement: "Accepted risk - no fix available in base images"
+
+sync:
+  - source: nginx
+    target: myregistry.example.com/nginx
+    type: repository
+    # This target gets both default tolerations PLUS the one below
+    x-tolerate:
+      - id: CVE-2024-56171
+        statement: "Nginx-specific toleration"
+        expires_at: 2025-12-31T23:59:59Z
+  
+  - source: alpine
+    target: myregistry.example.com/alpine
+    type: repository
+    # This target gets only the default tolerations
+```
+
+**Sync-Specific Tolerations Example:**
+
 ```yaml
 sync:
   - source: nginx
@@ -295,6 +337,7 @@ sync:
 
 **Behavior:**
 - Tolerated CVEs are excluded from policy evaluation
+- Default tolerations are merged with sync-specific tolerations
 - Expired tolerations are ignored (CVE counts as critical)
 - Warnings logged for tolerations expiring within 7 days
 - Tolerations without `expires_at` never expire
