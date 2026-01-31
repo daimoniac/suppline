@@ -596,3 +596,145 @@ func TestRescanPriority(t *testing.T) {
 		t.Errorf("expected normal priority for regular task, got %v", task2.Priority)
 	}
 }
+
+func TestFirstScanPriority(t *testing.T) {
+	q := NewInMemoryQueue(10)
+	defer q.Close()
+
+	ctx := context.Background()
+
+	// Enqueue a normal task (digest changed, not a first scan)
+	normalTask := &ScanTask{
+		ID:          "normal-1",
+		Repository:  "test/repo",
+		Digest:      "sha256:normal",
+		EnqueuedAt:  time.Now(),
+		IsRescan:    false,
+		IsFirstScan: false,
+	}
+	err := q.Enqueue(ctx, normalTask)
+	if err != nil {
+		t.Fatalf("failed to enqueue normal task: %v", err)
+	}
+
+	// Enqueue a first-scan task after the normal task
+	firstScanTask := &ScanTask{
+		ID:          "first-1",
+		Repository:  "test/newrepo",
+		Digest:      "sha256:newfirst",
+		EnqueuedAt:  time.Now(),
+		IsRescan:    false,
+		IsFirstScan: true,
+	}
+	err = q.Enqueue(ctx, firstScanTask)
+	if err != nil {
+		t.Fatalf("failed to enqueue first-scan task: %v", err)
+	}
+
+	// Dequeue should return the first-scan task first (higher priority)
+	task1, err := q.Dequeue(ctx)
+	if err != nil {
+		t.Fatalf("failed to dequeue first task: %v", err)
+	}
+	if task1.ID != "first-1" {
+		t.Errorf("expected first-scan task first, got %s", task1.ID)
+	}
+	if task1.Priority != PriorityHigh {
+		t.Errorf("expected high priority for first-scan task, got %v", task1.Priority)
+	}
+
+	// Dequeue should return the normal task second
+	task2, err := q.Dequeue(ctx)
+	if err != nil {
+		t.Fatalf("failed to dequeue second task: %v", err)
+	}
+	if task2.ID != "normal-1" {
+		t.Errorf("expected normal task second, got %s", task2.ID)
+	}
+	if task2.Priority != PriorityNormal {
+		t.Errorf("expected normal priority for regular task, got %v", task2.Priority)
+	}
+}
+
+func TestHighPriorityOrdering(t *testing.T) {
+	q := NewInMemoryQueue(10)
+	defer q.Close()
+
+	ctx := context.Background()
+
+	// Enqueue multiple high-priority tasks (rescan and first-scan)
+	// They should be processed in FIFO order among themselves
+	rescanTask := &ScanTask{
+		ID:          "rescan-1",
+		Repository:  "test/repo",
+		Digest:      "sha256:rescan",
+		EnqueuedAt:  time.Now(),
+		IsRescan:    true,
+		IsFirstScan: false,
+	}
+	err := q.Enqueue(ctx, rescanTask)
+	if err != nil {
+		t.Fatalf("failed to enqueue rescan task: %v", err)
+	}
+
+	firstScanTask := &ScanTask{
+		ID:          "first-1",
+		Repository:  "test/newrepo",
+		Digest:      "sha256:newfirst",
+		EnqueuedAt:  time.Now(),
+		IsRescan:    false,
+		IsFirstScan: true,
+	}
+	err = q.Enqueue(ctx, firstScanTask)
+	if err != nil {
+		t.Fatalf("failed to enqueue first-scan task: %v", err)
+	}
+
+	normalTask := &ScanTask{
+		ID:          "normal-1",
+		Repository:  "test/repo",
+		Digest:      "sha256:normal",
+		EnqueuedAt:  time.Now(),
+		IsRescan:    false,
+		IsFirstScan: false,
+	}
+	err = q.Enqueue(ctx, normalTask)
+	if err != nil {
+		t.Fatalf("failed to enqueue normal task: %v", err)
+	}
+
+	// First two dequeued should be high priority (rescan first, then first-scan)
+	task1, err := q.Dequeue(ctx)
+	if err != nil {
+		t.Fatalf("failed to dequeue first task: %v", err)
+	}
+	if task1.Priority != PriorityHigh {
+		t.Errorf("expected high priority task first, got %v", task1.Priority)
+	}
+	if task1.ID != "rescan-1" {
+		t.Errorf("expected rescan-1 first, got %s", task1.ID)
+	}
+
+	task2, err := q.Dequeue(ctx)
+	if err != nil {
+		t.Fatalf("failed to dequeue second task: %v", err)
+	}
+	if task2.Priority != PriorityHigh {
+		t.Errorf("expected high priority task second, got %v", task2.Priority)
+	}
+	if task2.ID != "first-1" {
+		t.Errorf("expected first-1 second, got %s", task2.ID)
+	}
+
+	// Last should be normal priority
+	task3, err := q.Dequeue(ctx)
+	if err != nil {
+		t.Fatalf("failed to dequeue third task: %v", err)
+	}
+	if task3.Priority != PriorityNormal {
+		t.Errorf("expected normal priority task last, got %v", task3.Priority)
+	}
+	if task3.ID != "normal-1" {
+		t.Errorf("expected normal-1 last, got %s", task3.ID)
+	}
+}

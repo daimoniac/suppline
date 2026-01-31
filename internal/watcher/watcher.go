@@ -186,6 +186,7 @@ func (w *watcherImpl) shouldScanImage(
 	lastScan, err := w.stateStore.GetLastScan(ctx, currentDigest)
 	if err != nil {
 		if errors.Is(err, statestore.ErrScanNotFound) {
+			// isRescan=false but this will be marked as IsFirstScan=true in caller
 			return true, "never scanned before", false, nil
 		}
 		// Error already classified in statestore package
@@ -331,6 +332,7 @@ func (w *watcherImpl) processTag(ctx context.Context, repo, tag string, tolerati
 		EnqueuedAt:  time.Now(),
 		Attempts:    0,
 		IsRescan:    isRescan,
+		IsFirstScan: !isRescan && reason == "never scanned before",
 		Tolerations: tolerations,
 	}
 

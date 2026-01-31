@@ -3,9 +3,10 @@ package watcher
 import (
 	"context"
 	"fmt"
-	"github.com/daimoniac/suppline/internal/types"
 	"testing"
 	"time"
+
+	"github.com/daimoniac/suppline/internal/types"
 
 	"github.com/daimoniac/suppline/internal/config"
 	"github.com/daimoniac/suppline/internal/observability"
@@ -184,6 +185,9 @@ func TestWatcher_Discover_NewImages(t *testing.T) {
 	if task1.IsRescan {
 		t.Error("Expected IsRescan to be false for new image")
 	}
+	if !task1.IsFirstScan {
+		t.Error("Expected IsFirstScan to be true for never-scanned image")
+	}
 	if len(task1.Tolerations) != 1 {
 		t.Errorf("Expected 1 toleration, got %d", len(task1.Tolerations))
 	}
@@ -264,6 +268,9 @@ func TestWatcher_Discover_RescanDue(t *testing.T) {
 	task, _ := mockQueue.Dequeue(ctx)
 	if !task.IsRescan {
 		t.Error("Expected IsRescan to be true for old image")
+	}
+	if task.IsFirstScan {
+		t.Error("Expected IsFirstScan to be false for rescan")
 	}
 	if task.Digest != "sha256:digest1" {
 		t.Errorf("Expected digest sha256:digest1, got %s", task.Digest)

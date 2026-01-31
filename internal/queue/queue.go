@@ -38,7 +38,7 @@ type TaskPriority int
 
 const (
 	PriorityNormal TaskPriority = iota
-	PriorityHigh   // For rescans and urgent tasks
+	PriorityHigh                // For rescans and urgent tasks
 )
 
 // ScanTask represents a container image scanning task
@@ -50,14 +50,15 @@ type ScanTask struct {
 	EnqueuedAt  time.Time
 	Attempts    int
 	IsRescan    bool
+	IsFirstScan bool // True when image has never been scanned before
 	Priority    TaskPriority
 	Tolerations []types.CVEToleration // Using canonical type from internal/types
 }
 
 // InMemoryQueue implements TaskQueue using priority queues
 type InMemoryQueue struct {
-	highPriorityTasks chan *ScanTask // For rescans and urgent tasks
-	normalTasks       chan *ScanTask // For regular scans
+	highPriorityTasks chan *ScanTask  // For rescans and urgent tasks
+	normalTasks       chan *ScanTask  // For regular scans
 	pending           map[string]bool // Deduplication map: digest -> exists
 	pendingMu         sync.RWMutex
 	metrics           *QueueMetrics
@@ -87,7 +88,7 @@ func NewInMemoryQueue(bufferSize int) *InMemoryQueue {
 	if normalBuffer < 1 {
 		normalBuffer = 1
 	}
-	
+
 	return &InMemoryQueue{
 		highPriorityTasks: make(chan *ScanTask, highPriorityBuffer),
 		normalTasks:       make(chan *ScanTask, normalBuffer),
@@ -124,7 +125,8 @@ func (q *InMemoryQueue) Enqueue(ctx context.Context, task *ScanTask) error {
 	q.pendingMu.Unlock()
 
 	// Set priority based on task type
-	if task.IsRescan {
+	// High priority for: rescans and first-time scans of new repositories
+	if task.IsRescan || task.IsFirstScan {
 		task.Priority = PriorityHigh
 	} else {
 		task.Priority = PriorityNormal
@@ -229,7 +231,7 @@ func (q *InMemoryQueue) HasPendingTask(ctx context.Context, digest string) (bool
 
 	q.pendingMu.RLock()
 	defer q.pendingMu.RUnlock()
-	
+
 	return q.pending[digest], nil
 }
 
