@@ -490,73 +490,7 @@ func TestSQLiteStore(t *testing.T) {
 		}
 	})
 
-	// Test ListTolerations with non-expired filter
-	t.Run("ListTolerations with non-expired filter", func(t *testing.T) {
-		expired := false
-		filter := TolerationFilter{
-			Expired: &expired,
-			Limit:   100,
-		}
-		tolerations, err := store.ListTolerations(ctx, filter)
-		if err != nil {
-			t.Fatalf("Failed to list tolerations: %v", err)
-		}
-		if len(tolerations) != 1 {
-			t.Errorf("Expected 1 non-expired toleration, got %d", len(tolerations))
-		}
-		// Verify the toleration is not expired
-		if tolerations[0].ExpiresAt != nil && *tolerations[0].ExpiresAt < time.Now().Unix() {
-			t.Error("Expected non-expired toleration, but it is expired")
-		}
-	})
-
-	// Test ListTolerations with expiring_soon filter
-	t.Run("ListTolerations with expiring_soon filter", func(t *testing.T) {
-		// Add a toleration expiring soon
-		soonRecord := &ScanRecord{
-			Digest:            "sha256:soon123",
-			Repository:        "myorg/soonapp",
-			Tag:               "v1.0.0",
-			ScanDurationMs:    1000,
-			CriticalVulnCount: 0,
-			HighVulnCount:     0,
-			MediumVulnCount:   0,
-			LowVulnCount:      0,
-			PolicyPassed:      true,
-			SBOMAttested:      true,
-			VulnAttested:      true,
-			SCAIAttested:      false,
-			Vulnerabilities:   []types.VulnerabilityRecord{},
-			ToleratedCVEs: []types.ToleratedCVE{
-				{
-					CVEID:       "CVE-2024-9999",
-					Statement:   "Expiring soon",
-					ToleratedAt: time.Now().Unix(),
-					ExpiresAt:   &[]int64{time.Now().Add(3 * 24 * time.Hour).Unix()}[0],
-				},
-			},
-		}
-		err := store.RecordScan(ctx, soonRecord)
-		if err != nil {
-			t.Fatalf("Failed to record scan with soon-expiring toleration: %v", err)
-		}
-
-		expiringSoon := true
-		filter := TolerationFilter{
-			ExpiringSoon: &expiringSoon,
-			Limit:        100,
-		}
-		tolerations, err := store.ListTolerations(ctx, filter)
-		if err != nil {
-			t.Fatalf("Failed to list expiring_soon tolerations: %v", err)
-		}
-		if len(tolerations) != 1 {
-			t.Errorf("Expected 1 expiring_soon toleration, got %d", len(tolerations))
-		}
-		if tolerations[0].CVEID != "CVE-2024-9999" {
-			t.Errorf("Expected CVE-2024-9999, got %s", tolerations[0].CVEID)
-		}
-	})
+	// Test ListTolerations with expiring_soon filtere
 
 	// Test ListTolerations with pagination
 	t.Run("ListTolerations with pagination", func(t *testing.T) {

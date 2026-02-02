@@ -696,7 +696,6 @@ func (s *SQLiteStore) ListTolerations(ctx context.Context, filter TolerationFilt
 	// Build a map of unique repository+CVE combinations
 	// Key: "repo:cve", Value: TolerationInfo with earliest tolerated_at
 	tolerationMap := make(map[string]*types.TolerationInfo)
-	nowUnix := time.Now().Unix()
 
 	for rows.Next() {
 		var repository string
@@ -722,29 +721,7 @@ func (s *SQLiteStore) ListTolerations(ctx context.Context, filter TolerationFilt
 				continue
 			}
 
-			// Apply expiration filters if specified
-			if filter.Expired != nil {
-				if *filter.Expired {
-					// Only expired
-					if tc.ExpiresAt == nil || *tc.ExpiresAt >= nowUnix {
-						continue
-					}
-				} else {
-					// Only non-expired
-					if tc.ExpiresAt != nil && *tc.ExpiresAt < nowUnix {
-						continue
-					}
-				}
-			}
-
-		if filter.ExpiringSoon != nil && *filter.ExpiringSoon {
-			// Expiring within 7 days (but not already expired)
-			sevenDaysFromNowUnix := time.Now().Add(7 * 24 * time.Hour).Unix()
-			// Skip if: no expiry, already expired, or expires more than 7 days from now
-			if tc.ExpiresAt == nil || *tc.ExpiresAt <= nowUnix || *tc.ExpiresAt > sevenDaysFromNowUnix {
-				continue
-			}
-		}			key := repository + ":" + tc.CVEID
+			key := repository + ":" + tc.CVEID
 			existing, found := tolerationMap[key]
 			if !found || tc.ToleratedAt < existing.ToleratedAt {
 				// Keep the earliest tolerated_at timestamp

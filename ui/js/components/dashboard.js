@@ -39,15 +39,11 @@ export class Dashboard extends BaseComponent {
             const [
                 recentScans,
                 failedScans,
-                allTolerations,
-                expiringTolerations,
-                expiredTolerations
+                allTolerations
             ] = await Promise.all([
                 this.apiClient.getScans({ limit: 20 }),
                 this.apiClient.getScans({ policy_passed: false }), 
-                this.apiClient.getTolerations({}),
-                this.apiClient.getTolerations({ expiring_soon: true }),
-                this.apiClient.getTolerations({ expired: true })
+                this.apiClient.getTolerations({})
             ]);
 
             // Process recent scans (API returns array directly)
@@ -58,11 +54,25 @@ export class Dashboard extends BaseComponent {
             this.data.failedImages = failedScansArray.length;
             this.processFailedByRepository(failedScansArray);
 
-            // Process tolerations (API returns array directly)
-            this.data.activeTolerations = Array.isArray(allTolerations) ? allTolerations.length : 0;
-            this.data.expiringTolerations = Array.isArray(expiringTolerations) ? expiringTolerations.length : 0;
-            this.data.expiringTolerationsDetails = Array.isArray(expiringTolerations) ? expiringTolerations : [];
-            this.data.expiredTolerationsDetails = Array.isArray(expiredTolerations) ? expiredTolerations : [];
+            // Process tolerations - filter expired and expiring in the UI
+            const tolerations = Array.isArray(allTolerations) ? allTolerations : [];
+            this.data.activeTolerations = tolerations.length;
+            
+            // Filter tolerations by expiration status
+            const now = Date.now();
+            const sevenDaysFromNow = now + (7 * 24 * 60 * 60 * 1000);
+            
+            this.data.expiredTolerationsDetails = tolerations.filter(t => {
+                return t.ExpiresAt && (t.ExpiresAt * 1000) <= now;
+            });
+            
+            this.data.expiringTolerationsDetails = tolerations.filter(t => {
+                if (!t.ExpiresAt) return false;
+                const expiryMs = t.ExpiresAt * 1000;
+                return expiryMs > now && expiryMs <= sevenDaysFromNow;
+            });
+            
+            this.data.expiringTolerations = this.data.expiringTolerationsDetails.length;
 
             // Calculate vulnerability breakdown from recent scans
             this.calculateVulnerabilityBreakdown(this.data.recentScans);
@@ -218,6 +228,17 @@ export class Dashboard extends BaseComponent {
             const expiredDate = toleration.ExpiresAt ? new Date(toleration.ExpiresAt * 1000) : null;
             const expiredDateStr = expiredDate ? expiredDate.toLocaleDateString() : 'N/A';
             const daysExpired = expiredDate ? Math.floor((Date.now() - expiredDate.getTime()) / (1000 * 60 * 60 * 24)) : 0;
+            
+            // Handle repositories array - show up to 3, or "multiple repositories"
+            const repositories = toleration.Repositories || [];
+            let repoDisplay = '';
+            if (repositories.length === 0) {
+                repoDisplay = 'No repositories';
+            } else if (repositories.length <= 3) {
+                repoDisplay = repositories.map(r => this.escapeHtml(r.Repository)).join(', ');
+            } else {
+                repoDisplay = 'multiple repositories';
+            }
 
             return `
                 <div class="toleration-attention-item toleration-expired" data-cve="${this.escapeHtml(toleration.CVEID)}">
@@ -225,7 +246,7 @@ export class Dashboard extends BaseComponent {
                         <span class="toleration-attention-cve">${this.escapeHtml(toleration.CVEID)}</span>
                         <span class="status-badge status-danger">⚠️ EXPIRED</span>
                     </div>
-                    <div class="toleration-attention-repo">${this.escapeHtml(toleration.Repository)}</div>
+                    <div class="toleration-attention-repo">${repoDisplay}</div>
                     <div class="toleration-attention-statement">${this.escapeHtml(toleration.Statement || 'No statement provided')}</div>
                     <div class="toleration-attention-expiry toleration-attention-expiry-danger">
                         Expired ${daysExpired} day${daysExpired !== 1 ? 's' : ''} ago on ${expiredDateStr}
@@ -248,6 +269,17 @@ export class Dashboard extends BaseComponent {
                 const expiryDate = toleration.ExpiresAt ? new Date(toleration.ExpiresAt * 1000) : null;
                 const expiryDateStr = expiryDate ? expiryDate.toLocaleDateString() : 'Never';
                 const daysUntilExpiry = expiryDate ? Math.ceil((expiryDate.getTime() - Date.now()) / (1000 * 60 * 60 * 24)) : null;
+                
+                // Handle repositories array - show up to 3, or "multiple repositories"
+                const repositories = toleration.Repositories || [];
+                let repoDisplay = '';
+                if (repositories.length === 0) {
+                    repoDisplay = 'No repositories';
+                } else if (repositories.length <= 3) {
+                    repoDisplay = repositories.map(r => this.escapeHtml(r.Repository)).join(', ');
+                } else {
+                    repoDisplay = 'multiple repositories';
+                }
 
                 return `
                     <div class="toleration-attention-item toleration-expiring" data-cve="${this.escapeHtml(toleration.CVEID)}">
@@ -255,7 +287,7 @@ export class Dashboard extends BaseComponent {
                             <span class="toleration-attention-cve">${this.escapeHtml(toleration.CVEID)}</span>
                             <span class="status-badge status-warning">⏰ Expiring Soon</span>
                         </div>
-                        <div class="toleration-attention-repo">${this.escapeHtml(toleration.Repository)}</div>
+                        <div class="toleration-attention-repo">${repoDisplay}</div>
                         <div class="toleration-attention-statement">${this.escapeHtml(toleration.Statement || 'No statement provided')}</div>
                         <div class="toleration-attention-expiry">
                             ${daysUntilExpiry !== null ? `Expires in ${daysUntilExpiry} day${daysUntilExpiry !== 1 ? 's' : ''} on ${expiryDateStr}` : 'No expiry date'}

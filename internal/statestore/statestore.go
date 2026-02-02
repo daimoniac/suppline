@@ -196,9 +196,7 @@ type ScanFilter struct {
 
 // TolerationFilter defines criteria for listing tolerations
 type TolerationFilter struct {
-	CVEID        string
-	Repository   string
-	Expired      *bool
-	ExpiringSoon *bool // Within 7 days
-	Limit        int
+	CVEID      string
+	Repository string
+	Limit      int
 }

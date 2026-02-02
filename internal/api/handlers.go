@@ -1,6 +1,7 @@
 package api
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -171,16 +172,13 @@ func (s *APIServer) handleQueryVulnerabilities(w http.ResponseWriter, r *http.Re
 
 // handleListTolerations lists tolerated CVEs with optional filters
 // @Summary List tolerations
-// @Description List all CVE tolerations with optional filtering. Returns one entry per unique repository + CVE ID combination.
+// @Description List all CVE tolerations as defined in the configuration file. Groups by CVE ID with repositories array.
 // @Tags Tolerations
 // @Accept json
 // @Produce json
 // @Param cve_id query string false "Filter by CVE ID"
 // @Param repository query string false "Filter by repository name"
-// @Param expired query boolean false "Filter by expiration status"
-// @Param expiring_soon query boolean false "Show tolerations expiring within 7 days"
-// @Param limit query int false "Maximum number of results" default(100)
-// @Success 200 {array} types.TolerationInfo
+// @Success 200 {array} types.TolerationSummary
 // @Failure 401 {object} map[string]string "Unauthorized"
 // @Failure 500 {object} map[string]string "Internal server error"
 // @Security BearerAuth
@@ -192,29 +190,23 @@ func (s *APIServer) handleListTolerations(w http.ResponseWriter, r *http.Request
 	}
 
 	// Parse query parameters
-	filter := statestore.TolerationFilter{
-		CVEID:        parseQueryParam(r, "cve_id"),
-		Repository:   parseQueryParam(r, "repository"),
-		Expired:      parseQueryParamBool(r, "expired"),
-		ExpiringSoon: parseQueryParamBool(r, "expiring_soon"),
-		Limit:        parseQueryParamInt(r, "limit", 100),
-	}
+	cveIDFilter := parseQueryParam(r, "cve_id")
+	repositoryFilter := parseQueryParam(r, "repository")
 
-	// List tolerations from state store
-	tolerations, err := s.stateStore.ListTolerations(r.Context(), filter)
-	if err != nil {
-		s.respondError(w, http.StatusInternalServerError, fmt.Sprintf("Failed to list tolerations: %v", err))
-		return
-	}
+	// Get all configured tolerations from config
+	tolerations := s.getConfiguredTolerations(cveIDFilter, repositoryFilter)
 
-	// Enrich tolerations with current config values
-	s.enrichTolerationList(tolerations)
+	// Get historical application timestamps from state store
+	s.enrichWithHistoricalTimestamps(r.Context(), tolerations)
+
+	// Group tolerations by CVE ID
+	grouped := s.groupTolerationsByCVE(tolerations)
 
 	// Stream JSON response to avoid buffering large payloads
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
 	encoder := json.NewEncoder(w)
-	if err := encoder.Encode(tolerations); err != nil {
+	if err := encoder.Encode(grouped); err != nil {
 		s.logger.Error("error encoding JSON response",
 			"error", err.Error())
 	}
@@ -1032,25 +1024,123 @@ func (s *APIServer) enrichScanRecord(record *statestore.ScanRecord) {
 	}
 }
 
-// enrichTolerationList updates toleration info with current config values (in-place)
-// Preserves ToleratedAt timestamps while using current Statement and ExpiresAt from config
-func (s *APIServer) enrichTolerationList(tolerations []*types.TolerationInfo) {
+// getConfiguredTolerations returns all tolerations from config file
+// Returns all configured tolerations for each target repository, optionally filtered by CVE ID and/or repository
+func (s *APIServer) getConfiguredTolerations(cveIDFilter, repositoryFilter string) []*types.TolerationInfo {
 	if s.regsyncConfig == nil {
+		return []*types.TolerationInfo{}
+	}
+
+	tolerationMap := make(map[string]*types.TolerationInfo)
+
+	// Get all target repositories from config
+	repositories := s.regsyncConfig.GetTargetRepositories()
+
+	for _, repo := range repositories {
+		// Apply repository filter if specified
+		if repositoryFilter != "" && repo != repositoryFilter {
+			continue
+		}
+
+		// Get tolerations for this repository
+		configTolerations := s.regsyncConfig.GetTolerationsForTarget(repo)
+
+		for i := range configTolerations {
+			// Apply CVE ID filter if specified
+			if cveIDFilter != "" && configTolerations[i].ID != cveIDFilter {
+				continue
+			}
+
+			key := repo + ":" + configTolerations[i].ID
+
+			// Only add if not already present (avoid duplicates from overlapping defaults and sync-specific)
+			if _, exists := tolerationMap[key]; !exists {
+				tolerationMap[key] = &types.TolerationInfo{
+					CVEID:       configTolerations[i].ID,
+					Statement:   configTolerations[i].Statement,
+					ToleratedAt: 0, // Will be enriched with historical data if available
+					ExpiresAt:   configTolerations[i].ExpiresAt,
+					Repository:  repo,
+				}
+			}
+		}
+	}
+
+	// Convert map to slice
+	result := make([]*types.TolerationInfo, 0, len(tolerationMap))
+	for _, info := range tolerationMap {
+		result = append(result, info)
+	}
+
+	return result
+}
+
+// enrichWithHistoricalTimestamps updates tolerations with earliest ToleratedAt timestamps from scan history
+// Only updates ToleratedAt if the toleration was actually applied in a past scan
+func (s *APIServer) enrichWithHistoricalTimestamps(ctx context.Context, tolerations []*types.TolerationInfo) {
+	if s.stateStore == nil || len(tolerations) == 0 {
 		return
 	}
 
-	for _, tol := range tolerations {
-		configTolerations := s.regsyncConfig.GetTolerationsForTarget(tol.Repository)
-
-		// Find matching CVE in current config
-		for i := range configTolerations {
-			if configTolerations[i].ID == tol.CVEID {
-				// Update with current config values, keep historical timestamp
-				tol.Statement = configTolerations[i].Statement
-				tol.ExpiresAt = configTolerations[i].ExpiresAt
-				break
-			}
-		}
-		// Note: If CVE not in current config, keep historical values as-is
+	// Query historical tolerations from state store to get ToleratedAt timestamps
+	filter := statestore.TolerationFilter{
+		Limit: 0, // No limit, get all historical records
 	}
+
+	historicalTolerations, err := s.stateStore.ListTolerations(ctx, filter)
+	if err != nil {
+		s.logger.Error("failed to get historical tolerations",
+			"error", err.Error())
+		return
+	}
+
+	// Build a map of historical timestamps: "repo:cveid" -> earliest ToleratedAt
+	historicalMap := make(map[string]int64)
+	for _, hist := range historicalTolerations {
+		key := hist.Repository + ":" + hist.CVEID
+		if existing, found := historicalMap[key]; !found || hist.ToleratedAt < existing {
+			historicalMap[key] = hist.ToleratedAt
+		}
+	}
+
+	// Update tolerations with historical timestamps
+	for _, tol := range tolerations {
+		key := tol.Repository + ":" + tol.CVEID
+		if toleratedAt, found := historicalMap[key]; found {
+			tol.ToleratedAt = toleratedAt
+		}
+	}
+}
+
+// groupTolerationsByCVE groups tolerations by CVE ID, collecting repositories into an array
+func (s *APIServer) groupTolerationsByCVE(tolerations []*types.TolerationInfo) []*types.TolerationSummary {
+	// Group by CVE ID
+	grouped := make(map[string]*types.TolerationSummary)
+
+	for _, tol := range tolerations {
+		summary, exists := grouped[tol.CVEID]
+		if !exists {
+			summary = &types.TolerationSummary{
+				CVEID:        tol.CVEID,
+				Statement:    tol.Statement,
+				ExpiresAt:    tol.ExpiresAt,
+				Repositories: make([]types.RepositoryTolInfo, 0),
+			}
+			grouped[tol.CVEID] = summary
+		}
+
+		// Add repository info
+		summary.Repositories = append(summary.Repositories, types.RepositoryTolInfo{
+			Repository:  tol.Repository,
+			ToleratedAt: tol.ToleratedAt,
+		})
+	}
+
+	// Convert map to slice
+	result := make([]*types.TolerationSummary, 0, len(grouped))
+	for _, summary := range grouped {
+		result = append(result, summary)
+	}
+
+	return result
 }
