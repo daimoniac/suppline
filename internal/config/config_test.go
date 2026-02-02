@@ -1,6 +1,7 @@
 package config
 
 import (
+	"fmt"
 	"os"
 	"strings"
 	"testing"
@@ -681,5 +682,218 @@ func TestGetExpiringTolerations_WithDefaults(t *testing.T) {
 	}
 	if !foundSync {
 		t.Error("expected to find expiring sync-specific toleration CVE-2024-12345")
+	}
+}
+
+func TestParseRegsyncWithExpiresAtTimestamp(t *testing.T) {
+	// Create a temporary regsync file with expires_at as RFC3339 timestamp
+	tmpfile, err := os.CreateTemp("", "regsync-*.yml")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer os.Remove(tmpfile.Name())
+
+	content := `version: 1
+defaults:
+  x-tolerate:
+    - id: CVE-2025-15467
+      statement: tolerating openssl issue until end of february
+      expires_at: 2026-02-28T23:59:59Z
+    - id: CVE-2024-99999
+      statement: permanent toleration
+sync:
+  - source: nginx
+    target: myregistry.com/nginx
+    type: repository
+    x-tolerate:
+      - id: CVE-2024-12345
+        statement: sync-specific with expiry
+        expires_at: 2026-03-15T12:00:00Z
+`
+	if _, err := tmpfile.Write([]byte(content)); err != nil {
+		t.Fatal(err)
+	}
+	if err := tmpfile.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	config, err := ParseRegsync(tmpfile.Name())
+	if err != nil {
+		t.Fatalf("ParseRegsync failed: %v", err)
+	}
+
+	// Check defaults
+	if len(config.Defaults.Tolerate) != 2 {
+		t.Fatalf("expected 2 default tolerations, got %d", len(config.Defaults.Tolerate))
+	}
+
+	// Verify first default toleration with expiry
+	tol1 := config.Defaults.Tolerate[0]
+	if tol1.ID != "CVE-2025-15467" {
+		t.Errorf("expected ID CVE-2025-15467, got %s", tol1.ID)
+	}
+	if tol1.ExpiresAt == nil {
+		t.Error("expected ExpiresAt to be non-nil for CVE-2025-15467")
+	} else {
+		expectedTime := time.Date(2026, 2, 28, 23, 59, 59, 0, time.UTC).Unix()
+		if *tol1.ExpiresAt != expectedTime {
+			t.Errorf("expected ExpiresAt %d (%s), got %d (%s)",
+				expectedTime, time.Unix(expectedTime, 0).UTC(),
+				*tol1.ExpiresAt, time.Unix(*tol1.ExpiresAt, 0).UTC())
+		}
+	}
+
+	// Verify second default toleration without expiry
+	tol2 := config.Defaults.Tolerate[1]
+	if tol2.ID != "CVE-2024-99999" {
+		t.Errorf("expected ID CVE-2024-99999, got %s", tol2.ID)
+	}
+	if tol2.ExpiresAt != nil {
+		t.Errorf("expected ExpiresAt to be nil for CVE-2024-99999, got %v", tol2.ExpiresAt)
+	}
+
+	// Check sync-specific toleration
+	if len(config.Sync) != 1 {
+		t.Fatalf("expected 1 sync entry, got %d", len(config.Sync))
+	}
+	if len(config.Sync[0].Tolerate) != 1 {
+		t.Fatalf("expected 1 sync toleration, got %d", len(config.Sync[0].Tolerate))
+	}
+
+	syncTol := config.Sync[0].Tolerate[0]
+	if syncTol.ID != "CVE-2024-12345" {
+		t.Errorf("expected ID CVE-2024-12345, got %s", syncTol.ID)
+	}
+	if syncTol.ExpiresAt == nil {
+		t.Error("expected ExpiresAt to be non-nil for CVE-2024-12345")
+	} else {
+		expectedTime := time.Date(2026, 3, 15, 12, 0, 0, 0, time.UTC).Unix()
+		if *syncTol.ExpiresAt != expectedTime {
+			t.Errorf("expected ExpiresAt %d (%s), got %d (%s)",
+				expectedTime, time.Unix(expectedTime, 0).UTC(),
+				*syncTol.ExpiresAt, time.Unix(*syncTol.ExpiresAt, 0).UTC())
+		}
+	}
+
+	// Test GetTolerationsForTarget includes both defaults and sync-specific
+	allTols := config.GetTolerationsForTarget("myregistry.com/nginx")
+	if len(allTols) != 3 {
+		t.Errorf("expected 3 total tolerations (2 defaults + 1 sync), got %d", len(allTols))
+	}
+}
+
+func TestParseRegsyncWithDateOnlyExpiresAt(t *testing.T) {
+	// Create a temporary regsync file with expires_at as date-only format
+	tmpfile, err := os.CreateTemp("", "regsync-*.yml")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer os.Remove(tmpfile.Name())
+
+	content := `version: 1
+defaults:
+  x-tolerate:
+    - id: CVE-2025-15467
+      statement: tolerating openssl issue until end of february
+      expires_at: 2026-02-28
+sync:
+  - source: nginx
+    target: myregistry.com/nginx
+    type: repository
+`
+	if _, err := tmpfile.Write([]byte(content)); err != nil {
+		t.Fatal(err)
+	}
+	if err := tmpfile.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	config, err := ParseRegsync(tmpfile.Name())
+	if err != nil {
+		t.Fatalf("ParseRegsync failed: %v", err)
+	}
+
+	// Check that the date was parsed and set to end of day
+	if len(config.Defaults.Tolerate) != 1 {
+		t.Fatalf("expected 1 default toleration, got %d", len(config.Defaults.Tolerate))
+	}
+
+	tol := config.Defaults.Tolerate[0]
+	if tol.ID != "CVE-2025-15467" {
+		t.Errorf("expected ID CVE-2025-15467, got %s", tol.ID)
+	}
+	if tol.ExpiresAt == nil {
+		t.Error("expected ExpiresAt to be non-nil")
+	} else {
+		// Should be set to 2026-02-28 23:59:59 UTC
+		expectedTime := time.Date(2026, 2, 28, 23, 59, 59, 0, time.UTC).Unix()
+		if *tol.ExpiresAt != expectedTime {
+			t.Errorf("expected ExpiresAt %d (%s), got %d (%s)",
+				expectedTime, time.Unix(expectedTime, 0).UTC(),
+				*tol.ExpiresAt, time.Unix(*tol.ExpiresAt, 0).UTC())
+		}
+	}
+}
+
+func TestParseRegsyncWithInvalidExpiresAt(t *testing.T) {
+	tests := []struct {
+		name      string
+		expiresAt string
+		wantErr   string
+	}{
+		{
+			name:      "invalid date - Feb 29 non-leap year",
+			expiresAt: "2026-02-29",
+			wantErr:   "invalid expires_at format",
+		},
+		{
+			name:      "invalid format",
+			expiresAt: "February 28, 2026",
+			wantErr:   "invalid expires_at format",
+		},
+		{
+			name:      "invalid date - month 13",
+			expiresAt: "2026-13-01",
+			wantErr:   "invalid expires_at format",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			tmpfile, err := os.CreateTemp("", "regsync-*.yml")
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer os.Remove(tmpfile.Name())
+
+			content := fmt.Sprintf(`version: 1
+defaults:
+  x-tolerate:
+    - id: CVE-2025-15467
+      statement: test toleration
+      expires_at: %s
+sync:
+  - source: nginx
+    target: myregistry.com/nginx
+    type: repository
+`, tt.expiresAt)
+
+			if _, err := tmpfile.Write([]byte(content)); err != nil {
+				t.Fatal(err)
+			}
+			if err := tmpfile.Close(); err != nil {
+				t.Fatal(err)
+			}
+
+			_, err = ParseRegsync(tmpfile.Name())
+			if err == nil {
+				t.Error("expected error but got nil")
+				return
+			}
+
+			if !strings.Contains(err.Error(), tt.wantErr) {
+				t.Errorf("error = %v, want error containing %q", err, tt.wantErr)
+			}
+		})
 	}
 }

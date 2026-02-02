@@ -105,7 +105,7 @@ defaults:
   x-tolerate:                 # Default CVE tolerations (optional)
     - id: string              # CVE identifier
       statement: string       # Reason for toleration
-      expires_at: string      # RFC3339 timestamp (optional)
+      expires_at: string      # RFC3339 timestamp or date (YYYY-MM-DD) (optional)
 
 # Sync entries
 sync:
@@ -120,7 +120,7 @@ sync:
     x-tolerate:               # CVE tolerations (optional)
       - id: string            # CVE identifier
         statement: string     # Reason for toleration
-        expires_at: string    # RFC3339 timestamp (optional)
+        expires_at: string    # RFC3339 timestamp or date (YYYY-MM-DD) (optional)
 ```
 
 ### Credentials Section
@@ -333,7 +333,10 @@ sync:
 **Fields:**
 - `id` (required): CVE identifier (e.g., `CVE-2024-56171`)
 - `statement` (required): Reason for toleration (for audit and compliance)
-- `expires_at` (optional): RFC3339 timestamp when toleration expires
+- `expires_at` (optional): When toleration expires. Supports:
+  - RFC3339 timestamp: `2026-02-28T23:59:59Z`
+  - Date only (sets to 23:59:59 UTC): `2026-02-28`
+  - Date validation ensures valid dates (e.g., Feb 29 only in leap years)
 
 **Behavior:**
 - Tolerated CVEs are excluded from policy evaluation
