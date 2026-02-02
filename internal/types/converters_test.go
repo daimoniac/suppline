@@ -48,10 +48,13 @@ func TestToVulnerabilityRecord(t *testing.T) {
 }
 
 func TestFilterToleratedCVEs(t *testing.T) {
+	expiresAt1 := time.Now().Add(30 * 24 * time.Hour).Unix()
+	expiresAt2 := time.Now().Add(60 * 24 * time.Hour).Unix()
+
 	tolerations := []CVEToleration{
-		{ID: "CVE-2024-1234", Statement: "Tolerated 1"},
-		{ID: "CVE-2024-5678", Statement: "Tolerated 2"},
-		{ID: "CVE-2024-9999", Statement: "Not tolerated"},
+		{ID: "CVE-2024-1234", Statement: "Tolerated 1", ExpiresAt: &expiresAt1},
+		{ID: "CVE-2024-5678", Statement: "Tolerated 2", ExpiresAt: &expiresAt2},
+		{ID: "CVE-2024-9999", Statement: "Not tolerated", ExpiresAt: nil},
 	}
 
 	toleratedSet := map[string]bool{
@@ -74,6 +77,24 @@ func TestFilterToleratedCVEs(t *testing.T) {
 	for _, tc := range filtered {
 		if tc.CVEID == "CVE-2024-9999" {
 			t.Errorf("CVE-2024-9999 should not be in filtered results")
+		}
+	}
+
+	// Verify that ExpiresAt is preserved
+	for _, tc := range filtered {
+		if tc.CVEID == "CVE-2024-1234" {
+			if tc.ExpiresAt == nil {
+				t.Error("CVE-2024-1234 ExpiresAt should not be nil")
+			} else if *tc.ExpiresAt != expiresAt1 {
+				t.Errorf("CVE-2024-1234 ExpiresAt = %d, want %d", *tc.ExpiresAt, expiresAt1)
+			}
+		}
+		if tc.CVEID == "CVE-2024-5678" {
+			if tc.ExpiresAt == nil {
+				t.Error("CVE-2024-5678 ExpiresAt should not be nil")
+			} else if *tc.ExpiresAt != expiresAt2 {
+				t.Errorf("CVE-2024-5678 ExpiresAt = %d, want %d", *tc.ExpiresAt, expiresAt2)
+			}
 		}
 	}
 }

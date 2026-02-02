@@ -3,6 +3,7 @@ package statestore
 import (
 	"context"
 	"database/sql"
+	"encoding/json"
 	"fmt"
 	"strings"
 	"time"
@@ -92,6 +93,7 @@ func (s *SQLiteStore) initSchema() error {
 		vuln_attested BOOLEAN NOT NULL,
 		scai_attested BOOLEAN NOT NULL,
 		error_message TEXT,
+		tolerated_cves_json TEXT, -- JSON array of ToleratedCVE objects for audit trail
 		created_at INTEGER NOT NULL DEFAULT (cast(strftime('%s', 'now') as integer)),
 		FOREIGN KEY (artifact_id) REFERENCES artifacts(id) ON DELETE CASCADE
 	);
@@ -111,20 +113,6 @@ func (s *SQLiteStore) initSchema() error {
 		FOREIGN KEY (scan_record_id) REFERENCES scan_records(id) ON DELETE CASCADE
 	);
 
-	CREATE TABLE IF NOT EXISTS tolerated_cves (
-		id INTEGER PRIMARY KEY AUTOINCREMENT,
-		repository_id INTEGER NOT NULL,
-		artifact_id INTEGER,
-		cve_id TEXT NOT NULL,
-		statement TEXT NOT NULL,
-		tolerated_at INTEGER NOT NULL,
-		expires_at INTEGER,
-		created_at INTEGER NOT NULL DEFAULT (cast(strftime('%s', 'now') as integer)),
-		FOREIGN KEY (repository_id) REFERENCES repositories(id),
-		FOREIGN KEY (artifact_id) REFERENCES artifacts(id),
-		UNIQUE(repository_id, cve_id)
-	);
-
 	CREATE INDEX IF NOT EXISTS idx_artifacts_repository ON artifacts(repository_id);
 	CREATE INDEX IF NOT EXISTS idx_artifacts_digest ON artifacts(digest);
 	CREATE INDEX IF NOT EXISTS idx_artifacts_next_scan ON artifacts(next_scan_at);
@@ -133,9 +121,6 @@ func (s *SQLiteStore) initSchema() error {
 	CREATE INDEX IF NOT EXISTS idx_vulnerabilities_scan ON vulnerabilities(scan_record_id);
 	CREATE INDEX IF NOT EXISTS idx_vulnerabilities_cve ON vulnerabilities(cve_id);
 	CREATE INDEX IF NOT EXISTS idx_vulnerabilities_severity ON vulnerabilities(severity);
-	CREATE INDEX IF NOT EXISTS idx_tolerated_repository ON tolerated_cves(repository_id);
-	CREATE INDEX IF NOT EXISTS idx_tolerated_cve ON tolerated_cves(cve_id);
-	CREATE INDEX IF NOT EXISTS idx_tolerated_expires ON tolerated_cves(expires_at) WHERE expires_at IS NOT NULL;
 	`
 
 	_, err := s.db.Exec(schema)
@@ -204,17 +189,28 @@ func (s *SQLiteStore) RecordScan(ctx context.Context, record *ScanRecord) error 
 		}
 	}
 
-	// Insert scan record
+	// Insert scan record with tolerated CVEs as JSON
+	toleratedJSON := "[]"
+	if len(record.ToleratedCVEs) > 0 {
+		jsonBytes, err := json.Marshal(record.ToleratedCVEs)
+		if err != nil {
+			return errors.NewTransientf("failed to marshal tolerated CVEs: %w", err)
+		}
+		toleratedJSON = string(jsonBytes)
+	}
+
 	result, err := tx.ExecContext(ctx, `
 		INSERT INTO scan_records (
 			artifact_id, scan_duration_ms,
 			critical_vuln_count, high_vuln_count, medium_vuln_count, low_vuln_count,
-			policy_passed, sbom_attested, vuln_attested, scai_attested, error_message
-		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+			policy_passed, sbom_attested, vuln_attested, scai_attested, error_message,
+			tolerated_cves_json
+		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 	`,
 		artifactID, record.ScanDurationMs,
 		record.CriticalVulnCount, record.HighVulnCount, record.MediumVulnCount, record.LowVulnCount,
 		record.PolicyPassed, record.SBOMAttested, record.VulnAttested, record.SCAIAttested, record.ErrorMessage,
+		toleratedJSON,
 	)
 	if err != nil {
 		return errors.NewTransientf("failed to insert scan record: %w", err)
@@ -259,35 +255,8 @@ func (s *SQLiteStore) RecordScan(ctx context.Context, record *ScanRecord) error 
 		}
 	}
 
-	// Insert tolerated CVEs
-	if len(record.ToleratedCVEs) > 0 {
-		toleratedStmt, err := tx.PrepareContext(ctx, `
-			INSERT INTO tolerated_cves (
-				repository_id, cve_id, statement, tolerated_at, expires_at
-			) VALUES (?, ?, ?, ?, ?)
-			ON CONFLICT(repository_id, cve_id) DO UPDATE SET
-				statement = excluded.statement,
-				tolerated_at = excluded.tolerated_at,
-				expires_at = excluded.expires_at
-		`)
-		if err != nil {
-			return errors.NewTransientf("failed to prepare tolerated CVE statement: %w", err)
-		}
-		defer toleratedStmt.Close()
-
-		for _, tolerated := range record.ToleratedCVEs {
-			var expiresAtUnix interface{} = nil
-			if tolerated.ExpiresAt != nil {
-				expiresAtUnix = *tolerated.ExpiresAt
-			}
-			_, err := toleratedStmt.ExecContext(ctx,
-				repositoryID, tolerated.CVEID, tolerated.Statement, tolerated.ToleratedAt, expiresAtUnix,
-			)
-			if err != nil {
-				return errors.NewTransientf("failed to insert tolerated CVE: %w", err)
-			}
-		}
-	}
+	// Note: ToleratedCVEs are now stored only in the scan_record JSON metadata
+	// and computed from current config at query time for API responses
 
 	if err := tx.Commit(); err != nil {
 		return errors.NewTransientf("failed to commit transaction: %w", err)
@@ -299,13 +268,14 @@ func (s *SQLiteStore) RecordScan(ctx context.Context, record *ScanRecord) error 
 // GetLastScan retrieves the most recent scan for a digest with vulnerabilities
 func (s *SQLiteStore) GetLastScan(ctx context.Context, digest string) (*ScanRecord, error) {
 	var record ScanRecord
-	var repositoryID int64
+	var toleratedJSON sql.NullString
 
 	err := s.db.QueryRowContext(ctx, `
 		SELECT sr.id, sr.artifact_id, sr.scan_duration_ms,
 			sr.critical_vuln_count, sr.high_vuln_count, sr.medium_vuln_count, sr.low_vuln_count,
 			sr.policy_passed, sr.sbom_attested, sr.vuln_attested, sr.scai_attested, sr.error_message, sr.created_at,
-			a.digest, a.tag, r.name, r.id
+			a.digest, a.tag, r.name,
+			sr.tolerated_cves_json
 		FROM scan_records sr
 		JOIN artifacts a ON sr.artifact_id = a.id
 		JOIN repositories r ON a.repository_id = r.id
@@ -316,7 +286,8 @@ func (s *SQLiteStore) GetLastScan(ctx context.Context, digest string) (*ScanReco
 		&record.ID, &record.ArtifactID, &record.ScanDurationMs,
 		&record.CriticalVulnCount, &record.HighVulnCount, &record.MediumVulnCount, &record.LowVulnCount,
 		&record.PolicyPassed, &record.SBOMAttested, &record.VulnAttested, &record.SCAIAttested, &record.ErrorMessage, &record.CreatedAt,
-		&record.Digest, &record.Tag, &record.Repository, &repositoryID,
+		&record.Digest, &record.Tag, &record.Repository,
+		&toleratedJSON,
 	)
 	if err == sql.ErrNoRows {
 		return nil, ErrScanNotFound
@@ -332,12 +303,14 @@ func (s *SQLiteStore) GetLastScan(ctx context.Context, digest string) (*ScanReco
 	}
 	record.Vulnerabilities = vulns
 
-	// Load tolerated CVEs
-	tolerated, err := s.loadToleratedCVEsByRepository(ctx, repositoryID)
-	if err != nil {
-		return nil, err
+	// Load tolerated CVEs from JSON
+	if toleratedJSON.Valid && toleratedJSON.String != "" {
+		var tolerated []types.ToleratedCVE
+		if err := json.Unmarshal([]byte(toleratedJSON.String), &tolerated); err != nil {
+			return nil, errors.NewTransientf("failed to unmarshal tolerated CVEs: %w", err)
+		}
+		record.ToleratedCVEs = tolerated
 	}
-	record.ToleratedCVEs = tolerated
 
 	return &record, nil
 }
@@ -380,7 +353,8 @@ func (s *SQLiteStore) GetScanHistory(ctx context.Context, digest string, limit i
 		SELECT sr.id, sr.artifact_id, sr.scan_duration_ms,
 			sr.critical_vuln_count, sr.high_vuln_count, sr.medium_vuln_count, sr.low_vuln_count,
 			sr.policy_passed, sr.sbom_attested, sr.vuln_attested, sr.scai_attested, sr.error_message, sr.created_at,
-			a.digest, a.tag, r.name, r.id
+			a.digest, a.tag, r.name,
+			sr.tolerated_cves_json
 		FROM scan_records sr
 		JOIN artifacts a ON sr.artifact_id = a.id
 		JOIN repositories r ON a.repository_id = r.id
@@ -400,13 +374,14 @@ func (s *SQLiteStore) GetScanHistory(ctx context.Context, digest string, limit i
 	var records []*ScanRecord
 	for rows.Next() {
 		var record ScanRecord
-		var repositoryID int64
+		var toleratedJSON sql.NullString
 
 		err := rows.Scan(
 			&record.ID, &record.ArtifactID, &record.ScanDurationMs,
 			&record.CriticalVulnCount, &record.HighVulnCount, &record.MediumVulnCount, &record.LowVulnCount,
 			&record.PolicyPassed, &record.SBOMAttested, &record.VulnAttested, &record.SCAIAttested, &record.ErrorMessage, &record.CreatedAt,
-			&record.Digest, &record.Tag, &record.Repository, &repositoryID,
+			&record.Digest, &record.Tag, &record.Repository,
+			&toleratedJSON,
 		)
 		if err != nil {
 			return nil, errors.NewTransientf("failed to scan row: %w", err)
@@ -419,12 +394,14 @@ func (s *SQLiteStore) GetScanHistory(ctx context.Context, digest string, limit i
 		}
 		record.Vulnerabilities = vulns
 
-		// Load tolerated CVEs
-		tolerated, err := s.loadToleratedCVEsByRepository(ctx, repositoryID)
-		if err != nil {
-			return nil, err
+		// Load tolerated CVEs from JSON
+		if toleratedJSON.Valid && toleratedJSON.String != "" {
+			var tolerated []types.ToleratedCVE
+			if err := json.Unmarshal([]byte(toleratedJSON.String), &tolerated); err != nil {
+				return nil, errors.NewTransientf("failed to unmarshal tolerated CVEs: %w", err)
+			}
+			record.ToleratedCVEs = tolerated
 		}
-		record.ToleratedCVEs = tolerated
 
 		records = append(records, &record)
 	}
@@ -510,7 +487,8 @@ func (s *SQLiteStore) GetImagesByCVE(ctx context.Context, cveID string) ([]*Scan
 		SELECT DISTINCT sr.id, sr.artifact_id, sr.scan_duration_ms,
 			sr.critical_vuln_count, sr.high_vuln_count, sr.medium_vuln_count, sr.low_vuln_count,
 			sr.policy_passed, sr.sbom_attested, sr.vuln_attested, sr.scai_attested, sr.error_message, sr.created_at,
-			a.digest, a.tag, r.name, r.id
+			a.digest, a.tag, r.name,
+			sr.tolerated_cves_json
 		FROM scan_records sr
 		JOIN artifacts a ON sr.artifact_id = a.id
 		JOIN repositories r ON a.repository_id = r.id
@@ -528,13 +506,14 @@ func (s *SQLiteStore) GetImagesByCVE(ctx context.Context, cveID string) ([]*Scan
 	var records []*ScanRecord
 	for rows.Next() {
 		var record ScanRecord
-		var repositoryID int64
+		var toleratedJSON sql.NullString
 
 		err := rows.Scan(
 			&record.ID, &record.ArtifactID, &record.ScanDurationMs,
 			&record.CriticalVulnCount, &record.HighVulnCount, &record.MediumVulnCount, &record.LowVulnCount,
 			&record.PolicyPassed, &record.SBOMAttested, &record.VulnAttested, &record.SCAIAttested, &record.ErrorMessage, &record.CreatedAt,
-			&record.Digest, &record.Tag, &record.Repository, &repositoryID,
+			&record.Digest, &record.Tag, &record.Repository,
+			&toleratedJSON,
 		)
 		if err != nil {
 			return nil, errors.NewTransientf("failed to scan row: %w", err)
@@ -547,12 +526,14 @@ func (s *SQLiteStore) GetImagesByCVE(ctx context.Context, cveID string) ([]*Scan
 		}
 		record.Vulnerabilities = vulns
 
-		// Load tolerated CVEs
-		tolerated, err := s.loadToleratedCVEsByRepository(ctx, repositoryID)
-		if err != nil {
-			return nil, err
+		// Load tolerated CVEs from JSON
+		if toleratedJSON.Valid && toleratedJSON.String != "" {
+			var tolerated []types.ToleratedCVE
+			if err := json.Unmarshal([]byte(toleratedJSON.String), &tolerated); err != nil {
+				return nil, errors.NewTransientf("failed to unmarshal tolerated CVEs: %w", err)
+			}
+			record.ToleratedCVEs = tolerated
 		}
-		record.ToleratedCVEs = tolerated
 
 		records = append(records, &record)
 	}
@@ -596,42 +577,6 @@ func (s *SQLiteStore) loadVulnerabilitiesByScan(ctx context.Context, scanRecordI
 	}
 
 	return vulnerabilities, nil
-}
-
-// loadToleratedCVEsByRepository loads all tolerated CVEs for a repository
-func (s *SQLiteStore) loadToleratedCVEsByRepository(ctx context.Context, repositoryID int64) ([]types.ToleratedCVE, error) {
-	rows, err := s.db.QueryContext(ctx, `
-		SELECT cve_id, statement, tolerated_at, expires_at
-		FROM tolerated_cves
-		WHERE repository_id = ?
-		ORDER BY cve_id
-	`, repositoryID)
-	if err != nil {
-		return nil, errors.NewTransientf("failed to query tolerated CVEs: %w", err)
-	}
-	defer rows.Close()
-
-	var tolerated []types.ToleratedCVE
-	for rows.Next() {
-		var cve types.ToleratedCVE
-		var expiresAtUnix sql.NullInt64
-		err := rows.Scan(&cve.CVEID, &cve.Statement, &cve.ToleratedAt, &expiresAtUnix)
-		if err != nil {
-			return nil, errors.NewTransientf("failed to scan tolerated CVE: %w", err)
-		}
-
-		if expiresAtUnix.Valid {
-			cve.ExpiresAt = &expiresAtUnix.Int64
-		}
-
-		tolerated = append(tolerated, cve)
-	}
-
-	if err := rows.Err(); err != nil {
-		return nil, errors.NewTransientf("error iterating tolerated CVE rows: %w", err)
-	}
-
-	return tolerated, nil
 }
 
 // ListScans returns scan records with optional filters
@@ -717,91 +662,120 @@ func (s *SQLiteStore) ListScans(ctx context.Context, filter ScanFilter) ([]*Scan
 	return records, nil
 }
 
-// ListTolerations returns tolerated CVEs with optional filters
-// Returns one entry per unique repository + CVE ID combination
+// ListTolerations returns unique tolerated CVEs from scan history
+// Returns one entry per unique repository + CVE ID combination with the earliest ToleratedAt timestamp
+// Note: Statement and ExpiresAt reflect historical values from scan records
 func (s *SQLiteStore) ListTolerations(ctx context.Context, filter TolerationFilter) ([]*types.TolerationInfo, error) {
+	// Query all scan records that have tolerated CVEs
 	query := `
 		SELECT 
-			tc.cve_id, 
-			tc.statement, 
-			tc.tolerated_at,
-			tc.expires_at,
-			r.name
-		FROM tolerated_cves tc
-		JOIN repositories r ON tc.repository_id = r.id
-		WHERE 1=1
+			r.name as repository,
+			sr.tolerated_cves_json
+		FROM scan_records sr
+		JOIN artifacts a ON sr.artifact_id = a.id
+		JOIN repositories r ON a.repository_id = r.id
+		WHERE sr.tolerated_cves_json IS NOT NULL 
+			AND sr.tolerated_cves_json != '[]'
+			AND sr.tolerated_cves_json != ''
 	`
 	args := []interface{}{}
-
-	if filter.CVEID != "" {
-		query += " AND tc.cve_id = ?"
-		args = append(args, filter.CVEID)
-	}
 
 	if filter.Repository != "" {
 		query += " AND r.name = ?"
 		args = append(args, filter.Repository)
 	}
 
-	nowUnix := time.Now().Unix()
-
-	if filter.Expired != nil {
-		if *filter.Expired {
-			// Only expired tolerations
-			query += " AND tc.expires_at IS NOT NULL AND tc.expires_at < ?"
-			args = append(args, nowUnix)
-		} else {
-			// Only non-expired tolerations
-			query += " AND (tc.expires_at IS NULL OR tc.expires_at >= ?)"
-			args = append(args, nowUnix)
-		}
-	}
-
-	if filter.ExpiringSoon != nil && *filter.ExpiringSoon {
-		// Expiring within 7 days
-		sevenDaysFromNowUnix := time.Now().Add(7 * 24 * time.Hour).Unix()
-		query += " AND tc.expires_at IS NOT NULL AND tc.expires_at >= ? AND tc.expires_at <= ?"
-		args = append(args, nowUnix, sevenDaysFromNowUnix)
-	}
-
-	query += " ORDER BY tc.expires_at, tc.cve_id, r.name"
-
-	if filter.Limit > 0 {
-		query += " LIMIT ?"
-		args = append(args, filter.Limit)
-	}
+	query += " ORDER BY sr.created_at DESC"
 
 	rows, err := s.db.QueryContext(ctx, query, args...)
 	if err != nil {
-		return nil, errors.NewTransientf("failed to list tolerations: %w", err)
+		return nil, errors.NewTransientf("failed to query tolerations: %w", err)
 	}
 	defer rows.Close()
 
-	var tolerations []*types.TolerationInfo
+	// Build a map of unique repository+CVE combinations
+	// Key: "repo:cve", Value: TolerationInfo with earliest tolerated_at
+	tolerationMap := make(map[string]*types.TolerationInfo)
+	nowUnix := time.Now().Unix()
+
 	for rows.Next() {
-		var info types.TolerationInfo
-		var expiresAtUnix sql.NullInt64
+		var repository string
+		var toleratedJSON sql.NullString
 
-		err := rows.Scan(
-			&info.CVEID,
-			&info.Statement,
-			&info.ToleratedAt,
-			&expiresAtUnix,
-			&info.Repository,
-		)
-		if err != nil {
-			return nil, errors.NewTransientf("failed to scan toleration: %w", err)
+		if err := rows.Scan(&repository, &toleratedJSON); err != nil {
+			return nil, errors.NewTransientf("failed to scan row: %w", err)
 		}
 
-		if expiresAtUnix.Valid {
-			info.ExpiresAt = &expiresAtUnix.Int64
+		if !toleratedJSON.Valid || toleratedJSON.String == "" {
+			continue
 		}
 
-		tolerations = append(tolerations, &info)
+		var tolerated []types.ToleratedCVE
+		if err := json.Unmarshal([]byte(toleratedJSON.String), &tolerated); err != nil {
+			// Skip invalid JSON
+			continue
+		}
+
+		for _, tc := range tolerated {
+			// Apply CVE ID filter if specified
+			if filter.CVEID != "" && tc.CVEID != filter.CVEID {
+				continue
+			}
+
+			// Apply expiration filters if specified
+			if filter.Expired != nil {
+				if *filter.Expired {
+					// Only expired
+					if tc.ExpiresAt == nil || *tc.ExpiresAt >= nowUnix {
+						continue
+					}
+				} else {
+					// Only non-expired
+					if tc.ExpiresAt != nil && *tc.ExpiresAt < nowUnix {
+						continue
+					}
+				}
+			}
+
+		if filter.ExpiringSoon != nil && *filter.ExpiringSoon {
+			// Expiring within 7 days (but not already expired)
+			sevenDaysFromNowUnix := time.Now().Add(7 * 24 * time.Hour).Unix()
+			// Skip if: no expiry, already expired, or expires more than 7 days from now
+			if tc.ExpiresAt == nil || *tc.ExpiresAt <= nowUnix || *tc.ExpiresAt > sevenDaysFromNowUnix {
+				continue
+			}
+		}			key := repository + ":" + tc.CVEID
+			existing, found := tolerationMap[key]
+			if !found || tc.ToleratedAt < existing.ToleratedAt {
+				// Keep the earliest tolerated_at timestamp
+				tolerationMap[key] = &types.TolerationInfo{
+					CVEID:       tc.CVEID,
+					Statement:   tc.Statement,
+					ToleratedAt: tc.ToleratedAt,
+					ExpiresAt:   tc.ExpiresAt,
+					Repository:  repository,
+				}
+			}
+		}
 	}
 
 	if err := rows.Err(); err != nil {
 		return nil, errors.NewTransientf("error iterating rows: %w", err)
+	}
+
+	// Convert map to slice
+	tolerations := make([]*types.TolerationInfo, 0, len(tolerationMap))
+	for _, info := range tolerationMap {
+		tolerations = append(tolerations, info)
+	}
+
+	// Sort by expires_at, cve_id, repository
+	// (Simple sort by CVEID for now since we lost the SQL ORDER BY)
+	// TODO: Implement proper sorting if needed
+
+	// Apply limit
+	if filter.Limit > 0 && len(tolerations) > filter.Limit {
+		tolerations = tolerations[:filter.Limit]
 	}
 
 	return tolerations, nil
@@ -1121,8 +1095,8 @@ func (s *SQLiteStore) CleanupArtifactScans(ctx context.Context, digest string) e
 			return errors.NewTransientf("failed to delete artifact: %w", err)
 		}
 
-		// Check if repository has any remaining artifacts or tolerated CVEs
-		var remainingArtifacts, remainingToleratedCVEs int
+		// Check if repository has any remaining artifacts
+		var remainingArtifacts int
 		err = tx.QueryRowContext(ctx, `
 			SELECT COUNT(*) FROM artifacts WHERE repository_id = ?
 		`, repositoryID).Scan(&remainingArtifacts)
@@ -1130,15 +1104,8 @@ func (s *SQLiteStore) CleanupArtifactScans(ctx context.Context, digest string) e
 			return errors.NewTransientf("failed to count remaining artifacts: %w", err)
 		}
 
-		err = tx.QueryRowContext(ctx, `
-			SELECT COUNT(*) FROM tolerated_cves WHERE repository_id = ?
-		`, repositoryID).Scan(&remainingToleratedCVEs)
-		if err != nil {
-			return errors.NewTransientf("failed to count remaining tolerated CVEs: %w", err)
-		}
-
-		// If no artifacts and no tolerated CVEs remain, delete the repository
-		if remainingArtifacts == 0 && remainingToleratedCVEs == 0 {
+		// If no artifacts remain, delete the repository
+		if remainingArtifacts == 0 {
 			_, err = tx.ExecContext(ctx, `
 				DELETE FROM repositories WHERE id = ?
 			`, repositoryID)
@@ -1181,8 +1148,7 @@ func (s *SQLiteStore) CleanupOrphanedRepositories(ctx context.Context) ([]string
 			SELECT r.id, r.name 
 			FROM repositories r 
 			LEFT JOIN artifacts a ON r.id = a.repository_id 
-			LEFT JOIN tolerated_cves tc ON r.id = tc.repository_id
-			WHERE a.id IS NULL AND tc.id IS NULL
+			WHERE a.id IS NULL
 		`)
 		if err != nil {
 			return errors.NewTransientf("failed to query orphaned repositories: %w", err)

@@ -1,6 +1,8 @@
 package types
 
 import (
+	"encoding/json"
+	"strings"
 	"testing"
 	"time"
 
@@ -194,4 +196,94 @@ func hasSubstring(s, substr string) bool {
 		}
 	}
 	return false
+}
+
+func TestToleratedCVE_JSONSerialization(t *testing.T) {
+	expiresAt := time.Date(2026, 3, 1, 23, 59, 59, 0, time.UTC).Unix()
+
+	tolerated := ToleratedCVE{
+		CVEID:       "CVE-2025-15467",
+		Statement:   "tolerating openssl issue until end of february",
+		ToleratedAt: time.Now().Unix(),
+		ExpiresAt:   &expiresAt,
+	}
+
+	// Use encoding/json to test serialization
+	data, err := json.Marshal(tolerated)
+	if err != nil {
+		t.Fatalf("Failed to marshal ToleratedCVE: %v", err)
+	}
+
+	jsonStr := string(data)
+
+	// Verify all fields are present
+	if !strings.Contains(jsonStr, "CVEID") {
+		t.Error("JSON should contain CVEID field")
+	}
+	if !strings.Contains(jsonStr, "CVE-2025-15467") {
+		t.Error("JSON should contain CVE ID value")
+	}
+	if !strings.Contains(jsonStr, "Statement") {
+		t.Error("JSON should contain Statement field")
+	}
+	if !strings.Contains(jsonStr, "tolerating openssl issue") {
+		t.Error("JSON should contain statement value")
+	}
+	if !strings.Contains(jsonStr, "ToleratedAt") {
+		t.Error("JSON should contain ToleratedAt field")
+	}
+	if !strings.Contains(jsonStr, "ExpiresAt") {
+		t.Error("JSON should contain ExpiresAt field")
+	}
+
+	// Verify ExpiresAt is not null
+	if strings.Contains(jsonStr, `"ExpiresAt":null`) {
+		t.Errorf("ExpiresAt should not be null in JSON, got: %s", jsonStr)
+	}
+
+	// Unmarshal and verify
+	var decoded ToleratedCVE
+	if err := json.Unmarshal(data, &decoded); err != nil {
+		t.Fatalf("Failed to unmarshal ToleratedCVE: %v", err)
+	}
+
+	if decoded.CVEID != "CVE-2025-15467" {
+		t.Errorf("CVEID = %s, want CVE-2025-15467", decoded.CVEID)
+	}
+	if decoded.ExpiresAt == nil {
+		t.Error("ExpiresAt should not be nil after unmarshal")
+	} else if *decoded.ExpiresAt != expiresAt {
+		t.Errorf("ExpiresAt = %d, want %d", *decoded.ExpiresAt, expiresAt)
+	}
+}
+
+func TestToleratedCVE_JSONSerializationWithNilExpiry(t *testing.T) {
+	tolerated := ToleratedCVE{
+		CVEID:       "CVE-2024-99999",
+		Statement:   "permanent toleration",
+		ToleratedAt: time.Now().Unix(),
+		ExpiresAt:   nil,
+	}
+
+	data, err := json.Marshal(tolerated)
+	if err != nil {
+		t.Fatalf("Failed to marshal ToleratedCVE: %v", err)
+	}
+
+	jsonStr := string(data)
+
+	// Verify ExpiresAt is null when nil
+	if !strings.Contains(jsonStr, `"ExpiresAt":null`) {
+		t.Errorf("ExpiresAt should be null in JSON when nil, got: %s", jsonStr)
+	}
+
+	// Unmarshal and verify
+	var decoded ToleratedCVE
+	if err := json.Unmarshal(data, &decoded); err != nil {
+		t.Fatalf("Failed to unmarshal ToleratedCVE: %v", err)
+	}
+
+	if decoded.ExpiresAt != nil {
+		t.Errorf("ExpiresAt should be nil after unmarshal, got %v", decoded.ExpiresAt)
+	}
 }

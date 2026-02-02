@@ -8,7 +8,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/daimoniac/suppline/internal/config"
 	"github.com/daimoniac/suppline/internal/integration"
 	"github.com/daimoniac/suppline/internal/queue"
 	"github.com/daimoniac/suppline/internal/statestore"
@@ -61,6 +60,9 @@ func (s *APIServer) handleGetScan(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Enrich with current tolerations from config instead of stale DB values
+	s.enrichScanRecord(record)
+
 	s.respondJSON(w, http.StatusOK, record)
 }
 
@@ -102,6 +104,11 @@ func (s *APIServer) handleListScans(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		s.respondError(w, http.StatusInternalServerError, fmt.Sprintf("Failed to list scans: %v", err))
 		return
+	}
+
+	// Enrich each record with current tolerations from config
+	for _, record := range records {
+		s.enrichScanRecord(record)
 	}
 
 	// Stream JSON response to avoid buffering large payloads
@@ -199,6 +206,9 @@ func (s *APIServer) handleListTolerations(w http.ResponseWriter, r *http.Request
 		s.respondError(w, http.StatusInternalServerError, fmt.Sprintf("Failed to list tolerations: %v", err))
 		return
 	}
+
+	// Enrich tolerations with current config values
+	s.enrichTolerationList(tolerations)
 
 	// Stream JSON response to avoid buffering large payloads
 	w.Header().Set("Content-Type", "application/json")
@@ -324,14 +334,8 @@ func (s *APIServer) handleTriggerScan(w http.ResponseWriter, r *http.Request) {
 		}
 
 		// Load regsync config to get tolerations
-		regsyncConfig, err := config.ParseRegsync(s.regsyncPath)
-		if err != nil {
-			s.respondError(w, http.StatusInternalServerError, fmt.Sprintf("Failed to load regsync config: %v", err))
-			return
-		}
-
-		// Get tolerations for this repository
-		tolerations := regsyncConfig.GetTolerationsForTarget(lastScan.Repository)
+		// Get tolerations for this repository from in-memory config
+		tolerations := s.regsyncConfig.GetTolerationsForTarget(lastScan.Repository)
 		queueTolerations := make([]types.CVEToleration, len(tolerations))
 		for i, t := range tolerations {
 			queueTolerations[i] = types.CVEToleration{
@@ -383,15 +387,8 @@ func (s *APIServer) handleTriggerScan(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 
-		// Load regsync config to get tolerations
-		regsyncConfig, err := config.ParseRegsync(s.regsyncPath)
-		if err != nil {
-			s.respondError(w, http.StatusInternalServerError, fmt.Sprintf("Failed to load regsync config: %v", err))
-			return
-		}
-
-		// Get tolerations for this repository
-		tolerations := regsyncConfig.GetTolerationsForTarget(req.Repository)
+		// Get tolerations for this repository from in-memory config
+		tolerations := s.regsyncConfig.GetTolerationsForTarget(req.Repository)
 		queueTolerations := make([]types.CVEToleration, len(tolerations))
 		for i, t := range tolerations {
 			queueTolerations[i] = types.CVEToleration{
@@ -484,15 +481,7 @@ func (s *APIServer) handleReevaluatePolicy(w http.ResponseWriter, r *http.Reques
 
 	ctx := r.Context()
 
-	// Reload regsync configuration
-	regsyncConfig, err := config.ParseRegsync(s.regsyncPath)
-	if err != nil {
-		s.respondError(w, http.StatusInternalServerError, fmt.Sprintf("Failed to reload regsync config: %v", err))
-		return
-	}
-
-	s.logger.Info("reloaded regsync configuration",
-		"path", s.regsyncPath)
+	s.logger.Info("reprocessing scans with current regsync configuration")
 
 	// Build scan filter
 	filter := statestore.ScanFilter{
@@ -516,8 +505,8 @@ func (s *APIServer) handleReevaluatePolicy(w http.ResponseWriter, r *http.Reques
 
 	// Enqueue rescan tasks for all matching images with updated tolerations
 	for _, scan := range scans {
-		// Get updated tolerations for this repository
-		tolerations := regsyncConfig.GetTolerationsForTarget(scan.Repository)
+		// Get updated tolerations for this repository from in-memory config
+		tolerations := s.regsyncConfig.GetTolerationsForTarget(scan.Repository)
 		queueTolerations := make([]types.CVEToleration, len(tolerations))
 		for i, t := range tolerations {
 			queueTolerations[i] = types.CVEToleration{
@@ -822,15 +811,8 @@ func (s *APIServer) handleRescanRepository(w http.ResponseWriter, r *http.Reques
 		return
 	}
 
-	// Load regsync config to get tolerations
-	regsyncConfig, err := config.ParseRegsync(s.regsyncPath)
-	if err != nil {
-		s.respondError(w, http.StatusInternalServerError, fmt.Sprintf("Failed to load regsync config: %v", err))
-		return
-	}
-
-	// Get tolerations for this repository
-	tolerations := regsyncConfig.GetTolerationsForTarget(name)
+	// Get tolerations for this repository from in-memory config
+	tolerations := s.regsyncConfig.GetTolerationsForTarget(name)
 	queueTolerations := make([]types.CVEToleration, len(tolerations))
 	for i, t := range tolerations {
 		queueTolerations[i] = types.CVEToleration{
@@ -979,15 +961,8 @@ func (s *APIServer) handleRescanTag(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Load regsync config to get tolerations
-	regsyncConfig, err := config.ParseRegsync(s.regsyncPath)
-	if err != nil {
-		s.respondError(w, http.StatusInternalServerError, fmt.Sprintf("Failed to load regsync config: %v", err))
-		return
-	}
-
-	// Get tolerations for this repository
-	tolerations := regsyncConfig.GetTolerationsForTarget(lastScan.Repository)
+	// Get tolerations for this repository from in-memory config
+	tolerations := s.regsyncConfig.GetTolerationsForTarget(lastScan.Repository)
 	queueTolerations := make([]types.CVEToleration, len(tolerations))
 	for i, t := range tolerations {
 		queueTolerations[i] = types.CVEToleration{
@@ -1026,4 +1001,56 @@ func (s *APIServer) handleRescanTag(w http.ResponseWriter, r *http.Request) {
 	}
 
 	s.respondJSON(w, http.StatusOK, response)
+}
+
+// enrichScanRecord updates a scan record's tolerated CVEs with current config values
+// Preserves ToleratedAt timestamps while using current Statement and ExpiresAt from config
+func (s *APIServer) enrichScanRecord(record *statestore.ScanRecord) {
+	if record == nil || s.regsyncConfig == nil {
+		return
+	}
+
+	// Build map of historically tolerated CVEs (cveID -> toleratedAt timestamp)
+	historicalMap := make(map[string]int64)
+	for _, stored := range record.ToleratedCVEs {
+		historicalMap[stored.CVEID] = stored.ToleratedAt
+	}
+
+	// Get current config and rebuild toleration list
+	configTolerations := s.regsyncConfig.GetTolerationsForTarget(record.Repository)
+	record.ToleratedCVEs = make([]types.ToleratedCVE, 0, len(historicalMap))
+
+	for _, configTol := range configTolerations {
+		if toleratedAt, wasHistoricallyTolerated := historicalMap[configTol.ID]; wasHistoricallyTolerated {
+			record.ToleratedCVEs = append(record.ToleratedCVEs, types.ToleratedCVE{
+				CVEID:       configTol.ID,
+				Statement:   configTol.Statement, // Current from config
+				ToleratedAt: toleratedAt,         // Historical timestamp (audit trail)
+				ExpiresAt:   configTol.ExpiresAt, // Current from config
+			})
+		}
+	}
+}
+
+// enrichTolerationList updates toleration info with current config values (in-place)
+// Preserves ToleratedAt timestamps while using current Statement and ExpiresAt from config
+func (s *APIServer) enrichTolerationList(tolerations []*types.TolerationInfo) {
+	if s.regsyncConfig == nil {
+		return
+	}
+
+	for _, tol := range tolerations {
+		configTolerations := s.regsyncConfig.GetTolerationsForTarget(tol.Repository)
+
+		// Find matching CVE in current config
+		for i := range configTolerations {
+			if configTolerations[i].ID == tol.CVEID {
+				// Update with current config values, keep historical timestamp
+				tol.Statement = configTolerations[i].Statement
+				tol.ExpiresAt = configTolerations[i].ExpiresAt
+				break
+			}
+		}
+		// Note: If CVE not in current config, keep historical values as-is
+	}
 }

@@ -230,7 +230,7 @@ func run() error {
 			&cfg.Attestation,
 			store,
 			taskQueue,
-			cfg.RegsyncPath,
+			regsyncCfg,
 			logger,
 		)
 		logger.Debug("API server initialized")

@@ -29,6 +29,15 @@ func mockAttestationConfig() *config.AttestationConfig {
 	}
 }
 
+// mockRegsyncConfig returns a minimal regsync config for testing
+func mockRegsyncConfig() *config.RegsyncConfig {
+	return &config.RegsyncConfig{
+		Version: 1,
+		Creds:   []config.RegistryCredential{},
+		Sync:    []config.SyncEntry{},
+	}
+}
+
 func (m *mockStateStore) RecordScan(ctx context.Context, record *statestore.ScanRecord) error {
 	return nil
 }
@@ -75,8 +84,8 @@ func (m *mockStateStore) GetRepository(ctx context.Context, name string, filter 
 		Name: name,
 		Tags: []statestore.TagInfo{
 			{
-				Name:       "latest",
-				Digest:     "sha256:abc123",
+				Name:         "latest",
+				Digest:       "sha256:abc123",
 				LastScanTime: &now,
 				NextScanTime: &now,
 				VulnerabilityCount: statestore.VulnerabilityCountSummary{
@@ -103,10 +112,10 @@ func TestNewAPIServer(t *testing.T) {
 
 	store := &mockStateStore{}
 	queue := queue.NewInMemoryQueue(100)
-	regsyncPath := "suppline.yml"
+	regsyncConfig := mockRegsyncConfig()
 	logger := observability.NewLogger("error")
 
-	server := NewAPIServer(cfg, mockAttestationConfig(), store, queue, regsyncPath, logger)
+	server := NewAPIServer(cfg, mockAttestationConfig(), store, queue, regsyncConfig, logger)
 
 	if server == nil {
 		t.Fatal("Expected server to be created")
@@ -124,8 +133,8 @@ func TestNewAPIServer(t *testing.T) {
 		t.Error("Expected task queue to be set")
 	}
 
-	if server.regsyncPath != regsyncPath {
-		t.Error("Expected regsync path to be set")
+	if server.regsyncConfig != regsyncConfig {
+		t.Error("Expected regsync config to be set")
 	}
 
 	if server.router == nil {
@@ -145,7 +154,7 @@ func TestAuthMiddleware_NoAPIKey(t *testing.T) {
 		ReadOnly: false,
 	}
 
-	server := NewAPIServer(cfg, mockAttestationConfig(), &mockStateStore{}, queue.NewInMemoryQueue(100), "suppline.yml", observability.NewLogger("error"))
+	server := NewAPIServer(cfg, mockAttestationConfig(), &mockStateStore{}, queue.NewInMemoryQueue(100), mockRegsyncConfig(), observability.NewLogger("error"))
 
 	// Test that requests pass through without authentication
 	req := httptest.NewRequest(http.MethodGet, "/api/v1/scans", nil)
@@ -170,7 +179,7 @@ func TestAuthMiddleware_WithAPIKey_Valid(t *testing.T) {
 		ReadOnly: false,
 	}
 
-	server := NewAPIServer(cfg, mockAttestationConfig(), &mockStateStore{}, queue.NewInMemoryQueue(100), "suppline.yml", observability.NewLogger("error"))
+	server := NewAPIServer(cfg, mockAttestationConfig(), &mockStateStore{}, queue.NewInMemoryQueue(100), mockRegsyncConfig(), observability.NewLogger("error"))
 
 	req := httptest.NewRequest(http.MethodGet, "/api/v1/scans", nil)
 	req.Header.Set("Authorization", "Bearer test-api-key")
@@ -195,7 +204,7 @@ func TestAuthMiddleware_WithAPIKey_Invalid(t *testing.T) {
 		ReadOnly: false,
 	}
 
-	server := NewAPIServer(cfg, mockAttestationConfig(), &mockStateStore{}, queue.NewInMemoryQueue(100), "suppline.yml", observability.NewLogger("error"))
+	server := NewAPIServer(cfg, mockAttestationConfig(), &mockStateStore{}, queue.NewInMemoryQueue(100), mockRegsyncConfig(), observability.NewLogger("error"))
 
 	req := httptest.NewRequest(http.MethodGet, "/api/v1/scans", nil)
 	req.Header.Set("Authorization", "Bearer wrong-key")
@@ -220,7 +229,7 @@ func TestAuthMiddleware_WithAPIKey_Missing(t *testing.T) {
 		ReadOnly: false,
 	}
 
-	server := NewAPIServer(cfg, mockAttestationConfig(), &mockStateStore{}, queue.NewInMemoryQueue(100), "suppline.yml", observability.NewLogger("error"))
+	server := NewAPIServer(cfg, mockAttestationConfig(), &mockStateStore{}, queue.NewInMemoryQueue(100), mockRegsyncConfig(), observability.NewLogger("error"))
 
 	req := httptest.NewRequest(http.MethodGet, "/api/v1/scans", nil)
 	// No Authorization header
@@ -245,7 +254,7 @@ func TestAuthMiddleware_ReadOnlyMode(t *testing.T) {
 		ReadOnly: true,
 	}
 
-	server := NewAPIServer(cfg, mockAttestationConfig(), &mockStateStore{}, queue.NewInMemoryQueue(100), "suppline.yml", observability.NewLogger("error"))
+	server := NewAPIServer(cfg, mockAttestationConfig(), &mockStateStore{}, queue.NewInMemoryQueue(100), mockRegsyncConfig(), observability.NewLogger("error"))
 
 	// Test read operation (should pass)
 	req := httptest.NewRequest(http.MethodGet, "/api/v1/scans", nil)
@@ -284,7 +293,7 @@ func TestRoutes_QueryEndpoints(t *testing.T) {
 		ReadOnly: false,
 	}
 
-	server := NewAPIServer(cfg, mockAttestationConfig(), &mockStateStore{}, queue.NewInMemoryQueue(100), "suppline.yml", observability.NewLogger("error"))
+	server := NewAPIServer(cfg, mockAttestationConfig(), &mockStateStore{}, queue.NewInMemoryQueue(100), mockRegsyncConfig(), observability.NewLogger("error"))
 
 	tests := []struct {
 		name   string
@@ -322,7 +331,7 @@ func TestRoutes_ActionEndpoints(t *testing.T) {
 		ReadOnly: false,
 	}
 
-	server := NewAPIServer(cfg, mockAttestationConfig(), &mockStateStore{}, queue.NewInMemoryQueue(100), "suppline.yml", observability.NewLogger("error"))
+	server := NewAPIServer(cfg, mockAttestationConfig(), &mockStateStore{}, queue.NewInMemoryQueue(100), mockRegsyncConfig(), observability.NewLogger("error"))
 
 	tests := []struct {
 		name   string
@@ -357,7 +366,7 @@ func TestHealthEndpoint(t *testing.T) {
 		ReadOnly: false,
 	}
 
-	server := NewAPIServer(cfg, mockAttestationConfig(), &mockStateStore{}, queue.NewInMemoryQueue(100), "suppline.yml", observability.NewLogger("error"))
+	server := NewAPIServer(cfg, mockAttestationConfig(), &mockStateStore{}, queue.NewInMemoryQueue(100), mockRegsyncConfig(), observability.NewLogger("error"))
 
 	req := httptest.NewRequest(http.MethodGet, "/health", nil)
 	w := httptest.NewRecorder()
@@ -383,7 +392,7 @@ func TestMetricsEndpoint(t *testing.T) {
 		ReadOnly: false,
 	}
 
-	server := NewAPIServer(cfg, mockAttestationConfig(), &mockStateStore{}, queue.NewInMemoryQueue(100), "suppline.yml", observability.NewLogger("error"))
+	server := NewAPIServer(cfg, mockAttestationConfig(), &mockStateStore{}, queue.NewInMemoryQueue(100), mockRegsyncConfig(), observability.NewLogger("error"))
 
 	req := httptest.NewRequest(http.MethodGet, "/metrics", nil)
 	w := httptest.NewRecorder()
@@ -409,7 +418,7 @@ func TestHandleTriggerScan_MissingFields(t *testing.T) {
 		ReadOnly: false,
 	}
 
-	server := NewAPIServer(cfg, mockAttestationConfig(), &mockStateStore{}, queue.NewInMemoryQueue(100), "suppline.yml", observability.NewLogger("error"))
+	server := NewAPIServer(cfg, mockAttestationConfig(), &mockStateStore{}, queue.NewInMemoryQueue(100), mockRegsyncConfig(), observability.NewLogger("error"))
 
 	// Test with empty body
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/scans/trigger", strings.NewReader("{}"))
@@ -430,7 +439,7 @@ func TestHandleTriggerScan_BothFields(t *testing.T) {
 		ReadOnly: false,
 	}
 
-	server := NewAPIServer(cfg, mockAttestationConfig(), &mockStateStore{}, queue.NewInMemoryQueue(100), "suppline.yml", observability.NewLogger("error"))
+	server := NewAPIServer(cfg, mockAttestationConfig(), &mockStateStore{}, queue.NewInMemoryQueue(100), mockRegsyncConfig(), observability.NewLogger("error"))
 
 	// Test with both digest and repository
 	body := `{"digest": "sha256:abc123", "repository": "test/repo"}`
@@ -452,7 +461,7 @@ func TestHandleTriggerScan_InvalidJSON(t *testing.T) {
 		ReadOnly: false,
 	}
 
-	server := NewAPIServer(cfg, mockAttestationConfig(), &mockStateStore{}, queue.NewInMemoryQueue(100), "suppline.yml", observability.NewLogger("error"))
+	server := NewAPIServer(cfg, mockAttestationConfig(), &mockStateStore{}, queue.NewInMemoryQueue(100), mockRegsyncConfig(), observability.NewLogger("error"))
 
 	// Test with invalid JSON
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/scans/trigger", strings.NewReader("invalid json"))
@@ -473,7 +482,7 @@ func TestHandleReevaluatePolicy_EmptyBody(t *testing.T) {
 		ReadOnly: false,
 	}
 
-	server := NewAPIServer(cfg, mockAttestationConfig(), &mockStateStore{}, queue.NewInMemoryQueue(100), "suppline.yml", observability.NewLogger("error"))
+	server := NewAPIServer(cfg, mockAttestationConfig(), &mockStateStore{}, queue.NewInMemoryQueue(100), mockRegsyncConfig(), observability.NewLogger("error"))
 
 	// Test with empty body (should be acceptable)
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/policy/reevaluate", nil)
@@ -495,7 +504,7 @@ func TestHandleReevaluatePolicy_WithRepository(t *testing.T) {
 		ReadOnly: false,
 	}
 
-	server := NewAPIServer(cfg, mockAttestationConfig(), &mockStateStore{}, queue.NewInMemoryQueue(100), "suppline.yml", observability.NewLogger("error"))
+	server := NewAPIServer(cfg, mockAttestationConfig(), &mockStateStore{}, queue.NewInMemoryQueue(100), mockRegsyncConfig(), observability.NewLogger("error"))
 
 	// Test with repository filter
 	body := `{"repository": "test/repo"}`
@@ -518,7 +527,7 @@ func TestActionEndpoints_ReadOnlyMode(t *testing.T) {
 		ReadOnly: true,
 	}
 
-	server := NewAPIServer(cfg, mockAttestationConfig(), &mockStateStore{}, queue.NewInMemoryQueue(100), "suppline.yml", observability.NewLogger("error"))
+	server := NewAPIServer(cfg, mockAttestationConfig(), &mockStateStore{}, queue.NewInMemoryQueue(100), mockRegsyncConfig(), observability.NewLogger("error"))
 
 	tests := []struct {
 		name string
@@ -553,7 +562,7 @@ func TestHandleGetRepository_Success(t *testing.T) {
 
 	// Create a mock state store that returns repository details
 	mockStore := &mockStateStore{}
-	server := NewAPIServer(cfg, mockAttestationConfig(), mockStore, queue.NewInMemoryQueue(100), "suppline.yml", observability.NewLogger("error"))
+	server := NewAPIServer(cfg, mockAttestationConfig(), mockStore, queue.NewInMemoryQueue(100), mockRegsyncConfig(), observability.NewLogger("error"))
 
 	req := httptest.NewRequest(http.MethodGet, "/api/v1/repositories/test-repo", nil)
 	w := httptest.NewRecorder()
@@ -594,7 +603,7 @@ func TestHandleGetRepository_NotFound(t *testing.T) {
 
 	// Create a mock state store that returns empty repository
 	mockStore := &emptyRepositoryMockStore{mockStateStore: &mockStateStore{}}
-	server := NewAPIServer(cfg, mockAttestationConfig(), mockStore, queue.NewInMemoryQueue(100), "suppline.yml", observability.NewLogger("error"))
+	server := NewAPIServer(cfg, mockAttestationConfig(), mockStore, queue.NewInMemoryQueue(100), mockRegsyncConfig(), observability.NewLogger("error"))
 
 	req := httptest.NewRequest(http.MethodGet, "/api/v1/repositories/nonexistent", nil)
 	w := httptest.NewRecorder()
@@ -615,7 +624,7 @@ func TestHandleGetRepository_WithPagination(t *testing.T) {
 	}
 
 	mockStore := &mockStateStore{}
-	server := NewAPIServer(cfg, mockAttestationConfig(), mockStore, queue.NewInMemoryQueue(100), "suppline.yml", observability.NewLogger("error"))
+	server := NewAPIServer(cfg, mockAttestationConfig(), mockStore, queue.NewInMemoryQueue(100), mockRegsyncConfig(), observability.NewLogger("error"))
 
 	// Test with pagination parameters
 	req := httptest.NewRequest(http.MethodGet, "/api/v1/repositories/test-repo?limit=10&offset=0", nil)
@@ -637,7 +646,7 @@ func TestHandleGetRepository_WithSearch(t *testing.T) {
 	}
 
 	mockStore := &mockStateStore{}
-	server := NewAPIServer(cfg, mockAttestationConfig(), mockStore, queue.NewInMemoryQueue(100), "suppline.yml", observability.NewLogger("error"))
+	server := NewAPIServer(cfg, mockAttestationConfig(), mockStore, queue.NewInMemoryQueue(100), mockRegsyncConfig(), observability.NewLogger("error"))
 
 	// Test with search parameter
 	req := httptest.NewRequest(http.MethodGet, "/api/v1/repositories/test-repo?search=latest", nil)
@@ -659,7 +668,7 @@ func TestHandleListRepositories_WithNewFilters(t *testing.T) {
 
 	// Create a mock state store that returns repositories
 	mockStore := &mockStateStore{}
-	server := NewAPIServer(cfg, mockAttestationConfig(), mockStore, queue.NewInMemoryQueue(100), "suppline.yml", observability.NewLogger("error"))
+	server := NewAPIServer(cfg, mockAttestationConfig(), mockStore, queue.NewInMemoryQueue(100), mockRegsyncConfig(), observability.NewLogger("error"))
 
 	// Test with new query parameters: max_age and sort_by
 	req := httptest.NewRequest(http.MethodGet, "/api/v1/repositories?max_age=3600&sort_by=name_desc&search=test&limit=50&offset=10", nil)
@@ -688,7 +697,7 @@ func TestHandleListRepositories_StatusSorting(t *testing.T) {
 
 	// Create a mock state store that returns repositories
 	mockStore := &mockStateStore{}
-	server := NewAPIServer(cfg, mockAttestationConfig(), mockStore, queue.NewInMemoryQueue(100), "suppline.yml", observability.NewLogger("error"))
+	server := NewAPIServer(cfg, mockAttestationConfig(), mockStore, queue.NewInMemoryQueue(100), mockRegsyncConfig(), observability.NewLogger("error"))
 
 	// Test status sorting ascending (failed first)
 	req := httptest.NewRequest(http.MethodGet, "/api/v1/repositories?sort_by=status_asc", nil)

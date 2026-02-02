@@ -16,6 +16,8 @@ export class Dashboard extends BaseComponent {
             failedImages: 0,
             activeTolerations: 0,
             expiringTolerations: 0,
+            expiringTolerationsDetails: [],
+            expiredTolerationsDetails: [],
             recentScans: [],
             vulnerabilityBreakdown: {
                 critical: 0,
@@ -38,12 +40,14 @@ export class Dashboard extends BaseComponent {
                 recentScans,
                 failedScans,
                 allTolerations,
-                expiringTolerations
+                expiringTolerations,
+                expiredTolerations
             ] = await Promise.all([
                 this.apiClient.getScans({ limit: 20 }),
                 this.apiClient.getScans({ policy_passed: false }), 
                 this.apiClient.getTolerations({}),
-                this.apiClient.getTolerations({ expiring_soon: true })
+                this.apiClient.getTolerations({ expiring_soon: true }),
+                this.apiClient.getTolerations({ expired: true })
             ]);
 
             // Process recent scans (API returns array directly)
@@ -57,6 +61,8 @@ export class Dashboard extends BaseComponent {
             // Process tolerations (API returns array directly)
             this.data.activeTolerations = Array.isArray(allTolerations) ? allTolerations.length : 0;
             this.data.expiringTolerations = Array.isArray(expiringTolerations) ? expiringTolerations.length : 0;
+            this.data.expiringTolerationsDetails = Array.isArray(expiringTolerations) ? expiringTolerations : [];
+            this.data.expiredTolerationsDetails = Array.isArray(expiredTolerations) ? expiredTolerations : [];
 
             // Calculate vulnerability breakdown from recent scans
             this.calculateVulnerabilityBreakdown(this.data.recentScans);
@@ -113,6 +119,7 @@ export class Dashboard extends BaseComponent {
                 </div>
 
                 ${this.renderSummaryCards()}
+                ${this.renderExpiringTolerationsCard()}
                 ${this.renderVulnerabilityBreakdown()}
                 ${this.renderFailedByRepository()}
                 ${this.renderRecentScans()}
@@ -170,6 +177,92 @@ export class Dashboard extends BaseComponent {
                 </div>
             </div>
         `;
+    }
+
+    /**
+     * Render expiring and expired tolerations card
+     */
+    renderExpiringTolerationsCard() {
+        const expiringCount = this.data.expiringTolerationsDetails.length;
+        const expiredCount = this.data.expiredTolerationsDetails.length;
+        const totalCount = expiringCount + expiredCount;
+
+        if (totalCount === 0) {
+            return '';
+        }
+
+        return `
+            <div class="dashboard-section">
+                <h2>Tolerations Requiring Attention</h2>
+                <div class="tolerations-attention-summary">
+                    ${expiredCount > 0 ? `<span class="attention-badge attention-badge-expired">${expiredCount} Expired</span>` : ''}
+                    ${expiringCount > 0 ? `<span class="attention-badge attention-badge-expiring">${expiringCount} Expiring Soon</span>` : ''}
+                </div>
+                <div class="tolerations-attention-list">
+                    ${this.renderExpiredTolerations()}
+                    ${this.renderExpiringTolerations()}
+                </div>
+            </div>
+        `;
+    }
+
+    /**
+     * Render expired tolerations (shown first with alert styling)
+     */
+    renderExpiredTolerations() {
+        if (this.data.expiredTolerationsDetails.length === 0) {
+            return '';
+        }
+
+        return this.data.expiredTolerationsDetails.map(toleration => {
+            const expiredDate = toleration.ExpiresAt ? new Date(toleration.ExpiresAt * 1000) : null;
+            const expiredDateStr = expiredDate ? expiredDate.toLocaleDateString() : 'N/A';
+            const daysExpired = expiredDate ? Math.floor((Date.now() - expiredDate.getTime()) / (1000 * 60 * 60 * 24)) : 0;
+
+            return `
+                <div class="toleration-attention-item toleration-expired" data-cve="${this.escapeHtml(toleration.CVEID)}">
+                    <div class="toleration-attention-header">
+                        <span class="toleration-attention-cve">${this.escapeHtml(toleration.CVEID)}</span>
+                        <span class="status-badge status-danger">⚠️ EXPIRED</span>
+                    </div>
+                    <div class="toleration-attention-repo">${this.escapeHtml(toleration.Repository)}</div>
+                    <div class="toleration-attention-statement">${this.escapeHtml(toleration.Statement || 'No statement provided')}</div>
+                    <div class="toleration-attention-expiry toleration-attention-expiry-danger">
+                        Expired ${daysExpired} day${daysExpired !== 1 ? 's' : ''} ago on ${expiredDateStr}
+                    </div>
+                </div>
+            `;
+        }).join('');
+    }
+
+    /**
+     * Render expiring soon tolerations
+     */
+    renderExpiringTolerations() {
+        if (this.data.expiringTolerationsDetails.length === 0) {
+            return '';
+        }
+
+        // API already returns only non-expired items expiring within 7 days
+        return this.data.expiringTolerationsDetails.map(toleration => {
+                const expiryDate = toleration.ExpiresAt ? new Date(toleration.ExpiresAt * 1000) : null;
+                const expiryDateStr = expiryDate ? expiryDate.toLocaleDateString() : 'Never';
+                const daysUntilExpiry = expiryDate ? Math.ceil((expiryDate.getTime() - Date.now()) / (1000 * 60 * 60 * 24)) : null;
+
+                return `
+                    <div class="toleration-attention-item toleration-expiring" data-cve="${this.escapeHtml(toleration.CVEID)}">
+                        <div class="toleration-attention-header">
+                            <span class="toleration-attention-cve">${this.escapeHtml(toleration.CVEID)}</span>
+                            <span class="status-badge status-warning">⏰ Expiring Soon</span>
+                        </div>
+                        <div class="toleration-attention-repo">${this.escapeHtml(toleration.Repository)}</div>
+                        <div class="toleration-attention-statement">${this.escapeHtml(toleration.Statement || 'No statement provided')}</div>
+                        <div class="toleration-attention-expiry">
+                            ${daysUntilExpiry !== null ? `Expires in ${daysUntilExpiry} day${daysUntilExpiry !== 1 ? 's' : ''} on ${expiryDateStr}` : 'No expiry date'}
+                        </div>
+                    </div>
+                `;
+            }).join('');
     }
 
     /**
@@ -392,6 +485,16 @@ export class Dashboard extends BaseComponent {
                 const repository = link.dataset.repository;
                 if (repository) {
                     window.router.navigate(`/repositories/${encodeURIComponent(repository)}`);
+                }
+            });
+        });
+
+        // Add click handlers for toleration items
+        document.querySelectorAll('.toleration-attention-item').forEach(item => {
+            item.addEventListener('click', () => {
+                const cveId = item.dataset.cve;
+                if (cveId) {
+                    window.router.navigate(`/vulnerabilities?cve_id=${encodeURIComponent(cveId)}`);
                 }
             });
         });

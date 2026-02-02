@@ -2,13 +2,14 @@ package statestore
 
 import (
 	"context"
+	"database/sql"
 	"fmt"
-	"github.com/daimoniac/suppline/internal/types"
 	"os"
 	"strings"
 	"testing"
 	"time"
-	"database/sql"
+
+	"github.com/daimoniac/suppline/internal/types"
 )
 
 func TestSQLiteStore(t *testing.T) {
@@ -104,7 +105,7 @@ func TestSQLiteStore(t *testing.T) {
 	t.Run("GetScanHistory", func(t *testing.T) {
 		// Add a small delay to ensure different timestamps
 		time.Sleep(10 * time.Millisecond)
-		
+
 		// Add another scan for the same digest with one vulnerability fixed
 		record := &ScanRecord{
 			Digest:            "sha256:abc123",
@@ -164,7 +165,7 @@ func TestSQLiteStore(t *testing.T) {
 			newestScan = history[1]
 			oldestScan = history[0]
 		}
-		
+
 		// Newest scan (v1.0.1) should have 1 vulnerability
 		if len(newestScan.Vulnerabilities) != 1 {
 			t.Errorf("Expected newest scan to have 1 vulnerability, got %d", len(newestScan.Vulnerabilities))
@@ -415,7 +416,7 @@ func TestSQLiteStore(t *testing.T) {
 		// Verify scans are sorted by created_at DESC (newest first)
 		for i := 1; i < len(scans); i++ {
 			if scans[i-1].CreatedAt < scans[i].CreatedAt {
-				t.Errorf("Scans not sorted by age descending: %d should be after %d", 
+				t.Errorf("Scans not sorted by age descending: %d should be after %d",
 					scans[i-1].CreatedAt, scans[i].CreatedAt)
 			}
 		}
@@ -620,7 +621,7 @@ func TestSchemaAndConstraints(t *testing.T) {
 
 	// Test 1: Verify all tables exist
 	t.Run("All tables are created", func(t *testing.T) {
-		tables := []string{"repositories", "artifacts", "scan_records", "vulnerabilities", "tolerated_cves"}
+		tables := []string{"repositories", "artifacts", "scan_records", "vulnerabilities"}
 		for _, table := range tables {
 			var count int
 			err := store.db.QueryRowContext(ctx, `
@@ -644,9 +645,6 @@ func TestSchemaAndConstraints(t *testing.T) {
 			"idx_vulnerabilities_scan",
 			"idx_vulnerabilities_cve",
 			"idx_vulnerabilities_severity",
-			"idx_tolerated_repository",
-			"idx_tolerated_cve",
-			"idx_tolerated_expires",
 		}
 		for _, idx := range indexes {
 			var count int
@@ -710,36 +708,6 @@ func TestSchemaAndConstraints(t *testing.T) {
 		}
 	})
 
-	// Test 5: Unique constraint on (repository_id, cve_id) in tolerated_cves
-	t.Run("Unique constraint on (repository_id, cve_id) in tolerated_cves", func(t *testing.T) {
-		var repoID int64
-		err := store.db.QueryRowContext(ctx, `
-			SELECT id FROM repositories WHERE name = ?
-		`, "test/repo").Scan(&repoID)
-		if err != nil {
-			t.Fatalf("Failed to get repository: %v", err)
-		}
-
-		now := time.Now()
-		// Insert first tolerated CVE
-		_, err = store.db.ExecContext(ctx, `
-			INSERT INTO tolerated_cves (repository_id, cve_id, statement, tolerated_at)
-			VALUES (?, ?, ?, ?)
-		`, repoID, "CVE-2024-TEST", "Test statement", now)
-		if err != nil {
-			t.Fatalf("Failed to insert first tolerated CVE: %v", err)
-		}
-
-		// Try to insert duplicate (repository_id, cve_id)
-		_, err = store.db.ExecContext(ctx, `
-			INSERT INTO tolerated_cves (repository_id, cve_id, statement, tolerated_at)
-			VALUES (?, ?, ?, ?)
-		`, repoID, "CVE-2024-TEST", "Different statement", now)
-		if err == nil {
-			t.Error("Expected unique constraint violation for duplicate (repository_id, cve_id)")
-		}
-	})
-
 	// Test 6: Foreign key constraint - artifact references repository
 	t.Run("Foreign key constraint - artifact references repository", func(t *testing.T) {
 		now := time.Now()
@@ -776,19 +744,6 @@ func TestSchemaAndConstraints(t *testing.T) {
 		`, 99999, "CVE-2024-TEST", "HIGH", "test-package")
 		if err == nil {
 			t.Error("Expected foreign key constraint violation for invalid scan_record_id")
-		}
-	})
-
-	// Test 9: Foreign key constraint - tolerated_cve references repository
-	t.Run("Foreign key constraint - tolerated_cve references repository", func(t *testing.T) {
-		now := time.Now()
-		// Try to insert tolerated_cve with non-existent repository_id
-		_, err := store.db.ExecContext(ctx, `
-			INSERT INTO tolerated_cves (repository_id, cve_id, statement, tolerated_at)
-			VALUES (?, ?, ?, ?)
-		`, 99999, "CVE-2024-TEST", "Test", now)
-		if err == nil {
-			t.Error("Expected foreign key constraint violation for invalid repository_id")
 		}
 	})
 
@@ -1032,19 +987,19 @@ func TestSchemaAndConstraints(t *testing.T) {
 		}
 
 		expectedColumns := map[string]string{
-			"id":                   "INTEGER",
-			"artifact_id":          "INTEGER",
-			"scan_duration_ms":     "INTEGER",
-			"critical_vuln_count":  "INTEGER",
-			"high_vuln_count":      "INTEGER",
-			"medium_vuln_count":    "INTEGER",
-			"low_vuln_count":       "INTEGER",
-			"policy_passed":        "BOOLEAN",
-			"sbom_attested":        "BOOLEAN",
-			"vuln_attested":        "BOOLEAN",
-			"scai_attested":        "BOOLEAN",
-			"error_message":        "TEXT",
-			"created_at":           "INTEGER",
+			"id":                  "INTEGER",
+			"artifact_id":         "INTEGER",
+			"scan_duration_ms":    "INTEGER",
+			"critical_vuln_count": "INTEGER",
+			"high_vuln_count":     "INTEGER",
+			"medium_vuln_count":   "INTEGER",
+			"low_vuln_count":      "INTEGER",
+			"policy_passed":       "BOOLEAN",
+			"sbom_attested":       "BOOLEAN",
+			"vuln_attested":       "BOOLEAN",
+			"scai_attested":       "BOOLEAN",
+			"error_message":       "TEXT",
+			"created_at":          "INTEGER",
 		}
 
 		for col, expectedType := range expectedColumns {
@@ -1096,11 +1051,11 @@ func TestSchemaAndConstraints(t *testing.T) {
 		}
 	})
 
-	// Test 17: Verify tolerated_cves table structure
-	t.Run("Verify tolerated_cves table structure", func(t *testing.T) {
-		rows, err := store.db.QueryContext(ctx, "PRAGMA table_info(tolerated_cves)")
+	// Test 17: Verify scan_records table has tolerated_cves_json column
+	t.Run("Verify scan_records table has tolerated_cves_json column", func(t *testing.T) {
+		rows, err := store.db.QueryContext(ctx, "PRAGMA table_info(scan_records)")
 		if err != nil {
-			t.Fatalf("Failed to get tolerated_cves table info: %v", err)
+			t.Fatalf("Failed to get scan_records table info: %v", err)
 		}
 		defer rows.Close()
 
@@ -1113,23 +1068,11 @@ func TestSchemaAndConstraints(t *testing.T) {
 			columns[name.(string)] = type_.(string)
 		}
 
-		expectedColumns := map[string]string{
-			"id":            "INTEGER",
-			"repository_id": "INTEGER",
-			"artifact_id":   "INTEGER",
-			"cve_id":        "TEXT",
-			"statement":     "TEXT",
-			"tolerated_at":  "INTEGER",
-			"expires_at":    "INTEGER",
-			"created_at":    "INTEGER",
-		}
-
-		for col, expectedType := range expectedColumns {
-			if actualType, exists := columns[col]; !exists {
-				t.Errorf("Column %s not found in tolerated_cves table", col)
-			} else if actualType != expectedType {
-				t.Errorf("Column %s has type %s, expected %s", col, actualType, expectedType)
-			}
+		// Check for tolerated_cves_json column
+		if actualType, exists := columns["tolerated_cves_json"]; !exists {
+			t.Errorf("Column tolerated_cves_json not found in scan_records table")
+		} else if actualType != "TEXT" {
+			t.Errorf("Column tolerated_cves_json has type %s, expected TEXT", actualType)
 		}
 	})
 }
@@ -1319,7 +1262,7 @@ func TestRescanScheduling(t *testing.T) {
 			}
 
 			// Set different next_scan_at times
-			pastTime := time.Now().Add(time.Duration(-(4-i)) * time.Hour).Unix()
+			pastTime := time.Now().Add(time.Duration(-(4 - i)) * time.Hour).Unix()
 			_, err = store.db.ExecContext(ctx, `
 				UPDATE artifacts SET next_scan_at = ? WHERE digest = ?
 			`, pastTime, digest)
@@ -1546,7 +1489,6 @@ func TestRescanScheduling(t *testing.T) {
 		}
 	})
 }
-
 
 // TestRepositoryAggregation tests the repository aggregation logic
 func TestRepositoryAggregation(t *testing.T) {
@@ -2135,7 +2077,7 @@ func TestRepositoryAggregation(t *testing.T) {
 
 		// Should be sorted alphabetically
 		if response.Repositories[0].Name > response.Repositories[1].Name {
-			t.Errorf("Repositories not sorted ascending: %s > %s", 
+			t.Errorf("Repositories not sorted ascending: %s > %s",
 				response.Repositories[0].Name, response.Repositories[1].Name)
 		}
 
@@ -2148,7 +2090,7 @@ func TestRepositoryAggregation(t *testing.T) {
 
 		// Should be sorted reverse alphabetically
 		if response.Repositories[0].Name < response.Repositories[1].Name {
-			t.Errorf("Repositories not sorted descending: %s < %s", 
+			t.Errorf("Repositories not sorted descending: %s < %s",
 				response.Repositories[0].Name, response.Repositories[1].Name)
 		}
 	})

@@ -13,7 +13,7 @@ import (
 	"github.com/daimoniac/suppline/internal/queue"
 	"github.com/daimoniac/suppline/internal/statestore"
 	httpSwagger "github.com/swaggo/http-swagger"
-	
+
 	_ "github.com/daimoniac/suppline/build/swagger" // Import generated docs
 )
 
@@ -42,24 +42,24 @@ import (
 
 // APIServer provides HTTP API for querying scan results and triggering operations
 type APIServer struct {
-	config           *config.APIConfig
+	config            *config.APIConfig
 	attestationConfig *config.AttestationConfig
-	stateStore       statestore.StateStoreQuery
-	taskQueue        queue.TaskQueue
-	regsyncPath      string
-	router           *http.ServeMux
-	server           *http.Server
-	logger           *slog.Logger
+	stateStore        statestore.StateStoreQuery
+	taskQueue         queue.TaskQueue
+	regsyncConfig     *config.RegsyncConfig
+	router            *http.ServeMux
+	server            *http.Server
+	logger            *slog.Logger
 }
 
 // NewAPIServer creates a new API server instance
-func NewAPIServer(cfg *config.APIConfig, attestationCfg *config.AttestationConfig, store statestore.StateStoreQuery, queue queue.TaskQueue, regsyncPath string, logger *slog.Logger) *APIServer {
+func NewAPIServer(cfg *config.APIConfig, attestationCfg *config.AttestationConfig, store statestore.StateStoreQuery, queue queue.TaskQueue, regsyncConfig *config.RegsyncConfig, logger *slog.Logger) *APIServer {
 	api := &APIServer{
 		config:            cfg,
 		attestationConfig: attestationCfg,
 		stateStore:        store,
 		taskQueue:         queue,
-		regsyncPath:       regsyncPath,
+		regsyncConfig:     regsyncConfig,
 		router:            http.NewServeMux(),
 		logger:            logger,
 	}

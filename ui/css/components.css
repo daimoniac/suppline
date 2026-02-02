@@ -759,6 +759,116 @@ tr:hover {
     z-index: 1;
 }
 
+/* Tolerations Attention Card */
+.tolerations-attention-summary {
+    display: flex;
+    gap: var(--spacing-md);
+    margin-bottom: var(--spacing-lg);
+}
+
+.attention-badge {
+    padding: 0.5rem 1rem;
+    border-radius: 6px;
+    font-weight: 600;
+    font-size: 0.875rem;
+    display: inline-flex;
+    align-items: center;
+    gap: 0.5rem;
+}
+
+.attention-badge-expired {
+    background-color: var(--critical-bg);
+    color: var(--critical-color);
+    border: 1px solid var(--critical-color);
+}
+
+.attention-badge-expiring {
+    background-color: var(--medium-bg);
+    color: #92400e;
+    border: 1px solid var(--medium-color);
+}
+
+.tolerations-attention-list {
+    display: flex;
+    flex-direction: column;
+    gap: var(--spacing-md);
+}
+
+.toleration-attention-item {
+    padding: var(--spacing-lg);
+    border-radius: 8px;
+    cursor: pointer;
+    transition: all 0.2s;
+    border-left: 4px solid transparent;
+}
+
+.toleration-attention-item:hover {
+    transform: translateX(2px);
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+}
+
+.toleration-expired {
+    background-color: var(--critical-bg);
+    border-left-color: var(--critical-color);
+}
+
+.toleration-expired:hover {
+    background-color: #fecaca;
+}
+
+.toleration-expiring {
+    background-color: var(--medium-bg);
+    border-left-color: var(--medium-color);
+}
+
+.toleration-expiring:hover {
+    background-color: #fde68a;
+}
+
+.toleration-attention-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: var(--spacing-sm);
+    gap: var(--spacing-md);
+    flex-wrap: wrap;
+}
+
+.toleration-attention-cve {
+    font-size: 1rem;
+    font-weight: 600;
+    font-family: 'Courier New', monospace;
+    color: var(--primary-color);
+}
+
+.toleration-attention-cve:hover {
+    text-decoration: underline;
+}
+
+.toleration-attention-repo {
+    font-size: 0.875rem;
+    color: var(--text-secondary);
+    margin-bottom: var(--spacing-xs);
+}
+
+.toleration-attention-statement {
+    font-size: 0.875rem;
+    color: var(--text-primary);
+    margin-bottom: var(--spacing-sm);
+    font-style: italic;
+}
+
+.toleration-attention-expiry {
+    font-size: 0.75rem;
+    color: var(--text-secondary);
+    font-weight: 500;
+}
+
+.toleration-attention-expiry-danger {
+    color: var(--critical-color);
+    font-weight: 700;
+}
+
 /* Scans Table */
 .scans-table {
     width: 100%;

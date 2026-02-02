@@ -59,19 +59,19 @@ func (c *CVEToleration) UnmarshalYAML(unmarshal func(interface{}) error) error {
 // Used by StateStore to record when and where tolerations were applied.
 // Note: This uses explicit fields instead of embedding to match statestore naming conventions.
 type ToleratedCVE struct {
-	CVEID       string
-	Statement   string
-	ToleratedAt int64  // Unix timestamp in seconds
-	ExpiresAt   *int64 // Unix timestamp in seconds, nil means no expiry
+	CVEID       string `json:"CVEID"`
+	Statement   string `json:"Statement"`
+	ToleratedAt int64  `json:"ToleratedAt"` // Unix timestamp in seconds
+	ExpiresAt   *int64 `json:"ExpiresAt"`   // Unix timestamp in seconds, nil means no expiry
 }
 
 // TolerationInfo extends ToleratedCVE with repository context for queries.
 // Used by StateStore queries to show which repositories have which tolerations.
 // Note: This uses explicit fields instead of embedding to match statestore naming conventions.
 type TolerationInfo struct {
-	CVEID       string
-	Statement   string
-	ToleratedAt int64  // Unix timestamp in seconds
-	ExpiresAt   *int64 // Unix timestamp in seconds
-	Repository  string
+	CVEID       string `json:"CVEID"`
+	Statement   string `json:"Statement"`
+	ToleratedAt int64  `json:"ToleratedAt"` // Unix timestamp in seconds
+	ExpiresAt   *int64 `json:"ExpiresAt"`   // Unix timestamp in seconds
+	Repository  string `json:"Repository"`
 }
