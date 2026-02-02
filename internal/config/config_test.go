@@ -897,3 +897,184 @@ sync:
 		})
 	}
 }
+
+func TestIsToleratedCVE_RespectsExpiration(t *testing.T) {
+	// Create a config with expired and active tolerations
+	pastTime := time.Now().Add(-24 * time.Hour).Unix()
+	futureTime := time.Now().Add(24 * time.Hour).Unix()
+
+	config := &RegsyncConfig{
+		Version: 1,
+		Defaults: Defaults{
+			Tolerate: []types.CVEToleration{
+				{
+					ID:        "CVE-2024-00001",
+					Statement: "Expired toleration",
+					ExpiresAt: &pastTime,
+				},
+				{
+					ID:        "CVE-2024-00002",
+					Statement: "Active toleration",
+					ExpiresAt: &futureTime,
+				},
+				{
+					ID:        "CVE-2024-00003",
+					Statement: "Permanent toleration",
+					ExpiresAt: nil,
+				},
+			},
+		},
+		Sync: []SyncEntry{
+			{
+				Source: "nginx",
+				Target: "myregistry.com/nginx",
+				Type:   "repository",
+			},
+		},
+	}
+
+	// Test expired toleration - should NOT be tolerated
+	tolerated, _ := config.IsToleratedCVE("myregistry.com/nginx", "CVE-2024-00001")
+	if tolerated {
+		t.Error("expired toleration CVE-2024-00001 should not be tolerated")
+	}
+
+	// Test active toleration - should be tolerated
+	tolerated, tol := config.IsToleratedCVE("myregistry.com/nginx", "CVE-2024-00002")
+	if !tolerated {
+		t.Error("active toleration CVE-2024-00002 should be tolerated")
+	}
+	if tol == nil {
+		t.Error("expected toleration object for CVE-2024-00002")
+	}
+
+	// Test permanent toleration - should be tolerated
+	tolerated, tol = config.IsToleratedCVE("myregistry.com/nginx", "CVE-2024-00003")
+	if !tolerated {
+		t.Error("permanent toleration CVE-2024-00003 should be tolerated")
+	}
+	if tol == nil {
+		t.Error("expected toleration object for CVE-2024-00003")
+	}
+
+	// Test non-existent CVE - should NOT be tolerated
+	tolerated, _ = config.IsToleratedCVE("myregistry.com/nginx", "CVE-9999-99999")
+	if tolerated {
+		t.Error("non-existent CVE should not be tolerated")
+	}
+}
+
+func TestEndToEndExpirationHandling(t *testing.T) {
+	// Create a temporary regsync file with expired and active tolerations
+	tmpfile, err := os.CreateTemp("", "regsync-*.yml")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer os.Remove(tmpfile.Name())
+
+	// Use dates relative to the test execution time
+	yesterday := time.Now().Add(-24 * time.Hour).Format("2006-01-02")
+	tomorrow := time.Now().Add(24 * time.Hour).Format("2006-01-02")
+
+	content := fmt.Sprintf(`version: 1
+defaults:
+  x-tolerate:
+    - id: CVE-2024-EXPIRED
+      statement: This toleration has already expired
+      expires_at: %s
+    - id: CVE-2024-ACTIVE
+      statement: This toleration is still active
+      expires_at: %s
+    - id: CVE-2024-PERMANENT
+      statement: This toleration never expires
+sync:
+  - source: nginx
+    target: myregistry.com/nginx
+    type: repository
+    x-tolerate:
+      - id: CVE-2024-SYNC-EXPIRED
+        statement: Sync-specific expired toleration
+        expires_at: %s
+      - id: CVE-2024-SYNC-ACTIVE
+        statement: Sync-specific active toleration
+        expires_at: %s
+`, yesterday, tomorrow, yesterday, tomorrow)
+
+	if _, err := tmpfile.Write([]byte(content)); err != nil {
+		t.Fatal(err)
+	}
+	if err := tmpfile.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	config, err := ParseRegsync(tmpfile.Name())
+	if err != nil {
+		t.Fatalf("ParseRegsync failed: %v", err)
+	}
+
+	// Verify all tolerations were parsed correctly
+	if len(config.Defaults.Tolerate) != 3 {
+		t.Errorf("expected 3 default tolerations, got %d", len(config.Defaults.Tolerate))
+	}
+	if len(config.Sync[0].Tolerate) != 2 {
+		t.Errorf("expected 2 sync tolerations, got %d", len(config.Sync[0].Tolerate))
+	}
+
+	// Test that expired default toleration is NOT tolerated
+	tolerated, _ := config.IsToleratedCVE("myregistry.com/nginx", "CVE-2024-EXPIRED")
+	if tolerated {
+		t.Error("CVE-2024-EXPIRED should NOT be tolerated (expired yesterday)")
+	}
+
+	// Test that active default toleration IS tolerated
+	tolerated, tol := config.IsToleratedCVE("myregistry.com/nginx", "CVE-2024-ACTIVE")
+	if !tolerated {
+		t.Error("CVE-2024-ACTIVE should be tolerated (expires tomorrow)")
+	}
+	if tol == nil || tol.Statement != "This toleration is still active" {
+		t.Error("expected correct toleration object for CVE-2024-ACTIVE")
+	}
+
+	// Test that permanent default toleration IS tolerated
+	tolerated, tol = config.IsToleratedCVE("myregistry.com/nginx", "CVE-2024-PERMANENT")
+	if !tolerated {
+		t.Error("CVE-2024-PERMANENT should be tolerated (permanent)")
+	}
+	if tol == nil || tol.ExpiresAt != nil {
+		t.Error("CVE-2024-PERMANENT should have nil ExpiresAt")
+	}
+
+	// Test that expired sync-specific toleration is NOT tolerated
+	tolerated, _ = config.IsToleratedCVE("myregistry.com/nginx", "CVE-2024-SYNC-EXPIRED")
+	if tolerated {
+		t.Error("CVE-2024-SYNC-EXPIRED should NOT be tolerated (expired yesterday)")
+	}
+
+	// Test that active sync-specific toleration IS tolerated
+	tolerated, tol = config.IsToleratedCVE("myregistry.com/nginx", "CVE-2024-SYNC-ACTIVE")
+	if !tolerated {
+		t.Error("CVE-2024-SYNC-ACTIVE should be tolerated (expires tomorrow)")
+	}
+	if tol == nil || tol.Statement != "Sync-specific active toleration" {
+		t.Error("expected correct toleration object for CVE-2024-SYNC-ACTIVE")
+	}
+
+	// Verify GetTolerationsForTarget returns all 5 tolerations (expired ones included in the list)
+	allTols := config.GetTolerationsForTarget("myregistry.com/nginx")
+	if len(allTols) != 5 {
+		t.Errorf("expected 5 total tolerations in list (3 default + 2 sync), got %d", len(allTols))
+	}
+
+	// But IsToleratedCVE should only return true for non-expired ones (3 out of 5)
+	activeCount := 0
+	cves := []string{"CVE-2024-EXPIRED", "CVE-2024-ACTIVE", "CVE-2024-PERMANENT",
+		"CVE-2024-SYNC-EXPIRED", "CVE-2024-SYNC-ACTIVE"}
+	for _, cve := range cves {
+		if tolerated, _ := config.IsToleratedCVE("myregistry.com/nginx", cve); tolerated {
+			activeCount++
+		}
+	}
+	if activeCount != 3 {
+		t.Errorf("expected 3 active (non-expired) tolerations, got %d", activeCount)
+	}
+}
