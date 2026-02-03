@@ -20,14 +20,23 @@ type SQLiteStore struct {
 
 // NewSQLiteStore creates a new SQLite state store
 func NewSQLiteStore(dbPath string) (*SQLiteStore, error) {
-	// Add foreign_keys pragma to connection string to ensure it's enabled for all connections
-	// This is critical for CASCADE DELETE to work properly
-	connStr := dbPath + "?_foreign_keys=1"
+	// Add pragmas and optimizations for better concurrent access
+	// _foreign_keys=1: Ensures CASCADE DELETE works properly
+	// mode=rwc: Read/Write/Create mode
+	// _journal_mode=WAL: Write-Ahead Logging allows concurrent readers and a single writer
+	// _busy_timeout=3000: Wait up to 3 seconds for locks to allow metrics to succeed
+	connStr := dbPath + "?_foreign_keys=1&mode=rwc&_journal_mode=WAL&_busy_timeout=3000"
 
 	db, err := sql.Open("sqlite3", connStr)
 	if err != nil {
 		return nil, errors.NewTransientf("failed to open sqlite database: %w", err)
 	}
+
+	// Configure connection pool for concurrent access with WAL mode
+	// WAL mode supports one writer and multiple concurrent readers
+	db.SetMaxOpenConns(5)
+	db.SetMaxIdleConns(2)
+	db.SetConnMaxLifetime(time.Hour)
 
 	// Verify foreign keys are enabled
 	var fkEnabled int

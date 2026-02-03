@@ -78,7 +78,12 @@ func (c *DatabaseCollector) Describe(ch chan<- *prometheus.Desc) {
 
 // Collect queries the database and sends current metrics to the provided channel
 func (c *DatabaseCollector) Collect(ch chan<- prometheus.Metric) {
-	ctx := context.Background()
+	// Create a context with a reasonable timeout for metrics collection.
+	// Metrics don't need to be real-time or ACID-compliant, but we want them to succeed
+	// even during moderate database contention. Use 3 seconds to allow retries but not
+	// block the /metrics endpoint indefinitely.
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	defer cancel()
 
 	// Check if store supports queries
 	queryStore, ok := c.store.(statestore.StateStoreQuery)
@@ -101,7 +106,11 @@ func (c *DatabaseCollector) Collect(ch chan<- prometheus.Metric) {
 func (c *DatabaseCollector) collectToleratedCVEs(ctx context.Context, store statestore.StateStoreQuery, ch chan<- prometheus.Metric) {
 	tolerations, err := store.ListTolerations(ctx, statestore.TolerationFilter{})
 	if err != nil {
-		c.logger.Error("failed to collect tolerated CVEs metric", "error", err)
+		if ctx.Err() != nil {
+			c.logger.Debug("tolerated CVEs metric collection timed out (likely database locked)", "error", err)
+		} else {
+			c.logger.Error("failed to collect tolerated CVEs metric", "error", err)
+		}
 		return
 	}
 
@@ -116,7 +125,11 @@ func (c *DatabaseCollector) collectToleratedCVEs(ctx context.Context, store stat
 func (c *DatabaseCollector) collectTolerationExpiry(ctx context.Context, store statestore.StateStoreQuery, ch chan<- prometheus.Metric) {
 	tolerations, err := store.ListTolerations(ctx, statestore.TolerationFilter{})
 	if err != nil {
-		c.logger.Error("failed to collect toleration expiry metrics", "error", err)
+		if ctx.Err() != nil {
+			c.logger.Debug("toleration expiry metric collection timed out (likely database locked)", "error", err)
+		} else {
+			c.logger.Error("failed to collect toleration expiry metrics", "error", err)
+		}
 		return
 	}
 
@@ -173,7 +186,11 @@ func (c *DatabaseCollector) collectVulnerabilities(ctx context.Context, store st
 	// Get all scans from the database
 	scans, err := store.ListScans(ctx, statestore.ScanFilter{})
 	if err != nil {
-		c.logger.Error("failed to collect vulnerability metrics", "error", err)
+		if ctx.Err() != nil {
+			c.logger.Debug("vulnerabilities metric collection timed out (likely database locked)", "error", err)
+		} else {
+			c.logger.Error("failed to collect vulnerability metrics", "error", err)
+		}
 		return
 	}
 
