@@ -175,15 +175,6 @@ func (p *Pipeline) scanPhase(ctx context.Context, task *queue.ScanTask, imageRef
 	metrics.ScansTotal.Inc()
 	metrics.ScanDuration.Observe(durations["vuln_scan"].Seconds())
 
-	// Count vulnerabilities by severity
-	severityCounts := make(map[string]int)
-	for _, vuln := range scanResult.Vulnerabilities {
-		severityCounts[vuln.Severity]++
-	}
-	for severity, count := range severityCounts {
-		metrics.VulnerabilitiesFound.WithLabelValues(severity).Add(float64(count))
-	}
-
 	return sbom, scanResult, durations, nil
 }
 
@@ -213,40 +204,6 @@ func (p *Pipeline) policyPhase(ctx context.Context, task *queue.ScanTask, imageR
 		metrics.PolicyPassed.Inc()
 	} else {
 		metrics.PolicyFailed.Inc()
-	}
-
-	// Record tolerated CVE count
-	if policyDecision.ToleratedVulnCount > 0 {
-		metrics.ToleratedCVEs.Add(float64(policyDecision.ToleratedVulnCount))
-	}
-
-	// Record toleration expiry metrics
-	expiredCount := 0
-	expiringCount := 0
-	now := time.Now()
-
-	for _, toleration := range task.Tolerations {
-		if toleration.ExpiresAt == nil {
-			// No expiry set, skip
-			continue
-		}
-		expiresAt := time.Unix(*toleration.ExpiresAt, 0)
-		if expiresAt.Before(now) {
-			// Toleration has already expired
-			expiredCount++
-		} else {
-			// Check if expiring within 7 days
-			daysUntilExpiry := expiresAt.Sub(now).Hours() / 24
-			if daysUntilExpiry <= 7 {
-				expiringCount++
-			}
-		}
-	}
-
-	// Update gauges with per-repository metrics
-	if expiredCount > 0 || expiringCount > 0 {
-		metrics.ExpiredTolerations.WithLabelValues(task.Repository).Set(float64(expiredCount))
-		metrics.ExpiringTolerationsSoon.WithLabelValues(task.Repository).Set(float64(expiringCount))
 	}
 
 	// Log expiring tolerations

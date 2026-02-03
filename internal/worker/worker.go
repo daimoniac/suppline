@@ -108,6 +108,9 @@ func (w *ImageWorker) Start(ctx context.Context) error {
 
 	w.logger.Info("worker starting", "concurrency", concurrency)
 
+	// Register database metrics collector (once across all worker instances)
+	observability.RegisterDatabaseCollector(w.stateStore, w.logger)
+
 	// Create a cancellable context for the worker
 	workerCtx, cancel := context.WithCancel(ctx)
 	defer cancel()

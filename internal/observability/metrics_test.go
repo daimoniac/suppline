@@ -33,19 +33,6 @@ func TestMetrics(t *testing.T) {
 	if testutil.ToFloat64(m.QueueDepth) != 5 {
 		t.Errorf("expected QueueDepth to be 5, got %f", testutil.ToFloat64(m.QueueDepth))
 	}
-
-	m.VulnerabilitiesFound.WithLabelValues("CRITICAL").Inc()
-	m.VulnerabilitiesFound.WithLabelValues("HIGH").Add(3)
-
-	criticalCount := testutil.ToFloat64(m.VulnerabilitiesFound.WithLabelValues("CRITICAL"))
-	if criticalCount != 1 {
-		t.Errorf("expected CRITICAL vulnerabilities to be 1, got %f", criticalCount)
-	}
-
-	highCount := testutil.ToFloat64(m.VulnerabilitiesFound.WithLabelValues("HIGH"))
-	if highCount != 3 {
-		t.Errorf("expected HIGH vulnerabilities to be 3, got %f", highCount)
-	}
 }
 
 func TestMetricsSingleton(t *testing.T) {

@@ -25,14 +25,6 @@ type Metrics struct {
 	PolicyPassed prometheus.Counter
 	PolicyFailed prometheus.Counter
 
-	// Vulnerability metrics
-	VulnerabilitiesFound *prometheus.CounterVec
-	ToleratedCVEs        prometheus.Counter
-
-	// Toleration metrics
-	ExpiredTolerations      *prometheus.GaugeVec // Labels: repository
-	ExpiringTolerationsSoon *prometheus.GaugeVec // Labels: repository (7 days or less)
-
 	// Attestation metrics
 	AttestationsCreated *prometheus.CounterVec
 	AttestationsFailed  *prometheus.CounterVec
@@ -101,35 +93,6 @@ func GetMetrics() *Metrics {
 				Name: "suppline_policy_failed_total",
 				Help: "Total number of images that failed policy evaluation",
 			}),
-
-			// Vulnerability metrics
-			VulnerabilitiesFound: promauto.NewCounterVec(
-				prometheus.CounterOpts{
-					Name: "suppline_vulnerabilities_found_total",
-					Help: "Total number of vulnerabilities found by severity",
-				},
-				[]string{"severity"},
-			),
-			ToleratedCVEs: promauto.NewCounter(prometheus.CounterOpts{
-				Name: "suppline_tolerated_cves_total",
-				Help: "Total number of CVEs that were tolerated",
-			}),
-
-			// Toleration metrics
-			ExpiredTolerations: promauto.NewGaugeVec(
-				prometheus.GaugeOpts{
-					Name: "suppline_expired_tolerations",
-					Help: "Number of expired tolerations per repository",
-				},
-				[]string{"repository"},
-			),
-			ExpiringTolerationsSoon: promauto.NewGaugeVec(
-				prometheus.GaugeOpts{
-					Name: "suppline_expiring_tolerations_soon",
-					Help: "Number of tolerations expiring within 7 days per repository",
-				},
-				[]string{"repository"},
-			),
 
 			// Attestation metrics
 			AttestationsCreated: promauto.NewCounterVec(
