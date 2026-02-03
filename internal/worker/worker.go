@@ -204,6 +204,69 @@ func (w *ImageWorker) processLoop(ctx context.Context, workerID int) {
 	}
 }
 
+// ErrorHandlerAction determines what action to take for a given error
+type ErrorHandlerAction int
+
+const (
+	// ActionRetry indicates the error is transient and should be retried
+	ActionRetry ErrorHandlerAction = iota
+	// ActionFail indicates the error is permanent and should not be retried
+	ActionFail
+	// ActionSpecialHandling indicates the error requires special handling (e.g., manifest not found)
+	ActionSpecialHandling
+)
+
+// handleTaskError classifies an error and determines the appropriate action.
+// This centralizes error classification logic and reduces cognitive load in the retry loop.
+func (w *ImageWorker) handleTaskError(err error, attempt int, task *queue.ScanTask) (ErrorHandlerAction, time.Duration) {
+	if err == nil {
+		return ActionRetry, 0
+	}
+
+	// Use single-pass error classification
+	errorClass := errors.ClassifyError(err)
+
+	switch errorClass {
+	case errors.ErrorClassManifestNotFound:
+		// Manifest not found is a special case that needs cleanup but still fails
+		w.logger.Info("manifest not found error during task processing",
+			"task_id", task.ID,
+			"digest", task.Digest)
+		return ActionSpecialHandling, 0
+
+	case errors.ErrorClassPermanent:
+		// Permanent errors should not be retried
+		return ActionFail, 0
+
+	case errors.ErrorClassTransient:
+		// Transient errors should be retried with exponential backoff
+		if attempt >= w.config.RetryAttempts {
+			// No more retries available
+			return ActionFail, 0
+		}
+
+		// Calculate backoff delay with exponential backoff
+		backoff := w.config.RetryBackoff * time.Duration(attempt)
+		w.logger.Warn("transient error, retrying",
+			"task_id", task.ID,
+			"digest", task.Digest,
+			"attempt", attempt,
+			"max_attempts", w.config.RetryAttempts,
+			"backoff", backoff,
+			"error", err)
+
+		return ActionRetry, backoff
+
+	case errors.ErrorClassUnknown:
+		// Unknown errors default to permanent (safe default - don't retry)
+		return ActionFail, 0
+
+	default:
+		// Unexpected error class - treat as permanent
+		return ActionFail, 0
+	}
+}
+
 // ProcessTask executes the complete workflow for one image with retry logic
 func (w *ImageWorker) ProcessTask(ctx context.Context, task *queue.ScanTask) error {
 	if task == nil {
@@ -221,33 +284,26 @@ func (w *ImageWorker) ProcessTask(ctx context.Context, task *queue.ScanTask) err
 
 		lastErr = err
 
-		// Check if error is transient and should be retried
-		if !errors.IsTransient(err) {
-			// Permanent error - don't log here, already logged in processLoop
+		// Handle the error and determine what action to take
+		action, backoff := w.handleTaskError(err, attempt, task)
+
+		switch action {
+		case ActionFail:
+			// Permanent error or retries exhausted - don't retry
 			return err
-		}
 
-		// Don't retry if this was the last attempt
-		if attempt >= w.config.RetryAttempts {
-			break
-		}
+		case ActionSpecialHandling:
+			// Special case like manifest not found - don't retry but return the error
+			return err
 
-		// Calculate backoff delay with exponential backoff
-		backoff := w.config.RetryBackoff * time.Duration(attempt)
-		w.logger.Warn("transient error, retrying",
-			"task_id", task.ID,
-			"digest", task.Digest,
-			"attempt", attempt,
-			"max_attempts", w.config.RetryAttempts,
-			"backoff", backoff,
-			"error", err)
-
-		// Wait before retrying
-		select {
-		case <-ctx.Done():
-			return ctx.Err()
-		case <-time.After(backoff):
-			// Continue to next attempt
+		case ActionRetry:
+			// Transient error - retry with backoff
+			select {
+			case <-ctx.Done():
+				return ctx.Err()
+			case <-time.After(backoff):
+				// Continue to next attempt
+			}
 		}
 	}
 

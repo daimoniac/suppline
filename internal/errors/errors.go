@@ -8,12 +8,6 @@ import (
 
 // Sentinel errors for common cases
 var (
-	// ErrTransient indicates a temporary error that should be retried
-	ErrTransient = errors.New("transient error")
-
-	// ErrPermanent indicates a permanent error that should not be retried
-	ErrPermanent = errors.New("permanent error")
-
 	// ErrNotFound indicates a resource was not found
 	ErrNotFound = errors.New("not found")
 
@@ -123,65 +117,83 @@ func NewManifestNotFoundf(format string, args ...interface{}) error {
 	return &ManifestNotFoundError{Cause: fmt.Errorf(format, args...)}
 }
 
-// IsTransient checks if an error is transient using errors.As
-func IsTransient(err error) bool {
+// ErrorClass represents the classification of an error
+type ErrorClass int
+
+const (
+	// ErrorClassTransient indicates the error is retryable
+	ErrorClassTransient ErrorClass = iota
+	// ErrorClassPermanent indicates the error is not retryable
+	ErrorClassPermanent
+	// ErrorClassManifestNotFound indicates a manifest not found error
+	ErrorClassManifestNotFound
+	// ErrorClassUnknown indicates an unclassified error
+	ErrorClassUnknown
+)
+
+// ClassifyError performs a single-pass error classification to determine its type.
+// This is more efficient than calling multiple IsTransient/IsPermanent/IsManifestNotFound checks.
+func ClassifyError(err error) ErrorClass {
 	if err == nil {
-		return false
+		return ErrorClassUnknown
 	}
 
-	var transientErr *TransientError
-	if errors.As(err, &transientErr) {
-		return true
+	// Check explicit error types (most specific first)
+	var manifestErr *ManifestNotFoundError
+	if errors.As(err, &manifestErr) {
+		return ErrorClassManifestNotFound
 	}
 
 	var permanentErr *PermanentError
 	if errors.As(err, &permanentErr) {
-		return false
+		return ErrorClassPermanent
 	}
 
-	var manifestErr *ManifestNotFoundError
-	if errors.As(err, &manifestErr) {
-		return false
+	var transientErr *TransientError
+	if errors.As(err, &transientErr) {
+		return ErrorClassTransient
 	}
 
+	// Check sentinel errors (manifest not found)
+	if errors.Is(err, ErrManifestNotFound) {
+		return ErrorClassManifestNotFound
+	}
+
+	// Check sentinel errors (permanent)
 	if errors.Is(err, ErrNotFound) ||
 		errors.Is(err, ErrUnauthorized) ||
 		errors.Is(err, ErrForbidden) ||
-		errors.Is(err, ErrInvalidInput) ||
-		errors.Is(err, ErrManifestNotFound) {
-		return false
+		errors.Is(err, ErrInvalidInput) {
+		return ErrorClassPermanent
 	}
 
+	// Check sentinel errors (transient)
 	if errors.Is(err, ErrTimeout) ||
 		errors.Is(err, ErrRateLimit) {
-		return true
+		return ErrorClassTransient
 	}
 
-	return false
+	// Unknown error classification
+	return ErrorClassUnknown
 }
 
-// IsPermanent checks if an error is permanent (not retryable)
+// IsTransient checks if an error is transient using ClassifyError
+func IsTransient(err error) bool {
+	class := ClassifyError(err)
+	return class == ErrorClassTransient
+}
+
+// IsPermanent checks if an error is permanent (not retryable) using ClassifyError.
+// Returns true only for errors explicitly marked as permanent (not for unknown errors).
 func IsPermanent(err error) bool {
-	if err == nil {
-		return false
-	}
-
-	var permanentErr *PermanentError
-	return errors.As(err, &permanentErr)
+	class := ClassifyError(err)
+	return class == ErrorClassPermanent
 }
 
-// IsManifestNotFound checks if an error is a manifest not found error
+// IsManifestNotFound checks if an error is a manifest not found error using ClassifyError
 func IsManifestNotFound(err error) bool {
-	if err == nil {
-		return false
-	}
-
-	var manifestErr *ManifestNotFoundError
-	if errors.As(err, &manifestErr) {
-		return true
-	}
-
-	return errors.Is(err, ErrManifestNotFound)
+	class := ClassifyError(err)
+	return class == ErrorClassManifestNotFound
 }
 
 // ClassifyRegistryError classifies registry errors, specifically detecting MANIFEST_UNKNOWN
@@ -191,7 +203,7 @@ func ClassifyRegistryError(err error) error {
 	}
 
 	errStr := err.Error()
-	
+
 	// Check for MANIFEST_UNKNOWN error patterns
 	if strings.Contains(errStr, "MANIFEST_UNKNOWN") ||
 		strings.Contains(errStr, "manifest unknown") ||
