@@ -4,6 +4,7 @@
  */
 
 import { BaseComponent } from './base-component.js';
+import { escapeHtml } from '../utils/security.js';
 import { formatDate, formatRelativeTime } from '../utils/date.js';
 import { truncateDigest } from '../utils/severity.js';
 import { Modal } from './common.js';
@@ -172,7 +173,7 @@ export class ScansList extends BaseComponent {
                         id="filter-repository" 
                         class="filter-input"
                         placeholder="Filter by repository name..."
-                        value="${this.escapeHtml(this.filters.repository)}"
+                        value="${escapeHtml(this.filters.repository)}"
                     />
                 </div>
 
@@ -208,7 +209,7 @@ export class ScansList extends BaseComponent {
                         <polyline points="23 4 23 10 17 10"></polyline>
                         <path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"></path>
                     </svg>
-                    Rescan Repository: ${this.escapeHtml(this.filters.repository)}
+                    Rescan Repository: ${escapeHtml(this.filters.repository)}
                 </button>
             </div>
         `;
@@ -287,10 +288,10 @@ export class ScansList extends BaseComponent {
         ].filter(v => v.count > 0);
 
         return `
-            <tr class="scan-row clickable" data-digest="${this.escapeHtml(scan.Digest)}">
-                <td>${this.escapeHtml(scan.Repository || 'N/A')}</td>
-                <td>${this.escapeHtml(scan.Tag || 'N/A')}</td>
-                <td class="digest-cell" title="${this.escapeHtml(scan.Digest)}">${this.escapeHtml(truncatedDigest)}</td>
+            <tr class="scan-row clickable" data-digest="${escapeHtml(scan.Digest)}">
+                <td>${escapeHtml(scan.Repository || 'N/A')}</td>
+                <td>${escapeHtml(scan.Tag || 'N/A')}</td>
+                <td class="digest-cell" title="${escapeHtml(scan.Digest)}">${escapeHtml(truncatedDigest)}</td>
                 <td title="${formatDate(scan.CreatedAt)}">${scanTime}</td>
                 <td><span class="status-badge ${statusClass}">${statusText}</span></td>
                 <td class="vulnerabilities-cell">
@@ -529,7 +530,7 @@ export class ScansList extends BaseComponent {
                         <polyline points="23 4 23 10 17 10"></polyline>
                         <path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"></path>
                     </svg>
-                    Rescan Repository: ${this.escapeHtml(repository)}
+                    Rescan Repository: ${escapeHtml(repository)}
                 `;
             }
         }

@@ -6,6 +6,7 @@
 import { Router } from './router.js';
 import { APIClient, APIError } from './api.js';
 import { AuthManager } from './auth.js';
+import { escapeHtml } from './utils/security.js';
 import { Dashboard } from './components/dashboard.js';
 import { ScansList } from './components/scans.js';
 import { ScanDetail } from './components/scan-detail.js';
@@ -633,7 +634,7 @@ class Application {
                     <line x1="12" y1="16" x2="12.01" y2="16"></line>
                 </svg>
                 <h3>Error Loading View</h3>
-                <p>${this.escapeHtml(error.message || 'An unexpected error occurred')}</p>
+                <p>${escapeHtml(error.message || 'An unexpected error occurred')}</p>
                 <button class="btn btn-primary" id="reload-page-btn">Reload Page</button>
             </div>
         `;
@@ -662,7 +663,7 @@ class Application {
                             <line x1="12" y1="16" x2="12.01" y2="16"></line>
                         </svg>
                         <h3>Application Error</h3>
-                        <p>${this.escapeHtml(error.message || 'Failed to initialize application')}</p>
+                        <p>${escapeHtml(error.message || 'Failed to initialize application')}</p>
                         <button class="btn btn-primary" id="reload-app-btn">Reload Application</button>
                     </div>
                 </div>
@@ -843,15 +844,6 @@ class Application {
         });
     }
 
-    /**
-     * Escape HTML to prevent XSS
-     */
-    escapeHtml(text) {
-        if (text === null || text === undefined) return '';
-        const div = document.createElement('div');
-        div.textContent = String(text);
-        return div.innerHTML;
-    }
 }
 
 // Initialize application when DOM is ready

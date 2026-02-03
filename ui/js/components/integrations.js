@@ -4,6 +4,7 @@
  */
 
 import { BaseComponent } from './base-component.js';
+import { escapeHtml } from '../utils/security.js';
 import { LoadingSpinner, ErrorState } from './common.js';
 
 export class Integrations extends BaseComponent {
@@ -95,8 +96,8 @@ export class Integrations extends BaseComponent {
         return `
             <div class="integration-details">
                 <div class="integration-header">
-                    <h3>${this.escapeHtml(title)}</h3>
-                    <p>${this.escapeHtml(description)}</p>
+                    <h3>${escapeHtml(title)}</h3>
+                    <p>${escapeHtml(description)}</p>
                     <div class="integration-actions">
                         <button class="btn btn-primary" id="copy-integration-btn">
                             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
@@ -116,7 +117,7 @@ export class Integrations extends BaseComponent {
                     </div>
                 </div>
                 <div class="integration-code">
-                    <pre><code id="integration-code-content">${this.escapeHtml(this.integrationData)}</code></pre>
+                    <pre><code id="integration-code-content">${escapeHtml(this.integrationData)}</code></pre>
                 </div>
             </div>
         `;
@@ -181,7 +182,7 @@ export class Integrations extends BaseComponent {
                             <line x1="9" y1="9" x2="15" y2="15"></line>
                         </svg>
                         <h3>Error Loading Integration</h3>
-                        <p>${this.escapeHtml(error.message || 'Failed to load integration data')}</p>
+                        <p>${escapeHtml(error.message || 'Failed to load integration data')}</p>
                     </div>
                 `;
             }

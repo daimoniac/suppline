@@ -4,6 +4,7 @@
  */
 
 import { BaseComponent } from './base-component.js';
+import { escapeHtml } from '../utils/security.js';
 import { formatDate, formatRelativeTime } from '../utils/date.js';
 import { Modal } from './common.js';
 
@@ -166,7 +167,7 @@ export class RepositoryDetail extends BaseComponent {
                         Back
                     </button>
                     <div class="repository-detail-title">
-                        <h1 class="page-title">${this.escapeHtml(this.repositoryName)}</h1>
+                        <h1 class="page-title">${escapeHtml(this.repositoryName)}</h1>
                         <p class="page-subtitle">Repository with ${this.total} tag${this.total !== 1 ? 's' : ''}</p>
                     </div>
                 </div>
@@ -191,7 +192,7 @@ export class RepositoryDetail extends BaseComponent {
                         id="filter-tag-search" 
                         class="filter-input"
                         placeholder="Filter by tag name..."
-                        value="${this.escapeHtml(this.filters.search)}"
+                        value="${escapeHtml(this.filters.search)}"
                     />
                 </div>
 
@@ -280,15 +281,15 @@ export class RepositoryDetail extends BaseComponent {
             .join(' ');
 
         return `
-            <tr class="tag-row" data-tag="${this.escapeHtml(tag.Name)}" data-digest="${this.escapeHtml(tag.Digest || '')}">
-                <td class="tag-name-cell clickable" data-digest="${this.escapeHtml(tag.Digest || '')}">${this.escapeHtml(tag.Name)}</td>
+            <tr class="tag-row" data-tag="${escapeHtml(tag.Name)}" data-digest="${escapeHtml(tag.Digest || '')}">
+                <td class="tag-name-cell clickable" data-digest="${escapeHtml(tag.Digest || '')}">${escapeHtml(tag.Name)}</td>
                 <td title="${tag.LastScanTime ? formatDate(tag.LastScanTime) : 'Never scanned'}">${lastScanTime}</td>
                 <td class="vulnerabilities-cell">
                     ${vulnDisplay}
                 </td>
                 <td><span class="status-badge ${statusClass}">${statusText}</span></td>
                 <td>
-                    <button class="btn btn-sm btn-warning rescan-tag-btn" data-tag="${this.escapeHtml(tag.Name)}">
+                    <button class="btn btn-sm btn-warning rescan-tag-btn" data-tag="${escapeHtml(tag.Name)}">
                         Rescan
                     </button>
                 </td>

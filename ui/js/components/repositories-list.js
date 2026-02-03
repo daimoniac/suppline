@@ -4,6 +4,7 @@
  */
 
 import { BaseComponent } from './base-component.js';
+import { escapeHtml } from '../utils/security.js';
 import { formatDate, formatRelativeTime } from '../utils/date.js';
 import { Modal } from './common.js';
 
@@ -150,7 +151,7 @@ export class RepositoriesList extends BaseComponent {
                         id="filter-repository-search" 
                         class="filter-input"
                         placeholder="Filter by repository name..."
-                        value="${this.escapeHtml(this.filters.search)}"
+                        value="${escapeHtml(this.filters.search)}"
                     />
                 </div>
 
@@ -239,15 +240,15 @@ export class RepositoriesList extends BaseComponent {
             .join(' ');
 
         return `
-            <tr class="repository-row" data-repository="${this.escapeHtml(repo.Name)}">
-                <td class="repository-name-cell clickable" data-repository="${this.escapeHtml(repo.Name)}">${this.escapeHtml(repo.Name)}</td>
+            <tr class="repository-row" data-repository="${escapeHtml(repo.Name)}">
+                <td class="repository-name-cell clickable" data-repository="${escapeHtml(repo.Name)}">${escapeHtml(repo.Name)}</td>
                 <td title="${repo.LastScanTime ? formatDate(repo.LastScanTime) : 'Never scanned'}">${lastScanTime}</td>
                 <td class="vulnerabilities-cell">
                     ${vulnDisplay}
                 </td>
                 <td><span class="status-badge ${statusClass}">${statusText}</span></td>
                 <td>
-                    <button class="btn btn-sm btn-warning rescan-repo-btn" data-repository="${this.escapeHtml(repo.Name)}">
+                    <button class="btn btn-sm btn-warning rescan-repo-btn" data-repository="${escapeHtml(repo.Name)}">
                         Rescan
                     </button>
                 </td>

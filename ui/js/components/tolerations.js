@@ -4,6 +4,7 @@
  */
 
 import { BaseComponent } from './base-component.js';
+import { escapeHtml } from '../utils/security.js';
 import { formatDate, formatRelativeTime, isPast, daysUntil, isWithinDays } from '../utils/date.js';
 import { truncateText } from '../utils/helpers.js';
 
@@ -167,7 +168,7 @@ export class Tolerations extends BaseComponent {
                         id="filter-cve-id" 
                         class="filter-input"
                         placeholder="Filter by CVE ID..."
-                        value="${this.escapeHtml(this.filters.cve_id)}"
+                        value="${escapeHtml(this.filters.cve_id)}"
                     />
                 </div>
 
@@ -178,7 +179,7 @@ export class Tolerations extends BaseComponent {
                         id="filter-repository" 
                         class="filter-input"
                         placeholder="Filter by repository..."
-                        value="${this.escapeHtml(this.filters.repository)}"
+                        value="${escapeHtml(this.filters.repository)}"
                     />
                 </div>
 
@@ -270,10 +271,10 @@ export class Tolerations extends BaseComponent {
             : 'Never';
 
         return `
-            <tr class="toleration-row clickable" data-repository="${this.escapeHtml(toleration.Repository)}" data-cve="${this.escapeHtml(toleration.CVEID)}">
-                <td class="cve-cell">${this.escapeHtml(toleration.CVEID || 'N/A')}</td>
-                <td>${this.escapeHtml(toleration.Repository || 'N/A')}</td>
-                <td class="statement-cell" title="${this.escapeHtml(toleration.Statement || 'N/A')}">${this.escapeHtml(truncatedStatement)}</td>
+            <tr class="toleration-row clickable" data-repository="${escapeHtml(toleration.Repository)}" data-cve="${escapeHtml(toleration.CVEID)}">
+                <td class="cve-cell">${escapeHtml(toleration.CVEID || 'N/A')}</td>
+                <td>${escapeHtml(toleration.Repository || 'N/A')}</td>
+                <td class="statement-cell" title="${escapeHtml(toleration.Statement || 'N/A')}">${escapeHtml(truncatedStatement)}</td>
                 <td title="${formatDate(toleration.ToleratedAt)}">${toleratedTime}</td>
                 <td>${expiresDisplay}</td>
                 <td>${statusBadge}</td>
@@ -600,11 +601,11 @@ export class ExpiringTolerations extends BaseComponent {
                         urgency === 'expired' ? 'urgency-expired' : '';
 
         return `
-            <tr class="toleration-row clickable ${rowClass}" data-repository="${this.escapeHtml(toleration.Repository)}" data-cve="${this.escapeHtml(toleration.CVEID)}">
+            <tr class="toleration-row clickable ${rowClass}" data-repository="${escapeHtml(toleration.Repository)}" data-cve="${escapeHtml(toleration.CVEID)}">
                 <td>${urgencyBadge}</td>
-                <td class="cve-cell">${this.escapeHtml(toleration.CVEID || 'N/A')}</td>
-                <td>${this.escapeHtml(toleration.Repository || 'N/A')}</td>
-                <td class="statement-cell" title="${this.escapeHtml(toleration.Statement || 'N/A')}">${this.escapeHtml(truncatedStatement)}</td>
+                <td class="cve-cell">${escapeHtml(toleration.CVEID || 'N/A')}</td>
+                <td>${escapeHtml(toleration.Repository || 'N/A')}</td>
+                <td class="statement-cell" title="${escapeHtml(toleration.Statement || 'N/A')}">${escapeHtml(truncatedStatement)}</td>
                 <td>${expiresDisplay}</td>
                 <td><strong>${daysLeftDisplay}</strong></td>
             </tr>

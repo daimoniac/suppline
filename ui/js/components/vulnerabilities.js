@@ -4,6 +4,7 @@
  */
 
 import { BaseComponent } from './base-component.js';
+import { escapeHtml } from '../utils/security.js';
 import { formatDate, formatRelativeTime } from '../utils/date.js';
 import { truncateDigest } from '../utils/severity.js';
 
@@ -151,7 +152,7 @@ export class Vulnerabilities extends BaseComponent {
                         id="filter-cve-id" 
                         class="filter-input"
                         placeholder="e.g., CVE-2023-12345"
-                        value="${this.escapeHtml(this.filters.cve_id)}"
+                        value="${escapeHtml(this.filters.cve_id)}"
                     />
                 </div>
 
@@ -173,7 +174,7 @@ export class Vulnerabilities extends BaseComponent {
                         id="filter-package-name" 
                         class="filter-input"
                         placeholder="Filter by package name..."
-                        value="${this.escapeHtml(this.filters.package_name)}"
+                        value="${escapeHtml(this.filters.package_name)}"
                     />
                 </div>
 
@@ -184,7 +185,7 @@ export class Vulnerabilities extends BaseComponent {
                         id="filter-repository" 
                         class="filter-input"
                         placeholder="Filter by repository..."
-                        value="${this.escapeHtml(this.filters.repository)}"
+                        value="${escapeHtml(this.filters.repository)}"
                     />
                 </div>
 
@@ -235,20 +236,20 @@ export class Vulnerabilities extends BaseComponent {
     renderVulnerabilityGroup(group) {
         const severityClass = group.severity ? group.severity.toLowerCase() : 'unknown';
         const affectedCount = group.affectedImages.length;
-        const groupId = `vuln-group-${this.escapeHtml(group.cveId).replace(/[^a-zA-Z0-9]/g, '-')}`;
+        const groupId = `vuln-group-${escapeHtml(group.cveId).replace(/[^a-zA-Z0-9]/g, '-')}`;
 
         return `
             <div class="vulnerability-group card">
                 <div class="vulnerability-group-header" data-group-id="${groupId}">
                     <div class="vulnerability-group-info">
                         <div class="vulnerability-group-title">
-                            <span class="vuln-badge vuln-badge-${severityClass}">${this.escapeHtml(group.severity || 'UNKNOWN')}</span>
-                            <h3 class="cve-id">${this.escapeHtml(group.cveId)}</h3>
+                            <span class="vuln-badge vuln-badge-${severityClass}">${escapeHtml(group.severity || 'UNKNOWN')}</span>
+                            <h3 class="cve-id">${escapeHtml(group.cveId)}</h3>
                             <span class="affected-count">${affectedCount} affected image${affectedCount !== 1 ? 's' : ''}</span>
                         </div>
-                        <p class="vulnerability-description">${this.escapeHtml(group.description)}</p>
+                        <p class="vulnerability-description">${escapeHtml(group.description)}</p>
                         ${group.primaryURL ? `
-                            <a href="${this.escapeHtml(group.primaryURL)}" target="_blank" rel="noopener noreferrer" class="vulnerability-link">
+                            <a href="${escapeHtml(group.primaryURL)}" target="_blank" rel="noopener noreferrer" class="vulnerability-link">
                                 View Details
                                 <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                                     <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"></path>
@@ -310,13 +311,13 @@ export class Vulnerabilities extends BaseComponent {
         const fixedVersion = image.fixedVersion || 'N/A';
 
         return `
-            <tr class="affected-image-row clickable" data-digest="${this.escapeHtml(image.digest)}">
-                <td>${this.escapeHtml(image.repository || 'N/A')}</td>
-                <td>${this.escapeHtml(image.tag || 'N/A')}</td>
-                <td class="digest-cell" title="${this.escapeHtml(image.digest)}">${this.escapeHtml(truncatedDigest)}</td>
-                <td>${this.escapeHtml(image.packageName || 'N/A')}</td>
-                <td>${this.escapeHtml(image.installedVersion || 'N/A')}</td>
-                <td>${this.escapeHtml(fixedVersion)}</td>
+            <tr class="affected-image-row clickable" data-digest="${escapeHtml(image.digest)}">
+                <td>${escapeHtml(image.repository || 'N/A')}</td>
+                <td>${escapeHtml(image.tag || 'N/A')}</td>
+                <td class="digest-cell" title="${escapeHtml(image.digest)}">${escapeHtml(truncatedDigest)}</td>
+                <td>${escapeHtml(image.packageName || 'N/A')}</td>
+                <td>${escapeHtml(image.installedVersion || 'N/A')}</td>
+                <td>${escapeHtml(fixedVersion)}</td>
                 <td title="${formatDate(image.scannedAt)}">${scanTime}</td>
             </tr>
         `;

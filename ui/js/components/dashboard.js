@@ -5,6 +5,7 @@
  */
 
 import { BaseComponent } from './base-component.js';
+import { escapeHtml } from '../utils/security.js';
 import { formatRelativeTime } from '../utils/date.js';
 import { getSeverityBadge } from '../utils/severity.js';
 
@@ -235,19 +236,19 @@ export class Dashboard extends BaseComponent {
             if (repositories.length === 0) {
                 repoDisplay = 'No repositories';
             } else if (repositories.length <= 3) {
-                repoDisplay = repositories.map(r => this.escapeHtml(r.Repository)).join(', ');
+                repoDisplay = repositories.map(r => escapeHtml(r.Repository)).join(', ');
             } else {
                 repoDisplay = 'multiple repositories';
             }
 
             return `
-                <div class="toleration-attention-item toleration-expired" data-cve="${this.escapeHtml(toleration.CVEID)}">
+                <div class="toleration-attention-item toleration-expired" data-cve="${escapeHtml(toleration.CVEID)}">
                     <div class="toleration-attention-header">
-                        <span class="toleration-attention-cve">${this.escapeHtml(toleration.CVEID)}</span>
+                        <span class="toleration-attention-cve">${escapeHtml(toleration.CVEID)}</span>
                         <span class="status-badge status-danger">⚠️ EXPIRED</span>
                     </div>
                     <div class="toleration-attention-repo">${repoDisplay}</div>
-                    <div class="toleration-attention-statement">${this.escapeHtml(toleration.Statement || 'No statement provided')}</div>
+                    <div class="toleration-attention-statement">${escapeHtml(toleration.Statement || 'No statement provided')}</div>
                     <div class="toleration-attention-expiry toleration-attention-expiry-danger">
                         Expired ${daysExpired} day${daysExpired !== 1 ? 's' : ''} ago on ${expiredDateStr}
                     </div>
@@ -276,19 +277,19 @@ export class Dashboard extends BaseComponent {
                 if (repositories.length === 0) {
                     repoDisplay = 'No repositories';
                 } else if (repositories.length <= 3) {
-                    repoDisplay = repositories.map(r => this.escapeHtml(r.Repository)).join(', ');
+                    repoDisplay = repositories.map(r => escapeHtml(r.Repository)).join(', ');
                 } else {
                     repoDisplay = 'multiple repositories';
                 }
 
                 return `
-                    <div class="toleration-attention-item toleration-expiring" data-cve="${this.escapeHtml(toleration.CVEID)}">
+                    <div class="toleration-attention-item toleration-expiring" data-cve="${escapeHtml(toleration.CVEID)}">
                         <div class="toleration-attention-header">
-                            <span class="toleration-attention-cve">${this.escapeHtml(toleration.CVEID)}</span>
+                            <span class="toleration-attention-cve">${escapeHtml(toleration.CVEID)}</span>
                             <span class="status-badge status-warning">⏰ Expiring Soon</span>
                         </div>
                         <div class="toleration-attention-repo">${repoDisplay}</div>
-                        <div class="toleration-attention-statement">${this.escapeHtml(toleration.Statement || 'No statement provided')}</div>
+                        <div class="toleration-attention-statement">${escapeHtml(toleration.Statement || 'No statement provided')}</div>
                         <div class="toleration-attention-expiry">
                             ${daysUntilExpiry !== null ? `Expires in ${daysUntilExpiry} day${daysUntilExpiry !== 1 ? 's' : ''} on ${expiryDateStr}` : 'No expiry date'}
                         </div>
@@ -415,7 +416,7 @@ export class Dashboard extends BaseComponent {
 
         return `
             <div class="repository-bar-item">
-                <div class="repository-bar-label repository-link" data-repository="${this.escapeHtml(repo)}">${this.escapeHtml(repo)}</div>
+                <div class="repository-bar-label repository-link" data-repository="${escapeHtml(repo)}">${escapeHtml(repo)}</div>
                 <div class="repository-bar-container">
                     <div class="repository-bar-fill" data-width="${percentage}"></div>
                     <div class="repository-bar-count">${count}</div>
@@ -480,10 +481,10 @@ export class Dashboard extends BaseComponent {
         ].filter(v => v.count > 0);
 
         return `
-            <tr class="scan-row" data-digest="${this.escapeHtml(scan.Digest)}">
-                <td>${this.escapeHtml(scan.Repository || 'N/A')}</td>
-                <td>${this.escapeHtml(scan.Tag || 'N/A')}</td>
-                <td class="digest-cell" title="${this.escapeHtml(scan.Digest)}">${this.escapeHtml(truncatedDigest)}</td>
+            <tr class="scan-row" data-digest="${escapeHtml(scan.Digest)}">
+                <td>${escapeHtml(scan.Repository || 'N/A')}</td>
+                <td>${escapeHtml(scan.Tag || 'N/A')}</td>
+                <td class="digest-cell" title="${escapeHtml(scan.Digest)}">${escapeHtml(truncatedDigest)}</td>
                 <td>${scanTime}</td>
                 <td><span class="status-badge ${statusClass}">${statusText}</span></td>
                 <td class="vulnerabilities-cell">

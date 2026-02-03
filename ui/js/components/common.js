@@ -3,6 +3,8 @@
  * Shared components for notifications, loading states, modals, badges, and error handling
  */
 
+import { escapeHtml } from '../utils/security.js';
+
 /**
  * Notification/Toast System
  * Displays temporary notification messages to the user
@@ -63,7 +65,7 @@ export class NotificationManager {
         
         notification.innerHTML = `
             ${icon}
-            <span>${this.escapeHtml(message)}</span>
+            <span>${escapeHtml(message)}</span>
             <button class="notification-close" aria-label="Close">&times;</button>
         `;
 
@@ -124,15 +126,6 @@ export class NotificationManager {
     dismissAll() {
         this.notifications.forEach((_, id) => this.dismiss(id));
     }
-
-    /**
-     * Escape HTML to prevent XSS
-     */
-    escapeHtml(text) {
-        const div = document.createElement('div');
-        div.textContent = text;
-        return div.innerHTML;
-    }
 }
 
 /**
@@ -154,7 +147,7 @@ export class LoadingSpinner {
         
         container.innerHTML = `
             <div class="${spinnerClass}"></div>
-            ${message ? `<p>${this.escapeHtml(message)}</p>` : ''}
+            ${message ? `<p>${escapeHtml(message)}</p>` : ''}
         `;
         
         return container;
@@ -180,14 +173,7 @@ export class LoadingSpinner {
         container.appendChild(this.create(message));
     }
 
-    /**
-     * Escape HTML to prevent XSS
-     */
-    static escapeHtml(text) {
-        const div = document.createElement('div');
-        div.textContent = text;
-        return div.innerHTML;
-    }
+
 }
 
 /**
@@ -249,14 +235,14 @@ export class Modal {
         overlay.innerHTML = `
             <div class="modal-dialog">
                 <div class="modal-header">
-                    <h3>${this.escapeHtml(this.title)}</h3>
+                    <h3>${escapeHtml(this.title)}</h3>
                 </div>
                 <div class="modal-body">
-                    ${typeof this.content === 'string' ? `<p>${this.escapeHtml(this.content)}</p>` : ''}
+                    ${typeof this.content === 'string' ? `<p>${escapeHtml(this.content)}</p>` : ''}
                 </div>
                 <div class="modal-footer">
-                    ${this.showCancel ? `<button class="btn btn-secondary modal-cancel">${this.escapeHtml(this.cancelText)}</button>` : ''}
-                    <button class="btn btn-primary modal-confirm">${this.escapeHtml(this.confirmText)}</button>
+                    ${this.showCancel ? `<button class="btn btn-secondary modal-cancel">${escapeHtml(this.cancelText)}</button>` : ''}
+                    <button class="btn btn-primary modal-confirm">${escapeHtml(this.confirmText)}</button>
                 </div>
             </div>
         `;
@@ -292,15 +278,6 @@ export class Modal {
         });
 
         return overlay;
-    }
-
-    /**
-     * Escape HTML to prevent XSS
-     */
-    escapeHtml(text) {
-        const div = document.createElement('div');
-        div.textContent = text;
-        return div.innerHTML;
     }
 
     /**
@@ -356,7 +333,7 @@ export class Badge {
      */
     static create(text, type = 'info') {
         const typeClass = type === 'info' ? 'status-info' : `badge-${type}`;
-        return `<span class="badge ${typeClass}">${this.escapeHtml(text)}</span>`;
+        return `<span class="badge ${typeClass}">${escapeHtml(text)}</span>`;
     }
 
     /**
@@ -391,14 +368,7 @@ export class Badge {
         return `<span class="status-badge status-${type}">${text}</span>`;
     }
 
-    /**
-     * Escape HTML to prevent XSS
-     */
-    static escapeHtml(text) {
-        const div = document.createElement('div');
-        div.textContent = text;
-        return div.innerHTML;
-    }
+
 }
 
 /**
@@ -423,8 +393,8 @@ export class ErrorState {
                 <line x1="15" y1="9" x2="9" y2="15"></line>
                 <line x1="9" y1="9" x2="15" y2="15"></line>
             </svg>
-            <h3>${this.escapeHtml(title)}</h3>
-            <p>${this.escapeHtml(message)}</p>
+            <h3>${escapeHtml(title)}</h3>
+            <p>${escapeHtml(message)}</p>
             ${onRetry ? '<button class="btn btn-primary retry-btn">Try Again</button>' : ''}
         `;
 
@@ -446,15 +416,6 @@ export class ErrorState {
     static show(container, title, message, onRetry = null) {
         container.innerHTML = '';
         container.appendChild(this.create(title, message, onRetry));
-    }
-
-    /**
-     * Escape HTML to prevent XSS
-     */
-    static escapeHtml(text) {
-        const div = document.createElement('div');
-        div.textContent = text;
-        return div.innerHTML;
     }
 }
 
@@ -481,9 +442,9 @@ export class EmptyState {
                 <line x1="12" y1="8" x2="12" y2="12"></line>
                 <line x1="12" y1="16" x2="12.01" y2="16"></line>
             </svg>
-            <h3>${this.escapeHtml(title)}</h3>
-            <p>${this.escapeHtml(message)}</p>
-            ${actionText && onAction ? `<button class="btn btn-primary action-btn">${this.escapeHtml(actionText)}</button>` : ''}
+            <h3>${escapeHtml(title)}</h3>
+            <p>${escapeHtml(message)}</p>
+            ${actionText && onAction ? `<button class="btn btn-primary action-btn">${escapeHtml(actionText)}</button>` : ''}
         `;
 
         if (actionText && onAction) {
@@ -503,15 +464,6 @@ export class EmptyState {
     static show(container, title, message) {
         container.innerHTML = '';
         container.appendChild(this.create(title, message));
-    }
-
-    /**
-     * Escape HTML to prevent XSS
-     */
-    static escapeHtml(text) {
-        const div = document.createElement('div');
-        div.textContent = text;
-        return div.innerHTML;
     }
 }
 

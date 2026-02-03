@@ -4,6 +4,7 @@
  */
 
 import { LoadingSpinner, ErrorState, notifications } from './common.js';
+import { escapeHtml } from '../utils/security.js';
 
 export class BaseComponent {
     constructor(apiClient) {
@@ -12,13 +13,10 @@ export class BaseComponent {
 
     /**
      * Escape HTML to prevent XSS
-     * Centralized implementation used by all components
+     * Delegates to centralized security utility
      */
     escapeHtml(text) {
-        if (text === null || text === undefined) return '';
-        const div = document.createElement('div');
-        div.textContent = String(text);
-        return div.innerHTML;
+        return escapeHtml(text);
     }
 
     /**

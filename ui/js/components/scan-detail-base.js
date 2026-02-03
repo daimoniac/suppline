@@ -5,6 +5,7 @@
  */
 
 import { BaseComponent } from './base-component.js';
+import { escapeHtml } from '../utils/security.js';
 import { formatDate, formatRelativeTime, formatExpirationStatus, getExpirationStatusClass } from '../utils/date.js';
 import { 
     getSeverityBadge, 
@@ -52,15 +53,15 @@ export class ScanDetailBase extends BaseComponent {
                 <div class="info-grid">
                     <div>
                         <div class="info-label">Repository</div>
-                        <div class="info-value">${this.escapeHtml(this.scan.Repository || 'N/A')}</div>
+                        <div class="info-value">${escapeHtml(this.scan.Repository || 'N/A')}</div>
                     </div>
                     <div>
                         <div class="info-label">Tag</div>
-                        <div class="info-value">${this.escapeHtml(this.scan.Tag || 'N/A')}</div>
+                        <div class="info-value">${escapeHtml(this.scan.Tag || 'N/A')}</div>
                     </div>
                     <div>
                         <div class="info-label">Digest</div>
-                        <div class="digest-cell" title="${this.escapeHtml(this.scan.Digest)}">${this.escapeHtml(truncateDigest(this.scan.Digest))}</div>
+                        <div class="digest-cell" title="${escapeHtml(this.scan.Digest)}">${escapeHtml(truncateDigest(this.scan.Digest))}</div>
                     </div>
                     <div>
                         <div class="info-label">Scanned</div>
@@ -241,31 +242,31 @@ export class ScanDetailBase extends BaseComponent {
                 <div class="vulnerability-header">
                     <div class="vulnerability-cve">
                         ${primaryUrl 
-                            ? `<a href="${this.escapeHtml(primaryUrl)}" target="_blank" rel="noopener noreferrer" class="vulnerability-link">${this.escapeHtml(cveId)}</a>`
-                            : this.escapeHtml(cveId)
+                            ? `<a href="${escapeHtml(primaryUrl)}" target="_blank" rel="noopener noreferrer" class="vulnerability-link">${escapeHtml(cveId)}</a>`
+                            : escapeHtml(cveId)
                         }
                     </div>
-                    ${title ? `<div class="vulnerability-title">${this.escapeHtml(title)}</div>` : ''}
+                    ${title ? `<div class="vulnerability-title">${escapeHtml(title)}</div>` : ''}
                 </div>
                 <div class="vulnerability-details">
                     <div>
                         <span class="detail-label">Package:</span>
-                        <span class="detail-value">${this.escapeHtml(packageName)}</span>
+                        <span class="detail-value">${escapeHtml(packageName)}</span>
                     </div>
                     <div>
                         <span class="detail-label">Version:</span>
-                        <span class="detail-value">${this.escapeHtml(versionDisplay)}</span>
+                        <span class="detail-value">${escapeHtml(versionDisplay)}</span>
                     </div>
                     ${fixedVersion ? `
                         <div>
                             <span class="detail-label">Fixed In:</span>
-                            <span class="detail-value fixed-version">${this.escapeHtml(fixedVersion)}</span>
+                            <span class="detail-value fixed-version">${escapeHtml(fixedVersion)}</span>
                         </div>
                     ` : ''}
                 </div>
                 ${description ? `
                     <div class="vulnerability-description">
-                        ${this.escapeHtml(description)}
+                        ${escapeHtml(description)}
                     </div>
                 ` : ''}
             </div>
@@ -333,14 +334,14 @@ export class ScanDetailBase extends BaseComponent {
                     <span class="toleration-expand-icon">${expandIcon}</span>
                     <div class="toleration-card-main">
                         <div class="toleration-header-top">
-                            <div class="toleration-cve-id">${this.escapeHtml(cveId)}</div>
+                            <div class="toleration-cve-id">${escapeHtml(cveId)}</div>
                             <div class="toleration-card-meta">
                                 <span class="toleration-meta-item">Tolerated: ${toleratedAt}</span>
                                 <span class="toleration-meta-item">Expires: ${expiresAt ? formatDate(expiresAt) : 'Never'}</span>
                                 <span class="${badgeClass}">${expirationText}</span>
                             </div>
                         </div>
-                        <div class="toleration-statement">${this.escapeHtml(statement)}</div>
+                        <div class="toleration-statement">${escapeHtml(statement)}</div>
                     </div>
                 </div>
                 <div class="toleration-card-content ${isExpanded ? 'expanded' : 'collapsed'}">
@@ -380,25 +381,25 @@ export class ScanDetailBase extends BaseComponent {
                 <div class="mitigated-vuln-header">
                     ${getSeverityBadge(severity)}
                     <div class="mitigated-vuln-info">
-                        <div class="mitigated-vuln-title">${title ? this.escapeHtml(title) : 'No title'}</div>
-                        <div class="mitigated-vuln-package">${this.escapeHtml(packageName)}</div>
+                        <div class="mitigated-vuln-title">${title ? escapeHtml(title) : 'No title'}</div>
+                        <div class="mitigated-vuln-package">${escapeHtml(packageName)}</div>
                     </div>
                 </div>
                 <div class="mitigated-vuln-details">
                     <div>
                         <span class="detail-label">Version:</span>
-                        <span class="detail-value">${this.escapeHtml(versionDisplay)}</span>
+                        <span class="detail-value">${escapeHtml(versionDisplay)}</span>
                     </div>
                     ${fixedVersion ? `
                         <div>
                             <span class="detail-label">Fixed In:</span>
-                            <span class="detail-value fixed-version">${this.escapeHtml(fixedVersion)}</span>
+                            <span class="detail-value fixed-version">${escapeHtml(fixedVersion)}</span>
                         </div>
                     ` : ''}
                 </div>
                 ${description ? `
                     <div class="mitigated-vuln-description">
-                        ${this.escapeHtml(description)}
+                        ${escapeHtml(description)}
                     </div>
                 ` : ''}
             </div>
@@ -418,7 +419,7 @@ export class ScanDetailBase extends BaseComponent {
                         <line x1="12" y1="16" x2="12.01" y2="16"></line>
                     </svg>
                     <h3>Error Loading Scan</h3>
-                    <p>${this.escapeHtml(message)}</p>
+                    <p>${escapeHtml(message)}</p>
                 </div>
             </div>
         `;

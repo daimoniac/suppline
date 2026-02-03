@@ -5,6 +5,7 @@
  */
 
 import { ScansList } from './scans.js';
+import { escapeHtml } from '../utils/security.js';
 import { formatDate, formatRelativeTime } from '../utils/date.js';
 import { truncateDigest } from '../utils/severity.js';
 
@@ -79,7 +80,7 @@ export class FailedImages extends ScansList {
                         id="filter-repository" 
                         class="filter-input"
                         placeholder="Filter by repository name..."
-                        value="${this.escapeHtml(this.filters.repository)}"
+                        value="${escapeHtml(this.filters.repository)}"
                     />
                 </div>
 
@@ -143,10 +144,10 @@ export class FailedImages extends ScansList {
         const failureReasons = this.renderFailureReasons(scan);
 
         return `
-            <tr class="failed-image-row clickable" data-digest="${this.escapeHtml(scan.Digest)}">
-                <td>${this.escapeHtml(scan.Repository || 'N/A')}</td>
-                <td>${this.escapeHtml(scan.Tag || 'N/A')}</td>
-                <td class="digest-cell" title="${this.escapeHtml(scan.Digest)}">${this.escapeHtml(truncatedDigest)}</td>
+            <tr class="failed-image-row clickable" data-digest="${escapeHtml(scan.Digest)}">
+                <td>${escapeHtml(scan.Repository || 'N/A')}</td>
+                <td>${escapeHtml(scan.Tag || 'N/A')}</td>
+                <td class="digest-cell" title="${escapeHtml(scan.Digest)}">${escapeHtml(truncatedDigest)}</td>
                 <td title="${formatDate(scan.CreatedAt)}">${scanTime}</td>
                 <td class="vulnerability-breakdown-cell">
                     ${vulnBreakdown}
