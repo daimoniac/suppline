@@ -8,7 +8,6 @@ import (
 	"time"
 
 	"github.com/daimoniac/suppline/internal/config"
-	"github.com/daimoniac/suppline/internal/observability"
 	"github.com/daimoniac/suppline/internal/queue"
 	"github.com/daimoniac/suppline/internal/registry"
 	"github.com/daimoniac/suppline/internal/statestore"
@@ -44,9 +43,9 @@ type Config struct {
 // NewWatcher creates a new registry watcher
 func NewWatcher(
 	registryClient registry.Client,
-	regsyncConfig  *config.RegsyncConfig,
-	stateStore     statestore.StateStore,
-	taskQueue      queue.TaskQueue,
+	regsyncConfig *config.RegsyncConfig,
+	stateStore statestore.StateStore,
+	taskQueue queue.TaskQueue,
 	config Config,
 	logger *slog.Logger,
 ) Watcher {
@@ -137,10 +136,10 @@ func (w *watcherImpl) processRepository(ctx context.Context, repo string) error 
 
 	// Check if this repository has specific tags defined (type=image entries)
 	specificTags := w.regsyncConfig.GetTagsForRepository(repo)
-	
+
 	var tags []string
 	var err error
-	
+
 	if len(specificTags) > 0 {
 		// For type=image entries, use the specific tags
 		tags = specificTags
@@ -154,7 +153,7 @@ func (w *watcherImpl) processRepository(ctx context.Context, repo string) error 
 			// Error already classified in registry package
 			return fmt.Errorf("failed to list tags: %w", err)
 		}
-		
+
 		w.logger.Debug("repository tags discovered",
 			"repo", repo,
 			"tag_count", len(tags))
@@ -250,14 +249,11 @@ func (w *watcherImpl) processTag(ctx context.Context, repo, tag string, tolerati
 		isRescan = false
 	}
 
-	// Get metrics instance
-	metrics := observability.GetMetrics()
-
 	// Log decision with structured fields and record metrics
 	if shouldScan {
 		// Get last scan info for additional context in logs
 		lastScan, scanErr := w.stateStore.GetLastScan(ctx, currentDigest)
-		
+
 		// Build log attributes
 		attrs := []any{
 			"repo", repo,
@@ -266,7 +262,7 @@ func (w *watcherImpl) processTag(ctx context.Context, repo, tag string, tolerati
 			"reason", reason,
 			"is_rescan", isRescan,
 		}
-		
+
 		// Add additional context based on reason
 		if scanErr == nil && lastScan != nil {
 			if lastScan.Digest != currentDigest {
@@ -281,16 +277,12 @@ func (w *watcherImpl) processTag(ctx context.Context, repo, tag string, tolerati
 					"rescan_interval", rescanInterval.String())
 			}
 		}
-		
-		w.logger.Debug("enqueuing scan task", attrs...)
 
-		// Record metrics for enqueue decision
-		metrics.ConditionalScanDecisionsTotal.WithLabelValues("enqueue", reason).Inc()
-		metrics.ConditionalScanEnqueuedTotal.WithLabelValues(repo, reason).Inc()
+		w.logger.Debug("enqueuing scan task", attrs...)
 	} else {
 		// For skip decisions, get last scan info to include in logs
 		lastScan, scanErr := w.stateStore.GetLastScan(ctx, currentDigest)
-		
+
 		// Build log attributes
 		attrs := []any{
 			"repo", repo,
@@ -298,7 +290,7 @@ func (w *watcherImpl) processTag(ctx context.Context, repo, tag string, tolerati
 			"digest", currentDigest,
 			"reason", reason,
 		}
-		
+
 		var timeSinceLastScan time.Duration
 		if scanErr == nil && lastScan != nil {
 			lastScanTime := time.Unix(lastScan.CreatedAt, 0).UTC()
@@ -308,18 +300,9 @@ func (w *watcherImpl) processTag(ctx context.Context, repo, tag string, tolerati
 				"time_since_scan", timeSinceLastScan.String(),
 				"rescan_interval", rescanInterval.String())
 		}
-		
+
 		w.logger.Debug("skipping scan", attrs...)
 
-		// Record metrics for skip decision
-		metrics.ConditionalScanDecisionsTotal.WithLabelValues("skip", reason).Inc()
-		metrics.ConditionalScanSkippedTotal.WithLabelValues(repo).Inc()
-		
-		// Record time since last scan in histogram (if available)
-		if scanErr == nil && lastScan != nil {
-			metrics.ConditionalScanSkipAgeSeconds.WithLabelValues(repo).Observe(timeSinceLastScan.Seconds())
-		}
-		
 		return nil
 	}
 

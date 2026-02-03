@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/daimoniac/suppline/internal/errors"
+	"github.com/daimoniac/suppline/internal/observability"
 	"github.com/daimoniac/suppline/internal/policy"
 	"github.com/daimoniac/suppline/internal/queue"
 	"github.com/daimoniac/suppline/internal/registry"
@@ -46,19 +47,21 @@ func (p *Pipeline) Execute(ctx context.Context, task *queue.ScanTask) error {
 	// Phase 1: Scan (SBOM + Vulnerabilities)
 	sbom, scanResult, scanDurations, err := p.scanPhase(ctx, task, imageRef)
 	if err != nil {
+		metrics := observability.GetMetrics()
+		metrics.ScansFailed.Inc()
 		// Check if this is a MANIFEST_UNKNOWN error that requires cleanup
 		if errors.IsManifestNotFound(err) {
-			p.logger.Info("manifest not found, performing cleanup", 
-				"image_ref", imageRef, 
+			p.logger.Info("manifest not found, performing cleanup",
+				"image_ref", imageRef,
 				"digest", task.Digest)
-			
+
 			// Perform cleanup before returning error
 			if cleanupErr := p.performManifestCleanup(ctx, task.Digest); cleanupErr != nil {
 				// If cleanup fails with transient error, return cleanup error for retry
 				if errors.IsTransient(cleanupErr) {
-					p.logger.Error("transient cleanup error after manifest not found", 
-						"image_ref", imageRef, 
-						"digest", task.Digest, 
+					p.logger.Error("transient cleanup error after manifest not found",
+						"image_ref", imageRef,
+						"digest", task.Digest,
 						"cleanup_error", cleanupErr)
 					return cleanupErr
 				}
@@ -71,6 +74,8 @@ func (p *Pipeline) Execute(ctx context.Context, task *queue.ScanTask) error {
 	// Phase 2: Policy Evaluation
 	policyDecision, err := p.policyPhase(ctx, task, imageRef, scanResult)
 	if err != nil {
+		metrics := observability.GetMetrics()
+		metrics.PolicyFailed.Inc()
 		return err
 	}
 
@@ -121,6 +126,7 @@ func (p *Pipeline) validateDependencies() error {
 // scanPhase performs SBOM generation and vulnerability scanning
 func (p *Pipeline) scanPhase(ctx context.Context, task *queue.ScanTask, imageRef string) (*scanner.SBOM, *scanner.ScanResult, map[string]time.Duration, error) {
 	durations := make(map[string]time.Duration)
+	metrics := observability.GetMetrics()
 
 	// Fetch image metadata with tag verification if available
 	p.logger.Debug("fetching image metadata", "image_ref", imageRef)
@@ -165,6 +171,19 @@ func (p *Pipeline) scanPhase(ctx context.Context, task *queue.ScanTask, imageRef
 		"total_vulnerabilities", len(scanResult.Vulnerabilities),
 		"duration", durations["vuln_scan"])
 
+	// Record scan metrics
+	metrics.ScansTotal.Inc()
+	metrics.ScanDuration.Observe(durations["vuln_scan"].Seconds())
+
+	// Count vulnerabilities by severity
+	severityCounts := make(map[string]int)
+	for _, vuln := range scanResult.Vulnerabilities {
+		severityCounts[vuln.Severity]++
+	}
+	for severity, count := range severityCounts {
+		metrics.VulnerabilitiesFound.WithLabelValues(severity).Add(float64(count))
+	}
+
 	return sbom, scanResult, durations, nil
 }
 
@@ -188,6 +207,48 @@ func (p *Pipeline) policyPhase(ctx context.Context, task *queue.ScanTask, imageR
 		"passed", policyDecision.Passed,
 		"reason", policyDecision.Reason)
 
+	// Record policy metrics
+	metrics := observability.GetMetrics()
+	if policyDecision.Passed {
+		metrics.PolicyPassed.Inc()
+	} else {
+		metrics.PolicyFailed.Inc()
+	}
+
+	// Record tolerated CVE count
+	if policyDecision.ToleratedVulnCount > 0 {
+		metrics.ToleratedCVEs.Add(float64(policyDecision.ToleratedVulnCount))
+	}
+
+	// Record toleration expiry metrics
+	expiredCount := 0
+	expiringCount := 0
+	now := time.Now()
+
+	for _, toleration := range task.Tolerations {
+		if toleration.ExpiresAt == nil {
+			// No expiry set, skip
+			continue
+		}
+		expiresAt := time.Unix(*toleration.ExpiresAt, 0)
+		if expiresAt.Before(now) {
+			// Toleration has already expired
+			expiredCount++
+		} else {
+			// Check if expiring within 7 days
+			daysUntilExpiry := expiresAt.Sub(now).Hours() / 24
+			if daysUntilExpiry <= 7 {
+				expiringCount++
+			}
+		}
+	}
+
+	// Update gauges with per-repository metrics
+	if expiredCount > 0 || expiringCount > 0 {
+		metrics.ExpiredTolerations.WithLabelValues(task.Repository).Set(float64(expiredCount))
+		metrics.ExpiringTolerationsSoon.WithLabelValues(task.Repository).Set(float64(expiringCount))
+	}
+
 	// Log expiring tolerations
 	for _, expiring := range policyDecision.ExpiringTolerations {
 		p.logger.Warn("toleration expiring soon",
@@ -204,15 +265,18 @@ func (p *Pipeline) policyPhase(ctx context.Context, task *queue.ScanTask, imageR
 // attestationPhase creates all attestations (SBOM, vulnerabilities, SCAI)
 func (p *Pipeline) attestationPhase(ctx context.Context, task *queue.ScanTask, imageRef string, sbom *scanner.SBOM, scanResult *scanner.ScanResult, policyDecision *policy.PolicyDecision) (map[string]time.Duration, bool, error) {
 	durations := make(map[string]time.Duration)
+	metrics := observability.GetMetrics()
 
 	// SBOM attestation
 	sbomStart := time.Now()
 	p.logger.Debug("creating SBOM attestation", "image_ref", imageRef)
 	if err := p.worker.attestor.AttestSBOM(ctx, imageRef, sbom); err != nil {
 		// Error already classified in attestation package
+		metrics.AttestationsFailed.WithLabelValues("sbom").Inc()
 		return nil, false, fmt.Errorf("failed to create SBOM attestation: %w", err)
 	}
 	durations["sbom_attest"] = time.Since(sbomStart)
+	metrics.AttestationsCreated.WithLabelValues("sbom").Inc()
 	p.logger.Info("SBOM attestation created", "image_ref", imageRef, "duration", durations["sbom_attest"])
 
 	// Vulnerability attestation
@@ -220,9 +284,11 @@ func (p *Pipeline) attestationPhase(ctx context.Context, task *queue.ScanTask, i
 	p.logger.Debug("creating vulnerability attestation", "image_ref", imageRef)
 	if err := p.worker.attestor.AttestVulnerabilities(ctx, imageRef, scanResult); err != nil {
 		// Error already classified in attestation package
+		metrics.AttestationsFailed.WithLabelValues("vulnerability").Inc()
 		return nil, false, fmt.Errorf("failed to create vulnerability attestation: %w", err)
 	}
 	durations["vuln_attest"] = time.Since(vulnStart)
+	metrics.AttestationsCreated.WithLabelValues("vulnerability").Inc()
 	p.logger.Info("vulnerability attestation created", "image_ref", imageRef, "duration", durations["vuln_attest"])
 
 	// SCAI attestation (optional)
@@ -234,12 +300,15 @@ func (p *Pipeline) attestationPhase(ctx context.Context, task *queue.ScanTask, i
 		scai, err := p.worker.scaiGenerator.GenerateSCAI(ctx, imageRef, scanResult, task.Repository, policyDecision)
 		if err != nil {
 			p.logger.Error("failed to generate SCAI attestation", "image_ref", imageRef, "error", err)
+			metrics.AttestationsFailed.WithLabelValues("scai").Inc()
 		} else {
 			if err := p.worker.attestor.AttestSCAI(ctx, imageRef, scai); err != nil {
 				p.logger.Error("failed to attest SCAI", "image_ref", imageRef, "error", err)
+				metrics.AttestationsFailed.WithLabelValues("scai").Inc()
 			} else {
 				scaiAttested = true
 				durations["scai_attest"] = time.Since(scaiStart)
+				metrics.AttestationsCreated.WithLabelValues("scai").Inc()
 				p.logger.Info("SCAI attestation created", "image_ref", imageRef, "duration", durations["scai_attest"])
 			}
 		}
@@ -254,7 +323,7 @@ func (p *Pipeline) attestationPhase(ctx context.Context, task *queue.ScanTask, i
 func (p *Pipeline) persistencePhase(ctx context.Context, task *queue.ScanTask, scanResult *scanner.ScanResult, policyDecision *policy.PolicyDecision, scannedAt time.Time) error {
 	// Build scan record from workflow results
 	scanRecord := buildScanRecord(task, scanResult, policyDecision, scannedAt)
-	
+
 	// Calculate and update scan duration
 	scanDuration := time.Since(scannedAt)
 	updateScanRecordWithDuration(scanRecord, scanDuration)
@@ -270,9 +339,9 @@ func (p *Pipeline) persistencePhase(ctx context.Context, task *queue.ScanTask, s
 	if err := p.performScanCleanup(ctx, task.Digest); err != nil {
 		// If cleanup fails with transient error, return error for retry
 		if errors.IsTransient(err) {
-			p.logger.Error("transient cleanup error after scan recording", 
+			p.logger.Error("transient cleanup error after scan recording",
 				"image_ref", fmt.Sprintf("%s@%s", task.Repository, task.Digest),
-				"digest", task.Digest, 
+				"digest", task.Digest,
 				"cleanup_error", err)
 			return err
 		}
@@ -342,7 +411,7 @@ func (p *Pipeline) performManifestCleanup(ctx context.Context, digest string) er
 	}
 
 	p.logger.Info("cleaning up artifact scans due to manifest not found", "digest", digest)
-	
+
 	// Cleanup all scans for this artifact
 	if err := cleanupStore.CleanupArtifactScans(ctx, digest); err != nil {
 		// Classify cleanup error for proper retry behavior
@@ -351,8 +420,8 @@ func (p *Pipeline) performManifestCleanup(ctx context.Context, digest string) er
 			return fmt.Errorf("failed to cleanup artifact scans: %w", err)
 		}
 		// Permanent cleanup errors should be logged but not fail the pipeline
-		p.logger.Error("permanent error during artifact cleanup", 
-			"digest", digest, 
+		p.logger.Error("permanent error during artifact cleanup",
+			"digest", digest,
 			"error", err)
 		// Continue with repository cleanup despite permanent error
 	} else {
@@ -388,16 +457,16 @@ func (p *Pipeline) performScanCleanup(ctx context.Context, digest string) error 
 			return fmt.Errorf("failed to get last scan for cleanup: %w", err)
 		}
 		// Permanent errors should be logged but not fail the pipeline
-		p.logger.Error("permanent error getting last scan for cleanup", 
-			"digest", digest, 
+		p.logger.Error("permanent error getting last scan for cleanup",
+			"digest", digest,
 			"error", err)
 		return nil
 	}
 
-	p.logger.Info("cleaning up excess scans after scan recording", 
-		"digest", digest, 
+	p.logger.Info("cleaning up excess scans after scan recording",
+		"digest", digest,
 		"keep_scan_id", lastScan.ID)
-	
+
 	// Cleanup excess scans, keeping only the most recent scan (maxScansToKeep = 1)
 	if err := cleanupStore.CleanupExcessScans(ctx, digest, 1); err != nil {
 		// Classify cleanup error for proper retry behavior
@@ -406,8 +475,8 @@ func (p *Pipeline) performScanCleanup(ctx context.Context, digest string) error 
 			return fmt.Errorf("failed to cleanup excess scans: %w", err)
 		}
 		// Permanent cleanup errors should be logged but not fail the pipeline
-		p.logger.Error("permanent error during excess scan cleanup", 
-			"digest", digest, 
+		p.logger.Error("permanent error during excess scan cleanup",
+			"digest", digest,
 			"error", err)
 		// Continue with repository cleanup despite permanent error
 	} else {
@@ -426,12 +495,10 @@ func (p *Pipeline) performScanCleanup(ctx context.Context, digest string) error 
 	return nil
 }
 
-
-
 // performRepositoryCleanup handles cleanup of orphaned repositories
 func (p *Pipeline) performRepositoryCleanup(ctx context.Context, cleanupStore statestore.StateStoreCleanup) error {
 	p.logger.Debug("cleaning up orphaned repositories")
-	
+
 	deletedRepos, err := cleanupStore.CleanupOrphanedRepositories(ctx)
 	if err != nil {
 		// Classify cleanup errors appropriately
@@ -445,8 +512,8 @@ func (p *Pipeline) performRepositoryCleanup(ctx context.Context, cleanupStore st
 	}
 
 	if len(deletedRepos) > 0 {
-		p.logger.Info("orphaned repositories cleaned up", 
-			"deleted_count", len(deletedRepos), 
+		p.logger.Info("orphaned repositories cleaned up",
+			"deleted_count", len(deletedRepos),
 			"repositories", deletedRepos)
 	} else {
 		p.logger.Debug("no orphaned repositories found")
@@ -462,11 +529,11 @@ func (p *Pipeline) fetchImageMetadata(ctx context.Context, task *queue.ScanTask,
 
 	// If we have both tag and digest, use verification to detect deleted tags
 	if task.Tag != "" && task.Tag != "latest" {
-		p.logger.Debug("fetching image metadata with tag verification", 
-			"image_ref", imageRef, 
-			"tag", task.Tag, 
+		p.logger.Debug("fetching image metadata with tag verification",
+			"image_ref", imageRef,
+			"tag", task.Tag,
 			"digest", digest)
-		
+
 		manifest, err := p.worker.registry.GetManifestWithTagVerification(ctx, repo, task.Tag, digest)
 		if err != nil {
 			// Error is already classified in registry client
@@ -476,10 +543,10 @@ func (p *Pipeline) fetchImageMetadata(ctx context.Context, task *queue.ScanTask,
 	}
 
 	// Fallback to digest-only fetch (for latest tags or when tag is unavailable)
-	p.logger.Debug("fetching image metadata by digest only", 
-		"image_ref", imageRef, 
+	p.logger.Debug("fetching image metadata by digest only",
+		"image_ref", imageRef,
 		"digest", digest)
-	
+
 	manifest, err := p.worker.registry.GetManifest(ctx, repo, digest)
 	if err != nil {
 		// Classify registry errors to detect MANIFEST_UNKNOWN
@@ -514,4 +581,3 @@ func (p *Pipeline) getPolicyEngineForRepository(repository string) (policy.Polic
 	// Create a new policy engine with the repository-specific config
 	return policy.NewEngine(p.logger, policyConfig)
 }
-

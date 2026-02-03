@@ -10,6 +10,7 @@ import (
 	"github.com/daimoniac/suppline/internal/attestation"
 	"github.com/daimoniac/suppline/internal/config"
 	"github.com/daimoniac/suppline/internal/errors"
+	"github.com/daimoniac/suppline/internal/observability"
 	"github.com/daimoniac/suppline/internal/policy"
 	"github.com/daimoniac/suppline/internal/queue"
 	"github.com/daimoniac/suppline/internal/registry"
@@ -183,6 +184,8 @@ func (w *ImageWorker) processLoop(ctx context.Context, workerID int) {
 					"digest", task.Digest,
 					"repository", task.Repository,
 					"error", err)
+				metrics := observability.GetMetrics()
+				metrics.WorkerErrors.Inc()
 				_ = w.queue.Fail(ctx, task.ID, err)
 			} else {
 				w.logger.Info("task processing completed",
@@ -190,6 +193,8 @@ func (w *ImageWorker) processLoop(ctx context.Context, workerID int) {
 					"task_id", task.ID,
 					"digest", task.Digest,
 					"repository", task.Repository)
+				metrics := observability.GetMetrics()
+				metrics.WorkerTasksProcessed.Inc()
 				_ = w.queue.Complete(ctx, task.ID)
 			}
 		}

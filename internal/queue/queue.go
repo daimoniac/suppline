@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/daimoniac/suppline/internal/errors"
+	"github.com/daimoniac/suppline/internal/observability"
 	"github.com/daimoniac/suppline/internal/types"
 )
 
@@ -143,6 +144,7 @@ func (q *InMemoryQueue) Enqueue(ctx context.Context, task *ScanTask) error {
 	select {
 	case targetQueue <- task:
 		q.incrementMetric("enqueued")
+		observability.GetMetrics().QueueEnqueued.Inc()
 		return nil
 	case <-ctx.Done():
 		q.pendingMu.Lock()
@@ -174,6 +176,7 @@ func (q *InMemoryQueue) Dequeue(ctx context.Context) (*ScanTask, error) {
 			delete(q.pending, task.Digest)
 			q.pendingMu.Unlock()
 			q.incrementMetric("dequeued")
+			observability.GetMetrics().QueueDequeued.Inc()
 			return task, nil
 		default:
 			// No high priority tasks available, check normal tasks
@@ -189,6 +192,7 @@ func (q *InMemoryQueue) Dequeue(ctx context.Context) (*ScanTask, error) {
 				delete(q.pending, task.Digest)
 				q.pendingMu.Unlock()
 				q.incrementMetric("dequeued")
+				observability.GetMetrics().QueueDequeued.Inc()
 				return task, nil
 			}
 		case task, ok := <-q.normalTasks:
@@ -199,6 +203,7 @@ func (q *InMemoryQueue) Dequeue(ctx context.Context) (*ScanTask, error) {
 			delete(q.pending, task.Digest)
 			q.pendingMu.Unlock()
 			q.incrementMetric("dequeued")
+			observability.GetMetrics().QueueDequeued.Inc()
 			return task, nil
 		case <-ctx.Done():
 			return nil, ctx.Err()
@@ -209,18 +214,22 @@ func (q *InMemoryQueue) Dequeue(ctx context.Context) (*ScanTask, error) {
 // Complete marks a task as successfully processed
 func (q *InMemoryQueue) Complete(ctx context.Context, taskID string) error {
 	q.incrementMetric("completed")
+	observability.GetMetrics().QueueCompleted.Inc()
 	return nil
 }
 
 // Fail marks a task as failed
 func (q *InMemoryQueue) Fail(ctx context.Context, taskID string, err error) error {
 	q.incrementMetric("failed")
+	observability.GetMetrics().QueueFailed.Inc()
 	return nil
 }
 
 // GetQueueDepth returns current queue size
 func (q *InMemoryQueue) GetQueueDepth(ctx context.Context) (int, error) {
-	return len(q.highPriorityTasks) + len(q.normalTasks), nil
+	depth := len(q.highPriorityTasks) + len(q.normalTasks)
+	observability.GetMetrics().QueueDepth.Set(float64(depth))
+	return depth, nil
 }
 
 // HasPendingTask checks if there's a pending task for the given digest
