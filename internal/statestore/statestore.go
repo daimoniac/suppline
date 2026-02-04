@@ -128,6 +128,11 @@ type StateStoreQuery interface {
 	// that are no longer being used and can be cleaned up from configuration.
 	GetUnappliedTolerationsCount(ctx context.Context, definedCVEIDs []string) (int, error)
 
+	// GetAppliedCVEIDs returns the subset of provided CVE IDs that have been applied
+	// (tolerated) in at least one scan record. This is used to identify which tolerations
+	// are actively being used.
+	GetAppliedCVEIDs(ctx context.Context, definedCVEIDs []string) ([]string, error)
+
 	// ListRepositories returns all repositories with aggregated metadata
 	ListRepositories(ctx context.Context, filter RepositoryFilter) (*RepositoriesListResponse, error)
 

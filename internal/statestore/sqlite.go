@@ -831,6 +831,69 @@ func (s *SQLiteStore) GetUnappliedTolerationsCount(ctx context.Context, definedC
 	return unappliedCount, nil
 }
 
+// GetAppliedCVEIDs returns the subset of provided CVE IDs that have been applied
+// (tolerated) in at least one scan record.
+func (s *SQLiteStore) GetAppliedCVEIDs(ctx context.Context, definedCVEIDs []string) ([]string, error) {
+	if len(definedCVEIDs) == 0 {
+		return []string{}, nil
+	}
+
+	// Query all tolerated CVEs from scan records
+	query := `
+		SELECT 
+			sr.tolerated_cves_json
+		FROM scan_records sr
+		WHERE sr.tolerated_cves_json IS NOT NULL 
+			AND sr.tolerated_cves_json != '[]'
+			AND sr.tolerated_cves_json != ''
+	`
+
+	rows, err := s.db.QueryContext(ctx, query)
+	if err != nil {
+		return nil, errors.NewTransientf("failed to query tolerated CVEs: %w", err)
+	}
+	defer rows.Close()
+
+	// Build a set of CVE IDs that have been tolerated at least once
+	appliedCVEs := make(map[string]bool)
+
+	for rows.Next() {
+		var toleratedJSON sql.NullString
+
+		if err := rows.Scan(&toleratedJSON); err != nil {
+			return nil, errors.NewTransientf("failed to scan row: %w", err)
+		}
+
+		if !toleratedJSON.Valid || toleratedJSON.String == "" {
+			continue
+		}
+
+		var tolerated []types.ToleratedCVE
+		if err := json.Unmarshal([]byte(toleratedJSON.String), &tolerated); err != nil {
+			// Skip invalid JSON
+			continue
+		}
+
+		for _, tc := range tolerated {
+			appliedCVEs[tc.CVEID] = true
+		}
+	}
+
+	if err := rows.Err(); err != nil {
+		return nil, errors.NewTransientf("error iterating rows: %w", err)
+	}
+
+	// Filter definedCVEIDs to only those that have been applied
+	result := make([]string, 0)
+	for _, cveID := range definedCVEIDs {
+		if appliedCVEs[cveID] {
+			result = append(result, cveID)
+		}
+	}
+
+	return result, nil
+}
+
 // ListRepositories returns all repositories with aggregated metadata
 func (s *SQLiteStore) ListRepositories(ctx context.Context, filter RepositoryFilter) (*RepositoriesListResponse, error) {
 	// First, get total count

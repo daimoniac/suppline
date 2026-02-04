@@ -203,6 +203,13 @@ class APIClient {
         return this.request(endpoint);
     }
 
+    /**
+     * Get unapplied tolerations (defined in config but never applied to any digest)
+     */
+    async getUnappliedTolerations() {
+        return this.request('/api/v1/tolerations/unapplied');
+    }
+
     // ==================== Policy API ====================
 
     /**

@@ -630,6 +630,116 @@ func TestUnappliedTolerationsCount(t *testing.T) {
 	})
 }
 
+// TestGetAppliedCVEIDs tests the GetAppliedCVEIDs method
+func TestGetAppliedCVEIDs(t *testing.T) {
+	dbPath := "test_applied_cveids_" + t.Name() + ".db"
+	os.Remove(dbPath)
+	defer os.Remove(dbPath)
+
+	store, err := NewSQLiteStore(dbPath)
+	if err != nil {
+		t.Fatalf("Failed to create SQLite store: %v", err)
+	}
+	defer store.Close()
+
+	ctx := context.Background()
+
+	// Record a scan with some tolerated CVEs
+	record := &ScanRecord{
+		Digest:            "sha256:def456",
+		Repository:        "myorg/testapp",
+		Tag:               "v1.0",
+		CriticalVulnCount: 0,
+		HighVulnCount:     0,
+		MediumVulnCount:   0,
+		LowVulnCount:      0,
+		PolicyPassed:      true,
+		ToleratedCVEs: []types.ToleratedCVE{
+			{
+				CVEID:       "CVE-2024-1111",
+				Statement:   "Low risk",
+				ToleratedAt: time.Now().Unix(),
+			},
+			{
+				CVEID:       "CVE-2024-2222",
+				Statement:   "Mitigated",
+				ToleratedAt: time.Now().Unix(),
+			},
+		},
+	}
+
+	err = store.RecordScan(ctx, record)
+	if err != nil {
+		t.Fatalf("Failed to record scan: %v", err)
+	}
+
+	t.Run("GetAppliedCVEIDs with empty list returns empty slice", func(t *testing.T) {
+		applied, err := store.GetAppliedCVEIDs(ctx, []string{})
+		if err != nil {
+			t.Fatalf("Failed to get applied CVE IDs: %v", err)
+		}
+		if len(applied) != 0 {
+			t.Errorf("Expected empty slice for empty input, got %d items", len(applied))
+		}
+	})
+
+	t.Run("GetAppliedCVEIDs finds all applied CVEs", func(t *testing.T) {
+		applied, err := store.GetAppliedCVEIDs(ctx, []string{"CVE-2024-1111", "CVE-2024-2222"})
+		if err != nil {
+			t.Fatalf("Failed to get applied CVE IDs: %v", err)
+		}
+		if len(applied) != 2 {
+			t.Errorf("Expected 2 applied CVEs, got %d", len(applied))
+		}
+
+		// Check both CVEs are present
+		appliedSet := make(map[string]bool)
+		for _, cve := range applied {
+			appliedSet[cve] = true
+		}
+		if !appliedSet["CVE-2024-1111"] || !appliedSet["CVE-2024-2222"] {
+			t.Errorf("Expected both CVE-2024-1111 and CVE-2024-2222 in result, got %v", applied)
+		}
+	})
+
+	t.Run("GetAppliedCVEIDs returns empty for unapplied CVEs", func(t *testing.T) {
+		applied, err := store.GetAppliedCVEIDs(ctx, []string{"CVE-2024-9999"})
+		if err != nil {
+			t.Fatalf("Failed to get applied CVE IDs: %v", err)
+		}
+		if len(applied) != 0 {
+			t.Errorf("Expected empty slice for unapplied CVE, got %v", applied)
+		}
+	})
+
+	t.Run("GetAppliedCVEIDs filters mixed applied and unapplied", func(t *testing.T) {
+		applied, err := store.GetAppliedCVEIDs(ctx, []string{
+			"CVE-2024-1111", // applied
+			"CVE-2024-9999", // unapplied
+			"CVE-2024-2222", // applied
+			"CVE-2024-8888", // unapplied
+		})
+		if err != nil {
+			t.Fatalf("Failed to get applied CVE IDs: %v", err)
+		}
+		if len(applied) != 2 {
+			t.Errorf("Expected 2 applied CVEs, got %d", len(applied))
+		}
+
+		// Check only applied CVEs are present
+		appliedSet := make(map[string]bool)
+		for _, cve := range applied {
+			appliedSet[cve] = true
+		}
+		if !appliedSet["CVE-2024-1111"] || !appliedSet["CVE-2024-2222"] {
+			t.Errorf("Expected CVE-2024-1111 and CVE-2024-2222, got %v", applied)
+		}
+		if appliedSet["CVE-2024-9999"] || appliedSet["CVE-2024-8888"] {
+			t.Errorf("Unexpected unapplied CVEs in result: %v", applied)
+		}
+	})
+}
+
 // TestSchemaAndConstraints tests database schema creation, indexes, and constraints
 func TestSchemaAndConstraints(t *testing.T) {
 	dbPath := "test_schema_" + t.Name() + ".db"

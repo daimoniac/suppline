@@ -170,6 +170,130 @@ func (s *APIServer) handleQueryVulnerabilities(w http.ResponseWriter, r *http.Re
 	}
 }
 
+// handleListUnappliedTolerations lists tolerations defined in config but not applied to any digests
+// @Summary List unapplied tolerations
+// @Description List all CVE tolerations defined in configuration that have never been applied to any digest. Returns CVE IDs grouped by repository.
+// @Tags Tolerations
+// @Accept json
+// @Produce json
+// @Success 200 {array} types.TolerationSummary
+// @Failure 401 {object} map[string]string "Unauthorized"
+// @Failure 500 {object} map[string]string "Internal server error"
+// @Security BearerAuth
+// @Router /tolerations/unapplied [get]
+func (s *APIServer) handleListUnappliedTolerations(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		s.respondError(w, http.StatusMethodNotAllowed, "Method not allowed")
+		return
+	}
+
+	if s.regsyncConfig == nil {
+		s.respondJSON(w, http.StatusOK, []types.TolerationSummary{})
+		return
+	}
+
+	ctx := r.Context()
+
+	// Collect all defined CVE IDs from configuration per repository
+	repoTolerations := make(map[string]map[string]*types.TolerationSummary)
+
+	// Get all target repositories from config
+	repositories := s.regsyncConfig.GetTargetRepositories()
+
+	for _, repo := range repositories {
+		// Get tolerations for this repository
+		configTolerations := s.regsyncConfig.GetTolerationsForTarget(repo)
+
+		for _, toleration := range configTolerations {
+			if _, exists := repoTolerations[repo]; !exists {
+				repoTolerations[repo] = make(map[string]*types.TolerationSummary)
+			}
+			if _, exists := repoTolerations[repo][toleration.ID]; !exists {
+				repoTolerations[repo][toleration.ID] = &types.TolerationSummary{
+					CVEID:     toleration.ID,
+					Statement: toleration.Statement,
+					ExpiresAt: toleration.ExpiresAt,
+					Repositories: []types.RepositoryTolInfo{
+						{Repository: repo, ToleratedAt: 0},
+					},
+				}
+			}
+		}
+	}
+
+	// Flatten to get all unique CVE IDs
+	definedCVEIDs := make(map[string]bool)
+	for _, cveMap := range repoTolerations {
+		for cveID := range cveMap {
+			definedCVEIDs[cveID] = true
+		}
+	}
+
+	// Convert to slice for query
+	cveIDSlice := make([]string, 0, len(definedCVEIDs))
+	for cveID := range definedCVEIDs {
+		cveIDSlice = append(cveIDSlice, cveID)
+	}
+
+	// Query state store to find which CVE IDs have been applied
+	appliedCVEs, err := s.stateStore.GetAppliedCVEIDs(ctx, cveIDSlice)
+	if err != nil {
+		s.respondError(w, http.StatusInternalServerError, fmt.Sprintf("Failed to get applied CVE IDs: %v", err))
+		return
+	}
+
+	// Build set of applied CVE IDs for quick lookup
+	appliedSet := make(map[string]bool)
+	for _, cveID := range appliedCVEs {
+		appliedSet[cveID] = true
+	}
+
+	// Filter to only include unapplied tolerations and group by CVE ID
+	grouped := make(map[string]*types.TolerationSummary)
+	for repo, cveMap := range repoTolerations {
+		for cveID, summary := range cveMap {
+			// Skip if this CVE has been applied
+			if appliedSet[cveID] {
+				continue
+			}
+
+			// Add to grouped result
+			if existing, exists := grouped[cveID]; exists {
+				// Add repository to existing entry
+				existing.Repositories = append(existing.Repositories, types.RepositoryTolInfo{
+					Repository:  repo,
+					ToleratedAt: 0,
+				})
+			} else {
+				// Create new entry
+				grouped[cveID] = &types.TolerationSummary{
+					CVEID:     summary.CVEID,
+					Statement: summary.Statement,
+					ExpiresAt: summary.ExpiresAt,
+					Repositories: []types.RepositoryTolInfo{
+						{Repository: repo, ToleratedAt: 0},
+					},
+				}
+			}
+		}
+	}
+
+	// Convert map to slice
+	result := make([]*types.TolerationSummary, 0, len(grouped))
+	for _, summary := range grouped {
+		result = append(result, summary)
+	}
+
+	// Stream JSON response
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusOK)
+	encoder := json.NewEncoder(w)
+	if err := encoder.Encode(result); err != nil {
+		s.logger.Error("error encoding JSON response",
+			"error", err.Error())
+	}
+}
+
 // handleListTolerations lists tolerated CVEs with optional filters
 // @Summary List tolerations
 // @Description List all CVE tolerations as defined in the configuration file. Groups by CVE ID with repositories array.

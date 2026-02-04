@@ -19,6 +19,7 @@ export class Dashboard extends BaseComponent {
             expiringTolerations: 0,
             expiringTolerationsDetails: [],
             expiredTolerationsDetails: [],
+            unappliedTolerationsDetails: [],
             recentScans: [],
             vulnerabilityBreakdown: {
                 critical: 0,
@@ -40,11 +41,13 @@ export class Dashboard extends BaseComponent {
             const [
                 recentScans,
                 failedScans,
-                allTolerations
+                allTolerations,
+                unappliedTolerations
             ] = await Promise.all([
                 this.apiClient.getScans({ limit: 20 }),
                 this.apiClient.getScans({ policy_passed: false }), 
-                this.apiClient.getTolerations({})
+                this.apiClient.getTolerations({}),
+                this.apiClient.getUnappliedTolerations()
             ]);
 
             // Process recent scans (API returns array directly)
@@ -74,6 +77,9 @@ export class Dashboard extends BaseComponent {
             });
             
             this.data.expiringTolerations = this.data.expiringTolerationsDetails.length;
+
+            // Process unapplied tolerations
+            this.data.unappliedTolerationsDetails = Array.isArray(unappliedTolerations) ? unappliedTolerations : [];
 
             // Calculate vulnerability breakdown from recent scans
             this.calculateVulnerabilityBreakdown(this.data.recentScans);
@@ -131,6 +137,7 @@ export class Dashboard extends BaseComponent {
 
                 ${this.renderSummaryCards()}
                 ${this.renderExpiringTolerationsCard()}
+                ${this.renderUnappliedTolerationsCard()}
                 ${this.renderVulnerabilityBreakdown()}
                 ${this.renderFailedByRepository()}
                 ${this.renderRecentScans()}
@@ -184,6 +191,19 @@ export class Dashboard extends BaseComponent {
                     <div class="summary-card-content">
                         <div class="summary-card-value">${this.data.expiringTolerations.toLocaleString()}</div>
                         <div class="summary-card-label">Expiring Soon</div>
+                    </div>
+                </div>
+
+                <div class="summary-card summary-card-secondary">
+                    <div class="summary-card-icon">
+                        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <path d="M9 11l3 3L22 4"></path>
+                            <path d="M21 12v7a2 2 0 01-2 2H5a2 2 0 01-2-2V5a2 2 0 012-2h11"></path>
+                        </svg>
+                    </div>
+                    <div class="summary-card-content">
+                        <div class="summary-card-value">${this.data.unappliedTolerationsDetails.length.toLocaleString()}</div>
+                        <div class="summary-card-label">Unapplied Tolerations</div>
                     </div>
                 </div>
             </div>
@@ -296,6 +316,55 @@ export class Dashboard extends BaseComponent {
                     </div>
                 `;
             }).join('');
+    }
+
+    /**
+     * Render unapplied tolerations card
+     */
+    renderUnappliedTolerationsCard() {
+        if (this.data.unappliedTolerationsDetails.length === 0) {
+            return '';
+        }
+
+        return `
+            <div class="dashboard-section">
+                <h2>Unapplied Tolerations</h2>
+                <div class="tolerations-attention-summary">
+                    <span class="attention-badge attention-badge-info">${this.data.unappliedTolerationsDetails.length} CVE${this.data.unappliedTolerationsDetails.length !== 1 ? 's' : ''} Defined but Never Applied</span>
+                </div>
+                <div class="tolerations-attention-list">
+                    ${this.data.unappliedTolerationsDetails.map(toleration => {
+                        // Handle repositories array - show up to 3, or "multiple repositories"
+                        const repositories = toleration.Repositories || [];
+                        let repoDisplay = '';
+                        if (repositories.length === 0) {
+                            repoDisplay = 'No repositories';
+                        } else if (repositories.length <= 3) {
+                            repoDisplay = repositories.map(r => escapeHtml(r.Repository)).join(', ');
+                        } else {
+                            repoDisplay = 'multiple repositories';
+                        }
+
+                        const expiryDate = toleration.ExpiresAt ? new Date(toleration.ExpiresAt * 1000) : null;
+                        const expiryDateStr = expiryDate ? expiryDate.toLocaleDateString() : 'Never';
+
+                        return `
+                            <div class="toleration-attention-item toleration-unapplied" data-cve="${escapeHtml(toleration.CVEID)}">
+                                <div class="toleration-attention-header">
+                                    <span class="toleration-attention-cve">${escapeHtml(toleration.CVEID)}</span>
+                                    <span class="status-badge status-secondary">📋 Not Yet Applied</span>
+                                </div>
+                                <div class="toleration-attention-repo">${repoDisplay}</div>
+                                <div class="toleration-attention-statement">${escapeHtml(toleration.Statement || 'No statement provided')}</div>
+                                <div class="toleration-attention-expiry">
+                                    Configured expiry: ${expiryDateStr}
+                                </div>
+                            </div>
+                        `;
+                    }).join('')}
+                </div>
+            </div>
+        `;
     }
 
     /**
