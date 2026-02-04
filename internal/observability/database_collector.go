@@ -23,12 +23,12 @@ type DatabaseCollector struct {
 	regsyncCfg *config.RegsyncConfig // Optional: used to calculate unapplied tolerations
 
 	// Metric descriptors
-	toleratedCVEsDesc              *prometheus.Desc
-	expiredTolerationsDesc         *prometheus.Desc
-	expiringTolerationsDesc        *prometheus.Desc
-	tolerationsWithoutExpiryDesc   *prometheus.Desc
-	vulnerabilitiesFoundDesc       *prometheus.Desc
-	unappliedTolerationsDesc       *prometheus.Desc
+	toleratedCVEsDesc            *prometheus.Desc
+	expiredTolerationsDesc       *prometheus.Desc
+	expiringTolerationsDesc      *prometheus.Desc
+	tolerationsWithoutExpiryDesc *prometheus.Desc
+	vulnerabilitiesFoundDesc     *prometheus.Desc
+	unappliedTolerationsDesc     *prometheus.Desc
 
 	// Cache for unapplied tolerations (10-minute TTL)
 	unappliedTolerationsMutex sync.RWMutex
@@ -62,6 +62,12 @@ func NewDatabaseCollector(store statestore.StateStore, regsyncCfg *config.Regsyn
 			[]string{"repository"},
 			nil,
 		),
+		tolerationsWithoutExpiryDesc: prometheus.NewDesc(
+			"suppline_tolerations_without_expiry",
+			"Number of tolerations without an expiry date per repository",
+			[]string{"repository"},
+			nil,
+		),
 		vulnerabilitiesFoundDesc: prometheus.NewDesc(
 			"suppline_vulnerabilities_found",
 			"Current number of vulnerabilities found by severity",
@@ -91,6 +97,7 @@ func (c *DatabaseCollector) Describe(ch chan<- *prometheus.Desc) {
 	ch <- c.toleratedCVEsDesc
 	ch <- c.expiredTolerationsDesc
 	ch <- c.expiringTolerationsDesc
+	ch <- c.tolerationsWithoutExpiryDesc
 	ch <- c.vulnerabilitiesFoundDesc
 	ch <- c.unappliedTolerationsDesc
 }
@@ -116,6 +123,9 @@ func (c *DatabaseCollector) Collect(ch chan<- prometheus.Metric) {
 
 	// Collect toleration expiry metrics
 	c.collectTolerationExpiry(ctx, queryStore, ch)
+
+	// Collect tolerations without expiry metric
+	c.collectTolerationsWithoutExpiry(ctx, queryStore, ch)
 
 	// Collect unapplied tolerations metric
 	c.collectUnappliedTolerations(ctx, queryStore, ch)
@@ -198,6 +208,39 @@ func (c *DatabaseCollector) collectTolerationExpiry(ctx context.Context, store s
 			c.expiringTolerationsDesc,
 			prometheus.GaugeValue,
 			float64(stats.expiring),
+			repo,
+		)
+	}
+}
+
+// collectTolerationsWithoutExpiry collects the count of tolerations without expiry dates per repository
+func (c *DatabaseCollector) collectTolerationsWithoutExpiry(ctx context.Context, store statestore.StateStoreQuery, ch chan<- prometheus.Metric) {
+	tolerations, err := store.ListTolerations(ctx, statestore.TolerationFilter{})
+	if err != nil {
+		if ctx.Err() != nil {
+			c.logger.Debug("tolerations without expiry metric collection timed out (likely database locked)", "error", err)
+		} else {
+			c.logger.Error("failed to collect tolerations without expiry metrics", "error", err)
+		}
+		return
+	}
+
+	// Count tolerations without expiry by repository
+	repoNoExpiryCount := make(map[string]int)
+
+	for _, toleration := range tolerations {
+		// Count tolerations where ExpiresAt is nil (no expiry)
+		if toleration.ExpiresAt == nil {
+			repoNoExpiryCount[toleration.Repository]++
+		}
+	}
+
+	// Send metrics for each repository
+	for repo, count := range repoNoExpiryCount {
+		ch <- prometheus.MustNewConstMetric(
+			c.tolerationsWithoutExpiryDesc,
+			prometheus.GaugeValue,
+			float64(count),
 			repo,
 		)
 	}
