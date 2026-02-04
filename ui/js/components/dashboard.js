@@ -12,6 +12,7 @@ import { getSeverityBadge } from '../utils/severity.js';
 export class Dashboard extends BaseComponent {
     constructor(apiClient) {
         super(apiClient);
+        this.activeFilter = 'all'; // Filter state: 'all', 'expired', 'expiring', 'unused'
         this.data = {
             totalScans: 0,
             failedImages: 0,
@@ -136,8 +137,7 @@ export class Dashboard extends BaseComponent {
                 </div>
 
                 ${this.renderSummaryCards()}
-                ${this.renderExpiringTolerationsCard()}
-                ${this.renderUnappliedTolerationsCard()}
+                ${this.renderTolerationsRequiringAttention()}
                 ${this.renderVulnerabilityBreakdown()}
                 ${this.renderFailedByRepository()}
                 ${this.renderRecentScans()}
@@ -211,12 +211,13 @@ export class Dashboard extends BaseComponent {
     }
 
     /**
-     * Render expiring and expired tolerations card
+     * Render tolerations requiring attention (expired, expiring, and unused)
      */
-    renderExpiringTolerationsCard() {
+    renderTolerationsRequiringAttention() {
         const expiringCount = this.data.expiringTolerationsDetails.length;
         const expiredCount = this.data.expiredTolerationsDetails.length;
-        const totalCount = expiringCount + expiredCount;
+        const unusedCount = this.data.unappliedTolerationsDetails.length;
+        const totalCount = expiringCount + expiredCount + unusedCount;
 
         if (totalCount === 0) {
             return '';
@@ -226,15 +227,34 @@ export class Dashboard extends BaseComponent {
             <div class="dashboard-section">
                 <h2>Tolerations Requiring Attention</h2>
                 <div class="tolerations-attention-summary">
-                    ${expiredCount > 0 ? `<span class="attention-badge attention-badge-expired">${expiredCount} Expired</span>` : ''}
-                    ${expiringCount > 0 ? `<span class="attention-badge attention-badge-expiring">${expiringCount} Expiring Soon</span>` : ''}
+                    ${expiredCount > 0 ? `<span class="attention-badge attention-badge-expired filter-badge" data-filter="expired">${expiredCount} Expired</span>` : ''}
+                    ${expiringCount > 0 ? `<span class="attention-badge attention-badge-expiring filter-badge" data-filter="expiring">${expiringCount} Expiring Soon</span>` : ''}
+                    ${unusedCount > 0 ? `<span class="attention-badge attention-badge-unused filter-badge" data-filter="unused">${unusedCount} Unused</span>` : ''}
                 </div>
-                <div class="tolerations-attention-list">
-                    ${this.renderExpiredTolerations()}
-                    ${this.renderExpiringTolerations()}
+                <div class="tolerations-attention-list" id="tolerations-list">
+                    ${this.renderFilteredTolerations()}
                 </div>
             </div>
         `;
+    }
+
+    /**
+     * Render filtered tolerations based on active filter
+     */
+    renderFilteredTolerations() {
+        let items = [];
+
+        if (this.activeFilter === 'all' || this.activeFilter === 'expired') {
+            items = items.concat(this.renderExpiredTolerations());
+        }
+        if (this.activeFilter === 'all' || this.activeFilter === 'expiring') {
+            items = items.concat(this.renderExpiringTolerations());
+        }
+        if (this.activeFilter === 'all' || this.activeFilter === 'unused') {
+            items = items.concat(this.renderUnusedTolerations());
+        }
+
+        return items.join('');
     }
 
     /**
@@ -242,7 +262,7 @@ export class Dashboard extends BaseComponent {
      */
     renderExpiredTolerations() {
         if (this.data.expiredTolerationsDetails.length === 0) {
-            return '';
+            return [];
         }
 
         return this.data.expiredTolerationsDetails.map(toleration => {
@@ -262,7 +282,7 @@ export class Dashboard extends BaseComponent {
             }
 
             return `
-                <div class="toleration-attention-item toleration-expired" data-cve="${escapeHtml(toleration.CVEID)}">
+                <div class="toleration-attention-item toleration-expired" data-cve="${escapeHtml(toleration.CVEID)}" data-type="expired">
                     <div class="toleration-attention-header">
                         <span class="toleration-attention-cve">${escapeHtml(toleration.CVEID)}</span>
                         <span class="status-badge status-danger">⚠️ EXPIRED</span>
@@ -274,7 +294,7 @@ export class Dashboard extends BaseComponent {
                     </div>
                 </div>
             `;
-        }).join('');
+        });
     }
 
     /**
@@ -282,7 +302,7 @@ export class Dashboard extends BaseComponent {
      */
     renderExpiringTolerations() {
         if (this.data.expiringTolerationsDetails.length === 0) {
-            return '';
+            return [];
         }
 
         // API already returns only non-expired items expiring within 7 days
@@ -303,7 +323,7 @@ export class Dashboard extends BaseComponent {
                 }
 
                 return `
-                    <div class="toleration-attention-item toleration-expiring" data-cve="${escapeHtml(toleration.CVEID)}">
+                    <div class="toleration-attention-item toleration-expiring" data-cve="${escapeHtml(toleration.CVEID)}" data-type="expiring">
                         <div class="toleration-attention-header">
                             <span class="toleration-attention-cve">${escapeHtml(toleration.CVEID)}</span>
                             <span class="status-badge status-warning">⏰ Expiring Soon</span>
@@ -315,56 +335,46 @@ export class Dashboard extends BaseComponent {
                         </div>
                     </div>
                 `;
-            }).join('');
+            });
     }
 
     /**
-     * Render unapplied tolerations card
+     * Render unused (unapplied) tolerations
      */
-    renderUnappliedTolerationsCard() {
+    renderUnusedTolerations() {
         if (this.data.unappliedTolerationsDetails.length === 0) {
-            return '';
+            return [];
         }
 
-        return `
-            <div class="dashboard-section">
-                <h2>Unapplied Tolerations</h2>
-                <div class="tolerations-attention-summary">
-                    <span class="attention-badge attention-badge-info">${this.data.unappliedTolerationsDetails.length} CVE${this.data.unappliedTolerationsDetails.length !== 1 ? 's' : ''} Defined but Never Applied</span>
-                </div>
-                <div class="tolerations-attention-list">
-                    ${this.data.unappliedTolerationsDetails.map(toleration => {
-                        // Handle repositories array - show up to 3, or "multiple repositories"
-                        const repositories = toleration.Repositories || [];
-                        let repoDisplay = '';
-                        if (repositories.length === 0) {
-                            repoDisplay = 'No repositories';
-                        } else if (repositories.length <= 3) {
-                            repoDisplay = repositories.map(r => escapeHtml(r.Repository)).join(', ');
-                        } else {
-                            repoDisplay = 'multiple repositories';
-                        }
+        return this.data.unappliedTolerationsDetails.map(toleration => {
+            // Handle repositories array - show up to 3, or "multiple repositories"
+            const repositories = toleration.Repositories || [];
+            let repoDisplay = '';
+            if (repositories.length === 0) {
+                repoDisplay = 'No repositories';
+            } else if (repositories.length <= 3) {
+                repoDisplay = repositories.map(r => escapeHtml(r.Repository)).join(', ');
+            } else {
+                repoDisplay = 'multiple repositories';
+            }
 
-                        const expiryDate = toleration.ExpiresAt ? new Date(toleration.ExpiresAt * 1000) : null;
-                        const expiryDateStr = expiryDate ? expiryDate.toLocaleDateString() : 'Never';
+            const expiryDate = toleration.ExpiresAt ? new Date(toleration.ExpiresAt * 1000) : null;
+            const expiryDateStr = expiryDate ? expiryDate.toLocaleDateString() : 'Never';
 
-                        return `
-                            <div class="toleration-attention-item toleration-unapplied" data-cve="${escapeHtml(toleration.CVEID)}">
-                                <div class="toleration-attention-header">
-                                    <span class="toleration-attention-cve">${escapeHtml(toleration.CVEID)}</span>
-                                    <span class="status-badge status-secondary">📋 Not Yet Applied</span>
-                                </div>
-                                <div class="toleration-attention-repo">${repoDisplay}</div>
-                                <div class="toleration-attention-statement">${escapeHtml(toleration.Statement || 'No statement provided')}</div>
-                                <div class="toleration-attention-expiry">
-                                    Configured expiry: ${expiryDateStr}
-                                </div>
-                            </div>
-                        `;
-                    }).join('')}
+            return `
+                <div class="toleration-attention-item toleration-unused" data-cve="${escapeHtml(toleration.CVEID)}" data-type="unused">
+                    <div class="toleration-attention-header">
+                        <span class="toleration-attention-cve">${escapeHtml(toleration.CVEID)}</span>
+                        <span class="status-badge status-secondary">📋 UNUSED</span>
+                    </div>
+                    <div class="toleration-attention-repo">${repoDisplay}</div>
+                    <div class="toleration-attention-statement">${escapeHtml(toleration.Statement || 'No statement provided')}</div>
+                    <div class="toleration-attention-expiry">
+                        Configured expiry: ${expiryDateStr}
+                    </div>
                 </div>
-            </div>
-        `;
+            `;
+        });
     }
 
     /**
@@ -570,6 +580,37 @@ export class Dashboard extends BaseComponent {
      * Attach event listeners after rendering
      */
     attachEventListeners() {
+        // Add click handlers for filter badges
+        document.querySelectorAll('.filter-badge').forEach(badge => {
+            badge.addEventListener('click', (e) => {
+                e.stopPropagation();
+                const filter = badge.dataset.filter;
+                
+                // Toggle filter
+                if (this.activeFilter === filter) {
+                    this.activeFilter = 'all';
+                } else {
+                    this.activeFilter = filter;
+                }
+                
+                // Update badge styling
+                document.querySelectorAll('.filter-badge').forEach(b => {
+                    b.classList.remove('filter-active');
+                });
+                if (this.activeFilter !== 'all') {
+                    badge.classList.add('filter-active');
+                }
+                
+                // Re-render filtered list
+                const listContainer = document.getElementById('tolerations-list');
+                if (listContainer) {
+                    listContainer.innerHTML = this.renderFilteredTolerations();
+                    // Re-attach click handlers for toleration items
+                    this.attachTolerationItemHandlers();
+                }
+            });
+        });
+
         // Add click handlers for scan rows
         document.querySelectorAll('.scan-row').forEach(row => {
             row.addEventListener('click', () => {
@@ -592,14 +633,7 @@ export class Dashboard extends BaseComponent {
         });
 
         // Add click handlers for toleration items
-        document.querySelectorAll('.toleration-attention-item').forEach(item => {
-            item.addEventListener('click', () => {
-                const cveId = item.dataset.cve;
-                if (cveId) {
-                    window.router.navigate(`/vulnerabilities?cve_id=${encodeURIComponent(cveId)}`);
-                }
-            });
-        });
+        this.attachTolerationItemHandlers();
         
         // Apply widths to vulnerability bar segments
         document.querySelectorAll('.vulnerability-bar-segment[data-width]').forEach(segment => {
@@ -615,6 +649,20 @@ export class Dashboard extends BaseComponent {
             if (width) {
                 fill.style.setProperty('--bar-width', `${width}%`);
             }
+        });
+    }
+
+    /**
+     * Attach click handlers for toleration items (helper for re-use)
+     */
+    attachTolerationItemHandlers() {
+        document.querySelectorAll('.toleration-attention-item').forEach(item => {
+            item.addEventListener('click', () => {
+                const cveId = item.dataset.cve;
+                if (cveId) {
+                    window.router.navigate(`/vulnerabilities?cve_id=${encodeURIComponent(cveId)}`);
+                }
+            });
         });
     }
 }

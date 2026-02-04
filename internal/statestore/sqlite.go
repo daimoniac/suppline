@@ -767,78 +767,9 @@ func (s *SQLiteStore) ListTolerations(ctx context.Context, filter TolerationFilt
 	return tolerations, nil
 }
 
-// GetUnappliedTolerationsCount returns the count of CVE IDs from the provided list
-// that have never been tolerated in any scan record.
-// This helps identify tolerations defined in configuration that are no longer being used.
-func (s *SQLiteStore) GetUnappliedTolerationsCount(ctx context.Context, definedCVEIDs []string) (int, error) {
-	if len(definedCVEIDs) == 0 {
-		return 0, nil
-	}
-
-	// Query all tolerated CVEs from scan records
-	query := `
-		SELECT 
-			sr.tolerated_cves_json
-		FROM scan_records sr
-		WHERE sr.tolerated_cves_json IS NOT NULL 
-			AND sr.tolerated_cves_json != '[]'
-			AND sr.tolerated_cves_json != ''
-	`
-
-	rows, err := s.db.QueryContext(ctx, query)
-	if err != nil {
-		return 0, errors.NewTransientf("failed to query tolerated CVEs: %w", err)
-	}
-	defer rows.Close()
-
-	// Build a set of CVE IDs that have been tolerated at least once
-	appliedCVEs := make(map[string]bool)
-
-	for rows.Next() {
-		var toleratedJSON sql.NullString
-
-		if err := rows.Scan(&toleratedJSON); err != nil {
-			return 0, errors.NewTransientf("failed to scan row: %w", err)
-		}
-
-		if !toleratedJSON.Valid || toleratedJSON.String == "" {
-			continue
-		}
-
-		var tolerated []types.ToleratedCVE
-		if err := json.Unmarshal([]byte(toleratedJSON.String), &tolerated); err != nil {
-			// Skip invalid JSON
-			continue
-		}
-
-		for _, tc := range tolerated {
-			appliedCVEs[tc.CVEID] = true
-		}
-	}
-
-	if err := rows.Err(); err != nil {
-		return 0, errors.NewTransientf("error iterating rows: %w", err)
-	}
-
-	// Count CVE IDs from the defined list that are NOT in the applied set
-	unappliedCount := 0
-	for _, cveID := range definedCVEIDs {
-		if !appliedCVEs[cveID] {
-			unappliedCount++
-		}
-	}
-
-	return unappliedCount, nil
-}
-
-// GetAppliedCVEIDs returns the subset of provided CVE IDs that have been applied
-// (tolerated) in at least one scan record.
-func (s *SQLiteStore) GetAppliedCVEIDs(ctx context.Context, definedCVEIDs []string) ([]string, error) {
-	if len(definedCVEIDs) == 0 {
-		return []string{}, nil
-	}
-
-	// Query all tolerated CVEs from scan records
+// getAppliedCVESet returns a set of all CVE IDs that have been applied (tolerated)
+// in at least one scan record. This is a helper method for unapplied tolerations queries.
+func (s *SQLiteStore) getAppliedCVESet(ctx context.Context) (map[string]bool, error) {
 	query := `
 		SELECT 
 			sr.tolerated_cves_json
@@ -881,6 +812,45 @@ func (s *SQLiteStore) GetAppliedCVEIDs(ctx context.Context, definedCVEIDs []stri
 
 	if err := rows.Err(); err != nil {
 		return nil, errors.NewTransientf("error iterating rows: %w", err)
+	}
+
+	return appliedCVEs, nil
+}
+
+// GetUnappliedTolerationsCount returns the count of CVE IDs from the provided list
+// that have never been tolerated in any scan record.
+// This helps identify tolerations defined in configuration that are no longer being used.
+func (s *SQLiteStore) GetUnappliedTolerationsCount(ctx context.Context, definedCVEIDs []string) (int, error) {
+	if len(definedCVEIDs) == 0 {
+		return 0, nil
+	}
+
+	appliedCVEs, err := s.getAppliedCVESet(ctx)
+	if err != nil {
+		return 0, err
+	}
+
+	// Count CVE IDs from the defined list that are NOT in the applied set
+	unappliedCount := 0
+	for _, cveID := range definedCVEIDs {
+		if !appliedCVEs[cveID] {
+			unappliedCount++
+		}
+	}
+
+	return unappliedCount, nil
+}
+
+// GetAppliedCVEIDs returns the subset of provided CVE IDs that have been applied
+// (tolerated) in at least one scan record.
+func (s *SQLiteStore) GetAppliedCVEIDs(ctx context.Context, definedCVEIDs []string) ([]string, error) {
+	if len(definedCVEIDs) == 0 {
+		return []string{}, nil
+	}
+
+	appliedCVEs, err := s.getAppliedCVESet(ctx)
+	if err != nil {
+		return nil, err
 	}
 
 	// Filter definedCVEIDs to only those that have been applied
