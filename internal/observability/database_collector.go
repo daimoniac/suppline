@@ -6,6 +6,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/daimoniac/suppline/internal/config"
 	"github.com/daimoniac/suppline/internal/statestore"
 	"github.com/prometheus/client_golang/prometheus"
 )
@@ -17,21 +18,32 @@ var (
 
 // DatabaseCollector collects metrics from the database on-demand when /metrics is scraped
 type DatabaseCollector struct {
-	store  statestore.StateStore
-	logger *slog.Logger
+	store      statestore.StateStore
+	logger     *slog.Logger
+	regsyncCfg *config.RegsyncConfig // Optional: used to calculate unapplied tolerations
 
 	// Metric descriptors
-	toleratedCVEsDesc        *prometheus.Desc
-	expiredTolerationsDesc   *prometheus.Desc
-	expiringTolerationsDesc  *prometheus.Desc
-	vulnerabilitiesFoundDesc *prometheus.Desc
+	toleratedCVEsDesc              *prometheus.Desc
+	expiredTolerationsDesc         *prometheus.Desc
+	expiringTolerationsDesc        *prometheus.Desc
+	tolerationsWithoutExpiryDesc   *prometheus.Desc
+	vulnerabilitiesFoundDesc       *prometheus.Desc
+	unappliedTolerationsDesc       *prometheus.Desc
+
+	// Cache for unapplied tolerations (10-minute TTL)
+	unappliedTolerationsMutex sync.RWMutex
+	unappliedTolerationsCache int
+	unappliedTolerationsTime  time.Time
+	unappliedTolerationsTTL   time.Duration
 }
 
 // NewDatabaseCollector creates a new database metrics collector
-func NewDatabaseCollector(store statestore.StateStore, logger *slog.Logger) *DatabaseCollector {
+func NewDatabaseCollector(store statestore.StateStore, regsyncCfg *config.RegsyncConfig, logger *slog.Logger) *DatabaseCollector {
 	return &DatabaseCollector{
-		store:  store,
-		logger: logger,
+		store:                   store,
+		logger:                  logger,
+		regsyncCfg:              regsyncCfg,
+		unappliedTolerationsTTL: 10 * time.Minute,
 		toleratedCVEsDesc: prometheus.NewDesc(
 			"suppline_tolerated_cves",
 			"Current total number of CVEs that are tolerated",
@@ -56,13 +68,19 @@ func NewDatabaseCollector(store statestore.StateStore, logger *slog.Logger) *Dat
 			[]string{"severity"},
 			nil,
 		),
+		unappliedTolerationsDesc: prometheus.NewDesc(
+			"suppline_unapplied_tolerations",
+			"Number of toleration CVE IDs defined in configuration that have never been applied to any digest",
+			nil,
+			nil,
+		),
 	}
 }
 
 // RegisterDatabaseCollector registers the database collector exactly once
-func RegisterDatabaseCollector(store statestore.StateStore, logger *slog.Logger) {
+func RegisterDatabaseCollector(store statestore.StateStore, regsyncCfg *config.RegsyncConfig, logger *slog.Logger) {
 	dbCollectorOnce.Do(func() {
-		dbCollectorInstance = NewDatabaseCollector(store, logger)
+		dbCollectorInstance = NewDatabaseCollector(store, regsyncCfg, logger)
 		prometheus.MustRegister(dbCollectorInstance)
 		logger.Info("database metrics collector registered")
 	})
@@ -74,6 +92,7 @@ func (c *DatabaseCollector) Describe(ch chan<- *prometheus.Desc) {
 	ch <- c.expiredTolerationsDesc
 	ch <- c.expiringTolerationsDesc
 	ch <- c.vulnerabilitiesFoundDesc
+	ch <- c.unappliedTolerationsDesc
 }
 
 // Collect queries the database and sends current metrics to the provided channel
@@ -97,6 +116,9 @@ func (c *DatabaseCollector) Collect(ch chan<- prometheus.Metric) {
 
 	// Collect toleration expiry metrics
 	c.collectTolerationExpiry(ctx, queryStore, ch)
+
+	// Collect unapplied tolerations metric
+	c.collectUnappliedTolerations(ctx, queryStore, ch)
 
 	// Collect vulnerability metrics
 	c.collectVulnerabilities(ctx, queryStore, ch)
@@ -179,6 +201,76 @@ func (c *DatabaseCollector) collectTolerationExpiry(ctx context.Context, store s
 			repo,
 		)
 	}
+}
+
+// collectUnappliedTolerations collects the count of tolerations defined in config but not yet applied
+func (c *DatabaseCollector) collectUnappliedTolerations(ctx context.Context, store statestore.StateStoreQuery, ch chan<- prometheus.Metric) {
+	// If no regsync config is available, skip this metric
+	if c.regsyncCfg == nil {
+		return
+	}
+
+	// Check cache first
+	c.unappliedTolerationsMutex.RLock()
+	if time.Since(c.unappliedTolerationsTime) < c.unappliedTolerationsTTL {
+		// Cache is still valid
+		cachedValue := c.unappliedTolerationsCache
+		c.unappliedTolerationsMutex.RUnlock()
+		ch <- prometheus.MustNewConstMetric(
+			c.unappliedTolerationsDesc,
+			prometheus.GaugeValue,
+			float64(cachedValue),
+		)
+		return
+	}
+	c.unappliedTolerationsMutex.RUnlock()
+
+	// Cache miss or expired, collect the metric
+	// Collect all defined CVE IDs from the configuration
+	definedCVEIDs := make(map[string]bool)
+
+	// Get default tolerations
+	for _, toleration := range c.regsyncCfg.Defaults.Tolerate {
+		definedCVEIDs[toleration.ID] = true
+	}
+
+	// Get all unique CVE IDs from all syncs
+	if c.regsyncCfg.Sync != nil {
+		for _, sync := range c.regsyncCfg.Sync {
+			for _, toleration := range sync.Tolerate {
+				definedCVEIDs[toleration.ID] = true
+			}
+		}
+	}
+
+	// Convert map to slice for the statestore method
+	cveIDSlice := make([]string, 0, len(definedCVEIDs))
+	for cveID := range definedCVEIDs {
+		cveIDSlice = append(cveIDSlice, cveID)
+	}
+
+	// Query the state store for unapplied tolerations
+	unappliedCount, err := store.GetUnappliedTolerationsCount(ctx, cveIDSlice)
+	if err != nil {
+		if ctx.Err() != nil {
+			c.logger.Debug("unapplied tolerations metric collection timed out (likely database locked)", "error", err)
+		} else {
+			c.logger.Error("failed to collect unapplied tolerations metric", "error", err)
+		}
+		return
+	}
+
+	// Update cache
+	c.unappliedTolerationsMutex.Lock()
+	c.unappliedTolerationsCache = unappliedCount
+	c.unappliedTolerationsTime = time.Now()
+	c.unappliedTolerationsMutex.Unlock()
+
+	ch <- prometheus.MustNewConstMetric(
+		c.unappliedTolerationsDesc,
+		prometheus.GaugeValue,
+		float64(unappliedCount),
+	)
 }
 
 // collectVulnerabilities collects vulnerability counts by severity

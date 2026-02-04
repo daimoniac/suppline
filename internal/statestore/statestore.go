@@ -123,6 +123,11 @@ type StateStoreQuery interface {
 	// ListTolerations returns tolerated CVEs with optional filters
 	ListTolerations(ctx context.Context, filter TolerationFilter) ([]*types.TolerationInfo, error)
 
+	// GetUnappliedTolerationsCount returns the count of CVE IDs that are defined in a set
+	// but have never been tolerated in any scan record. This helps identify tolerations
+	// that are no longer being used and can be cleaned up from configuration.
+	GetUnappliedTolerationsCount(ctx context.Context, definedCVEIDs []string) (int, error)
+
 	// ListRepositories returns all repositories with aggregated metadata
 	ListRepositories(ctx context.Context, filter RepositoryFilter) (*RepositoriesListResponse, error)
 

@@ -70,6 +70,10 @@ func (m *mockStateStore) ListTolerations(ctx context.Context, filter statestore.
 	return nil, nil
 }
 
+func (m *mockStateStore) GetUnappliedTolerationsCount(ctx context.Context, definedCVEIDs []string) (int, error) {
+	return 0, nil
+}
+
 func (m *mockStateStore) ListRepositories(ctx context.Context, filter statestore.RepositoryFilter) (*statestore.RepositoriesListResponse, error) {
 	return &statestore.RepositoriesListResponse{
 		Repositories: []statestore.RepositoryInfo{},

@@ -539,6 +539,97 @@ func TestSQLiteStore(t *testing.T) {
 	})
 }
 
+// TestUnappliedTolerationsCount tests the GetUnappliedTolerationsCount method
+func TestUnappliedTolerationsCount(t *testing.T) {
+	dbPath := "test_unapplied_tolerations_" + t.Name() + ".db"
+	os.Remove(dbPath)
+	defer os.Remove(dbPath)
+
+	store, err := NewSQLiteStore(dbPath)
+	if err != nil {
+		t.Fatalf("Failed to create SQLite store: %v", err)
+	}
+	defer store.Close()
+
+	ctx := context.Background()
+
+	// Record a scan with some tolerated CVEs
+	record := &ScanRecord{
+		Digest:            "sha256:abc123",
+		Repository:        "myorg/myapp",
+		Tag:               "latest",
+		CriticalVulnCount: 0,
+		HighVulnCount:     0,
+		MediumVulnCount:   0,
+		LowVulnCount:      0,
+		PolicyPassed:      true,
+		ToleratedCVEs: []types.ToleratedCVE{
+			{
+				CVEID:       "CVE-2024-1234",
+				Statement:   "Acceptable risk",
+				ToleratedAt: time.Now().Unix(),
+			},
+			{
+				CVEID:       "CVE-2024-5678",
+				Statement:   "Acceptable risk",
+				ToleratedAt: time.Now().Unix(),
+			},
+		},
+	}
+
+	err = store.RecordScan(ctx, record)
+	if err != nil {
+		t.Fatalf("Failed to record scan: %v", err)
+	}
+
+	t.Run("GetUnappliedTolerationsCount with empty list returns 0", func(t *testing.T) {
+		count, err := store.GetUnappliedTolerationsCount(ctx, []string{})
+		if err != nil {
+			t.Fatalf("Failed to get unapplied tolerations count: %v", err)
+		}
+		if count != 0 {
+			t.Errorf("Expected 0 for empty list, got %d", count)
+		}
+	})
+
+	t.Run("GetUnappliedTolerationsCount finds applied tolerations", func(t *testing.T) {
+		// These CVEs have been applied
+		count, err := store.GetUnappliedTolerationsCount(ctx, []string{"CVE-2024-1234", "CVE-2024-5678"})
+		if err != nil {
+			t.Fatalf("Failed to get unapplied tolerations count: %v", err)
+		}
+		if count != 0 {
+			t.Errorf("Expected 0 for applied CVEs, got %d", count)
+		}
+	})
+
+	t.Run("GetUnappliedTolerationsCount finds unapplied tolerations", func(t *testing.T) {
+		// CVE-2024-9999 has never been tolerated
+		count, err := store.GetUnappliedTolerationsCount(ctx, []string{"CVE-2024-9999"})
+		if err != nil {
+			t.Fatalf("Failed to get unapplied tolerations count: %v", err)
+		}
+		if count != 1 {
+			t.Errorf("Expected 1 for unapplied CVE, got %d", count)
+		}
+	})
+
+	t.Run("GetUnappliedTolerationsCount with mixed applied and unapplied", func(t *testing.T) {
+		// Mix of applied and unapplied
+		count, err := store.GetUnappliedTolerationsCount(ctx, []string{
+			"CVE-2024-1234", // applied
+			"CVE-2024-9999", // unapplied
+			"CVE-2024-8888", // unapplied
+		})
+		if err != nil {
+			t.Fatalf("Failed to get unapplied tolerations count: %v", err)
+		}
+		if count != 2 {
+			t.Errorf("Expected 2 unapplied CVEs, got %d", count)
+		}
+	})
+}
+
 // TestSchemaAndConstraints tests database schema creation, indexes, and constraints
 func TestSchemaAndConstraints(t *testing.T) {
 	dbPath := "test_schema_" + t.Name() + ".db"
