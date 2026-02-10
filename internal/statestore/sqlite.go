@@ -1025,9 +1025,9 @@ func (s *SQLiteStore) ListRepositories(ctx context.Context, filter RepositoryFil
 
 // GetRepository returns a repository with all its tags
 func (s *SQLiteStore) GetRepository(ctx context.Context, name string, filter RepositoryTagFilter) (*RepositoryDetail, error) {
-	// First, get total count of tags for this repository
+	// First, get total count of unique tags for this repository
 	countQuery := `
-		SELECT COUNT(DISTINCT a.id)
+		SELECT COUNT(DISTINCT a.tag)
 		FROM artifacts a
 		JOIN repositories r ON a.repository_id = r.id
 		WHERE r.name = ?
@@ -1045,7 +1045,11 @@ func (s *SQLiteStore) GetRepository(ctx context.Context, name string, filter Rep
 		return nil, errors.NewTransientf("failed to count tags: %w", err)
 	}
 
-	// Query tags with their scan data
+	// Query tags with their scan data, selecting only the newest artifact per tag
+	// Using a subquery to get the maximum artifact id (newest) for each tag, then joining back
+	// to get the full artifact details for only the newest digest per tag.
+	// We use MAX(id) instead of MAX(last_seen) because multiple scans of different digests
+	// with the same tag can happen at the same timestamp, but id is always unique and sequential.
 	query := `
 		SELECT 
 			a.tag,
@@ -1060,16 +1064,22 @@ func (s *SQLiteStore) GetRepository(ctx context.Context, name string, filter Rep
 		FROM artifacts a
 		JOIN repositories r ON a.repository_id = r.id
 		LEFT JOIN scan_records sr ON a.last_scan_id = sr.id
+		INNER JOIN (
+			SELECT a2.tag, MAX(a2.id) as max_id
+			FROM artifacts a2
+			JOIN repositories r2 ON a2.repository_id = r2.id
+			WHERE r2.name = ?
+			GROUP BY a2.tag
+		) latest ON a.tag = latest.tag AND a.id = latest.max_id
 		WHERE r.name = ?
 	`
-	args := []interface{}{name}
+	args := []interface{}{name, name}
 
 	if filter.Search != "" {
 		query += " AND a.tag LIKE ?"
 		args = append(args, "%"+filter.Search+"%")
 	}
 
-	query += " GROUP BY a.id"
 	query += " ORDER BY a.tag ASC"
 
 	if filter.Limit > 0 {

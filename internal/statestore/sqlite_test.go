@@ -2110,6 +2110,135 @@ func TestRepositoryAggregation(t *testing.T) {
 		}
 	})
 
+	// Test 8b: GetRepository returns only newest digest when multiple digests exist for same tag
+	t.Run("GetRepository returns only newest digest for each tag", func(t *testing.T) {
+		// Create multiple digests for the same tag "1.29-alpine"
+		// This simulates the scenario where a tag is retagged to different digests over time
+
+		// First digest (oldest)
+		record1 := &ScanRecord{
+			Digest:            "sha256:f7d0d0f2ebc0486dc110278672b9073f7fd641e58376b112b0c8865cf36d2e36",
+			Repository:        "hostingmaloonde/nginxinc_nginx-unprivileged",
+			Tag:               "1.29-alpine",
+			ScanDurationMs:    1000,
+			CriticalVulnCount: 3,
+			HighVulnCount:     4,
+			MediumVulnCount:   22,
+			LowVulnCount:      3,
+			PolicyPassed:      false,
+			SBOMAttested:      true,
+			VulnAttested:      true,
+			SCAIAttested:      false,
+			Vulnerabilities:   []types.VulnerabilityRecord{},
+			ToleratedCVEs:     []types.ToleratedCVE{},
+		}
+		err := store.RecordScan(ctx, record1)
+		if err != nil {
+			t.Fatalf("Failed to record scan 1: %v", err)
+		}
+
+		// Sleep to ensure different last_seen timestamps
+		time.Sleep(10 * time.Millisecond)
+
+		// Second digest
+		record2 := &ScanRecord{
+			Digest:            "sha256:f856da9f9b5cc94a1be923a11030633def427c6ad05de345ad8d6bb614b63e69",
+			Repository:        "hostingmaloonde/nginxinc_nginx-unprivileged",
+			Tag:               "1.29-alpine",
+			ScanDurationMs:    1000,
+			CriticalVulnCount: 0,
+			HighVulnCount:     0,
+			MediumVulnCount:   0,
+			LowVulnCount:      0,
+			PolicyPassed:      true,
+			SBOMAttested:      true,
+			VulnAttested:      true,
+			SCAIAttested:      false,
+			Vulnerabilities:   []types.VulnerabilityRecord{},
+			ToleratedCVEs:     []types.ToleratedCVE{},
+		}
+		err = store.RecordScan(ctx, record2)
+		if err != nil {
+			t.Fatalf("Failed to record scan 2: %v", err)
+		}
+
+		time.Sleep(10 * time.Millisecond)
+
+		// Third digest
+		record3 := &ScanRecord{
+			Digest:            "sha256:45f5c575b82708d0b6cacb5ea428642d95cf4b5e766f0de5b42eaa15a0970052",
+			Repository:        "hostingmaloonde/nginxinc_nginx-unprivileged",
+			Tag:               "1.29-alpine",
+			ScanDurationMs:    1000,
+			CriticalVulnCount: 0,
+			HighVulnCount:     0,
+			MediumVulnCount:   0,
+			LowVulnCount:      0,
+			PolicyPassed:      true,
+			SBOMAttested:      true,
+			VulnAttested:      true,
+			SCAIAttested:      false,
+			Vulnerabilities:   []types.VulnerabilityRecord{},
+			ToleratedCVEs:     []types.ToleratedCVE{},
+		}
+		err = store.RecordScan(ctx, record3)
+		if err != nil {
+			t.Fatalf("Failed to record scan 3: %v", err)
+		}
+
+		time.Sleep(10 * time.Millisecond)
+
+		// Fourth digest (newest - this is the one we expect)
+		record4 := &ScanRecord{
+			Digest:            "sha256:47ac856415c885f6ca892fa57408ce8ef414fffffc4bd4e8f2b7f298d4d0461c",
+			Repository:        "hostingmaloonde/nginxinc_nginx-unprivileged",
+			Tag:               "1.29-alpine",
+			ScanDurationMs:    1000,
+			CriticalVulnCount: 0,
+			HighVulnCount:     0,
+			MediumVulnCount:   0,
+			LowVulnCount:      0,
+			PolicyPassed:      true,
+			SBOMAttested:      true,
+			VulnAttested:      true,
+			SCAIAttested:      false,
+			Vulnerabilities:   []types.VulnerabilityRecord{},
+			ToleratedCVEs:     []types.ToleratedCVE{},
+		}
+		err = store.RecordScan(ctx, record4)
+		if err != nil {
+			t.Fatalf("Failed to record scan 4: %v", err)
+		}
+
+		// Now query the repository - should only return the newest digest
+		filter := RepositoryTagFilter{
+			Limit:  100,
+			Offset: 0,
+		}
+		detail, err := store.GetRepository(ctx, "hostingmaloonde/nginxinc_nginx-unprivileged", filter)
+		if err != nil {
+			t.Fatalf("Failed to get repository: %v", err)
+		}
+
+		// Should only return 1 tag, not 4
+		if len(detail.Tags) != 1 {
+			t.Errorf("Expected only 1 tag (newest digest), got %d tags", len(detail.Tags))
+		}
+
+		if detail.Total != 1 {
+			t.Errorf("Expected total count of 1, got %d", detail.Total)
+		}
+
+		// Verify it's the newest digest
+		if detail.Tags[0].Digest != "sha256:47ac856415c885f6ca892fa57408ce8ef414fffffc4bd4e8f2b7f298d4d0461c" {
+			t.Errorf("Expected newest digest sha256:47ac856415c885f6ca892fa57408ce8ef414fffffc4bd4e8f2b7f298d4d0461c, got %s", detail.Tags[0].Digest)
+		}
+
+		if detail.Tags[0].Name != "1.29-alpine" {
+			t.Errorf("Expected tag name '1.29-alpine', got %s", detail.Tags[0].Name)
+		}
+	})
+
 	// Test 9: Empty search results
 	t.Run("Empty search results", func(t *testing.T) {
 		filter := RepositoryFilter{
@@ -2144,8 +2273,8 @@ func TestRepositoryAggregation(t *testing.T) {
 		if len(response.Repositories) != 0 {
 			t.Errorf("Expected 0 repositories with large offset, got %d", len(response.Repositories))
 		}
-		if response.Total != 2 {
-			t.Errorf("Expected total count of 2, got %d", response.Total)
+		if response.Total != 3 {
+			t.Errorf("Expected total count of 3, got %d", response.Total)
 		}
 	})
 
