@@ -61,6 +61,15 @@ func (s *APIServer) handleGetScan(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Load all tags for this digest (with composite unique constraint, multiple tags can point to same digest)
+	tags, err := s.stateStore.GetTagsForDigest(r.Context(), digest)
+	if err != nil {
+		// Log error but don't fail the request
+		s.logger.Error("failed to get tags for digest", "digest", digest, "error", err)
+	} else {
+		record.Tags = tags
+	}
+
 	// Enrich with current tolerations from config instead of stale DB values
 	s.enrichScanRecord(record)
 

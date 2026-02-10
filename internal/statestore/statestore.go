@@ -102,6 +102,13 @@ type TagInfo struct {
 	PolicyPassed       bool
 }
 
+// TagRef represents a repository+tag combination pointing to a digest
+type TagRef struct {
+	Repository string
+	Tag        string
+	LastSeen   int64 // Unix timestamp in seconds
+}
+
 // StateStoreQuery defines the extended interface for querying scan data.
 // This interface is primarily used by the API layer for reporting and analysis.
 // Implementations should also implement StateStore for core functionality.
@@ -138,6 +145,9 @@ type StateStoreQuery interface {
 
 	// GetRepository returns a repository with all its tags
 	GetRepository(ctx context.Context, name string, filter RepositoryTagFilter) (*RepositoryDetail, error)
+
+	// GetTagsForDigest returns all repository+tag combinations that point to the given digest
+	GetTagsForDigest(ctx context.Context, digest string) ([]TagRef, error)
 }
 
 // RepositoryFilter defines criteria for listing repositories
@@ -180,7 +190,8 @@ type ScanRecord struct {
 	// Denormalized for convenience (loaded via joins)
 	Digest          string
 	Repository      string
-	Tag             string
+	Tag             string                      // Primary tag from the artifact that was scanned
+	Tags            []TagRef                    // All tags pointing to this digest (loaded separately)
 	Vulnerabilities []types.VulnerabilityRecord // Using canonical type
 	ToleratedCVEs   []types.ToleratedCVE        // Using canonical type
 }

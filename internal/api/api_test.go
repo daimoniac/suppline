@@ -43,7 +43,28 @@ func (m *mockStateStore) RecordScan(ctx context.Context, record *statestore.Scan
 }
 
 func (m *mockStateStore) GetLastScan(ctx context.Context, digest string) (*statestore.ScanRecord, error) {
-	return nil, nil
+	// Return a minimal scan record for testing
+	return &statestore.ScanRecord{
+		ID:                1,
+		ArtifactID:        1,
+		ScanDurationMs:    100,
+		CriticalVulnCount: 0,
+		HighVulnCount:     0,
+		MediumVulnCount:   0,
+		LowVulnCount:      0,
+		PolicyPassed:      true,
+		SBOMAttested:      false,
+		VulnAttested:      false,
+		SCAIAttested:      false,
+		ErrorMessage:      "",
+		CreatedAt:         time.Now().Unix(),
+		Digest:            digest,
+		Repository:        "test/repo",
+		Tag:               "latest",
+		Tags:              []statestore.TagRef{},
+		Vulnerabilities:   []types.VulnerabilityRecord{},
+		ToleratedCVEs:     []types.ToleratedCVE{},
+	}, nil
 }
 
 func (m *mockStateStore) ListDueForRescan(ctx context.Context, interval time.Duration) ([]string, error) {
@@ -108,6 +129,11 @@ func (m *mockStateStore) GetRepository(ctx context.Context, name string, filter 
 		},
 		Total: 1,
 	}, nil
+}
+
+func (m *mockStateStore) GetTagsForDigest(ctx context.Context, digest string) ([]statestore.TagRef, error) {
+	// Return empty list for mock
+	return []statestore.TagRef{}, nil
 }
 
 func TestNewAPIServer(t *testing.T) {

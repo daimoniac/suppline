@@ -146,24 +146,31 @@ func TestSQLiteStore(t *testing.T) {
 		if len(history) != 2 {
 			t.Errorf("Expected 2 scan records, got %d", len(history))
 		}
-		// Verify both scans are returned in reverse chronological order (newest first)
-		// Note: tag is mutable and points to current artifact tag, so both scans will have the latest tag
-		if history[0].Tag != "v1.0.1" {
-			t.Errorf("Expected first scan to have tag v1.0.1, got %s", history[0].Tag)
+		// Verify both scans are returned
+		// Note: With composite unique constraint, each tag gets its own artifact row
+		// So scans from different tags (v1.0.0 and v1.0.1) are separate artifacts
+		// Due to timestamp precision, scans might be returned in either order
+		tags := map[string]bool{}
+		for _, scan := range history {
+			tags[scan.Tag] = true
 		}
-		if history[1].Tag != "v1.0.1" {
-			t.Errorf("Expected second scan to also have tag v1.0.1 (current artifact tag), got %s", history[1].Tag)
+		if !tags["v1.0.0"] || !tags["v1.0.1"] {
+			t.Errorf("Expected both tags v1.0.0 and v1.0.1 in history, got: %v", tags)
 		}
+
 		// Verify each scan has its own vulnerabilities (linked to scan_record_id)
-		// Note: Due to timestamp precision, scans might be returned in creation order rather than DESC
 		// Find which scan is which by checking vulnerability count
 		var newestScan, oldestScan *ScanRecord
-		if len(history[0].Vulnerabilities) == 1 {
-			newestScan = history[0]
-			oldestScan = history[1]
-		} else {
-			newestScan = history[1]
-			oldestScan = history[0]
+		for _, scan := range history {
+			if len(scan.Vulnerabilities) == 1 {
+				newestScan = scan
+			} else {
+				oldestScan = scan
+			}
+		}
+
+		if newestScan == nil || oldestScan == nil {
+			t.Fatal("Failed to identify newest and oldest scans")
 		}
 
 		// Newest scan (v1.0.1) should have 1 vulnerability
@@ -812,8 +819,8 @@ func TestSchemaAndConstraints(t *testing.T) {
 		}
 	})
 
-	// Test 4: Unique constraint on artifact digest
-	t.Run("Unique constraint on artifact digest", func(t *testing.T) {
+	// Test 4: Composite unique constraint on artifact (repository_id, digest, tag)
+	t.Run("Composite unique constraint on artifact", func(t *testing.T) {
 		// Get or create repository
 		var repoID int64
 		err := store.db.QueryRowContext(ctx, `
@@ -824,22 +831,40 @@ func TestSchemaAndConstraints(t *testing.T) {
 		}
 
 		now := time.Now()
-		// Insert first artifact
+		// Insert first artifact with tag
 		_, err = store.db.ExecContext(ctx, `
-			INSERT INTO artifacts (repository_id, digest, first_seen, last_seen)
-			VALUES (?, ?, ?, ?)
-		`, repoID, "sha256:abc123", now, now)
+			INSERT INTO artifacts (repository_id, digest, tag, first_seen, last_seen)
+			VALUES (?, ?, ?, ?, ?)
+		`, repoID, "sha256:abc123", "v1.0", now, now)
 		if err != nil {
 			t.Fatalf("Failed to insert first artifact: %v", err)
 		}
 
-		// Try to insert duplicate digest
+		// Try to insert duplicate (same repo, digest, tag) - should fail
 		_, err = store.db.ExecContext(ctx, `
-			INSERT INTO artifacts (repository_id, digest, first_seen, last_seen)
-			VALUES (?, ?, ?, ?)
-		`, repoID, "sha256:abc123", now, now)
+			INSERT INTO artifacts (repository_id, digest, tag, first_seen, last_seen)
+			VALUES (?, ?, ?, ?, ?)
+		`, repoID, "sha256:abc123", "v1.0", now, now)
 		if err == nil {
-			t.Error("Expected unique constraint violation for duplicate digest")
+			t.Error("Expected unique constraint violation for duplicate (repository_id, digest, tag)")
+		}
+
+		// Insert same digest with different tag - should succeed
+		_, err = store.db.ExecContext(ctx, `
+			INSERT INTO artifacts (repository_id, digest, tag, first_seen, last_seen)
+			VALUES (?, ?, ?, ?, ?)
+		`, repoID, "sha256:abc123", "v1.0.0", now, now)
+		if err != nil {
+			t.Errorf("Failed to insert artifact with same digest but different tag: %v", err)
+		}
+
+		// Insert different digest with same tag - should succeed
+		_, err = store.db.ExecContext(ctx, `
+			INSERT INTO artifacts (repository_id, digest, tag, first_seen, last_seen)
+			VALUES (?, ?, ?, ?, ?)
+		`, repoID, "sha256:def456", "v1.0", now, now)
+		if err != nil {
+			t.Errorf("Failed to insert artifact with same tag but different digest: %v", err)
 		}
 	})
 

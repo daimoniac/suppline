@@ -25,7 +25,7 @@ export class TagDetail extends ScanDetailBase {
      */
     render() {
         if (!this.scan) {
-            return this.renderError('Tag data not available');
+            return this.renderError('Digest data not available');
         }
 
         return `
@@ -38,8 +38,8 @@ export class TagDetail extends ScanDetailBase {
                         </svg>
                         Back to Repository
                     </button>
-                    <h1 class="page-title">Tag Details</h1>
-                    <p class="page-subtitle">Detailed information about this tag</p>
+                    <h1 class="page-title">Digest Details</h1>
+                    <p class="page-subtitle">Detailed scan information for this image digest</p>
                 </div>
 
                 ${this.renderImageInformation()}

@@ -47,6 +47,10 @@ export class ScanDetailBase extends BaseComponent {
         const scanTime = formatDate(this.scan.CreatedAt);
         const relativeTime = formatRelativeTime(this.scan.CreatedAt);
 
+        // Check if we have multiple tags for this digest
+        const hasTags = this.scan.Tags && this.scan.Tags.length > 0;
+        const tagDisplay = hasTags ? this.renderTagsList() : escapeHtml(this.scan.Tag || 'N/A');
+
         return `
             <div class="dashboard-section scan-section">
                 <h2>Image Information</h2>
@@ -56,8 +60,8 @@ export class ScanDetailBase extends BaseComponent {
                         <div class="info-value">${escapeHtml(this.scan.Repository || 'N/A')}</div>
                     </div>
                     <div>
-                        <div class="info-label">Tag</div>
-                        <div class="info-value">${escapeHtml(this.scan.Tag || 'N/A')}</div>
+                        <div class="info-label">${hasTags && this.scan.Tags.length > 1 ? 'Tags' : 'Tag'}</div>
+                        <div class="info-value">${tagDisplay}</div>
                     </div>
                     <div>
                         <div class="info-label">Digest</div>
@@ -82,6 +86,36 @@ export class ScanDetailBase extends BaseComponent {
                 ${this.renderRescanButton()}
             </div>
         `;
+    }
+
+    /**
+     * Render list of tags pointing to this digest
+     */
+    renderTagsList() {
+        if (!this.scan.Tags || this.scan.Tags.length === 0) {
+            return escapeHtml(this.scan.Tag || 'N/A');
+        }
+
+        // Group tags by repository
+        const tagsByRepo = {};
+        this.scan.Tags.forEach(tagRef => {
+            if (!tagsByRepo[tagRef.Repository]) {
+                tagsByRepo[tagRef.Repository] = [];
+            }
+            tagsByRepo[tagRef.Repository].push(tagRef.Tag);
+        });
+
+        // Render tags grouped by repository
+        return Object.entries(tagsByRepo).map(([repo, tags]) => {
+            const tagList = tags.map(tag => `<code class="tag-badge">${escapeHtml(tag)}</code>`).join(' ');
+            if (Object.keys(tagsByRepo).length > 1) {
+                // Multiple repositories - show repo name
+                return `<div class="tag-group"><strong>${escapeHtml(repo)}:</strong> ${tagList}</div>`;
+            } else {
+                // Single repository - just show tags
+                return `<div class="tag-group">${tagList}</div>`;
+            }
+        }).join('');
     }
 
     /**
