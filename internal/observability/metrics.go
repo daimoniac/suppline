@@ -18,12 +18,10 @@ type Metrics struct {
 
 	// Scan metrics
 	ScansTotal   prometheus.Counter
-	ScansFailed  prometheus.Counter
 	ScanDuration prometheus.Histogram
 
 	// Policy metrics
 	PolicyPassed prometheus.Counter
-	PolicyFailed prometheus.Counter
 
 	// Attestation metrics
 	AttestationsCreated *prometheus.CounterVec
@@ -74,10 +72,6 @@ func GetMetrics() *Metrics {
 				Name: "suppline_scans_total",
 				Help: "Total number of scans performed",
 			}),
-			ScansFailed: promauto.NewCounter(prometheus.CounterOpts{
-				Name: "suppline_scans_failed_total",
-				Help: "Total number of scans that failed",
-			}),
 			ScanDuration: promauto.NewHistogram(prometheus.HistogramOpts{
 				Name:    "suppline_scan_duration_seconds",
 				Help:    "Duration of scan operations in seconds",
@@ -88,10 +82,6 @@ func GetMetrics() *Metrics {
 			PolicyPassed: promauto.NewCounter(prometheus.CounterOpts{
 				Name: "suppline_policy_passed_total",
 				Help: "Total number of images that passed policy evaluation",
-			}),
-			PolicyFailed: promauto.NewCounter(prometheus.CounterOpts{
-				Name: "suppline_policy_failed_total",
-				Help: "Total number of images that failed policy evaluation",
 			}),
 
 			// Attestation metrics

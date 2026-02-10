@@ -29,6 +29,7 @@ type DatabaseCollector struct {
 	tolerationsWithoutExpiryDesc *prometheus.Desc
 	vulnerabilitiesFoundDesc     *prometheus.Desc
 	unappliedTolerationsDesc     *prometheus.Desc
+	policyFailedDesc             *prometheus.Desc
 
 	// Cache for unapplied tolerations (10-minute TTL)
 	unappliedTolerationsMutex sync.RWMutex
@@ -80,6 +81,12 @@ func NewDatabaseCollector(store statestore.StateStore, regsyncCfg *config.Regsyn
 			nil,
 			nil,
 		),
+		policyFailedDesc: prometheus.NewDesc(
+			"suppline_policy_failed_total",
+			"Current number of artifacts that failed policy evaluation",
+			nil,
+			nil,
+		),
 	}
 }
 
@@ -100,6 +107,7 @@ func (c *DatabaseCollector) Describe(ch chan<- *prometheus.Desc) {
 	ch <- c.tolerationsWithoutExpiryDesc
 	ch <- c.vulnerabilitiesFoundDesc
 	ch <- c.unappliedTolerationsDesc
+	ch <- c.policyFailedDesc
 }
 
 // Collect queries the database and sends current metrics to the provided channel
@@ -129,6 +137,9 @@ func (c *DatabaseCollector) Collect(ch chan<- prometheus.Metric) {
 
 	// Collect unapplied tolerations metric
 	c.collectUnappliedTolerations(ctx, queryStore, ch)
+
+	// Collect policy failed metric
+	c.collectPolicyFailed(ctx, queryStore, ch)
 
 	// Collect vulnerability metrics
 	c.collectVulnerabilities(ctx, queryStore, ch)
@@ -313,6 +324,34 @@ func (c *DatabaseCollector) collectUnappliedTolerations(ctx context.Context, sto
 		c.unappliedTolerationsDesc,
 		prometheus.GaugeValue,
 		float64(unappliedCount),
+	)
+}
+
+// collectPolicyFailed collects the count of artifacts that failed policy evaluation
+func (c *DatabaseCollector) collectPolicyFailed(ctx context.Context, store statestore.StateStoreQuery, ch chan<- prometheus.Metric) {
+	// Get all scans from the database
+	scans, err := store.ListScans(ctx, statestore.ScanFilter{})
+	if err != nil {
+		if ctx.Err() != nil {
+			c.logger.Debug("policy failed metric collection timed out (likely database locked)", "error", err)
+		} else {
+			c.logger.Error("failed to collect policy failed metric", "error", err)
+		}
+		return
+	}
+
+	// Count scans where policy_passed is false
+	failedCount := 0
+	for _, scan := range scans {
+		if !scan.PolicyPassed {
+			failedCount++
+		}
+	}
+
+	ch <- prometheus.MustNewConstMetric(
+		c.policyFailedDesc,
+		prometheus.GaugeValue,
+		float64(failedCount),
 	)
 }
 

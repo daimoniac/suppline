@@ -47,8 +47,6 @@ func (p *Pipeline) Execute(ctx context.Context, task *queue.ScanTask) error {
 	// Phase 1: Scan (SBOM + Vulnerabilities)
 	sbom, scanResult, scanDurations, err := p.scanPhase(ctx, task, imageRef)
 	if err != nil {
-		metrics := observability.GetMetrics()
-		metrics.ScansFailed.Inc()
 		// Check if this is a MANIFEST_UNKNOWN error that requires cleanup
 		if errors.IsManifestNotFound(err) {
 			p.logger.Info("manifest not found, performing cleanup",
@@ -74,8 +72,6 @@ func (p *Pipeline) Execute(ctx context.Context, task *queue.ScanTask) error {
 	// Phase 2: Policy Evaluation
 	policyDecision, err := p.policyPhase(ctx, task, imageRef, scanResult)
 	if err != nil {
-		metrics := observability.GetMetrics()
-		metrics.PolicyFailed.Inc()
 		return err
 	}
 
@@ -202,8 +198,6 @@ func (p *Pipeline) policyPhase(ctx context.Context, task *queue.ScanTask, imageR
 	metrics := observability.GetMetrics()
 	if policyDecision.Passed {
 		metrics.PolicyPassed.Inc()
-	} else {
-		metrics.PolicyFailed.Inc()
 	}
 
 	// Log expiring tolerations
