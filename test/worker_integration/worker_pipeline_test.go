@@ -147,6 +147,10 @@ func (m *mockStateStore) ListDueForRescan(ctx context.Context, interval time.Dur
 	return nil, nil
 }
 
+func (m *mockStateStore) GetFailedArtifacts(ctx context.Context) ([]*statestore.ScanRecord, error) {
+	return nil, nil
+}
+
 func (m *mockStateStore) CleanupArtifactScans(ctx context.Context, digest string) error {
 	m.cleanupCalled["artifact_"+digest] = true
 	if err, exists := m.cleanupErrors["artifact_"+digest]; exists {

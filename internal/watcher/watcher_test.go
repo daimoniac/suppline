@@ -114,6 +114,13 @@ func (m *mockStateStore) ListDueForRescan(ctx context.Context, interval time.Dur
 	return m.dueForRescan, nil
 }
 
+func (m *mockStateStore) GetFailedArtifacts(ctx context.Context) ([]*statestore.ScanRecord, error) {
+	if m.err != nil {
+		return nil, m.err
+	}
+	return nil, nil
+}
+
 // mockStateStore only implements the core StateStore interface
 // since the watcher doesn't need query methods
 

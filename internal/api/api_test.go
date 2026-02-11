@@ -71,6 +71,10 @@ func (m *mockStateStore) ListDueForRescan(ctx context.Context, interval time.Dur
 	return nil, nil
 }
 
+func (m *mockStateStore) GetFailedArtifacts(ctx context.Context) ([]*statestore.ScanRecord, error) {
+	return nil, nil
+}
+
 func (m *mockStateStore) GetScanHistory(ctx context.Context, digest string, limit int) ([]*statestore.ScanRecord, error) {
 	return nil, nil
 }

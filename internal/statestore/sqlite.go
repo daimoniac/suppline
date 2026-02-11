@@ -358,6 +358,51 @@ func (s *SQLiteStore) ListDueForRescan(ctx context.Context, interval time.Durati
 	return digests, nil
 }
 
+// GetFailedArtifacts returns all artifacts whose most recent scan failed policy evaluation
+func (s *SQLiteStore) GetFailedArtifacts(ctx context.Context) ([]*ScanRecord, error) {
+	query := `
+		SELECT sr.id, sr.artifact_id, sr.scan_duration_ms,
+			sr.critical_vuln_count, sr.high_vuln_count, sr.medium_vuln_count, sr.low_vuln_count,
+			sr.policy_passed, sr.sbom_attested, sr.vuln_attested, sr.scai_attested, sr.error_message, sr.created_at,
+			a.digest, a.tag, r.name
+		FROM scan_records sr
+		JOIN artifacts a ON sr.artifact_id = a.id
+		JOIN repositories r ON a.repository_id = r.id
+		WHERE sr.id = a.last_scan_id
+			AND sr.policy_passed = 0
+		ORDER BY sr.created_at DESC
+	`
+
+	rows, err := s.db.QueryContext(ctx, query)
+	if err != nil {
+		return nil, errors.NewTransientf("failed to query failed artifacts: %w", err)
+	}
+	defer rows.Close()
+
+	var records []*ScanRecord
+	for rows.Next() {
+		var record ScanRecord
+
+		err := rows.Scan(
+			&record.ID, &record.ArtifactID, &record.ScanDurationMs,
+			&record.CriticalVulnCount, &record.HighVulnCount, &record.MediumVulnCount, &record.LowVulnCount,
+			&record.PolicyPassed, &record.SBOMAttested, &record.VulnAttested, &record.SCAIAttested, &record.ErrorMessage, &record.CreatedAt,
+			&record.Digest, &record.Tag, &record.Repository,
+		)
+		if err != nil {
+			return nil, errors.NewTransientf("failed to scan row: %w", err)
+		}
+
+		records = append(records, &record)
+	}
+
+	if err := rows.Err(); err != nil {
+		return nil, errors.NewTransientf("error iterating rows: %w", err)
+	}
+
+	return records, nil
+}
+
 // GetScanHistory returns scan history for a digest with full details
 func (s *SQLiteStore) GetScanHistory(ctx context.Context, digest string, limit int) ([]*ScanRecord, error) {
 	query := `

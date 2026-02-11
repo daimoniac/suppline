@@ -22,6 +22,7 @@ import (
 	"github.com/daimoniac/suppline/internal/registry"
 	"github.com/daimoniac/suppline/internal/scanner"
 	"github.com/daimoniac/suppline/internal/statestore"
+	"github.com/daimoniac/suppline/internal/types"
 	"github.com/daimoniac/suppline/internal/watcher"
 	"github.com/daimoniac/suppline/internal/worker"
 	"github.com/joho/godotenv"
@@ -197,6 +198,13 @@ func run() error {
 	healthChecker.UpdateComponentHealth("watcher", observability.StatusHealthy, "")
 	logger.Debug("registry watcher initialized")
 
+	// Enqueue failed artifacts for immediate rescanning on startup
+	logger.Info("checking for failed artifacts to rescan")
+	if err := enqueueFailedArtifacts(ctx, store, taskQueue, regsyncCfg, logger); err != nil {
+		logger.Error("failed to enqueue failed artifacts", "error", err)
+		// Don't fail startup - this is a best-effort operation
+	}
+
 	logger.Debug("initializing worker",
 		"retry_attempts", cfg.Worker.RetryAttempts,
 		"retry_backoff", cfg.Worker.RetryBackoff,
@@ -337,6 +345,71 @@ func run() error {
 	}
 
 	logger.Info("shutdown complete")
+	return nil
+}
+
+// enqueueFailedArtifacts retrieves all failed artifacts from the state store and
+// enqueues them for immediate rescanning in the high-priority queue when starting up.
+func enqueueFailedArtifacts(ctx context.Context, store statestore.StateStore, taskQueue queue.TaskQueue, regsyncCfg *config.RegsyncConfig, logger *slog.Logger) error {
+	failedArtifacts, err := store.GetFailedArtifacts(ctx)
+	if err != nil {
+		return fmt.Errorf("failed to get failed artifacts: %w", err)
+	}
+
+	if len(failedArtifacts) == 0 {
+		logger.Info("no failed artifacts found to rescan")
+		return nil
+	}
+
+	logger.Info("found failed artifacts to rescan", "count", len(failedArtifacts))
+
+	// Enqueue each failed artifact with high priority
+	enqueuedCount := 0
+	for _, artifact := range failedArtifacts {
+		// Get tolerations for this repository
+		tolerations := regsyncCfg.GetTolerationsForTarget(artifact.Repository)
+		queueTolerations := make([]types.CVEToleration, len(tolerations))
+		for i, t := range tolerations {
+			queueTolerations[i] = types.CVEToleration{
+				ID:        t.ID,
+				Statement: t.Statement,
+				ExpiresAt: t.ExpiresAt,
+			}
+		}
+
+		task := &queue.ScanTask{
+			ID:          fmt.Sprintf("%s-%d", artifact.Digest, time.Now().Unix()),
+			Repository:  artifact.Repository,
+			Digest:      artifact.Digest,
+			Tag:         artifact.Tag,
+			EnqueuedAt:  time.Now(),
+			IsRescan:    true,
+			IsFirstScan: false,
+			Priority:    queue.PriorityHigh,
+			Tolerations: queueTolerations,
+		}
+
+		if err := taskQueue.Enqueue(ctx, task); err != nil {
+			logger.Error("failed to enqueue failed artifact",
+				"repository", artifact.Repository,
+				"digest", artifact.Digest,
+				"tag", artifact.Tag,
+				"error", err)
+			continue
+		}
+
+		logger.Info("enqueued failed artifact for rescan",
+			"repository", artifact.Repository,
+			"digest", artifact.Digest,
+			"tag", artifact.Tag,
+			"critical_vulns", artifact.CriticalVulnCount)
+		enqueuedCount++
+	}
+
+	logger.Info("finished enqueueing failed artifacts",
+		"enqueued", enqueuedCount,
+		"total", len(failedArtifacts))
+
 	return nil
 }
 

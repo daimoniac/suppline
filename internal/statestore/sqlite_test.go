@@ -2410,3 +2410,187 @@ func TestRepositoryAggregation(t *testing.T) {
 		}
 	})
 }
+
+// TestGetFailedArtifacts tests the GetFailedArtifacts method
+func TestGetFailedArtifacts(t *testing.T) {
+	dbPath := "test_failed_artifacts.db"
+	os.Remove(dbPath)
+	defer os.Remove(dbPath)
+
+	store, err := NewSQLiteStore(dbPath)
+	if err != nil {
+		t.Fatalf("Failed to create SQLite store: %v", err)
+	}
+	defer store.Close()
+
+	ctx := context.Background()
+
+	// Record a passing scan
+	passingRecord := &ScanRecord{
+		Digest:            "sha256:passing123",
+		Repository:        "myorg/passing-app",
+		Tag:               "v1.0.0",
+		ScanDurationMs:    1000,
+		CriticalVulnCount: 0,
+		HighVulnCount:     0,
+		MediumVulnCount:   0,
+		LowVulnCount:      0,
+		PolicyPassed:      true,
+		SBOMAttested:      true,
+		VulnAttested:      true,
+		SCAIAttested:      false,
+		Vulnerabilities:   []types.VulnerabilityRecord{},
+		ToleratedCVEs:     []types.ToleratedCVE{},
+	}
+
+	if err := store.RecordScan(ctx, passingRecord); err != nil {
+		t.Fatalf("Failed to record passing scan: %v", err)
+	}
+
+	// Record a failing scan
+	failingRecord := &ScanRecord{
+		Digest:            "sha256:failing123",
+		Repository:        "myorg/failing-app",
+		Tag:               "v1.0.0",
+		ScanDurationMs:    1500,
+		CriticalVulnCount: 5,
+		HighVulnCount:     10,
+		MediumVulnCount:   15,
+		LowVulnCount:      3,
+		PolicyPassed:      false,
+		SBOMAttested:      true,
+		VulnAttested:      true,
+		SCAIAttested:      false,
+		Vulnerabilities: []types.VulnerabilityRecord{
+			{
+				CVEID:            "CVE-2024-1234",
+				Severity:         "CRITICAL",
+				PackageName:      "openssl",
+				InstalledVersion: "1.0.0",
+				FixedVersion:     "1.0.1",
+				Title:            "Critical vulnerability",
+				Description:      "A critical security issue",
+				PrimaryURL:       "https://cve.mitre.org/cgi-bin/cvename.cgi?name=CVE-2024-1234",
+			},
+		},
+		ToleratedCVEs: []types.ToleratedCVE{},
+	}
+
+	if err := store.RecordScan(ctx, failingRecord); err != nil {
+		t.Fatalf("Failed to record failing scan: %v", err)
+	}
+
+	// Record another failing scan for a different repository
+	failingRecord2 := &ScanRecord{
+		Digest:            "sha256:failing456",
+		Repository:        "myorg/another-failing-app",
+		Tag:               "v2.0.0",
+		ScanDurationMs:    2000,
+		CriticalVulnCount: 3,
+		HighVulnCount:     8,
+		MediumVulnCount:   12,
+		LowVulnCount:      5,
+		PolicyPassed:      false,
+		SBOMAttested:      true,
+		VulnAttested:      true,
+		SCAIAttested:      false,
+		Vulnerabilities:   []types.VulnerabilityRecord{},
+		ToleratedCVEs:     []types.ToleratedCVE{},
+	}
+
+	if err := store.RecordScan(ctx, failingRecord2); err != nil {
+		t.Fatalf("Failed to record second failing scan: %v", err)
+	}
+
+	// Test GetFailedArtifacts
+	t.Run("GetFailedArtifacts returns only failed scans", func(t *testing.T) {
+		failedArtifacts, err := store.GetFailedArtifacts(ctx)
+		if err != nil {
+			t.Fatalf("Failed to get failed artifacts: %v", err)
+		}
+
+		// Should return exactly 2 failed artifacts (not the passing one)
+		if len(failedArtifacts) != 2 {
+			t.Errorf("Expected 2 failed artifacts, got %d", len(failedArtifacts))
+		}
+
+		// Verify the failed artifacts are the correct ones
+		foundFailing1 := false
+		foundFailing2 := false
+		foundPassing := false
+
+		for _, artifact := range failedArtifacts {
+			if artifact.Digest == "sha256:failing123" {
+				foundFailing1 = true
+				if artifact.PolicyPassed {
+					t.Errorf("Expected failing artifact to have PolicyPassed=false")
+				}
+				if artifact.Repository != "myorg/failing-app" {
+					t.Errorf("Expected repository myorg/failing-app, got %s", artifact.Repository)
+				}
+			}
+			if artifact.Digest == "sha256:failing456" {
+				foundFailing2 = true
+				if artifact.PolicyPassed {
+					t.Errorf("Expected failing artifact to have PolicyPassed=false")
+				}
+			}
+			if artifact.Digest == "sha256:passing123" {
+				foundPassing = true
+			}
+		}
+
+		if !foundFailing1 {
+			t.Error("Expected to find sha256:failing123 in failed artifacts")
+		}
+		if !foundFailing2 {
+			t.Error("Expected to find sha256:failing456 in failed artifacts")
+		}
+		if foundPassing {
+			t.Error("Did not expect to find sha256:passing123 in failed artifacts")
+		}
+	})
+
+	t.Run("GetFailedArtifacts returns empty when all scans pass", func(t *testing.T) {
+		// Create a new database with only passing scans
+		dbPath2 := "test_all_passing.db"
+		os.Remove(dbPath2)
+		defer os.Remove(dbPath2)
+
+		store2, err := NewSQLiteStore(dbPath2)
+		if err != nil {
+			t.Fatalf("Failed to create SQLite store: %v", err)
+		}
+		defer store2.Close()
+
+		// Record only passing scans
+		passingRecord := &ScanRecord{
+			Digest:            "sha256:allgood",
+			Repository:        "myorg/good-app",
+			Tag:               "v1.0.0",
+			ScanDurationMs:    1000,
+			CriticalVulnCount: 0,
+			HighVulnCount:     0,
+			MediumVulnCount:   0,
+			LowVulnCount:      0,
+			PolicyPassed:      true,
+			SBOMAttested:      true,
+			VulnAttested:      true,
+			Vulnerabilities:   []types.VulnerabilityRecord{},
+			ToleratedCVEs:     []types.ToleratedCVE{},
+		}
+
+		if err := store2.RecordScan(ctx, passingRecord); err != nil {
+			t.Fatalf("Failed to record passing scan: %v", err)
+		}
+
+		failedArtifacts, err := store2.GetFailedArtifacts(ctx)
+		if err != nil {
+			t.Fatalf("Failed to get failed artifacts: %v", err)
+		}
+
+		if len(failedArtifacts) != 0 {
+			t.Errorf("Expected 0 failed artifacts when all scans pass, got %d", len(failedArtifacts))
+		}
+	})
+}
