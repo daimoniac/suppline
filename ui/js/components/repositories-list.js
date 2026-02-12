@@ -81,6 +81,7 @@ export class RepositoriesList extends BaseComponent {
         // Map frontend sort columns to API sort_by values
         const sortMap = {
             'name': this.sortDirection === 'asc' ? 'name_asc' : 'name_desc',
+            'artifactCount': this.sortDirection === 'asc' ? 'artifacts_asc' : 'artifacts_desc',
             'lastScanTime': this.sortDirection === 'asc' ? 'age_asc' : 'age_desc',
             'status': this.sortDirection === 'asc' ? 'status_asc' : 'status_desc'
         };
@@ -187,7 +188,7 @@ export class RepositoriesList extends BaseComponent {
                     <thead>
                         <tr>
                             ${this.renderTableHeader('name', 'Name')}
-                            <th>Artifacts</th>
+                            ${this.renderTableHeader('artifactCount', 'Artifacts')}
                             ${this.renderTableHeader('lastScanTime', 'Last Scan')}
                             <th>Vulnerabilities</th>
                             ${this.renderTableHeader('status', 'Status')}

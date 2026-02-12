@@ -10,7 +10,7 @@ import { escapeHtml } from './utils/security.js';
 import { Dashboard } from './components/dashboard.js';
 import { ScansList } from './components/scans.js';
 import { ScanDetail } from './components/scan-detail.js';
-import { TagDetail } from './components/tag-detail.js';
+import { ArtifactDetail } from './components/artifact-detail.js';
 import { RepositoriesList } from './components/repositories-list.js';
 import { RepositoryDetail } from './components/repository-detail.js';
 import { Tolerations } from './components/tolerations.js';
@@ -132,7 +132,7 @@ class Application {
         // More specific routes first (with dynamic segments)
         // Tag detail within repository (most specific)
         this.router.addRoute('/repositories/:name/tags/:digest', async (params) => {
-            await this.renderTagDetail(params.name, params.digest);
+            await this.renderArtifactDetail(params.name, params.digest);
         });
 
         // Scan detail (more specific)
@@ -276,9 +276,9 @@ class Application {
     }
 
     /**
-     * Render tag detail view
+     * Render artifact detail view
      */
-    async renderTagDetail(repositoryName, digest) {
+    async renderArtifactDetail(repositoryName, digest) {
         if (!this.authManager.isAuthenticated()) {
             this.showAuthRequired();
             return;
@@ -289,15 +289,15 @@ class Application {
             // Decode the parameters from URL encoding
             const decodedName = decodeURIComponent(repositoryName);
             const decodedDigest = decodeURIComponent(digest);
-            const tagDetail = new TagDetail(this.apiClient);
-            tagDetail.setRepository(decodedName);
-            await tagDetail.loadScan(decodedDigest);
+            const artifactDetail = new ArtifactDetail(this.apiClient);
+            artifactDetail.setRepository(decodedName);
+            await artifactDetail.loadScan(decodedDigest);
             
             const content = document.getElementById('content');
-            content.innerHTML = tagDetail.render();
-            tagDetail.attachEventListeners();
+            content.innerHTML = artifactDetail.render();
+            artifactDetail.attachEventListeners();
             
-            this.currentView = tagDetail;
+            this.currentView = artifactDetail;
             this.updateActiveNavLink('/repositories');
         } catch (error) {
             this.handleViewError(error);

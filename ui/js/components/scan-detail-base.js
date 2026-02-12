@@ -1,6 +1,6 @@
 /**
  * Scan Detail Base Component
- * Shared logic for displaying scan details, used by both ScanDetail and TagDetail views.
+ * Shared logic for displaying scan details, used by both ScanDetail and ArtifactDetail views.
  * This component handles rendering vulnerabilities, tolerations, and attestation info.
  */
 

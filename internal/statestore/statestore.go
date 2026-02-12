@@ -73,7 +73,7 @@ type StateStoreCleanup interface {
 // RepositoryInfo represents a repository with aggregated metadata
 type RepositoryInfo struct {
 	Name               string
-	TagCount           int
+	ArtifactCount      int
 	LastScanTime       *int64 // Unix timestamp in seconds
 	VulnerabilityCount VulnerabilityCountSummary
 	PolicyPassed       bool

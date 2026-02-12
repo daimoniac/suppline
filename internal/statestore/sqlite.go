@@ -976,7 +976,7 @@ func (s *SQLiteStore) ListRepositories(ctx context.Context, filter RepositoryFil
 		SELECT 
 			r.id,
 			r.name,
-			COUNT(DISTINCT a.id) as tag_count,
+			COUNT(DISTINCT a.id) as artifact_count,
 			(SELECT MAX(sr2.created_at) FROM scan_records sr2 
 			 JOIN artifacts a2 ON sr2.artifact_id = a2.id 
 			 WHERE a2.repository_id = r.id) as last_scan_time,
@@ -1010,6 +1010,10 @@ func (s *SQLiteStore) ListRepositories(ctx context.Context, filter RepositoryFil
 		query += " ORDER BY r.name ASC"
 	case "name_desc":
 		query += " ORDER BY r.name DESC"
+	case "artifacts_asc":
+		query += " ORDER BY artifact_count ASC, r.name ASC"
+	case "artifacts_desc":
+		query += " ORDER BY artifact_count DESC, r.name ASC"
 	case "age_desc", "":
 		// Default: most recently scanned first
 		query += " ORDER BY last_scan_time DESC NULLS LAST"
@@ -1056,7 +1060,7 @@ func (s *SQLiteStore) ListRepositories(ctx context.Context, filter RepositoryFil
 		err := rows.Scan(
 			&repoID, // repository id (not needed in response)
 			&repo.Name,
-			&repo.TagCount,
+			&repo.ArtifactCount,
 			&lastScanTimeUnix,
 			&maxCritical,
 			&maxHigh,
