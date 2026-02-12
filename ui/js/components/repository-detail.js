@@ -89,7 +89,8 @@ export class RepositoryDetail extends BaseComponent {
         const columnMap = {
             'name': 'Name',
             'lastScanTime': 'LastScanTime',
-            'nextScanTime': 'NextScanTime'
+            'nextScanTime': 'NextScanTime',
+            'status': 'PolicyPassed'
         };
 
         const apiColumn = columnMap[this.sortColumn] || this.sortColumn;
@@ -107,6 +108,16 @@ export class RepositoryDetail extends BaseComponent {
                 // Unix timestamps are already numbers, just ensure they're treated as such
                 aVal = typeof aVal === 'number' ? aVal : (new Date(aVal).getTime() / 1000);
                 bVal = typeof bVal === 'number' ? bVal : (new Date(bVal).getTime() / 1000);
+            }
+
+            // Handle boolean sorting (for status/PolicyPassed)
+            if (this.sortColumn === 'status') {
+                aVal = Boolean(aVal);
+                bVal = Boolean(bVal);
+                // true (passed) comes before false (failed) in ascending order
+                const aNum = aVal ? 1 : 0;
+                const bNum = bVal ? 1 : 0;
+                return this.sortDirection === 'asc' ? bNum - aNum : aNum - bNum;
             }
 
             // Handle numeric sorting
@@ -230,7 +241,7 @@ export class RepositoryDetail extends BaseComponent {
                             ${this.renderTableHeader('name', 'Tag')}
                             ${this.renderTableHeader('lastScanTime', 'Last Scan')}
                             <th>Vulnerabilities</th>
-                            <th>Status</th>
+                            ${this.renderTableHeader('status', 'Status')}
                             <th>Action</th>
                         </tr>
                     </thead>
