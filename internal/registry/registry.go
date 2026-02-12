@@ -150,7 +150,7 @@ func parseImageRef(repo string) (registry, repository string, err error) {
 		registry = parts[0]
 		repository = parts[1]
 	} else {
-		registry = "index.docker.io"
+		registry = "docker.io"
 		if len(parts) == 1 {
 			repository = "library/" + parts[0]
 		} else {

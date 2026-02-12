@@ -187,6 +187,7 @@ export class RepositoriesList extends BaseComponent {
                     <thead>
                         <tr>
                             ${this.renderTableHeader('name', 'Name')}
+                            <th>Artifacts</th>
                             ${this.renderTableHeader('lastScanTime', 'Last Scan')}
                             <th>Vulnerabilities</th>
                             ${this.renderTableHeader('status', 'Status')}
@@ -242,6 +243,7 @@ export class RepositoriesList extends BaseComponent {
         return `
             <tr class="repository-row" data-repository="${escapeHtml(repo.Name)}">
                 <td class="repository-name-cell clickable" data-repository="${escapeHtml(repo.Name)}">${escapeHtml(repo.Name)}</td>
+                <td class="artifacts-cell">${repo.ArtifactCount || 0}</td>
                 <td title="${repo.LastScanTime ? formatDate(repo.LastScanTime) : 'Never scanned'}">${lastScanTime}</td>
                 <td class="vulnerabilities-cell">
                     ${vulnDisplay}

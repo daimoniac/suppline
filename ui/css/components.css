@@ -730,6 +730,21 @@ tr:hover {
     font-weight: 500;
 }
 
+/* Repository Link Cell - for clickable repository names in tables and info grids */
+.repository-link-cell {
+    color: var(--primary-color);
+    cursor: pointer;
+    text-decoration: none;
+    font-weight: 500;
+    border-bottom: 1px solid transparent;
+    transition: border-color 0.2s ease, color 0.2s ease;
+}
+
+.repository-link-cell:hover {
+    border-bottom-color: var(--primary-color);
+    color: var(--primary-hover);
+}
+
 .repository-bar-container {
     position: relative;
     height: 32px;

@@ -560,8 +560,8 @@ export class Dashboard extends BaseComponent {
         ].filter(v => v.count > 0);
 
         return `
-            <tr class="scan-row" data-digest="${escapeHtml(scan.Digest)}">
-                <td>${escapeHtml(scan.Repository || 'N/A')}</td>
+            <tr class="scan-row" data-digest="${escapeHtml(scan.Digest)}" data-repository="${escapeHtml(scan.Repository || '')}">
+                <td><span class="repository-link-cell" data-repository="${escapeHtml(scan.Repository || 'N/A')}">${escapeHtml(scan.Repository || 'N/A')}</span></td>
                 <td>${escapeHtml(scan.Tag || 'N/A')}</td>
                 <td class="digest-cell" title="${escapeHtml(scan.Digest)}">${escapeHtml(truncatedDigest)}</td>
                 <td>${scanTime}</td>
@@ -613,10 +613,19 @@ export class Dashboard extends BaseComponent {
 
         // Add click handlers for scan rows
         document.querySelectorAll('.scan-row').forEach(row => {
-            row.addEventListener('click', () => {
-                const digest = row.dataset.digest;
-                if (digest) {
-                    window.router.navigate(`/scans/${digest}`);
+            row.addEventListener('click', (e) => {
+                // If clicking on the repository link cell, navigate to repository details instead
+                if (e.target.classList.contains('repository-link-cell')) {
+                    const repository = e.target.dataset.repository;
+                    if (repository && repository !== 'N/A') {
+                        window.router.navigate(`/repositories/${encodeURIComponent(repository)}`);
+                    }
+                } else {
+                    // Otherwise navigate to tag details
+                    const digest = row.dataset.digest;
+                    if (digest) {
+                        window.router.navigate(`/scans/${digest}`);
+                    }
                 }
             });
         });

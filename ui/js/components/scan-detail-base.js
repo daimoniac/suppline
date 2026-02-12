@@ -57,7 +57,9 @@ export class ScanDetailBase extends BaseComponent {
                 <div class="info-grid">
                     <div>
                         <div class="info-label">Repository</div>
-                        <div class="info-value">${escapeHtml(this.scan.Repository || 'N/A')}</div>
+                        <div class="info-value">
+                            <span class="repository-link-cell" data-repository="${escapeHtml(this.scan.Repository || 'N/A')}">${escapeHtml(this.scan.Repository || 'N/A')}</span>
+                        </div>
                     </div>
                     <div>
                         <div class="info-label">${hasTags && this.scan.Tags.length > 1 ? 'Tags' : 'Tag'}</div>
@@ -463,6 +465,17 @@ export class ScanDetailBase extends BaseComponent {
      * Attach common event listeners for expand/collapse and rescan
      */
     attachCommonEventListeners() {
+        // Repository link click handler
+        document.querySelectorAll('.repository-link-cell').forEach(link => {
+            link.addEventListener('click', (e) => {
+                e.stopPropagation();
+                const repository = link.dataset.repository;
+                if (repository && repository !== 'N/A') {
+                    window.router.navigate(`/repositories/${encodeURIComponent(repository)}`);
+                }
+            });
+        });
+
         // Vulnerability group expand/collapse
         document.querySelectorAll('[data-severity]').forEach(header => {
             header.addEventListener('click', () => {
