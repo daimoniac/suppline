@@ -45,9 +45,26 @@ export class Tolerations extends BaseComponent {
             }
 
             // API returns array directly (already deduplicated by backend)
-            const tolerations = await this.apiClient.getTolerations(apiFilters);
-            this.tolerations = Array.isArray(tolerations) ? tolerations : [];
-            
+            const response = await this.apiClient.getTolerations(apiFilters);
+            const tolerations = Array.isArray(response) ? response : [];
+
+            this.tolerations = tolerations.map(t => {
+                const repos = t.Repositories || [];
+                const nonZeroToleratedAt = repos
+                    .map(r => r.ToleratedAt)
+                    .filter(at => at > 0);
+
+                const oldestToleratedAt = nonZeroToleratedAt.length > 0
+                    ? Math.min(...nonZeroToleratedAt)
+                    : 0;
+
+                return {
+                    ...t,
+                    ToleratedAt: oldestToleratedAt,
+                    Repository: repos.length > 0 ? repos[0].Repository : 'N/A'
+                };
+            });
+
             // Apply client-side filtering for 'active' status
             if (this.filters.expiration_status === 'active') {
                 this.tolerations = this.tolerations.filter(t => !isPast(t.ExpiresAt) && !isWithinDays(t.ExpiresAt, 7));
@@ -246,7 +263,7 @@ export class Tolerations extends BaseComponent {
      */
     renderTableHeader(column, label) {
         const isSorted = this.sortColumn === column;
-        const sortIcon = isSorted 
+        const sortIcon = isSorted
             ? (this.sortDirection === 'asc' ? '↑' : '↓')
             : '';
         const sortClass = isSorted ? 'sorted' : '';
@@ -266,16 +283,34 @@ export class Tolerations extends BaseComponent {
         const statusBadge = this.renderStatusBadge(status, toleration);
         const truncatedStatement = truncateText(toleration.Statement || 'N/A', 50);
         const toleratedTime = formatRelativeTime(toleration.ToleratedAt);
-        const expiresDisplay = toleration.ExpiresAt 
+        const expiresDisplay = toleration.ExpiresAt
             ? formatDate(toleration.ExpiresAt)
             : 'Never';
+
+        const repos = toleration.Repositories || [];
+        let reposHtml = '';
+
+        if (repos.length > 3) {
+            const allRepos = repos.map(r => r.Repository).join('\n');
+            reposHtml = `<span class="repository-many" title="${escapeHtml(allRepos)}">many</span>`;
+        } else if (repos.length > 0) {
+            reposHtml = `
+                <div class="repo-link-list">
+                    ${repos.map(r => `<span class="repository-link-cell" data-repository="${escapeHtml(r.Repository)}">${escapeHtml(r.Repository)}</span>`).join('')}
+                </div>
+            `;
+        } else {
+            reposHtml = 'N/A';
+        }
 
         return `
             <tr class="toleration-row clickable" data-repository="${escapeHtml(toleration.Repository)}" data-cve="${escapeHtml(toleration.CVEID)}">
                 <td class="cve-cell">${escapeHtml(toleration.CVEID || 'N/A')}</td>
-                <td>${escapeHtml(toleration.Repository || 'N/A')}</td>
+                <td>${reposHtml}</td>
                 <td class="statement-cell" title="${escapeHtml(toleration.Statement || 'N/A')}">${escapeHtml(truncatedStatement)}</td>
-                <td title="${formatDate(toleration.ToleratedAt)}">${toleratedTime}</td>
+                <td title="${toleration.ToleratedAt > 0 ? formatDate(toleration.ToleratedAt) : 'N/A'}">
+                    ${toleration.ToleratedAt > 0 ? toleratedTime : 'N/A'}
+                </td>
                 <td>${expiresDisplay}</td>
                 <td>${statusBadge}</td>
             </tr>
@@ -399,8 +434,26 @@ export class ExpiringTolerations extends BaseComponent {
     async loadExpiringTolerations() {
         try {
             // API returns array directly
-            const tolerations = await this.apiClient.getTolerations({ expiring_soon: true });
-            this.tolerations = Array.isArray(tolerations) ? tolerations : [];
+            const response = await this.apiClient.getTolerations({ expiring_soon: true });
+            const tolerations = Array.isArray(response) ? response : [];
+
+            this.tolerations = tolerations.map(t => {
+                const repos = t.Repositories || [];
+                const nonZeroToleratedAt = repos
+                    .map(r => r.ToleratedAt)
+                    .filter(at => at > 0);
+
+                const oldestToleratedAt = nonZeroToleratedAt.length > 0
+                    ? Math.min(...nonZeroToleratedAt)
+                    : 0;
+
+                return {
+                    ...t,
+                    ToleratedAt: oldestToleratedAt,
+                    Repository: repos.length > 0 ? repos[0].Repository : 'N/A'
+                };
+            });
+
             this.total = this.tolerations.length;
 
             // Sort by expiration date ascending (most urgent first)
@@ -568,7 +621,7 @@ export class ExpiringTolerations extends BaseComponent {
      */
     renderTableHeader(column, label) {
         const isSorted = this.sortColumn === column;
-        const sortIcon = isSorted 
+        const sortIcon = isSorted
             ? (this.sortDirection === 'asc' ? '↑' : '↓')
             : '';
         const sortClass = isSorted ? 'sorted' : '';
@@ -587,24 +640,40 @@ export class ExpiringTolerations extends BaseComponent {
         const urgency = this.getUrgencyLevel(toleration);
         const urgencyBadge = this.renderUrgencyBadge(urgency);
         const daysLeft = daysUntil(toleration.ExpiresAt);
-        const daysLeftDisplay = daysLeft !== null 
+        const daysLeftDisplay = daysLeft !== null
             ? (daysLeft < 0 ? 'Expired' : `${daysLeft} day${daysLeft !== 1 ? 's' : ''}`)
             : 'N/A';
         const truncatedStatement = truncateText(toleration.Statement || 'N/A', 50);
-        const expiresDisplay = toleration.ExpiresAt 
+        const expiresDisplay = toleration.ExpiresAt
             ? formatDate(toleration.ExpiresAt)
             : 'Never';
 
         // Add row class based on urgency
-        const rowClass = urgency === 'critical' ? 'urgency-critical' : 
-                        urgency === 'high' ? 'urgency-high' : 
-                        urgency === 'expired' ? 'urgency-expired' : '';
+        const rowClass = urgency === 'critical' ? 'urgency-critical' :
+            urgency === 'high' ? 'urgency-high' :
+                urgency === 'expired' ? 'urgency-expired' : '';
+
+        const repos = toleration.Repositories || [];
+        let reposHtml = '';
+
+        if (repos.length > 3) {
+            const allRepos = repos.map(r => r.Repository).join('\n');
+            reposHtml = `<span class="repository-many" title="${escapeHtml(allRepos)}">many</span>`;
+        } else if (repos.length > 0) {
+            reposHtml = `
+                <div class="repo-link-list">
+                    ${repos.map(r => `<span class="repository-link-cell" data-repository="${escapeHtml(r.Repository)}">${escapeHtml(r.Repository)}</span>`).join('')}
+                </div>
+            `;
+        } else {
+            reposHtml = 'N/A';
+        }
 
         return `
             <tr class="toleration-row clickable ${rowClass}" data-repository="${escapeHtml(toleration.Repository)}" data-cve="${escapeHtml(toleration.CVEID)}">
                 <td>${urgencyBadge}</td>
                 <td class="cve-cell">${escapeHtml(toleration.CVEID || 'N/A')}</td>
-                <td>${escapeHtml(toleration.Repository || 'N/A')}</td>
+                <td>${reposHtml}</td>
                 <td class="statement-cell" title="${escapeHtml(toleration.Statement || 'N/A')}">${escapeHtml(truncatedStatement)}</td>
                 <td>${expiresDisplay}</td>
                 <td><strong>${daysLeftDisplay}</strong></td>

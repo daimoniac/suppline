@@ -800,6 +800,27 @@ tr:hover {
     z-index: 1;
 }
 
+/* Tolerations Repository List */
+.repo-link-list {
+    display: flex;
+    flex-direction: column;
+    gap: var(--spacing-xs);
+}
+
+.repository-many {
+    color: var(--primary-color);
+    font-weight: 600;
+    cursor: help;
+    text-decoration: underline;
+    text-decoration-style: dotted;
+    text-underline-offset: 4px;
+    display: inline-block;
+}
+
+.repository-many:hover {
+    color: var(--primary-hover);
+}
+
 /* Tolerations Attention Card */
 .tolerations-attention-summary {
     display: flex;
