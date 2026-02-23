@@ -184,6 +184,13 @@ class APIClient {
         return { vulnerabilities: data, total };
     }
 
+    /**
+     * Get unique vulnerability counts by severity
+     */
+    async getVulnerabilityStats() {
+        return this.request('/api/v1/vulnerabilities/stats');
+    }
+
     // ==================== Tolerations API ====================
 
     /**

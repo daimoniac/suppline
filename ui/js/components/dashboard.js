@@ -44,12 +44,14 @@ export class Dashboard extends BaseComponent {
                 recentScans,
                 failedScans,
                 allTolerations,
-                unappliedTolerations
+                unappliedTolerations,
+                uniqueVulnStats
             ] = await Promise.all([
                 this.apiClient.getScans({ limit: 20 }),
                 this.apiClient.getScans({ policy_passed: false }),
                 this.apiClient.getTolerations({}),
-                this.apiClient.getUnappliedTolerations()
+                this.apiClient.getUnappliedTolerations(),
+                this.apiClient.getVulnerabilityStats()
             ]);
 
             // Process recent scans (API returns array directly)
@@ -83,8 +85,15 @@ export class Dashboard extends BaseComponent {
             // Process unapplied tolerations
             this.data.unappliedTolerationsDetails = Array.isArray(unappliedTolerations) ? unappliedTolerations : [];
 
-            // Calculate vulnerability breakdown from recent scans
-            this.calculateVulnerabilityBreakdown(this.data.recentScans);
+            // Set vulnerability breakdown from unique stats
+            if (uniqueVulnStats) {
+                this.data.vulnerabilityBreakdown = {
+                    critical: uniqueVulnStats.CRITICAL || 0,
+                    high: uniqueVulnStats.HIGH || 0,
+                    medium: uniqueVulnStats.MEDIUM || 0,
+                    low: uniqueVulnStats.LOW || 0
+                };
+            }
 
             return this.data;
         } catch (error) {
@@ -104,25 +113,6 @@ export class Dashboard extends BaseComponent {
                 this.data.failedByRepository[repo] = 0;
             }
             this.data.failedByRepository[repo]++;
-        });
-    }
-
-    /**
-     * Calculate vulnerability breakdown across all scans
-     */
-    calculateVulnerabilityBreakdown(scans) {
-        this.data.vulnerabilityBreakdown = {
-            critical: 0,
-            high: 0,
-            medium: 0,
-            low: 0
-        };
-
-        scans.forEach(scan => {
-            this.data.vulnerabilityBreakdown.critical += scan.CriticalVulnCount || 0;
-            this.data.vulnerabilityBreakdown.high += scan.HighVulnCount || 0;
-            this.data.vulnerabilityBreakdown.medium += scan.MediumVulnCount || 0;
-            this.data.vulnerabilityBreakdown.low += scan.LowVulnCount || 0;
         });
     }
 

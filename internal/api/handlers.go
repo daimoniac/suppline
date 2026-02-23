@@ -1415,3 +1415,31 @@ func (s *APIServer) groupVulnerabilitiesByCVE(vulnerabilities []*types.Vulnerabi
 
 	return result
 }
+
+// handleGetVulnerabilityStats returns unique vulnerability counts by severity
+// @Summary Get vulnerability stats
+// @Description Get counts of unique CVE IDs by severity across all latest scans
+// @Tags Vulnerabilities
+// @Accept json
+// @Produce json
+// @Success 200 {object} map[string]int
+// @Failure 401 {object} map[string]string "Unauthorized"
+// @Failure 500 {object} map[string]string "Internal server error"
+// @Security BearerAuth
+// @Router /vulnerabilities/stats [get]
+func (s *APIServer) handleGetVulnerabilityStats(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		s.respondError(w, http.StatusMethodNotAllowed, "Method not allowed")
+		return
+	}
+
+	counts, err := s.stateStore.GetUniqueVulnerabilityCounts(r.Context())
+	if err != nil {
+		s.logger.Error("failed to get unique vulnerability counts",
+			"error", err.Error())
+		s.respondError(w, http.StatusInternalServerError, fmt.Sprintf("Failed to get vulnerability stats: %v", err))
+		return
+	}
+
+	s.respondJSON(w, http.StatusOK, counts)
+}

@@ -151,6 +151,9 @@ type StateStoreQuery interface {
 
 	// GetTagsForDigest returns all repository+tag combinations that point to the given digest
 	GetTagsForDigest(ctx context.Context, digest string) ([]TagRef, error)
+
+	// GetUniqueVulnerabilityCounts returns the count of unique CVE IDs by severity across all latest scans
+	GetUniqueVulnerabilityCounts(ctx context.Context) (map[string]int, error)
 }
 
 // RepositoryFilter defines criteria for listing repositories

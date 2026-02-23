@@ -279,3 +279,35 @@ func (m *mockStateStoreWithHistory) ListTolerations(ctx context.Context, filter 
 	}
 	return result, nil
 }
+func (m *mockStateStoreWithHistory) GetUniqueVulnerabilityCounts(ctx context.Context) (map[string]int, error) {
+	return map[string]int{
+		"CRITICAL": 5,
+		"HIGH":     10,
+		"MEDIUM":   15,
+		"LOW":      20,
+	}, nil
+}
+
+func TestHandleGetVulnerabilityStats(t *testing.T) {
+	mockStore := &mockStateStoreWithHistory{}
+	cfg := &config.APIConfig{Enabled: true}
+	server := NewAPIServer(cfg, nil, mockStore, nil, nil, observability.NewLogger("error"))
+
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/vulnerabilities/stats", nil)
+	w := httptest.NewRecorder()
+
+	server.router.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("Expected status 200, got %d", w.Code)
+	}
+
+	var counts map[string]int
+	if err := json.NewDecoder(w.Body).Decode(&counts); err != nil {
+		t.Fatalf("Failed to decode response: %v", err)
+	}
+
+	if counts["CRITICAL"] != 5 || counts["HIGH"] != 10 {
+		t.Errorf("Unexpected counts: %v", counts)
+	}
+}

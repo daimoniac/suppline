@@ -140,6 +140,15 @@ func (m *mockStateStore) GetTagsForDigest(ctx context.Context, digest string) ([
 	return []statestore.TagRef{}, nil
 }
 
+func (m *mockStateStore) GetUniqueVulnerabilityCounts(ctx context.Context) (map[string]int, error) {
+	return map[string]int{
+		"CRITICAL": 0,
+		"HIGH":     0,
+		"MEDIUM":   0,
+		"LOW":      0,
+	}, nil
+}
+
 func TestNewAPIServer(t *testing.T) {
 	cfg := &config.APIConfig{
 		Enabled:  true,

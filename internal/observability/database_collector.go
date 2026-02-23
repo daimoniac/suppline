@@ -104,7 +104,7 @@ func (c *DatabaseCollector) collectPolicyFailed(ctx context.Context, store state
 }
 
 func (c *DatabaseCollector) collectVulnerabilities(ctx context.Context, store statestore.StateStoreQuery, ch chan<- prometheus.Metric) {
-	scans, err := store.ListScans(ctx, statestore.ScanFilter{})
+	counts, err := store.GetUniqueVulnerabilityCounts(ctx)
 	if err != nil {
 		if ctx.Err() != nil {
 			c.logger.Debug("vulnerabilities metric collection timed out", "error", err)
@@ -114,21 +114,7 @@ func (c *DatabaseCollector) collectVulnerabilities(ctx context.Context, store st
 		return
 	}
 
-	severityCounts := map[string]int{
-		"CRITICAL": 0,
-		"HIGH":     0,
-		"MEDIUM":   0,
-		"LOW":      0,
-	}
-
-	for _, scan := range scans {
-		severityCounts["CRITICAL"] += scan.CriticalVulnCount
-		severityCounts["HIGH"] += scan.HighVulnCount
-		severityCounts["MEDIUM"] += scan.MediumVulnCount
-		severityCounts["LOW"] += scan.LowVulnCount
-	}
-
-	for severity, count := range severityCounts {
+	for severity, count := range counts {
 		ch <- prometheus.MustNewConstMetric(
 			c.vulnerabilitiesFoundDesc,
 			prometheus.GaugeValue,

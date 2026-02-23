@@ -503,6 +503,46 @@ func (s *SQLiteStore) GetTagsForDigest(ctx context.Context, digest string) ([]Ta
 	return tags, nil
 }
 
+// GetUniqueVulnerabilityCounts returns the count of unique CVE IDs by severity across all latest scans.
+// This deduplicates vulnerabilities so that a CVE ID is counted only once for the whole configuration,
+// even if it appears in multiple repositories or multiple tags.
+func (s *SQLiteStore) GetUniqueVulnerabilityCounts(ctx context.Context) (map[string]int, error) {
+	query := `
+		SELECT v.severity, COUNT(DISTINCT v.cve_id)
+		FROM vulnerabilities v
+		JOIN artifacts a ON v.scan_record_id = a.last_scan_id
+		GROUP BY v.severity
+	`
+
+	rows, err := s.db.QueryContext(ctx, query)
+	if err != nil {
+		return nil, errors.NewTransientf("failed to query unique vulnerability counts: %w", err)
+	}
+	defer rows.Close()
+
+	counts := map[string]int{
+		"CRITICAL": 0,
+		"HIGH":     0,
+		"MEDIUM":   0,
+		"LOW":      0,
+	}
+
+	for rows.Next() {
+		var severity string
+		var count int
+		if err := rows.Scan(&severity, &count); err != nil {
+			return nil, errors.NewTransientf("failed to scan vulnerability count: %w", err)
+		}
+		counts[severity] = count
+	}
+
+	if err := rows.Err(); err != nil {
+		return nil, errors.NewTransientf("error iterating vulnerability count rows: %w", err)
+	}
+
+	return counts, nil
+}
+
 // QueryVulnerabilities searches vulnerabilities across all scans
 func (s *SQLiteStore) QueryVulnerabilities(ctx context.Context, filter VulnFilter) ([]*types.VulnerabilityRecord, error) {
 	query := `
