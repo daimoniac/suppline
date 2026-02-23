@@ -6,15 +6,16 @@ class Router {
         this.routes = new Map();
         this.currentRoute = null;
         this.notFoundHandler = null;
-        
+
         // Listen for browser navigation events
         window.addEventListener('popstate', () => this.handleRoute());
-        
+
         // Intercept link clicks for client-side navigation
         document.addEventListener('click', (e) => {
-            if (e.target.matches('a[data-link]')) {
+            const link = e.target.closest('a[data-link]');
+            if (link) {
                 e.preventDefault();
-                this.navigate(e.target.getAttribute('href'));
+                this.navigate(link.getAttribute('href'));
             }
         });
     }
@@ -47,10 +48,10 @@ class Router {
     pathToRegex(path) {
         // Escape special regex characters except : and /
         const escaped = path.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-        
+
         // Convert :param to named capture groups
         const pattern = escaped.replace(/:(\w+)/g, '(?<$1>[^/]+)');
-        
+
         return new RegExp(`^${pattern}$`);
     }
 
@@ -59,7 +60,7 @@ class Router {
      */
     matchRoute() {
         const path = window.location.pathname;
-        
+
         for (const [, route] of this.routes) {
             const match = path.match(route.pattern);
             if (match) {
@@ -69,7 +70,7 @@ class Router {
                 };
             }
         }
-        
+
         return null;
     }
 
@@ -79,11 +80,11 @@ class Router {
     getQueryParams() {
         const params = {};
         const searchParams = new URLSearchParams(window.location.search);
-        
+
         for (const [key, value] of searchParams) {
             params[key] = value;
         }
-        
+
         return params;
     }
 
@@ -95,20 +96,20 @@ class Router {
      */
     navigate(path, queryParams = null, replace = false) {
         let url = path;
-        
+
         // Add query parameters if provided
         if (queryParams) {
             const params = new URLSearchParams(queryParams);
             url += `?${params.toString()}`;
         }
-        
+
         // Update browser history
         if (replace) {
             window.history.replaceState(null, '', url);
         } else {
             window.history.pushState(null, '', url);
         }
-        
+
         // Handle the new route
         this.handleRoute();
     }
@@ -118,11 +119,11 @@ class Router {
      */
     async handleRoute() {
         const match = this.matchRoute();
-        
+
         if (match) {
             this.currentRoute = match.route.path;
             const queryParams = this.getQueryParams();
-            
+
             try {
                 await match.route.handler(match.params, queryParams);
             } catch (error) {

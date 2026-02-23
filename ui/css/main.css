@@ -97,7 +97,16 @@ nav {
 
 nav h1 {
     font-size: 1.5rem;
+}
+
+nav h1 a {
     color: var(--primary-color);
+    text-decoration: none;
+    transition: opacity 0.2s;
+}
+
+nav h1 a:hover {
+    opacity: 0.8;
 }
 
 #nav-menu {
@@ -145,15 +154,37 @@ main {
     text-align: center;
 }
 
-.mt-1 { margin-top: 0.5rem; }
-.mt-2 { margin-top: 1rem; }
-.mt-3 { margin-top: 1.5rem; }
-.mt-4 { margin-top: 2rem; }
+.mt-1 {
+    margin-top: 0.5rem;
+}
 
-.mb-1 { margin-bottom: 0.5rem; }
-.mb-2 { margin-bottom: 1rem; }
-.mb-3 { margin-bottom: 1.5rem; }
-.mb-4 { margin-bottom: 2rem; }
+.mt-2 {
+    margin-top: 1rem;
+}
+
+.mt-3 {
+    margin-top: 1.5rem;
+}
+
+.mt-4 {
+    margin-top: 2rem;
+}
+
+.mb-1 {
+    margin-bottom: 0.5rem;
+}
+
+.mb-2 {
+    margin-bottom: 1rem;
+}
+
+.mb-3 {
+    margin-bottom: 1.5rem;
+}
+
+.mb-4 {
+    margin-bottom: 2rem;
+}
 
 .hidden {
     display: none !important;
@@ -165,13 +196,13 @@ main {
         flex-direction: column;
         gap: 1rem;
     }
-    
+
     #nav-menu {
         flex-wrap: wrap;
         gap: 1rem;
         justify-content: center;
     }
-    
+
     main {
         padding: 1rem;
     }
@@ -313,6 +344,7 @@ main {
         transform: translateY(-50px);
         opacity: 0;
     }
+
     to {
         transform: translateY(0);
         opacity: 1;
@@ -320,8 +352,13 @@ main {
 }
 
 @keyframes fadeIn {
-    from { opacity: 0; }
-    to { opacity: 1; }
+    from {
+        opacity: 0;
+    }
+
+    to {
+        opacity: 1;
+    }
 }
 
 @keyframes slideIn {
@@ -329,6 +366,7 @@ main {
         transform: translateX(400px);
         opacity: 0;
     }
+
     to {
         transform: translateX(0);
         opacity: 1;
@@ -340,6 +378,7 @@ main {
         transform: translateX(400px);
         opacity: 0;
     }
+
     to {
         transform: translateX(0);
         opacity: 1;
@@ -347,17 +386,29 @@ main {
 }
 
 @keyframes fadeOut {
-    from { opacity: 1; }
-    to { opacity: 0; }
+    from {
+        opacity: 1;
+    }
+
+    to {
+        opacity: 0;
+    }
 }
 
 @keyframes spin {
-    to { transform: rotate(360deg); }
+    to {
+        transform: rotate(360deg);
+    }
 }
 
 @keyframes skeleton-loading {
-    0% { background-position: 200% 0; }
-    100% { background-position: -200% 0; }
+    0% {
+        background-position: 200% 0;
+    }
+
+    100% {
+        background-position: -200% 0;
+    }
 }
 
 /* Notifications */
@@ -528,9 +579,17 @@ main {
     margin-bottom: 12px;
 }
 
-.skeleton-line-short { width: 60%; }
-.skeleton-line-60 { width: 60%; }
-.skeleton-line-80 { width: 80%; }
+.skeleton-line-short {
+    width: 60%;
+}
+
+.skeleton-line-60 {
+    width: 60%;
+}
+
+.skeleton-line-80 {
+    width: 80%;
+}
 
 .skeleton-line-large {
     height: 32px;
