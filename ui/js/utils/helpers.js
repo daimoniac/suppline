@@ -35,7 +35,7 @@ export function buildQueryString(params) {
     const filtered = Object.entries(params)
         .filter(([_, value]) => value !== null && value !== undefined && value !== '')
         .map(([key, value]) => `${encodeURIComponent(key)}=${encodeURIComponent(value)}`);
-    
+
     return filtered.length > 0 ? '?' + filtered.join('&') : '';
 }
 
@@ -47,16 +47,16 @@ export function buildQueryString(params) {
 export function parseQueryString(queryString) {
     const params = {};
     const search = queryString.startsWith('?') ? queryString.slice(1) : queryString;
-    
+
     if (!search) return params;
-    
+
     search.split('&').forEach(pair => {
         const [key, value] = pair.split('=');
         if (key) {
             params[decodeURIComponent(key)] = decodeURIComponent(value || '');
         }
     });
-    
+
     return params;
 }
 
@@ -86,6 +86,21 @@ export function debounce(func, wait) {
 export function formatNumber(num) {
     if (num === null || num === undefined) return 'N/A';
     return num.toLocaleString();
+}
+
+/**
+ * Copy text to clipboard
+ * @param {string} text - Text to copy
+ * @returns {Promise<boolean>} True if successful
+ */
+export async function copyToClipboard(text) {
+    try {
+        await navigator.clipboard.writeText(text);
+        return true;
+    } catch (err) {
+        console.error('Failed to copy text: ', err);
+        return false;
+    }
 }
 
 /**

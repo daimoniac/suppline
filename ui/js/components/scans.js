@@ -6,7 +6,8 @@
 import { BaseComponent } from './base-component.js';
 import { escapeHtml } from '../utils/security.js';
 import { formatDate, formatRelativeTime } from '../utils/date.js';
-import { truncateDigest } from '../utils/severity.js';
+import { truncateDigest, renderDigestCell } from '../utils/severity.js';
+import { copyToClipboard } from '../utils/helpers.js';
 import { Modal } from './common.js';
 
 export class ScansList extends BaseComponent {
@@ -161,8 +162,8 @@ export class ScansList extends BaseComponent {
      * Render filter controls
      */
     renderFilters() {
-        const policyPassedValue = this.filters.policy_passed === null ? 'all' : 
-                                   this.filters.policy_passed ? 'passed' : 'failed';
+        const policyPassedValue = this.filters.policy_passed === null ? 'all' :
+            this.filters.policy_passed ? 'passed' : 'failed';
 
         return `
             <div class="filters-container">
@@ -259,7 +260,7 @@ export class ScansList extends BaseComponent {
      */
     renderTableHeader(column, label) {
         const isSorted = this.sortColumn === column;
-        const sortIcon = isSorted 
+        const sortIcon = isSorted
             ? (this.sortDirection === 'asc' ? '↑' : '↓')
             : '';
         const sortClass = isSorted ? 'sorted' : '';
@@ -277,7 +278,7 @@ export class ScansList extends BaseComponent {
     renderScanRow(scan) {
         const statusClass = scan.PolicyPassed ? 'status-success' : 'status-danger';
         const statusText = scan.PolicyPassed ? 'Passed' : 'Failed';
-        const truncatedDigest = truncateDigest(scan.Digest);
+        const digestHtml = renderDigestCell(scan.Digest);
         const scanTime = formatRelativeTime(scan.CreatedAt);
 
         const vulnCounts = [
@@ -291,14 +292,14 @@ export class ScansList extends BaseComponent {
             <tr class="scan-row clickable" data-digest="${escapeHtml(scan.Digest)}">
                 <td>${escapeHtml(scan.Repository || 'N/A')}</td>
                 <td>${escapeHtml(scan.Tag || 'N/A')}</td>
-                <td class="digest-cell" title="${escapeHtml(scan.Digest)}">${escapeHtml(truncatedDigest)}</td>
+                <td class="digest-cell">${digestHtml}</td>
                 <td title="${formatDate(scan.CreatedAt)}">${scanTime}</td>
                 <td><span class="status-badge ${statusClass}">${statusText}</span></td>
                 <td class="vulnerabilities-cell">
-                    ${vulnCounts.length > 0 
-                        ? vulnCounts.map(v => `<span class="vuln-badge vuln-badge-${v.severity}">${v.count}</span>`).join(' ')
-                        : '<span class="text-muted">None</span>'
-                    }
+                    ${vulnCounts.length > 0
+                ? vulnCounts.map(v => `<span class="vuln-badge vuln-badge-${v.severity}">${v.count}</span>`).join(' ')
+                : '<span class="text-muted">None</span>'
+            }
                 </td>
             </tr>
         `;
@@ -309,7 +310,7 @@ export class ScansList extends BaseComponent {
      */
     renderPagination() {
         const totalPages = Math.ceil(this.total / this.pageSize);
-        
+
         if (totalPages <= 1) {
             return '';
         }
@@ -423,6 +424,23 @@ export class ScansList extends BaseComponent {
             });
         });
 
+        // Copy button handlers
+        document.querySelectorAll('.copy-button').forEach(btn => {
+            btn.addEventListener('click', async (e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                const text = btn.dataset.copy;
+                if (text) {
+                    const success = await copyToClipboard(text);
+                    if (success) {
+                        this.showNotification('Digest copied to clipboard', 'success');
+                    } else {
+                        this.showNotification('Failed to copy digest', 'error');
+                    }
+                }
+            });
+        });
+
         // Pagination controls
         const firstPageBtn = document.getElementById('first-page-btn');
         const prevPageBtn = document.getElementById('prev-page-btn');
@@ -474,7 +492,7 @@ export class ScansList extends BaseComponent {
      */
     async handleRescanRepository() {
         const repository = this.filters.repository;
-        
+
         if (!repository) {
             this.showNotification('No repository selected', 'error');
             return;

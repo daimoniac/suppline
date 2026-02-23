@@ -14,9 +14,9 @@ const SEVERITY_LEVELS = ['CRITICAL', 'HIGH', 'MEDIUM', 'LOW', 'UNKNOWN'];
  */
 function getSeverityColor(severity) {
     if (!severity) return 'severity-unknown';
-    
+
     const level = severity.toUpperCase();
-    
+
     switch (level) {
         case 'CRITICAL':
             return 'severity-critical';
@@ -38,9 +38,9 @@ function getSeverityColor(severity) {
  */
 function getSeverityHexColor(severity) {
     if (!severity) return '#6c757d';
-    
+
     const level = severity.toUpperCase();
-    
+
     switch (level) {
         case 'CRITICAL':
             return '#dc3545'; // Red
@@ -65,7 +65,7 @@ function createSeverityBadge(severity, count = null) {
     const colorClass = getSeverityColor(severity);
     const displayText = severity ? severity.toUpperCase() : 'UNKNOWN';
     const countText = count !== null ? ` (${count})` : '';
-    
+
     return `<span class="badge ${colorClass}">${displayText}${countText}</span>`;
 }
 
@@ -86,7 +86,7 @@ function getSeverityBadge(severity, count = null) {
  */
 function createSeverityIcon(severity) {
     const colorClass = getSeverityColor(severity);
-    
+
     return `<span class="severity-icon ${colorClass}">●</span>`;
 }
 
@@ -99,14 +99,14 @@ function sortBySeverity(vulnerabilities) {
     return vulnerabilities.sort((a, b) => {
         const severityA = a.severity ? a.severity.toUpperCase() : 'UNKNOWN';
         const severityB = b.severity ? b.severity.toUpperCase() : 'UNKNOWN';
-        
+
         const indexA = SEVERITY_LEVELS.indexOf(severityA);
         const indexB = SEVERITY_LEVELS.indexOf(severityB);
-        
+
         // If severity not found in list, put at end
         const orderA = indexA === -1 ? SEVERITY_LEVELS.length : indexA;
         const orderB = indexB === -1 ? SEVERITY_LEVELS.length : indexB;
-        
+
         return orderA - orderB;
     });
 }
@@ -126,14 +126,14 @@ function groupBySeverity(vulnerabilities, fieldName = 'severity') {
         LOW: [],
         UNKNOWN: [],
     };
-    
+
     vulnerabilities.forEach(vuln => {
         // Try the specified field name first, then fallback to PascalCase
         let severityValue = vuln[fieldName];
         if (!severityValue && fieldName === 'severity') {
             severityValue = vuln.Severity; // Fallback to PascalCase
         }
-        
+
         const severity = severityValue ? severityValue.toUpperCase() : 'UNKNOWN';
         if (groups[severity]) {
             groups[severity].push(vuln);
@@ -141,7 +141,7 @@ function groupBySeverity(vulnerabilities, fieldName = 'severity') {
             groups.UNKNOWN.push(vuln);
         }
     });
-    
+
     return groups;
 }
 
@@ -158,7 +158,7 @@ function getSeverityCounts(vulnerabilities) {
         low: 0,
         unknown: 0,
     };
-    
+
     vulnerabilities.forEach(vuln => {
         const severity = vuln.severity ? vuln.severity.toLowerCase() : 'unknown';
         if (counts.hasOwnProperty(severity)) {
@@ -167,7 +167,7 @@ function getSeverityCounts(vulnerabilities) {
             counts.unknown++;
         }
     });
-    
+
     return counts;
 }
 
@@ -178,7 +178,7 @@ function getSeverityCounts(vulnerabilities) {
  */
 function formatVulnerabilitySummary(counts) {
     const parts = [];
-    
+
     if (counts.critical > 0) {
         parts.push(`${counts.critical} Critical`);
     }
@@ -191,11 +191,11 @@ function formatVulnerabilitySummary(counts) {
     if (counts.low > 0) {
         parts.push(`${counts.low} Low`);
     }
-    
+
     if (parts.length === 0) {
         return 'No vulnerabilities';
     }
-    
+
     return parts.join(', ');
 }
 
@@ -207,18 +207,40 @@ function formatVulnerabilitySummary(counts) {
  */
 function truncateDigest(digest) {
     if (!digest) return 'N/A';
-    
+
     // If digest starts with sha256:, keep that prefix plus first 12 chars
     if (digest.startsWith('sha256:')) {
         return digest.substring(0, 19) + '...';
     }
-    
+
     // Otherwise just truncate to 16 chars
     if (digest.length > 16) {
         return digest.substring(0, 16) + '...';
     }
-    
+
     return digest;
+}
+
+/**
+ * Render digest cell content with copy-to-clipboard button
+ * @param {string} digest - Full digest string
+ * @returns {string} HTML string for the digest cell content
+ */
+function renderDigestCell(digest) {
+    if (!digest) return 'N/A';
+    const truncated = truncateDigest(digest);
+
+    return `
+        <div class="digest-container">
+            <span class="digest-text" title="${digest}">${truncated}</span>
+            <button class="copy-button" data-copy="${digest}" title="Copy full digest to clipboard">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect>
+                    <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path>
+                </svg>
+            </button>
+        </div>
+    `;
 }
 
 /**
@@ -229,11 +251,11 @@ function truncateDigest(digest) {
  */
 function formatVersions(installedVersion, fixedVersion) {
     if (!installedVersion) return 'N/A';
-    
+
     if (fixedVersion) {
         return `${installedVersion} → ${fixedVersion}`;
     }
-    
+
     return installedVersion;
 }
 
@@ -250,5 +272,6 @@ export {
     getSeverityCounts,
     formatVulnerabilitySummary,
     truncateDigest,
+    renderDigestCell,
     formatVersions,
 };

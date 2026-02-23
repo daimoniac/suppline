@@ -7,7 +7,8 @@
 import { ScansList } from './scans.js';
 import { escapeHtml } from '../utils/security.js';
 import { formatDate, formatRelativeTime } from '../utils/date.js';
-import { truncateDigest } from '../utils/severity.js';
+import { truncateDigest, renderDigestCell } from '../utils/severity.js';
+import { copyToClipboard } from '../utils/helpers.js';
 
 export class FailedImages extends ScansList {
     constructor(apiClient) {
@@ -147,7 +148,7 @@ export class FailedImages extends ScansList {
             <tr class="failed-image-row clickable" data-digest="${escapeHtml(scan.Digest)}">
                 <td>${escapeHtml(scan.Repository || 'N/A')}</td>
                 <td>${escapeHtml(scan.Tag || 'N/A')}</td>
-                <td class="digest-cell" title="${escapeHtml(scan.Digest)}">${escapeHtml(truncatedDigest)}</td>
+                <td class="digest-cell">${renderDigestCell(scan.Digest)}</td>
                 <td title="${formatDate(scan.CreatedAt)}">${scanTime}</td>
                 <td class="vulnerability-breakdown-cell">
                     ${vulnBreakdown}
@@ -179,8 +180,8 @@ export class FailedImages extends ScansList {
         return `
             <div class="vulnerability-breakdown-inline">
                 ${vulnCounts
-                    .filter(v => v.count > 0)
-                    .map(v => `
+                .filter(v => v.count > 0)
+                .map(v => `
                         <div class="vuln-count-item">
                             <span class="vuln-badge vuln-badge-${v.severity}">${v.count}</span>
                             <span class="vuln-label">${v.label}</span>
@@ -298,6 +299,23 @@ export class FailedImages extends ScansList {
                 const digest = row.dataset.digest;
                 if (digest) {
                     window.router.navigate(`/scans/${encodeURIComponent(digest)}`);
+                }
+            });
+        });
+
+        // Copy button handlers
+        document.querySelectorAll('.copy-button').forEach(btn => {
+            btn.addEventListener('click', async (e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                const text = btn.dataset.copy;
+                if (text) {
+                    const success = await copyToClipboard(text);
+                    if (success) {
+                        this.showNotification('Digest copied to clipboard', 'success');
+                    } else {
+                        this.showNotification('Failed to copy digest', 'error');
+                    }
                 }
             });
         });

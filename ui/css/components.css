@@ -17,12 +17,18 @@
 
 :root {
     /* Spacing Scale */
-    --spacing-xs: 0.25rem;   /* 4px */
-    --spacing-sm: 0.5rem;    /* 8px */
-    --spacing-md: 0.75rem;   /* 12px */
-    --spacing-lg: 1rem;      /* 16px */
-    --spacing-xl: 1.5rem;    /* 24px */
-    --spacing-2xl: 2rem;     /* 32px */
+    --spacing-xs: 0.25rem;
+    /* 4px */
+    --spacing-sm: 0.5rem;
+    /* 8px */
+    --spacing-md: 0.75rem;
+    /* 12px */
+    --spacing-lg: 1rem;
+    /* 16px */
+    --spacing-xl: 1.5rem;
+    /* 24px */
+    --spacing-2xl: 2rem;
+    /* 32px */
 
     /* Border Radius Scale */
     --radius-sm: 4px;
@@ -128,12 +134,29 @@
 }
 
 /* Gap Utilities */
-.gap-xs { gap: var(--spacing-xs); }
-.gap-sm { gap: var(--spacing-sm); }
-.gap-md { gap: var(--spacing-md); }
-.gap-lg { gap: var(--spacing-lg); }
-.gap-xl { gap: var(--spacing-xl); }
-.gap-2xl { gap: var(--spacing-2xl); }
+.gap-xs {
+    gap: var(--spacing-xs);
+}
+
+.gap-sm {
+    gap: var(--spacing-sm);
+}
+
+.gap-md {
+    gap: var(--spacing-md);
+}
+
+.gap-lg {
+    gap: var(--spacing-lg);
+}
+
+.gap-xl {
+    gap: var(--spacing-xl);
+}
+
+.gap-2xl {
+    gap: var(--spacing-2xl);
+}
 
 /* Font Utilities */
 .font-mono {
@@ -465,9 +488,12 @@ tr:hover {
 }
 
 @keyframes celebration {
-    0%, 100% {
+
+    0%,
+    100% {
         transform: scale(1);
     }
+
     50% {
         transform: scale(1.1);
     }
@@ -939,6 +965,50 @@ tr:hover {
 
 .digest-cell {
     color: var(--text-secondary);
+    position: relative;
+    padding-right: 32px !important;
+    /* Make room for the copy button */
+}
+
+.digest-container {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    width: 100%;
+}
+
+.copy-button {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 24px;
+    height: 24px;
+    padding: 4px;
+    border-radius: 4px;
+    background: transparent;
+    border: none;
+    color: var(--text-secondary);
+    cursor: pointer;
+    transition: all 0.2s ease;
+    margin-left: 4px;
+    opacity: 0;
+}
+
+.digest-cell:hover .copy-button {
+    opacity: 1;
+}
+
+.copy-button:hover {
+    background-color: var(--bg-color);
+    color: var(--primary-color);
+}
+
+.copy-button:active {
+    transform: scale(0.9);
+}
+
+.copy-button svg {
+    pointer-events: none;
 }
 
 .cve-cell {
@@ -996,81 +1066,82 @@ tr:hover {
     .summary-cards {
         grid-template-columns: 1fr;
     }
-    
+
     .vulnerability-stats {
         grid-template-columns: repeat(2, 1fr);
     }
-    
+
     .dashboard-section,
     .summary-card {
         padding: 1rem;
     }
-    
+
     .summary-card-value {
         font-size: 1.5rem;
     }
-    
+
     .filters-container {
         flex-direction: column;
         align-items: stretch;
     }
-    
+
     .filter-group {
         min-width: 100%;
     }
-    
+
     .filter-actions {
         width: 100%;
     }
-    
+
     .filter-actions button {
         flex: 1;
     }
-    
+
     .pagination-container {
         flex-direction: column;
         align-items: stretch;
     }
-    
+
     .pagination-controls {
         justify-content: center;
     }
-    
+
     .vulnerability-group-header,
     .vulnerability-group-content {
         padding: 1rem;
     }
-    
+
     .vulnerability-group-title {
         flex-direction: column;
         align-items: flex-start;
         gap: 0.5rem;
     }
-    
+
     .vulnerability-breakdown-inline {
         flex-direction: row;
         flex-wrap: wrap;
     }
-    
+
     .failure-reasons-list {
         flex-direction: row;
         flex-wrap: wrap;
     }
-    
+
     .failure-alert {
         flex-direction: column;
         align-items: flex-start;
     }
-    
+
     .statement-cell {
         max-width: 150px;
     }
-    
+
     table {
         font-size: 0.875rem;
     }
-    
-    th, td {
+
+    th,
+    td {
         padding: 0.5rem;
     }
 }
@@ -1079,30 +1150,30 @@ tr:hover {
     .vulnerability-stats {
         grid-template-columns: 1fr;
     }
-    
+
     .pagination-controls {
         flex-wrap: wrap;
     }
-    
+
     .pagination-current {
         width: 100%;
         text-align: center;
         padding: 0.5rem 0;
     }
-    
+
     .vulnerability-group-header {
         flex-direction: column;
     }
-    
+
     .expand-toggle {
         align-self: flex-end;
     }
-    
+
     .vulnerability-breakdown-cell,
     .failure-reasons-cell {
         min-width: auto;
     }
-    
+
     .affected-images-table {
         font-size: 0.75rem;
     }
@@ -2011,15 +2082,15 @@ tr:hover {
         flex-direction: column;
         align-items: stretch;
     }
-    
+
     .integration-dropdown {
         max-width: 100%;
     }
-    
+
     .integration-actions {
         flex-direction: column;
     }
-    
+
     .integration-actions .btn {
         width: 100%;
         justify-content: center;
@@ -2559,11 +2630,12 @@ tr:hover {
 
 /* Responsive Styles for Repositories Overview */
 @media (max-width: 1024px) {
+
     .repository-row-vulnerabilities,
     .tag-row-vulnerabilities {
         flex: 0 0 150px;
     }
-    
+
     .repository-row-time,
     .tag-row-time {
         flex: 0 0 120px;
@@ -2571,11 +2643,12 @@ tr:hover {
 }
 
 @media (max-width: 768px) {
+
     .repositories-list,
     .repository-detail {
         gap: var(--spacing-lg);
     }
-    
+
     .repository-row,
     .tag-row {
         flex-direction: column;
@@ -2583,7 +2656,7 @@ tr:hover {
         gap: var(--spacing-md);
         padding: var(--spacing-md);
     }
-    
+
     .repository-row-name,
     .tag-row-name,
     .repository-row-time,
@@ -2598,7 +2671,7 @@ tr:hover {
         width: 100%;
         text-align: left;
     }
-    
+
     .repository-row-time,
     .tag-row-time,
     .repository-row-vulnerabilities,
@@ -2609,20 +2682,20 @@ tr:hover {
     .tag-row-action {
         text-align: left;
     }
-    
+
     .repository-row-vulnerabilities,
     .tag-row-vulnerabilities {
         justify-content: flex-start;
     }
-    
+
     .search-input {
         max-width: 100%;
     }
-    
+
     .table-header-row {
         display: none;
     }
-    
+
     .repository-row::before,
     .tag-row::before {
         content: attr(data-label);
@@ -2633,21 +2706,21 @@ tr:hover {
         display: block;
         margin-bottom: 0.25rem;
     }
-    
+
     .pagination-controls {
         justify-content: center;
     }
-    
+
     .pagination-button {
         padding: 0.375rem 0.5rem;
         font-size: 0.8125rem;
     }
-    
+
     .rescan-button {
         width: 100%;
         justify-content: center;
     }
-    
+
     .repository-detail-header {
         flex-direction: column;
         align-items: flex-start;
@@ -2655,20 +2728,21 @@ tr:hover {
 }
 
 @media (max-width: 480px) {
+
     .repository-row,
     .tag-row {
         padding: var(--spacing-sm);
     }
-    
+
     .severity-badge {
         font-size: 0.7rem;
         padding: 0.2rem 0.4rem;
     }
-    
+
     .pagination-info {
         padding: 0 var(--spacing-sm);
     }
-    
+
     .rescan-button {
         padding: 0.375rem 0.75rem;
         font-size: 0.8125rem;

@@ -7,12 +7,14 @@
 import { BaseComponent } from './base-component.js';
 import { escapeHtml } from '../utils/security.js';
 import { formatDate, formatRelativeTime, formatExpirationStatus, getExpirationStatusClass } from '../utils/date.js';
-import { 
-    getSeverityBadge, 
+import {
+    getSeverityBadge,
     truncateDigest,
+    renderDigestCell,
     formatVersions,
     groupBySeverity
 } from '../utils/severity.js';
+import { copyToClipboard } from '../utils/helpers.js';
 
 export class ScanDetailBase extends BaseComponent {
     constructor(apiClient) {
@@ -67,7 +69,7 @@ export class ScanDetailBase extends BaseComponent {
                     </div>
                     <div>
                         <div class="info-label">Digest</div>
-                        <div class="digest-cell" title="${escapeHtml(this.scan.Digest)}">${escapeHtml(truncateDigest(this.scan.Digest))}</div>
+                        <div class="digest-cell">${renderDigestCell(this.scan.Digest)}</div>
                     </div>
                     <div>
                         <div class="info-label">Scanned</div>
@@ -125,10 +127,10 @@ export class ScanDetailBase extends BaseComponent {
      */
     renderAttestationIndicator(label, attested) {
         const badgeClass = attested ? 'badge-success' : 'badge-danger';
-        const icon = attested 
+        const icon = attested
             ? '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><polyline points="20 6 9 17 4 12"></polyline></svg>'
             : '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>';
-        
+
         return `
             <span class="badge attestation-badge ${badgeClass}" title="${label}: ${attested ? 'Yes' : 'No'}">
                 ${icon}
@@ -211,10 +213,10 @@ export class ScanDetailBase extends BaseComponent {
      */
     renderVulnerabilityList() {
         let vulnerabilities = this.scan.Vulnerabilities || [];
-        
+
         const toleratedCVEIds = new Set((this.scan.ToleratedCVEs || []).map(tol => tol.CVEID));
         vulnerabilities = vulnerabilities.filter(vuln => !toleratedCVEIds.has(vuln.CVEID));
-        
+
         if (vulnerabilities.length === 0) {
             return '';
         }
@@ -277,10 +279,10 @@ export class ScanDetailBase extends BaseComponent {
             <div class="vulnerability-item">
                 <div class="vulnerability-header">
                     <div class="vulnerability-cve">
-                        ${primaryUrl 
-                            ? `<a href="${escapeHtml(primaryUrl)}" target="_blank" rel="noopener noreferrer" class="vulnerability-link">${escapeHtml(cveId)}</a>`
-                            : escapeHtml(cveId)
-                        }
+                        ${primaryUrl
+                ? `<a href="${escapeHtml(primaryUrl)}" target="_blank" rel="noopener noreferrer" class="vulnerability-link">${escapeHtml(cveId)}</a>`
+                : escapeHtml(cveId)
+            }
                     </div>
                     ${title ? `<div class="vulnerability-title">${escapeHtml(title)}</div>` : ''}
                 </div>
@@ -344,10 +346,10 @@ export class ScanDetailBase extends BaseComponent {
         const statement = toleration.Statement || 'No justification provided';
         const toleratedAt = formatDate(toleration.ToleratedAt);
         const expiresAt = toleration.ExpiresAt;
-        
+
         const expirationText = expiresAt ? formatExpirationStatus(expiresAt) : 'No expiration';
         const expirationClass = expiresAt ? getExpirationStatusClass(expiresAt) : 'no-expiration';
-        
+
         let badgeClass = 'badge';
         if (expirationClass === 'expired') {
             badgeClass = 'badge badge-danger';
@@ -518,6 +520,23 @@ export class ScanDetailBase extends BaseComponent {
             });
         });
 
+        // Copy button handlers
+        document.querySelectorAll('.copy-button').forEach(btn => {
+            btn.addEventListener('click', async (e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                const text = btn.dataset.copy;
+                if (text) {
+                    const success = await copyToClipboard(text);
+                    if (success) {
+                        this.showNotification('Digest copied to clipboard', 'success');
+                    } else {
+                        this.showNotification('Failed to copy digest', 'error');
+                    }
+                }
+            });
+        });
+
         // Trigger rescan button
         const rescanBtn = document.getElementById('trigger-rescan-btn');
         if (rescanBtn) {
@@ -567,10 +586,10 @@ export class ScanDetailBase extends BaseComponent {
 
         } catch (error) {
             console.error('Failed to trigger rescan:', error);
-            
+
             if (error.status === 403) {
                 this.showNotification('Cannot trigger rescan: API is in read-only mode', 'warning');
-                
+
                 const rescanBtn = document.getElementById('trigger-rescan-btn');
                 if (rescanBtn) {
                     rescanBtn.disabled = true;

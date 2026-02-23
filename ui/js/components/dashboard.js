@@ -7,7 +7,8 @@
 import { BaseComponent } from './base-component.js';
 import { escapeHtml } from '../utils/security.js';
 import { formatRelativeTime } from '../utils/date.js';
-import { getSeverityBadge } from '../utils/severity.js';
+import { getSeverityBadge, renderDigestCell } from '../utils/severity.js';
+import { copyToClipboard } from '../utils/helpers.js';
 
 export class Dashboard extends BaseComponent {
     constructor(apiClient) {
@@ -46,7 +47,7 @@ export class Dashboard extends BaseComponent {
                 unappliedTolerations
             ] = await Promise.all([
                 this.apiClient.getScans({ limit: 20 }),
-                this.apiClient.getScans({ policy_passed: false }), 
+                this.apiClient.getScans({ policy_passed: false }),
                 this.apiClient.getTolerations({}),
                 this.apiClient.getUnappliedTolerations()
             ]);
@@ -62,21 +63,21 @@ export class Dashboard extends BaseComponent {
             // Process tolerations - filter expired and expiring in the UI
             const tolerations = Array.isArray(allTolerations) ? allTolerations : [];
             this.data.activeTolerations = tolerations.length;
-            
+
             // Filter tolerations by expiration status
             const now = Date.now();
             const sevenDaysFromNow = now + (7 * 24 * 60 * 60 * 1000);
-            
+
             this.data.expiredTolerationsDetails = tolerations.filter(t => {
                 return t.ExpiresAt && (t.ExpiresAt * 1000) <= now;
             });
-            
+
             this.data.expiringTolerationsDetails = tolerations.filter(t => {
                 if (!t.ExpiresAt) return false;
                 const expiryMs = t.ExpiresAt * 1000;
                 return expiryMs > now && expiryMs <= sevenDaysFromNow;
             });
-            
+
             this.data.expiringTolerations = this.data.expiringTolerationsDetails.length;
 
             // Process unapplied tolerations
@@ -269,7 +270,7 @@ export class Dashboard extends BaseComponent {
             const expiredDate = toleration.ExpiresAt ? new Date(toleration.ExpiresAt * 1000) : null;
             const expiredDateStr = expiredDate ? expiredDate.toLocaleDateString() : 'N/A';
             const daysExpired = expiredDate ? Math.floor((Date.now() - expiredDate.getTime()) / (1000 * 60 * 60 * 24)) : 0;
-            
+
             // Handle repositories array - show up to 3, or "multiple repositories"
             const repositories = toleration.Repositories || [];
             let repoDisplay = '';
@@ -307,22 +308,22 @@ export class Dashboard extends BaseComponent {
 
         // API already returns only non-expired items expiring within 7 days
         return this.data.expiringTolerationsDetails.map(toleration => {
-                const expiryDate = toleration.ExpiresAt ? new Date(toleration.ExpiresAt * 1000) : null;
-                const expiryDateStr = expiryDate ? expiryDate.toLocaleDateString() : 'Never';
-                const daysUntilExpiry = expiryDate ? Math.ceil((expiryDate.getTime() - Date.now()) / (1000 * 60 * 60 * 24)) : null;
-                
-                // Handle repositories array - show up to 3, or "multiple repositories"
-                const repositories = toleration.Repositories || [];
-                let repoDisplay = '';
-                if (repositories.length === 0) {
-                    repoDisplay = 'No repositories';
-                } else if (repositories.length <= 3) {
-                    repoDisplay = repositories.map(r => escapeHtml(r.Repository)).join(', ');
-                } else {
-                    repoDisplay = 'multiple repositories';
-                }
+            const expiryDate = toleration.ExpiresAt ? new Date(toleration.ExpiresAt * 1000) : null;
+            const expiryDateStr = expiryDate ? expiryDate.toLocaleDateString() : 'Never';
+            const daysUntilExpiry = expiryDate ? Math.ceil((expiryDate.getTime() - Date.now()) / (1000 * 60 * 60 * 24)) : null;
 
-                return `
+            // Handle repositories array - show up to 3, or "multiple repositories"
+            const repositories = toleration.Repositories || [];
+            let repoDisplay = '';
+            if (repositories.length === 0) {
+                repoDisplay = 'No repositories';
+            } else if (repositories.length <= 3) {
+                repoDisplay = repositories.map(r => escapeHtml(r.Repository)).join(', ');
+            } else {
+                repoDisplay = 'multiple repositories';
+            }
+
+            return `
                     <div class="toleration-attention-item toleration-expiring" data-cve="${escapeHtml(toleration.CVEID)}" data-type="expiring">
                         <div class="toleration-attention-header">
                             <span class="toleration-attention-cve">${escapeHtml(toleration.CVEID)}</span>
@@ -335,7 +336,7 @@ export class Dashboard extends BaseComponent {
                         </div>
                     </div>
                 `;
-            });
+        });
     }
 
     /**
@@ -563,14 +564,14 @@ export class Dashboard extends BaseComponent {
             <tr class="scan-row" data-digest="${escapeHtml(scan.Digest)}" data-repository="${escapeHtml(scan.Repository || '')}">
                 <td><span class="repository-link-cell" data-repository="${escapeHtml(scan.Repository || 'N/A')}">${escapeHtml(scan.Repository || 'N/A')}</span></td>
                 <td>${escapeHtml(scan.Tag || 'N/A')}</td>
-                <td class="digest-cell" title="${escapeHtml(scan.Digest)}">${escapeHtml(truncatedDigest)}</td>
+                <td class="digest-cell">${renderDigestCell(scan.Digest)}</td>
                 <td>${scanTime}</td>
                 <td><span class="status-badge ${statusClass}">${statusText}</span></td>
                 <td class="vulnerabilities-cell">
-                    ${vulnCounts.length > 0 
-                        ? vulnCounts.map(v => `<span class="vuln-badge vuln-badge-${v.severity}">${v.count}</span>`).join(' ')
-                        : '<span class="text-muted">None</span>'
-                    }
+                    ${vulnCounts.length > 0
+                ? vulnCounts.map(v => `<span class="vuln-badge vuln-badge-${v.severity}">${v.count}</span>`).join(' ')
+                : '<span class="text-muted">None</span>'
+            }
                 </td>
             </tr>
         `;
@@ -585,14 +586,14 @@ export class Dashboard extends BaseComponent {
             badge.addEventListener('click', (e) => {
                 e.stopPropagation();
                 const filter = badge.dataset.filter;
-                
+
                 // Toggle filter
                 if (this.activeFilter === filter) {
                     this.activeFilter = 'all';
                 } else {
                     this.activeFilter = filter;
                 }
-                
+
                 // Update badge styling
                 document.querySelectorAll('.filter-badge').forEach(b => {
                     b.classList.remove('filter-active');
@@ -600,7 +601,7 @@ export class Dashboard extends BaseComponent {
                 if (this.activeFilter !== 'all') {
                     badge.classList.add('filter-active');
                 }
-                
+
                 // Re-render filtered list
                 const listContainer = document.getElementById('tolerations-list');
                 if (listContainer) {
@@ -630,6 +631,23 @@ export class Dashboard extends BaseComponent {
             });
         });
 
+        // Add click handlers for copy buttons
+        document.querySelectorAll('.copy-button').forEach(btn => {
+            btn.addEventListener('click', async (e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                const text = btn.dataset.copy;
+                if (text) {
+                    const success = await copyToClipboard(text);
+                    if (success) {
+                        this.showNotification('Digest copied to clipboard', 'success');
+                    } else {
+                        this.showNotification('Failed to copy digest', 'error');
+                    }
+                }
+            });
+        });
+
         // Add click handlers for repository names in failed scans chart
         document.querySelectorAll('.repository-link').forEach(link => {
             link.addEventListener('click', (e) => {
@@ -643,7 +661,7 @@ export class Dashboard extends BaseComponent {
 
         // Add click handlers for toleration items
         this.attachTolerationItemHandlers();
-        
+
         // Apply widths to vulnerability bar segments
         document.querySelectorAll('.vulnerability-bar-segment[data-width]').forEach(segment => {
             const width = segment.dataset.width;
@@ -651,7 +669,7 @@ export class Dashboard extends BaseComponent {
                 segment.style.setProperty('--bar-width', `${width}%`);
             }
         });
-        
+
         // Apply widths to repository bar fills
         document.querySelectorAll('.repository-bar-fill[data-width]').forEach(fill => {
             const width = fill.dataset.width;
