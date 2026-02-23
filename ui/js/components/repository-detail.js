@@ -50,7 +50,7 @@ export class RepositoryDetail extends BaseComponent {
 
             // API returns repository with tags
             const response = await this.apiClient.getRepository(this.repositoryName, apiFilters);
-            
+
             // Handle both direct object and object with Tags property (Go returns uppercase)
             if (response && response.Tags) {
                 this.tags = Array.isArray(response.Tags) ? response.Tags : [];
@@ -181,6 +181,15 @@ export class RepositoryDetail extends BaseComponent {
                         <h1 class="page-title">${escapeHtml(this.repositoryName)}</h1>
                         <p class="page-subtitle">Repository with ${this.total} tag${this.total !== 1 ? 's' : ''}</p>
                     </div>
+                    <div class="repository-detail-actions">
+                        <button id="rescan-repository-detail-btn" class="btn btn-warning btn-with-icon">
+                            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                <polyline points="23 4 23 10 17 10"></polyline>
+                                <path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"></path>
+                            </svg>
+                            Rescan Repository
+                        </button>
+                    </div>
                 </div>
 
                 ${this.renderFilters()}
@@ -258,7 +267,7 @@ export class RepositoryDetail extends BaseComponent {
      */
     renderTableHeader(column, label) {
         const isSorted = this.sortColumn === column;
-        const sortIcon = isSorted 
+        const sortIcon = isSorted
             ? (this.sortDirection === 'asc' ? '↑' : '↓')
             : '';
         const sortClass = isSorted ? 'sorted' : '';
@@ -313,7 +322,7 @@ export class RepositoryDetail extends BaseComponent {
      */
     renderPagination() {
         const totalPages = Math.ceil(this.total / this.pageSize);
-        
+
         if (totalPages <= 1) {
             return '';
         }
@@ -368,7 +377,7 @@ export class RepositoryDetail extends BaseComponent {
      */
     updateURL() {
         const queryParams = {};
-        
+
         if (this.filters.search) {
             queryParams.search = this.filters.search;
         }
@@ -381,7 +390,7 @@ export class RepositoryDetail extends BaseComponent {
         if (this.sortDirection !== 'asc') {
             queryParams.order = this.sortDirection;
         }
-        
+
         window.router.navigate(`/repositories/${encodeURIComponent(this.repositoryName)}`, queryParams, true);
     }
 
@@ -440,6 +449,14 @@ export class RepositoryDetail extends BaseComponent {
                 this.renderAndAttach();
             });
         });
+
+        // Rescan repository button handler
+        const rescanRepoBtn = document.getElementById('rescan-repository-detail-btn');
+        if (rescanRepoBtn) {
+            rescanRepoBtn.addEventListener('click', async () => {
+                await this.handleRescanRepository();
+            });
+        }
 
         // Tag name click handlers - navigate to tag detail view
         document.querySelectorAll('.tag-name-cell').forEach(cell => {
@@ -557,6 +574,71 @@ export class RepositoryDetail extends BaseComponent {
             if (rescanBtn) {
                 rescanBtn.disabled = false;
                 rescanBtn.innerHTML = 'Rescan';
+            }
+        }
+    }
+
+    /**
+     * Handle repository rescan action
+     */
+    async handleRescanRepository() {
+        const repositoryName = this.repositoryName;
+        if (!repositoryName) {
+            this.showNotification('No repository selected', 'error');
+            return;
+        }
+
+        // Show confirmation dialog
+        const confirmed = await Modal.confirm(
+            'Rescan Repository',
+            `Are you sure you want to trigger a rescan for all images in repository "${repositoryName}"? This will queue scans for all images in this repository.`
+        );
+
+        if (!confirmed) {
+            return;
+        }
+
+        try {
+            // Find and disable the button
+            const rescanBtn = document.getElementById('rescan-repository-detail-btn');
+            if (rescanBtn) {
+                rescanBtn.disabled = true;
+                rescanBtn.innerHTML = `
+                    <span class="spinner-small"></span>
+                    Triggering Rescan...
+                `;
+            }
+
+            // Trigger rescan via API
+            const response = await this.apiClient.triggerRepositoryRescan(repositoryName);
+
+            // Show success notification
+            const message = response.message || `Repository rescan triggered successfully`;
+            this.showNotification(message, 'success');
+
+            // Reload repository after a short delay
+            setTimeout(async () => {
+                await this.loadAndRender();
+            }, 2000);
+
+        } catch (error) {
+            console.error('Failed to trigger repository rescan:', error);
+            this.showNotification(
+                error.message || 'Failed to trigger repository rescan',
+                'error'
+            );
+
+            // Re-enable button
+            const rescanBtn = document.getElementById('rescan-repository-detail-btn');
+            if (rescanBtn) {
+                rescanBtn.disabled = false;
+                rescanBtn.innerHTML = `
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <polyline points="23 4 23 10 17 10"></polyline>
+                        <path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"></path>
+                    </svg>
+                    Rescan Repository
+                `;
             }
         }
     }
