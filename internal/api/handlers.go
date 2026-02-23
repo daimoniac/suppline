@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"sort"
 	"strings"
 	"time"
 
@@ -142,7 +143,7 @@ func (s *APIServer) handleListScans(w http.ResponseWriter, r *http.Request) {
 // @Param package_name query string false "Filter by package name"
 // @Param repository query string false "Filter by repository"
 // @Param limit query int false "Maximum number of results" default(100)
-// @Success 200 {array} types.VulnerabilityRecord
+// @Success 200 {array} types.VulnerabilityGroup
 // @Failure 401 {object} map[string]string "Unauthorized"
 // @Failure 500 {object} map[string]string "Internal server error"
 // @Security BearerAuth
@@ -159,23 +160,47 @@ func (s *APIServer) handleQueryVulnerabilities(w http.ResponseWriter, r *http.Re
 		Severity:    parseQueryParam(r, "severity"),
 		PackageName: parseQueryParam(r, "package_name"),
 		Repository:  parseQueryParam(r, "repository"),
-		Limit:       parseQueryParamInt(r, "limit", 100),
 	}
-
 	// Query vulnerabilities from state store
-	vulnerabilities, err := s.stateStore.QueryVulnerabilities(r.Context(), filter)
+	// We use a larger limit for the raw query to ensure we capture enough data for grouping
+	rawFilter := filter
+	rawFilter.Limit = 10000 // Large buffer for grouping
+
+	vulnerabilities, err := s.stateStore.QueryVulnerabilities(r.Context(), rawFilter)
 	if err != nil {
 		s.respondError(w, http.StatusInternalServerError, fmt.Sprintf("Failed to query vulnerabilities: %v", err))
 		return
 	}
 
-	// Stream JSON response to avoid buffering large payloads
+	// Group vulnerabilities by CVE ID
+	grouped := s.groupVulnerabilitiesByCVE(vulnerabilities)
+
+	// Apply pagination on grouped results
+	limit := parseQueryParamInt(r, "limit", 10)
+	offset := parseQueryParamInt(r, "offset", 0)
+	totalGroups := len(grouped)
+
+	start := offset
+	if start > totalGroups {
+		start = totalGroups
+	}
+	end := start + limit
+	if end > totalGroups {
+		end = totalGroups
+	}
+
+	pagedGroups := grouped[start:end]
+
+	// Add total count header for UI pagination
+	w.Header().Set("X-Total-Count", fmt.Sprintf("%d", totalGroups))
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
+
 	encoder := json.NewEncoder(w)
-	if err := encoder.Encode(vulnerabilities); err != nil {
+	if err := encoder.Encode(pagedGroups); err != nil {
 		s.logger.Error("error encoding JSON response",
-			"error", err.Error())
+			"error", err,
+			"path", r.URL.Path)
 	}
 }
 
@@ -1274,6 +1299,119 @@ func (s *APIServer) groupTolerationsByCVE(tolerations []*types.TolerationInfo) [
 	for _, summary := range grouped {
 		result = append(result, summary)
 	}
+
+	return result
+}
+
+// groupVulnerabilitiesByCVE groups vulnerabilities by CVE ID, with nested affected repositories and digests
+func (s *APIServer) groupVulnerabilitiesByCVE(vulnerabilities []*types.VulnerabilityRecord) []*types.VulnerabilityGroup {
+	// Group by CVE ID
+	groups := make(map[string]*types.VulnerabilityGroup)
+
+	// To keep track of affected repositories/digests within each CVE
+	// map[CVEID] -> map[Repository] -> map[Digest] -> details
+	type digestDetail struct {
+		tags             map[string]bool
+		packageName      string
+		installedVersion string
+		fixedVersion     string
+		scannedAt        int64
+	}
+	type affectedTracking struct {
+		repos map[string]map[string]*digestDetail
+	}
+	tracking := make(map[string]*affectedTracking)
+
+	for _, v := range vulnerabilities {
+		group, exists := groups[v.CVEID]
+		if !exists {
+			group = &types.VulnerabilityGroup{
+				CVEID:            v.CVEID,
+				Severity:         v.Severity,
+				PackageName:      v.PackageName,
+				InstalledVersion: v.InstalledVersion,
+				FixedVersion:     v.FixedVersion,
+				Title:            v.Title,
+				Description:      v.Description,
+				PrimaryURL:       v.PrimaryURL,
+				Affected:         []types.AffectedRepository{},
+			}
+			groups[v.CVEID] = group
+			tracking[v.CVEID] = &affectedTracking{
+				repos: make(map[string]map[string]*digestDetail),
+			}
+		}
+
+		cveTracking := tracking[v.CVEID]
+		if _, exists := cveTracking.repos[v.Repository]; !exists {
+			cveTracking.repos[v.Repository] = make(map[string]*digestDetail)
+		}
+		if _, exists := cveTracking.repos[v.Repository][v.Digest]; !exists {
+			cveTracking.repos[v.Repository][v.Digest] = &digestDetail{
+				tags:             make(map[string]bool),
+				packageName:      v.PackageName,
+				installedVersion: v.InstalledVersion,
+				fixedVersion:     v.FixedVersion,
+				scannedAt:        v.ScannedAt,
+			}
+		}
+		cveTracking.repos[v.Repository][v.Digest].tags[v.Tag] = true
+	}
+
+	// Build the final structure from the map
+	result := make([]*types.VulnerabilityGroup, 0, len(groups))
+	for cveID, group := range groups {
+		cveTracking := tracking[cveID]
+		for repoName, digestMap := range cveTracking.repos {
+			affectedRepo := types.AffectedRepository{
+				Repository: repoName,
+				Digests:    []types.AffectedDigest{},
+			}
+			for digest, detail := range digestMap {
+				affectedDigest := types.AffectedDigest{
+					Digest:           digest,
+					Tags:             make([]string, 0, len(detail.tags)),
+					PackageName:      detail.packageName,
+					InstalledVersion: detail.installedVersion,
+					FixedVersion:     detail.fixedVersion,
+					ScannedAt:        detail.scannedAt,
+				}
+				for tag := range detail.tags {
+					affectedDigest.Tags = append(affectedDigest.Tags, tag)
+				}
+				sort.Strings(affectedDigest.Tags)
+				affectedRepo.Digests = append(affectedRepo.Digests, affectedDigest)
+			}
+			// Sort digests
+			sort.Slice(affectedRepo.Digests, func(i, j int) bool {
+				return affectedRepo.Digests[i].Digest < affectedRepo.Digests[j].Digest
+			})
+			group.Affected = append(group.Affected, affectedRepo)
+		}
+		// Sort repositories
+		sort.Slice(group.Affected, func(i, j int) bool {
+			return group.Affected[i].Repository < group.Affected[j].Repository
+		})
+		result = append(result, group)
+	}
+
+	// Sort final result by affected count (descending)
+	sort.Slice(result, func(i, j int) bool {
+		countI := 0
+		for _, repo := range result[i].Affected {
+			countI += len(repo.Digests)
+		}
+		countJ := 0
+		for _, repo := range result[j].Affected {
+			countJ += len(repo.Digests)
+		}
+
+		if countI != countJ {
+			return countI > countJ // Higher count first
+		}
+		// Fallback to CVE ID
+		return result[i].CVEID < result[j].CVEID
+	})
 
 	return result
 }

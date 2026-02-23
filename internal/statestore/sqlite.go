@@ -518,8 +518,8 @@ func (s *SQLiteStore) QueryVulnerabilities(ctx context.Context, filter VulnFilte
 	args := []interface{}{}
 
 	if filter.CVEID != "" {
-		query += " AND v.cve_id = ?"
-		args = append(args, filter.CVEID)
+		query += " AND v.cve_id LIKE ?"
+		args = append(args, "%"+filter.CVEID+"%")
 	}
 
 	if filter.Severity != "" {
@@ -528,13 +528,13 @@ func (s *SQLiteStore) QueryVulnerabilities(ctx context.Context, filter VulnFilte
 	}
 
 	if filter.PackageName != "" {
-		query += " AND v.package_name = ?"
-		args = append(args, filter.PackageName)
+		query += " AND v.package_name LIKE ?"
+		args = append(args, "%"+filter.PackageName+"%")
 	}
 
 	if filter.Repository != "" {
-		query += " AND r.name = ?"
-		args = append(args, filter.Repository)
+		query += " AND r.name LIKE ?"
+		args = append(args, "%"+filter.Repository+"%")
 	}
 
 	query += " ORDER BY v.severity, v.cve_id, r.name, a.tag"

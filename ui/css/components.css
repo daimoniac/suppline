@@ -1566,6 +1566,14 @@ tr:hover {
     background-color: var(--bg-color);
 }
 
+.vulnerability-group-content.collapsed {
+    display: none !important;
+}
+
+.vulnerability-group-content.expanded {
+    display: block !important;
+}
+
 .affected-images h4 {
     font-size: 1rem;
     font-weight: 600;

@@ -38,12 +38,17 @@ class APIClient {
         return headers;
     }
 
-    /**
-     * Make an API request with retry logic
-     */
     async request(endpoint, options = {}, retryCount = 0) {
+        const { data } = await this.requestWithResponse(endpoint, options, retryCount);
+        return data;
+    }
+
+    /**
+     * Make an API request and return both data and response object
+     */
+    async requestWithResponse(endpoint, options = {}, retryCount = 0) {
         const url = `${this.baseURL}${endpoint}`;
-        
+
         try {
             const response = await fetch(url, {
                 method: 'GET',
@@ -71,12 +76,13 @@ class APIClient {
                 );
             }
 
-            return await response.json();
+            const data = await response.json();
+            return { data, response };
         } catch (error) {
             // Retry on network errors
             if (error.name === 'TypeError' && retryCount < this.maxRetries) {
                 await this.sleep(this.retryDelay * (retryCount + 1));
-                return this.request(endpoint, options, retryCount + 1);
+                return this.requestWithResponse(endpoint, options, retryCount + 1);
             }
 
             throw error;
@@ -104,7 +110,7 @@ class APIClient {
      */
     async getScans(filters = {}) {
         const params = new URLSearchParams();
-        
+
         if (filters.repository) params.append('repository', filters.repository);
         if (filters.policy_passed !== undefined) params.append('policy_passed', filters.policy_passed);
         if (filters.max_age) params.append('max_age', filters.max_age);
@@ -114,7 +120,7 @@ class APIClient {
 
         const queryString = params.toString();
         const endpoint = `/api/v1/scans${queryString ? '?' + queryString : ''}`;
-        
+
         return this.request(endpoint);
     }
 
@@ -161,7 +167,7 @@ class APIClient {
      */
     async queryVulnerabilities(filters = {}) {
         const params = new URLSearchParams();
-        
+
         if (filters.cve_id) params.append('cve_id', filters.cve_id);
         if (filters.severity) params.append('severity', filters.severity);
         if (filters.package_name) params.append('package_name', filters.package_name);
@@ -171,8 +177,11 @@ class APIClient {
 
         const queryString = params.toString();
         const endpoint = `/api/v1/vulnerabilities${queryString ? '?' + queryString : ''}`;
-        
-        return this.request(endpoint);
+
+        const { data, response } = await this.requestWithResponse(endpoint);
+        const total = parseInt(response.headers.get('X-Total-Count'), 10) || data.length;
+
+        return { vulnerabilities: data, total };
     }
 
     // ==================== Tolerations API ====================
@@ -189,7 +198,7 @@ class APIClient {
      */
     async getTolerations(filters = {}) {
         const params = new URLSearchParams();
-        
+
         if (filters.cve_id) params.append('cve_id', filters.cve_id);
         if (filters.repository) params.append('repository', filters.repository);
         if (filters.expired !== undefined) params.append('expired', filters.expired);
@@ -199,7 +208,7 @@ class APIClient {
 
         const queryString = params.toString();
         const endpoint = `/api/v1/tolerations${queryString ? '?' + queryString : ''}`;
-        
+
         return this.request(endpoint);
     }
 
@@ -230,7 +239,7 @@ class APIClient {
      */
     async getPublicKey() {
         const url = `${this.baseURL}/api/v1/integration/publickey`;
-        
+
         try {
             const response = await fetch(url, {
                 method: 'GET',
@@ -254,7 +263,7 @@ class APIClient {
      */
     async getKyvernoPolicy() {
         const url = `${this.baseURL}/api/v1/integration/kyverno/policy`;
-        
+
         try {
             const response = await fetch(url, {
                 method: 'GET',
@@ -286,7 +295,7 @@ class APIClient {
      */
     async getRepositories(filters = {}) {
         const params = new URLSearchParams();
-        
+
         if (filters.search) params.append('search', filters.search);
         if (filters.max_age) params.append('max_age', filters.max_age);
         if (filters.sort_by) params.append('sort_by', filters.sort_by);
@@ -295,7 +304,7 @@ class APIClient {
 
         const queryString = params.toString();
         const endpoint = `/api/v1/repositories${queryString ? '?' + queryString : ''}`;
-        
+
         return this.request(endpoint);
     }
 
@@ -309,14 +318,14 @@ class APIClient {
      */
     async getRepository(name, filters = {}) {
         const params = new URLSearchParams();
-        
+
         if (filters.search) params.append('search', filters.search);
         if (filters.limit) params.append('limit', filters.limit);
         if (filters.offset) params.append('offset', filters.offset);
 
         const queryString = params.toString();
         const endpoint = `/api/v1/repositories/${encodeURIComponent(name)}${queryString ? '?' + queryString : ''}`;
-        
+
         return this.request(endpoint);
     }
 

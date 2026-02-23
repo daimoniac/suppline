@@ -14,11 +14,12 @@ export class Vulnerabilities extends BaseComponent {
         this.vulnerabilities = [];
         this.groupedVulnerabilities = new Map();
         this.total = 0;
+        this.totalImages = 0; // Track total images affected separately
         this.currentPage = 1;
-        this.pageSize = 100;
+        this.pageSize = 10;
         this.filters = {
             cve_id: '',
-            severity: '',
+            severity: 'CRITICAL',
             package_name: '',
             repository: '',
         };
@@ -51,13 +52,12 @@ export class Vulnerabilities extends BaseComponent {
                 apiFilters.repository = this.filters.repository;
             }
 
-            // API returns array directly
-            const vulnerabilities = await this.apiClient.queryVulnerabilities(apiFilters);
-            this.vulnerabilities = Array.isArray(vulnerabilities) ? vulnerabilities : [];
-            this.total = this.vulnerabilities.length;
+            // API now returns grouped vulnerabilities wrapper { vulnerabilities: [], total: X }
+            const response = await this.apiClient.queryVulnerabilities(apiFilters);
 
-            // Group vulnerabilities by CVE ID
-            this.groupVulnerabilities();
+            this.vulnerabilities = Array.isArray(response.vulnerabilities) ? response.vulnerabilities : [];
+            this.total = response.total; // Total unique CVEs
+            this.processGroupedVulnerabilities();
 
             return { vulnerabilities: this.vulnerabilities, total: this.total };
         } catch (error) {
@@ -67,39 +67,44 @@ export class Vulnerabilities extends BaseComponent {
     }
 
     /**
-     * Group vulnerabilities by CVE ID and count affected images
+     * Process grouped vulnerabilities from API into component state
      */
-    groupVulnerabilities() {
+    processGroupedVulnerabilities() {
         this.groupedVulnerabilities.clear();
+        this.totalImages = 0;
 
-        this.vulnerabilities.forEach(vuln => {
-            const cveId = vuln.CVEID || 'Unknown';
-            
-            if (!this.groupedVulnerabilities.has(cveId)) {
-                this.groupedVulnerabilities.set(cveId, {
-                    cveId: cveId,
-                    severity: vuln.Severity,
-                    description: vuln.Description || vuln.Title || 'No description available',
-                    primaryURL: vuln.PrimaryURL,
-                    affectedImages: [],
+        this.vulnerabilities.forEach(group => {
+            const cveId = group.CVEID || 'Unknown';
+
+            const affectedImages = [];
+            if (group.affected) {
+                group.affected.forEach(repo => {
+                    if (repo.digests) {
+                        repo.digests.forEach(digest => {
+                            affectedImages.push({
+                                digest: digest.digest,
+                                repository: repo.repository,
+                                // Join tags with comma for display
+                                tag: digest.tags ? digest.tags.join(', ') : 'N/A',
+                                packageName: digest.packageName,
+                                installedVersion: digest.installedVersion,
+                                fixedVersion: digest.fixedVersion,
+                                scannedAt: digest.scannedAt,
+                            });
+                        });
+                    }
                 });
             }
 
-            const group = this.groupedVulnerabilities.get(cveId);
-            
-            // Add affected image info (avoid duplicates by digest)
-            const existingImage = group.affectedImages.find(img => img.digest === vuln.Digest);
-            if (!existingImage) {
-                group.affectedImages.push({
-                    digest: vuln.Digest,
-                    repository: vuln.Repository,
-                    tag: vuln.Tag,
-                    packageName: vuln.PackageName,
-                    installedVersion: vuln.InstalledVersion,
-                    fixedVersion: vuln.FixedVersion,
-                    scannedAt: vuln.ScannedAt,
-                });
-            }
+            this.groupedVulnerabilities.set(cveId, {
+                cveId: cveId,
+                severity: group.Severity,
+                description: group.Description || group.Title || 'No description available',
+                primaryURL: group.PrimaryURL,
+                affectedImages: affectedImages,
+            });
+
+            this.totalImages += affectedImages.length;
         });
     }
 
@@ -151,7 +156,7 @@ export class Vulnerabilities extends BaseComponent {
                         type="text" 
                         id="filter-cve-id" 
                         class="filter-input"
-                        placeholder="e.g., CVE-2023-12345"
+                        placeholder="Search CVE ID..."
                         value="${escapeHtml(this.filters.cve_id)}"
                     />
                 </div>
@@ -173,7 +178,7 @@ export class Vulnerabilities extends BaseComponent {
                         type="text" 
                         id="filter-package-name" 
                         class="filter-input"
-                        placeholder="Filter by package name..."
+                        placeholder="Search package..."
                         value="${escapeHtml(this.filters.package_name)}"
                     />
                 </div>
@@ -184,7 +189,7 @@ export class Vulnerabilities extends BaseComponent {
                         type="text" 
                         id="filter-repository" 
                         class="filter-input"
-                        placeholder="Filter by repository..."
+                        placeholder="Search repository..."
                         value="${escapeHtml(this.filters.repository)}"
                     />
                 </div>
@@ -219,8 +224,8 @@ export class Vulnerabilities extends BaseComponent {
         return `
             <div class="vulnerabilities-results">
                 <div class="results-summary">
-                    Found ${groups.length} unique CVE${groups.length !== 1 ? 's' : ''} 
-                    affecting ${this.total} image${this.total !== 1 ? 's' : ''}
+                    Found ${this.total} unique CVE${this.total !== 1 ? 's' : ''} 
+                    meeting your search criteria
                 </div>
                 
                 <div class="vulnerability-groups">
@@ -236,20 +241,20 @@ export class Vulnerabilities extends BaseComponent {
     renderVulnerabilityGroup(group) {
         const severityClass = group.severity ? group.severity.toLowerCase() : 'unknown';
         const affectedCount = group.affectedImages.length;
-        const groupId = `vuln-group-${escapeHtml(group.cveId).replace(/[^a-zA-Z0-9]/g, '-')}`;
+        const groupId = `vuln-group-${this.escapeHtml(group.cveId).replace(/[^a-zA-Z0-9]/g, '-')}`;
 
         return `
             <div class="vulnerability-group card">
-                <div class="vulnerability-group-header" data-group-id="${groupId}">
+                <div class="vulnerability-group-header toggle-trigger" data-target="${groupId}">
                     <div class="vulnerability-group-info">
                         <div class="vulnerability-group-title">
-                            <span class="vuln-badge vuln-badge-${severityClass}">${escapeHtml(group.severity || 'UNKNOWN')}</span>
-                            <h3 class="cve-id">${escapeHtml(group.cveId)}</h3>
+                            <span class="vuln-badge vuln-badge-${severityClass}">${this.escapeHtml(group.severity || 'UNKNOWN')}</span>
+                            <h3 class="cve-id">${this.escapeHtml(group.cveId)}</h3>
                             <span class="affected-count">${affectedCount} affected image${affectedCount !== 1 ? 's' : ''}</span>
                         </div>
-                        <p class="vulnerability-description">${escapeHtml(group.description)}</p>
+                        <p class="vulnerability-description">${this.escapeHtml(group.description)}</p>
                         ${group.primaryURL ? `
-                            <a href="${escapeHtml(group.primaryURL)}" target="_blank" rel="noopener noreferrer" class="vulnerability-link">
+                            <a href="${this.escapeHtml(group.primaryURL)}" target="_blank" rel="noopener noreferrer" class="vulnerability-link" onclick="event.stopPropagation()">
                                 View Details
                                 <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                                     <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"></path>
@@ -259,7 +264,7 @@ export class Vulnerabilities extends BaseComponent {
                             </a>
                         ` : ''}
                     </div>
-                    <button class="expand-toggle" data-target="${groupId}" aria-expanded="false">
+                    <button class="expand-toggle" data-target="${groupId}" aria-expanded="false" aria-controls="${groupId}">
                         <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                             <polyline points="6 9 12 15 18 9"></polyline>
                         </svg>
@@ -328,7 +333,7 @@ export class Vulnerabilities extends BaseComponent {
      */
     renderPagination() {
         const totalPages = Math.ceil(this.total / this.pageSize);
-        
+
         if (totalPages <= 1) {
             return '';
         }
@@ -412,7 +417,7 @@ export class Vulnerabilities extends BaseComponent {
             clearFiltersBtn.addEventListener('click', async () => {
                 this.setFilters({
                     cve_id: '',
-                    severity: '',
+                    severity: 'CRITICAL',
                     package_name: '',
                     repository: '',
                 });
@@ -432,15 +437,17 @@ export class Vulnerabilities extends BaseComponent {
             }
         });
 
-        // Expand/collapse toggle buttons
-        document.querySelectorAll('.expand-toggle').forEach(button => {
-            button.addEventListener('click', (e) => {
-                e.stopPropagation();
-                const targetId = button.dataset.target;
+        // Expand/collapse toggle handlers
+        document.querySelectorAll('.toggle-trigger').forEach(trigger => {
+            trigger.addEventListener('click', () => {
+                const targetId = trigger.dataset.target;
                 const content = document.getElementById(targetId);
-                const isExpanded = button.getAttribute('aria-expanded') === 'true';
+                const button = trigger.querySelector('.expand-toggle') ||
+                    document.querySelector(`.expand-toggle[data-target="${targetId}"]`);
 
-                if (content) {
+                if (content && button) {
+                    const isExpanded = button.getAttribute('aria-expanded') === 'true';
+
                     if (isExpanded) {
                         content.classList.remove('expanded');
                         content.classList.add('collapsed');
@@ -452,6 +459,18 @@ export class Vulnerabilities extends BaseComponent {
                         button.setAttribute('aria-expanded', 'true');
                         button.classList.add('expanded');
                     }
+                }
+            });
+        });
+
+        // Also allow the button itself to work if clicked directly (though it's inside the trigger)
+        document.querySelectorAll('.expand-toggle').forEach(button => {
+            button.addEventListener('click', (e) => {
+                e.stopPropagation();
+                // Find parent trigger to avoid double-handling
+                const trigger = button.closest('.toggle-trigger');
+                if (trigger) {
+                    trigger.click();
                 }
             });
         });
