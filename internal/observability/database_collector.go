@@ -79,7 +79,7 @@ func (c *DatabaseCollector) Collect(ch chan<- prometheus.Metric) {
 }
 
 func (c *DatabaseCollector) collectPolicyFailed(ctx context.Context, store statestore.StateStoreQuery, ch chan<- prometheus.Metric) {
-	scans, err := store.ListScans(ctx, statestore.ScanFilter{})
+	scans, err := store.GetFailedArtifacts(ctx)
 	if err != nil {
 		if ctx.Err() != nil {
 			c.logger.Debug("policy failed metric collection timed out", "error", err)
@@ -89,12 +89,7 @@ func (c *DatabaseCollector) collectPolicyFailed(ctx context.Context, store state
 		return
 	}
 
-	failedCount := 0
-	for _, scan := range scans {
-		if !scan.PolicyPassed {
-			failedCount++
-		}
-	}
+	failedCount := len(scans)
 
 	ch <- prometheus.MustNewConstMetric(
 		c.policyFailedDesc,

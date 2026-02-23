@@ -1323,9 +1323,8 @@ func (s *APIServer) groupVulnerabilitiesByCVE(vulnerabilities []*types.Vulnerabi
 	tracking := make(map[string]*affectedTracking)
 
 	for _, v := range vulnerabilities {
-		group, exists := groups[v.CVEID]
-		if !exists {
-			group = &types.VulnerabilityGroup{
+		if _, exists := groups[v.CVEID]; !exists {
+			groups[v.CVEID] = &types.VulnerabilityGroup{
 				CVEID:            v.CVEID,
 				Severity:         v.Severity,
 				PackageName:      v.PackageName,
@@ -1336,7 +1335,6 @@ func (s *APIServer) groupVulnerabilitiesByCVE(vulnerabilities []*types.Vulnerabi
 				PrimaryURL:       v.PrimaryURL,
 				Affected:         []types.AffectedRepository{},
 			}
-			groups[v.CVEID] = group
 			tracking[v.CVEID] = &affectedTracking{
 				repos: make(map[string]map[string]*digestDetail),
 			}

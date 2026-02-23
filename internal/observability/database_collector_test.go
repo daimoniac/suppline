@@ -20,8 +20,14 @@ type mockStateStore struct {
 	counts map[string]int
 }
 
-func (m *mockStateStore) ListScans(ctx context.Context, filter statestore.ScanFilter) ([]*statestore.ScanRecord, error) {
-	return m.scans, nil
+func (m *mockStateStore) GetFailedArtifacts(ctx context.Context) ([]*statestore.ScanRecord, error) {
+	var failed []*statestore.ScanRecord
+	for _, s := range m.scans {
+		if !s.PolicyPassed {
+			failed = append(failed, s)
+		}
+	}
+	return failed, nil
 }
 
 func (m *mockStateStore) GetUniqueVulnerabilityCounts(ctx context.Context) (map[string]int, error) {

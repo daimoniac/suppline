@@ -2,7 +2,6 @@ package errors
 
 import (
 	"errors"
-	"strings"
 	"testing"
 
 	"github.com/leanovate/gopter"
@@ -23,10 +22,10 @@ func TestManifestNotFoundDetectionProperty(t *testing.T) {
 			// Create an error with the manifest pattern
 			fullMessage := prefix + manifestPattern + suffix
 			originalErr := errors.New(fullMessage)
-			
+
 			// Classify the error
 			classifiedErr := ClassifyRegistryError(originalErr)
-			
+
 			// Should be classified as ManifestNotFound
 			return IsManifestNotFound(classifiedErr) && !IsTransient(classifiedErr)
 		},
@@ -40,7 +39,7 @@ func TestManifestNotFoundDetectionProperty(t *testing.T) {
 		func(errorMessage string) bool {
 			originalErr := errors.New(errorMessage)
 			classifiedErr := ClassifyRegistryError(originalErr)
-			
+
 			// Should be transient and not manifest error
 			return IsTransient(classifiedErr) && !IsManifestNotFound(classifiedErr)
 		},
@@ -68,10 +67,10 @@ func min(a, b int) int {
 func genManifestPattern() gopter.Gen {
 	manifestPatterns := []interface{}{
 		"MANIFEST_UNKNOWN",
-		"manifest unknown", 
+		"manifest unknown",
 		"manifest not found",
 	}
-	
+
 	return gen.OneConstOf(manifestPatterns...)
 }
 
@@ -79,7 +78,7 @@ func genManifestPattern() gopter.Gen {
 func genNonManifestError() gopter.Gen {
 	nonManifestMessages := []interface{}{
 		"connection timeout",
-		"network unreachable", 
+		"network unreachable",
 		"authentication failed",
 		"rate limit exceeded",
 		"internal server error",
@@ -90,14 +89,6 @@ func genNonManifestError() gopter.Gen {
 		"invalid credentials",
 		"ssl certificate error",
 	}
-	
-	return gen.OneConstOf(nonManifestMessages...)
-}
 
-// containsManifestPattern checks if a string contains patterns that should be classified as MANIFEST_UNKNOWN
-func containsManifestPattern(s string) bool {
-	s = strings.ToLower(s)
-	return strings.Contains(s, "manifest_unknown") ||
-		strings.Contains(s, "manifest unknown") ||
-		(strings.Contains(s, "not found") && strings.Contains(s, "manifest"))
+	return gen.OneConstOf(nonManifestMessages...)
 }

@@ -1370,7 +1370,7 @@ func (s *SQLiteStore) executeCleanup(ctx context.Context, operation func(*sql.Tx
 	if err != nil {
 		return errors.NewTransientf("failed to begin cleanup transaction: %w", err)
 	}
-	defer tx.Rollback()
+	defer func() { _ = tx.Rollback() }()
 
 	if err := operation(tx); err != nil {
 		return err // Error already classified by operation
