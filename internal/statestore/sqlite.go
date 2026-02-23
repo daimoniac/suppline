@@ -231,12 +231,14 @@ func (s *SQLiteStore) RecordScan(ctx context.Context, record *ScanRecord) error 
 		return errors.NewTransientf("failed to get scan record ID: %w", err)
 	}
 
-	// Update artifact's last_scan_id and next_scan_at
-	// Set next_scan_at to now (due for rescan immediately by default)
-	// This will be updated by the worker based on scan interval configuration
+	// Update all artifacts for this repository and digest to point to the new scan
+	// This ensures that all tags pointing to the same digest show the same policy result,
+	// which is consistent with the watcher skipping scans for identical digests.
 	_, err = tx.ExecContext(ctx, `
-		UPDATE artifacts SET last_scan_id = ?, next_scan_at = ? WHERE id = ?
-	`, scanRecordID, nowUnix, artifactID)
+		UPDATE artifacts 
+		SET last_scan_id = ?, next_scan_at = ? 
+		WHERE repository_id = ? AND digest = ?
+	`, scanRecordID, nowUnix, repositoryID, record.Digest)
 	if err != nil {
 		return errors.NewTransientf("failed to update artifact last_scan_id and next_scan_at: %w", err)
 	}

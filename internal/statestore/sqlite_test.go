@@ -1954,8 +1954,8 @@ func TestRepositoryAggregation(t *testing.T) {
 			t.Fatal("Expected to find myapp repository")
 		}
 
-		if myappRepo.TagCount != 3 {
-			t.Errorf("Expected 3 tags for myapp, got %d", myappRepo.TagCount)
+		if myappRepo.ArtifactCount != 3 {
+			t.Errorf("Expected 3 tags for myapp, got %d", myappRepo.ArtifactCount)
 		}
 	})
 
