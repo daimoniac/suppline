@@ -336,6 +336,8 @@ func (s *APIServer) handleListUnappliedTolerations(w http.ResponseWriter, r *htt
 // @Produce json
 // @Param cve_id query string false "Filter by CVE ID"
 // @Param repository query string false "Filter by repository name"
+// @Param expiring_soon query boolean false "Filter expiring within 7 days"
+// @Param expired query boolean false "Filter already expired"
 // @Success 200 {array} types.TolerationSummary
 // @Failure 401 {object} map[string]string "Unauthorized"
 // @Failure 500 {object} map[string]string "Internal server error"
@@ -350,9 +352,11 @@ func (s *APIServer) handleListTolerations(w http.ResponseWriter, r *http.Request
 	// Parse query parameters
 	cveIDFilter := parseQueryParam(r, "cve_id")
 	repositoryFilter := parseQueryParam(r, "repository")
+	expiringSoonFilter := parseQueryParamBool(r, "expiring_soon")
+	expiredFilter := parseQueryParamBool(r, "expired")
 
 	// Get all configured tolerations from config
-	tolerations := s.getConfiguredTolerations(cveIDFilter, repositoryFilter)
+	tolerations := s.getConfiguredTolerations(cveIDFilter, repositoryFilter, expiringSoonFilter, expiredFilter)
 
 	// Get historical application timestamps from state store
 	s.enrichWithHistoricalTimestamps(r.Context(), tolerations)
@@ -1184,7 +1188,7 @@ func (s *APIServer) enrichScanRecord(record *statestore.ScanRecord) {
 
 // getConfiguredTolerations returns all tolerations from config file
 // Returns all configured tolerations for each target repository, optionally filtered by CVE ID and/or repository
-func (s *APIServer) getConfiguredTolerations(cveIDFilter, repositoryFilter string) []*types.TolerationInfo {
+func (s *APIServer) getConfiguredTolerations(cveIDFilter, repositoryFilter string, expiringSoon *bool, expired *bool) []*types.TolerationInfo {
 	if s.regsyncConfig == nil {
 		return []*types.TolerationInfo{}
 	}
@@ -1194,9 +1198,12 @@ func (s *APIServer) getConfiguredTolerations(cveIDFilter, repositoryFilter strin
 	// Get all target repositories from config
 	repositories := s.regsyncConfig.GetTargetRepositories()
 
+	now := time.Now()
+	sevenDaysFromNow := now.Add(7 * 24 * time.Hour)
+
 	for _, repo := range repositories {
-		// Apply repository filter if specified
-		if repositoryFilter != "" && repo != repositoryFilter {
+		// Apply repository filter if specified (partial match)
+		if repositoryFilter != "" && !strings.Contains(strings.ToLower(repo), strings.ToLower(repositoryFilter)) {
 			continue
 		}
 
@@ -1204,9 +1211,32 @@ func (s *APIServer) getConfiguredTolerations(cveIDFilter, repositoryFilter strin
 		configTolerations := s.regsyncConfig.GetTolerationsForTarget(repo)
 
 		for i := range configTolerations {
-			// Apply CVE ID filter if specified
-			if cveIDFilter != "" && configTolerations[i].ID != cveIDFilter {
+			// Apply CVE ID filter if specified (partial match)
+			if cveIDFilter != "" && !strings.Contains(strings.ToLower(configTolerations[i].ID), strings.ToLower(cveIDFilter)) {
 				continue
+			}
+
+			// Apply expiration filters
+			if (expiringSoon != nil && *expiringSoon) || (expired != nil && *expired) {
+				if configTolerations[i].ExpiresAt == nil || *configTolerations[i].ExpiresAt == 0 {
+					continue
+				}
+
+				expiresTime := time.Unix(*configTolerations[i].ExpiresAt, 0)
+				isExpired := expiresTime.Before(now)
+				isExpiringSoon := !isExpired && expiresTime.Before(sevenDaysFromNow)
+
+				match := false
+				if expiringSoon != nil && *expiringSoon && isExpiringSoon {
+					match = true
+				}
+				if expired != nil && *expired && isExpired {
+					match = true
+				}
+
+				if !match {
+					continue
+				}
 			}
 
 			key := repo + ":" + configTolerations[i].ID
