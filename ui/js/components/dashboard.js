@@ -142,7 +142,7 @@ export class Dashboard extends BaseComponent {
     renderSummaryCards() {
         return `
             <div class="summary-cards">
-                <div class="summary-card summary-card-danger">
+                <div class="summary-card summary-card-danger clickable" id="card-failed-scans">
                     <div class="summary-card-icon">
                         <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                             <circle cx="12" cy="12" r="10"></circle>
@@ -156,7 +156,7 @@ export class Dashboard extends BaseComponent {
                     </div>
                 </div>
 
-                <div class="summary-card summary-card-info">
+                <div class="summary-card summary-card-info clickable" id="card-active-tolerations">
                     <div class="summary-card-icon">
                         <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                             <path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"></path>
@@ -172,7 +172,7 @@ export class Dashboard extends BaseComponent {
                     </div>
                 </div>
 
-                <div class="summary-card summary-card-warning">
+                <div class="summary-card summary-card-warning clickable" id="card-expiring-soon">
                     <div class="summary-card-icon">
                         <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                             <circle cx="12" cy="12" r="10"></circle>
@@ -571,6 +571,27 @@ export class Dashboard extends BaseComponent {
      * Attach event listeners after rendering
      */
     attachEventListeners() {
+        const failedScansCard = document.getElementById('card-failed-scans');
+        if (failedScansCard) {
+            failedScansCard.addEventListener('click', () => {
+                window.router.navigate('/failed');
+            });
+        }
+
+        const activeTolerationsCard = document.getElementById('card-active-tolerations');
+        if (activeTolerationsCard) {
+            activeTolerationsCard.addEventListener('click', () => {
+                window.router.navigate('/tolerations');
+            });
+        }
+
+        const expiringSoonCard = document.getElementById('card-expiring-soon');
+        if (expiringSoonCard) {
+            expiringSoonCard.addEventListener('click', () => {
+                window.router.navigate('/tolerations?expiration_status=expiring');
+            });
+        }
+
         // Add click handlers for filter badges
         document.querySelectorAll('.filter-badge').forEach(badge => {
             badge.addEventListener('click', (e) => {
