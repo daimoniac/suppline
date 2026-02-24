@@ -889,7 +889,7 @@ func (s *SQLiteStore) ListTolerations(ctx context.Context, filter TolerationFilt
 }
 
 // getAppliedCVESet returns a set of all CVE IDs that have been applied (tolerated)
-// in at least one scan record. This is a helper method for unapplied tolerations queries.
+// in at least one scan record. This is a helper method for inactive tolerations queries.
 func (s *SQLiteStore) getAppliedCVESet(ctx context.Context) (map[string]bool, error) {
 	query := `
 		SELECT 
@@ -938,10 +938,10 @@ func (s *SQLiteStore) getAppliedCVESet(ctx context.Context) (map[string]bool, er
 	return appliedCVEs, nil
 }
 
-// GetUnappliedTolerationsCount returns the count of CVE IDs from the provided list
+// GetInactiveTolerationsCount returns the count of CVE IDs from the provided list
 // that have never been tolerated in any scan record.
 // This helps identify tolerations defined in configuration that are no longer being used.
-func (s *SQLiteStore) GetUnappliedTolerationsCount(ctx context.Context, definedCVEIDs []string) (int, error) {
+func (s *SQLiteStore) GetInactiveTolerationsCount(ctx context.Context, definedCVEIDs []string) (int, error) {
 	if len(definedCVEIDs) == 0 {
 		return 0, nil
 	}
@@ -952,14 +952,14 @@ func (s *SQLiteStore) GetUnappliedTolerationsCount(ctx context.Context, definedC
 	}
 
 	// Count CVE IDs from the defined list that are NOT in the applied set
-	unappliedCount := 0
+	inactiveCount := 0
 	for _, cveID := range definedCVEIDs {
 		if !appliedCVEs[cveID] {
-			unappliedCount++
+			inactiveCount++
 		}
 	}
 
-	return unappliedCount, nil
+	return inactiveCount, nil
 }
 
 // GetAppliedCVEIDs returns the subset of provided CVE IDs that have been applied

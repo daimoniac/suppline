@@ -204,8 +204,8 @@ func (s *APIServer) handleQueryVulnerabilities(w http.ResponseWriter, r *http.Re
 	}
 }
 
-// handleListUnappliedTolerations lists tolerations defined in config but not applied to any digests
-// @Summary List unapplied tolerations
+// handleListInactiveTolerations lists tolerations defined in config but not applied to any digests
+// @Summary List inactive tolerations
 // @Description List all CVE tolerations defined in configuration that have never been applied to any digest. Returns CVE IDs grouped by repository.
 // @Tags Tolerations
 // @Accept json
@@ -214,8 +214,8 @@ func (s *APIServer) handleQueryVulnerabilities(w http.ResponseWriter, r *http.Re
 // @Failure 401 {object} map[string]string "Unauthorized"
 // @Failure 500 {object} map[string]string "Internal server error"
 // @Security BearerAuth
-// @Router /tolerations/unapplied [get]
-func (s *APIServer) handleListUnappliedTolerations(w http.ResponseWriter, r *http.Request) {
+// @Router /tolerations/inactive [get]
+func (s *APIServer) handleListInactiveTolerations(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {
 		s.respondError(w, http.StatusMethodNotAllowed, "Method not allowed")
 		return
@@ -282,7 +282,7 @@ func (s *APIServer) handleListUnappliedTolerations(w http.ResponseWriter, r *htt
 		appliedSet[cveID] = true
 	}
 
-	// Filter to only include unapplied tolerations and group by CVE ID
+	// Filter to only include inactive tolerations and group by CVE ID
 	grouped := make(map[string]*types.TolerationSummary)
 	for repo, cveMap := range repoTolerations {
 		for cveID, summary := range cveMap {

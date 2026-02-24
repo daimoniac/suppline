@@ -95,7 +95,7 @@ func (m *mockStateStore) ListTolerations(ctx context.Context, filter statestore.
 	return nil, nil
 }
 
-func (m *mockStateStore) GetUnappliedTolerationsCount(ctx context.Context, definedCVEIDs []string) (int, error) {
+func (m *mockStateStore) GetInactiveTolerationsCount(ctx context.Context, definedCVEIDs []string) (int, error) {
 	return 0, nil
 }
 

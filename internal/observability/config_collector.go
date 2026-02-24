@@ -27,13 +27,13 @@ type ConfigCollector struct {
 	expiredTolerationsDesc       *prometheus.Desc
 	expiringTolerationsDesc      *prometheus.Desc
 	tolerationsWithoutExpiryDesc *prometheus.Desc
-	unappliedTolerationsDesc     *prometheus.Desc
+	inactiveTolerationsDesc     *prometheus.Desc
 
-	// Cache for unapplied tolerations (10-minute TTL)
-	unappliedTolerationsMutex sync.RWMutex
-	unappliedTolerationsCache int
-	unappliedTolerationsTime  time.Time
-	unappliedTolerationsTTL   time.Duration
+	// Cache for inactive tolerations (10-minute TTL)
+	inactiveTolerationsMutex sync.RWMutex
+	inactiveTolerationsCache int
+	inactiveTolerationsTime  time.Time
+	inactiveTolerationsTTL   time.Duration
 }
 
 // NewConfigCollector creates a new configuration metrics collector
@@ -42,7 +42,7 @@ func NewConfigCollector(regsyncCfg *config.RegsyncConfig, store statestore.State
 		regsyncCfg:              regsyncCfg,
 		store:                   store,
 		logger:                  logger,
-		unappliedTolerationsTTL: 10 * time.Minute,
+		inactiveTolerationsTTL: 10 * time.Minute,
 		toleratedCVEsDesc: prometheus.NewDesc(
 			"suppline_tolerated_cves",
 			"Current total number of CVEs that are tolerated in configuration",
@@ -67,8 +67,8 @@ func NewConfigCollector(regsyncCfg *config.RegsyncConfig, store statestore.State
 			[]string{"repository"},
 			nil,
 		),
-		unappliedTolerationsDesc: prometheus.NewDesc(
-			"suppline_unapplied_tolerations",
+		inactiveTolerationsDesc: prometheus.NewDesc(
+			"suppline_inactive_tolerations",
 			"Number of toleration CVE IDs defined in configuration that have never been applied to any digest",
 			nil,
 			nil,
@@ -91,7 +91,7 @@ func (c *ConfigCollector) Describe(ch chan<- *prometheus.Desc) {
 	ch <- c.expiredTolerationsDesc
 	ch <- c.expiringTolerationsDesc
 	ch <- c.tolerationsWithoutExpiryDesc
-	ch <- c.unappliedTolerationsDesc
+	ch <- c.inactiveTolerationsDesc
 }
 
 // Collect sends current metrics from configuration to the provided channel
@@ -112,10 +112,10 @@ func (c *ConfigCollector) Collect(ch chan<- prometheus.Metric) {
 	// Collect tolerations without expiry metric
 	c.collectTolerationsWithoutExpiry(ch)
 
-	// Collect unapplied tolerations metric (needs store)
+	// Collect inactive tolerations metric (needs store)
 	if c.store != nil {
 		if queryStore, ok := c.store.(statestore.StateStoreQuery); ok {
-			c.collectUnappliedTolerations(ctx, queryStore, ch)
+			c.collectInactiveTolerations(ctx, queryStore, ch)
 		}
 	}
 }
@@ -194,19 +194,19 @@ func (c *ConfigCollector) collectTolerationsWithoutExpiry(ch chan<- prometheus.M
 	}
 }
 
-func (c *ConfigCollector) collectUnappliedTolerations(ctx context.Context, store statestore.StateStoreQuery, ch chan<- prometheus.Metric) {
-	c.unappliedTolerationsMutex.RLock()
-	if time.Since(c.unappliedTolerationsTime) < c.unappliedTolerationsTTL {
-		cachedValue := c.unappliedTolerationsCache
-		c.unappliedTolerationsMutex.RUnlock()
+func (c *ConfigCollector) collectInactiveTolerations(ctx context.Context, store statestore.StateStoreQuery, ch chan<- prometheus.Metric) {
+	c.inactiveTolerationsMutex.RLock()
+	if time.Since(c.inactiveTolerationsTime) < c.inactiveTolerationsTTL {
+		cachedValue := c.inactiveTolerationsCache
+		c.inactiveTolerationsMutex.RUnlock()
 		ch <- prometheus.MustNewConstMetric(
-			c.unappliedTolerationsDesc,
+			c.inactiveTolerationsDesc,
 			prometheus.GaugeValue,
 			float64(cachedValue),
 		)
 		return
 	}
-	c.unappliedTolerationsMutex.RUnlock()
+	c.inactiveTolerationsMutex.RUnlock()
 
 	definedCVEIDs := make(map[string]bool)
 	for _, toleration := range c.regsyncCfg.Defaults.Tolerate {
@@ -226,24 +226,24 @@ func (c *ConfigCollector) collectUnappliedTolerations(ctx context.Context, store
 		cveIDSlice = append(cveIDSlice, cveID)
 	}
 
-	unappliedCount, err := store.GetUnappliedTolerationsCount(ctx, cveIDSlice)
+	inactiveCount, err := store.GetInactiveTolerationsCount(ctx, cveIDSlice)
 	if err != nil {
 		if ctx.Err() != nil {
-			c.logger.Debug("unapplied tolerations metric collection timed out", "error", err)
+			c.logger.Debug("inactive tolerations metric collection timed out", "error", err)
 		} else {
-			c.logger.Error("failed to collect unapplied tolerations metric", "error", err)
+			c.logger.Error("failed to collect inactive tolerations metric", "error", err)
 		}
 		return
 	}
 
-	c.unappliedTolerationsMutex.Lock()
-	c.unappliedTolerationsCache = unappliedCount
-	c.unappliedTolerationsTime = time.Now()
-	c.unappliedTolerationsMutex.Unlock()
+	c.inactiveTolerationsMutex.Lock()
+	c.inactiveTolerationsCache = inactiveCount
+	c.inactiveTolerationsTime = time.Now()
+	c.inactiveTolerationsMutex.Unlock()
 
 	ch <- prometheus.MustNewConstMetric(
-		c.unappliedTolerationsDesc,
+		c.inactiveTolerationsDesc,
 		prometheus.GaugeValue,
-		float64(unappliedCount),
+		float64(inactiveCount),
 	)
 }

@@ -21,7 +21,7 @@ export class Dashboard extends BaseComponent {
             expiringTolerations: 0,
             expiringTolerationsDetails: [],
             expiredTolerationsDetails: [],
-            unappliedTolerationsDetails: [],
+            inactiveTolerationsDetails: [],
             recentScans: [],
             vulnerabilityBreakdown: {
                 critical: 0,
@@ -44,13 +44,13 @@ export class Dashboard extends BaseComponent {
                 recentScans,
                 failedScans,
                 allTolerations,
-                unappliedTolerations,
+                inactiveTolerations,
                 uniqueVulnStats
             ] = await Promise.all([
                 this.apiClient.getScans({ limit: 20 }),
                 this.apiClient.getScans({ policy_passed: false }),
                 this.apiClient.getTolerations({}),
-                this.apiClient.getUnappliedTolerations(),
+                this.apiClient.getInactiveTolerations(),
                 this.apiClient.getVulnerabilityStats()
             ]);
 
@@ -82,8 +82,8 @@ export class Dashboard extends BaseComponent {
 
             this.data.expiringTolerations = this.data.expiringTolerationsDetails.length;
 
-            // Process unapplied tolerations
-            this.data.unappliedTolerationsDetails = Array.isArray(unappliedTolerations) ? unappliedTolerations : [];
+            // Process inactive tolerations
+            this.data.inactiveTolerationsDetails = Array.isArray(inactiveTolerations) ? inactiveTolerations : [];
 
             // Set vulnerability breakdown from unique stats
             if (uniqueVulnStats) {
@@ -193,8 +193,8 @@ export class Dashboard extends BaseComponent {
                         </svg>
                     </div>
                     <div class="summary-card-content">
-                        <div class="summary-card-value">${this.data.unappliedTolerationsDetails.length.toLocaleString()}</div>
-                        <div class="summary-card-label">Unapplied Tolerations</div>
+                        <div class="summary-card-value">${this.data.inactiveTolerationsDetails.length.toLocaleString()}</div>
+                        <div class="summary-card-label">Inactive Tolerations</div>
                     </div>
                 </div>
             </div>
@@ -207,7 +207,7 @@ export class Dashboard extends BaseComponent {
     renderTolerationsRequiringAttention() {
         const expiringCount = this.data.expiringTolerationsDetails.length;
         const expiredCount = this.data.expiredTolerationsDetails.length;
-        const unusedCount = this.data.unappliedTolerationsDetails.length;
+        const unusedCount = this.data.inactiveTolerationsDetails.length;
         const totalCount = expiringCount + expiredCount + unusedCount;
 
         if (totalCount === 0) {
@@ -330,14 +330,14 @@ export class Dashboard extends BaseComponent {
     }
 
     /**
-     * Render unused (unapplied) tolerations
+     * Render unused (inactive) tolerations
      */
     renderUnusedTolerations() {
-        if (this.data.unappliedTolerationsDetails.length === 0) {
+        if (this.data.inactiveTolerationsDetails.length === 0) {
             return [];
         }
 
-        return this.data.unappliedTolerationsDetails.map(toleration => {
+        return this.data.inactiveTolerationsDetails.map(toleration => {
             // Handle repositories array - show up to 3, or "multiple repositories"
             const repositories = toleration.Repositories || [];
             let repoDisplay = '';

@@ -546,9 +546,9 @@ func TestSQLiteStore(t *testing.T) {
 	})
 }
 
-// TestUnappliedTolerationsCount tests the GetUnappliedTolerationsCount method
-func TestUnappliedTolerationsCount(t *testing.T) {
-	dbPath := "test_unapplied_tolerations_" + t.Name() + ".db"
+// TestInactiveTolerationsCount tests the GetInactiveTolerationsCount method
+func TestInactiveTolerationsCount(t *testing.T) {
+	dbPath := "test_inactive_tolerations_" + t.Name() + ".db"
 	os.Remove(dbPath)
 	defer os.Remove(dbPath)
 
@@ -589,50 +589,50 @@ func TestUnappliedTolerationsCount(t *testing.T) {
 		t.Fatalf("Failed to record scan: %v", err)
 	}
 
-	t.Run("GetUnappliedTolerationsCount with empty list returns 0", func(t *testing.T) {
-		count, err := store.GetUnappliedTolerationsCount(ctx, []string{})
+	t.Run("GetInactiveTolerationsCount with empty list returns 0", func(t *testing.T) {
+		count, err := store.GetInactiveTolerationsCount(ctx, []string{})
 		if err != nil {
-			t.Fatalf("Failed to get unapplied tolerations count: %v", err)
+			t.Fatalf("Failed to get inactive tolerations count: %v", err)
 		}
 		if count != 0 {
 			t.Errorf("Expected 0 for empty list, got %d", count)
 		}
 	})
 
-	t.Run("GetUnappliedTolerationsCount finds applied tolerations", func(t *testing.T) {
+	t.Run("GetInactiveTolerationsCount finds applied tolerations", func(t *testing.T) {
 		// These CVEs have been applied
-		count, err := store.GetUnappliedTolerationsCount(ctx, []string{"CVE-2024-1234", "CVE-2024-5678"})
+		count, err := store.GetInactiveTolerationsCount(ctx, []string{"CVE-2024-1234", "CVE-2024-5678"})
 		if err != nil {
-			t.Fatalf("Failed to get unapplied tolerations count: %v", err)
+			t.Fatalf("Failed to get inactive tolerations count: %v", err)
 		}
 		if count != 0 {
 			t.Errorf("Expected 0 for applied CVEs, got %d", count)
 		}
 	})
 
-	t.Run("GetUnappliedTolerationsCount finds unapplied tolerations", func(t *testing.T) {
+	t.Run("GetInactiveTolerationsCount finds inactive tolerations", func(t *testing.T) {
 		// CVE-2024-9999 has never been tolerated
-		count, err := store.GetUnappliedTolerationsCount(ctx, []string{"CVE-2024-9999"})
+		count, err := store.GetInactiveTolerationsCount(ctx, []string{"CVE-2024-9999"})
 		if err != nil {
-			t.Fatalf("Failed to get unapplied tolerations count: %v", err)
+			t.Fatalf("Failed to get inactive tolerations count: %v", err)
 		}
 		if count != 1 {
-			t.Errorf("Expected 1 for unapplied CVE, got %d", count)
+			t.Errorf("Expected 1 for inactive CVE, got %d", count)
 		}
 	})
 
-	t.Run("GetUnappliedTolerationsCount with mixed applied and unapplied", func(t *testing.T) {
-		// Mix of applied and unapplied
-		count, err := store.GetUnappliedTolerationsCount(ctx, []string{
+	t.Run("GetInactiveTolerationsCount with mixed applied and inactive", func(t *testing.T) {
+		// Mix of applied and inactive
+		count, err := store.GetInactiveTolerationsCount(ctx, []string{
 			"CVE-2024-1234", // applied
-			"CVE-2024-9999", // unapplied
-			"CVE-2024-8888", // unapplied
+			"CVE-2024-9999", // inactive
+			"CVE-2024-8888", // inactive
 		})
 		if err != nil {
-			t.Fatalf("Failed to get unapplied tolerations count: %v", err)
+			t.Fatalf("Failed to get inactive tolerations count: %v", err)
 		}
 		if count != 2 {
-			t.Errorf("Expected 2 unapplied CVEs, got %d", count)
+			t.Errorf("Expected 2 inactive CVEs, got %d", count)
 		}
 	})
 }
@@ -709,22 +709,22 @@ func TestGetAppliedCVEIDs(t *testing.T) {
 		}
 	})
 
-	t.Run("GetAppliedCVEIDs returns empty for unapplied CVEs", func(t *testing.T) {
+	t.Run("GetAppliedCVEIDs returns empty for inactive CVEs", func(t *testing.T) {
 		applied, err := store.GetAppliedCVEIDs(ctx, []string{"CVE-2024-9999"})
 		if err != nil {
 			t.Fatalf("Failed to get applied CVE IDs: %v", err)
 		}
 		if len(applied) != 0 {
-			t.Errorf("Expected empty slice for unapplied CVE, got %v", applied)
+			t.Errorf("Expected empty slice for inactive CVE, got %v", applied)
 		}
 	})
 
-	t.Run("GetAppliedCVEIDs filters mixed applied and unapplied", func(t *testing.T) {
+	t.Run("GetAppliedCVEIDs filters mixed applied and inactive", func(t *testing.T) {
 		applied, err := store.GetAppliedCVEIDs(ctx, []string{
 			"CVE-2024-1111", // applied
-			"CVE-2024-9999", // unapplied
+			"CVE-2024-9999", // inactive
 			"CVE-2024-2222", // applied
-			"CVE-2024-8888", // unapplied
+			"CVE-2024-8888", // inactive
 		})
 		if err != nil {
 			t.Fatalf("Failed to get applied CVE IDs: %v", err)
@@ -742,7 +742,7 @@ func TestGetAppliedCVEIDs(t *testing.T) {
 			t.Errorf("Expected CVE-2024-1111 and CVE-2024-2222, got %v", applied)
 		}
 		if appliedSet["CVE-2024-9999"] || appliedSet["CVE-2024-8888"] {
-			t.Errorf("Unexpected unapplied CVEs in result: %v", applied)
+			t.Errorf("Unexpected inactive CVEs in result: %v", applied)
 		}
 	})
 }

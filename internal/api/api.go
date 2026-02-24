@@ -103,7 +103,7 @@ func (s *APIServer) setupRoutes() {
 	s.router.HandleFunc("/api/v1/vulnerabilities", s.corsMiddleware(s.authMiddleware(s.handleQueryVulnerabilities, false)))
 	s.router.HandleFunc("/api/v1/vulnerabilities/stats", s.corsMiddleware(s.authMiddleware(s.handleGetVulnerabilityStats, false)))
 	s.router.HandleFunc("/api/v1/tolerations", s.corsMiddleware(s.authMiddleware(s.handleListTolerations, false)))
-	s.router.HandleFunc("/api/v1/tolerations/unapplied", s.corsMiddleware(s.authMiddleware(s.handleListUnappliedTolerations, false)))
+	s.router.HandleFunc("/api/v1/tolerations/inactive", s.corsMiddleware(s.authMiddleware(s.handleListInactiveTolerations, false)))
 	s.router.HandleFunc("/api/v1/images/failed", s.corsMiddleware(s.authMiddleware(s.handleListFailedImages, false)))
 	s.router.HandleFunc("/api/v1/repositories", s.corsMiddleware(s.authMiddleware(s.handleListRepositories, false)))
 	s.router.HandleFunc("/api/v1/repositories/", s.corsMiddleware(s.authMiddleware(s.handleRepositoriesRouter, false)))

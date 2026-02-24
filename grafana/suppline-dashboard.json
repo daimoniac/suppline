@@ -702,13 +702,13 @@
             "uid": "Prometheus"
           },
           "editorMode": "code",
-          "expr": "sum(suppline_unapplied_tolerations)",
+          "expr": "sum(suppline_inactive_tolerations)",
           "legendFormat": "{{repository}}",
           "range": true,
           "refId": "A"
         }
       ],
-      "title": "unapplied tolerations",
+      "title": "inactive tolerations",
       "type": "timeseries"
     },
     {
