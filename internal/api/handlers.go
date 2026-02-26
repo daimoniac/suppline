@@ -108,6 +108,7 @@ func (s *APIServer) handleListScans(w http.ResponseWriter, r *http.Request) {
 		SortBy:       parseQueryParam(r, "sort_by"),
 		Limit:        parseQueryParamInt(r, "limit", 100),
 		Offset:       parseQueryParamInt(r, "offset", 0),
+		LatestOnly:   parseQueryParamBoolDefault(r, "latest_only", false),
 	}
 
 	// Get scans from state store
