@@ -343,9 +343,11 @@ func TestSQLiteStore(t *testing.T) {
 		if len(scans2) != 1 {
 			t.Errorf("Expected 1 scan on page 2, got %d", len(scans2))
 		}
-		// Verify different scans
-		if scans[0].ID == scans2[0].ID {
-			t.Error("Expected different scans on different pages")
+		// Verify different artifact rows (different tags) on each page.
+		// Note: two artifacts may share the same scan record ID when they point
+		// to the same digest — what matters is that the paginated rows differ.
+		if scans[0].Tag == scans2[0].Tag {
+			t.Error("Expected different artifact rows (tags) on different pages")
 		}
 	})
 
@@ -436,6 +438,91 @@ func TestSQLiteStore(t *testing.T) {
 		}
 		if len(scans2) != len(scans) {
 			t.Errorf("Expected same number of scans with empty sort_by, got %d vs %d", len(scans2), len(scans))
+		}
+	})
+
+	// Regression test: ListScans must only return current (latest) scans, not stale historical ones.
+	//
+	// Scenario: an image is scanned and fails policy (policy_passed=false). It is then rescanned
+	// and passes (policy_passed=true). The old failing scan_record still exists in the DB but
+	// artifacts.last_scan_id now points to the newer passing record.
+	//
+	// Before the fix, ListScans with policy_passed=false would still surface the old record,
+	// contradicting GetRepository which reads current state via last_scan_id.
+	t.Run("ListScans only returns current scan per artifact not stale historical scans", func(t *testing.T) {
+		dbPath := t.TempDir() + "/regression_stale.db"
+
+		rStore, err := NewSQLiteStore(dbPath)
+		if err != nil {
+			t.Fatalf("Failed to create SQLite store: %v", err)
+		}
+		defer rStore.Close()
+
+		digest := "sha256:regression001"
+		repo := "org/regression-app"
+
+		// Step 1: scan fails policy (e.g. before tolerations were added)
+		err = rStore.RecordScan(ctx, &ScanRecord{
+			Digest:            digest,
+			Repository:        repo,
+			Tag:               "v1.0",
+			ScanDurationMs:    1000,
+			CriticalVulnCount: 2,
+			HighVulnCount:     0,
+			MediumVulnCount:   0,
+			LowVulnCount:      0,
+			PolicyPassed:      false,
+			SBOMAttested:      false,
+			VulnAttested:      false,
+			SCAIAttested:      false,
+		})
+		if err != nil {
+			t.Fatalf("Failed to record failing scan: %v", err)
+		}
+
+		// Step 2: rescan passes (e.g. CVEs are now tolerated)
+		err = rStore.RecordScan(ctx, &ScanRecord{
+			Digest:            digest,
+			Repository:        repo,
+			Tag:               "v1.0",
+			ScanDurationMs:    900,
+			CriticalVulnCount: 2,
+			HighVulnCount:     0,
+			MediumVulnCount:   0,
+			LowVulnCount:      0,
+			PolicyPassed:      true,
+			SBOMAttested:      true,
+			VulnAttested:      true,
+			SCAIAttested:      false,
+		})
+		if err != nil {
+			t.Fatalf("Failed to record passing scan: %v", err)
+		}
+
+		// ListScans with policy_passed=false must return nothing — the current scan passes
+		policyFailed := false
+		failedScans, err := rStore.ListScans(ctx, ScanFilter{PolicyPassed: &policyFailed, Limit: 100})
+		if err != nil {
+			t.Fatalf("Failed to list scans: %v", err)
+		}
+		if len(failedScans) != 0 {
+			t.Errorf("ListScans(policy_passed=false) returned %d record(s) but expected 0: "+
+				"stale historical scan record is leaking through. "+
+				"Latest scan for digest %s passes policy, so it must not appear in the failed list.",
+				len(failedScans), digest)
+		}
+
+		// ListScans with policy_passed=true must return exactly the one current passing scan
+		policyPassed := true
+		passedScans, err := rStore.ListScans(ctx, ScanFilter{PolicyPassed: &policyPassed, Limit: 100})
+		if err != nil {
+			t.Fatalf("Failed to list passing scans: %v", err)
+		}
+		if len(passedScans) != 1 {
+			t.Errorf("ListScans(policy_passed=true) returned %d record(s), expected 1", len(passedScans))
+		}
+		if len(passedScans) > 0 && !passedScans[0].PolicyPassed {
+			t.Errorf("Returned scan has PolicyPassed=false, expected true")
 		}
 	})
 

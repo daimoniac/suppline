@@ -709,16 +709,20 @@ func (s *SQLiteStore) loadVulnerabilitiesByScan(ctx context.Context, scanRecordI
 	return vulnerabilities, nil
 }
 
-// ListScans returns scan records with optional filters
+// ListScans returns scan records with optional filters.
+// Only returns the current (latest) scan per artifact, i.e. those referenced by
+// artifacts.last_scan_id. This keeps results consistent with GetRepository which
+// also reads the current state via last_scan_id, and avoids surfacing stale
+// historical records (e.g. an old failed scan after a subsequent passing scan).
 func (s *SQLiteStore) ListScans(ctx context.Context, filter ScanFilter) ([]*ScanRecord, error) {
 	query := `
 		SELECT sr.id, sr.artifact_id, sr.scan_duration_ms,
 			sr.critical_vuln_count, sr.high_vuln_count, sr.medium_vuln_count, sr.low_vuln_count,
 			sr.policy_passed, sr.sbom_attested, sr.vuln_attested, sr.scai_attested, sr.error_message, sr.created_at,
 			a.digest, a.tag, r.name
-		FROM scan_records sr
-		JOIN artifacts a ON sr.artifact_id = a.id
+		FROM artifacts a
 		JOIN repositories r ON a.repository_id = r.id
+		JOIN scan_records sr ON a.last_scan_id = sr.id
 		WHERE 1=1
 	`
 	args := []interface{}{}
