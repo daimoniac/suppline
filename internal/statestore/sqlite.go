@@ -721,9 +721,6 @@ func (s *SQLiteStore) ListScans(ctx context.Context, filter ScanFilter) ([]*Scan
 		JOIN repositories r ON a.repository_id = r.id
 		WHERE 1=1
 	`
-	if filter.LatestOnly {
-		query += " AND sr.id = a.last_scan_id"
-	}
 	args := []interface{}{}
 
 	if filter.Repository != "" {

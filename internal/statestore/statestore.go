@@ -219,7 +219,6 @@ type ScanFilter struct {
 	SortBy       string // Sorting option: "age_desc" (default)
 	Limit        int
 	Offset       int
-	LatestOnly   bool // Only return the most recent scan for each artifact
 }
 
 // TolerationFilter defines criteria for listing tolerations

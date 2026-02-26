@@ -249,16 +249,7 @@ func parseQueryParamInt(r *http.Request, key string, defaultValue int) int {
 	return defaultValue
 }
 
-// parseQueryParamBoolDefault extracts a boolean query parameter with a default value
-func parseQueryParamBoolDefault(r *http.Request, key string, defaultValue bool) bool {
-	value := r.URL.Query().Get(key)
-	if value == "" {
-		return defaultValue
-	}
-	return value == "true" || value == "1" || value == "yes"
-}
-
-// parseQueryParamBool extracts a boolean query parameter, returning nil if not present
+// parseQueryParamBool extracts a boolean query parameter
 func parseQueryParamBool(r *http.Request, key string) *bool {
 	value := r.URL.Query().Get(key)
 	if value == "" {
