@@ -181,7 +181,7 @@ export class Dashboard extends BaseComponent {
                     </div>
                     <div class="summary-card-content">
                         <div class="summary-card-value">${this.data.expiringTolerations.toLocaleString()}</div>
-                        <div class="summary-card-label">Expiring Soon</div>
+                        <div class="summary-card-label">Tolerations Expiring Soon</div>
                     </div>
                 </div>
 
