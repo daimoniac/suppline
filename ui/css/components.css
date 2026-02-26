@@ -868,7 +868,7 @@ tr:hover {
     border: 1px solid var(--medium-color);
 }
 
-.attention-badge-unused {
+.attention-badge-inactive {
     background-color: #f3f4f6;
     color: #374151;
     border: 1px solid #9ca3af;
@@ -911,12 +911,12 @@ tr:hover {
     background-color: #fde68a;
 }
 
-.toleration-unused {
+.toleration-inactive {
     background-color: #f3f4f6;
     border-left-color: #6b7280;
 }
 
-.toleration-unused:hover {
+.toleration-inactive:hover {
     background-color: #e5e7eb;
 }
 

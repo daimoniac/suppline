@@ -13,7 +13,7 @@ import { copyToClipboard } from '../utils/helpers.js';
 export class Dashboard extends BaseComponent {
     constructor(apiClient) {
         super(apiClient);
-        this.activeFilter = 'all'; // Filter state: 'all', 'expired', 'expiring', 'unused'
+        this.activeFilter = 'all'; // Filter state: 'all', 'expired', 'expiring', 'inactive'
         this.data = {
             totalScans: 0,
             failedImages: 0,
@@ -202,13 +202,13 @@ export class Dashboard extends BaseComponent {
     }
 
     /**
-     * Render tolerations requiring attention (expired, expiring, and unused)
+     * Render tolerations requiring attention (expired, expiring, and inactive)
      */
     renderTolerationsRequiringAttention() {
         const expiringCount = this.data.expiringTolerationsDetails.length;
         const expiredCount = this.data.expiredTolerationsDetails.length;
-        const unusedCount = this.data.inactiveTolerationsDetails.length;
-        const totalCount = expiringCount + expiredCount + unusedCount;
+        const inactiveCount = this.data.inactiveTolerationsDetails.length;
+        const totalCount = expiringCount + expiredCount + inactiveCount;
 
         if (totalCount === 0) {
             return '';
@@ -220,7 +220,7 @@ export class Dashboard extends BaseComponent {
                 <div class="tolerations-attention-summary">
                     ${expiredCount > 0 ? `<span class="attention-badge attention-badge-expired filter-badge" data-filter="expired">${expiredCount} Expired</span>` : ''}
                     ${expiringCount > 0 ? `<span class="attention-badge attention-badge-expiring filter-badge" data-filter="expiring">${expiringCount} Expiring Soon</span>` : ''}
-                    ${unusedCount > 0 ? `<span class="attention-badge attention-badge-unused filter-badge" data-filter="unused">${unusedCount} Unused</span>` : ''}
+                    ${inactiveCount > 0 ? `<span class="attention-badge attention-badge-inactive filter-badge" data-filter="inactive">${inactiveCount} Inactive</span>` : ''}
                 </div>
                 <div class="tolerations-attention-list" id="tolerations-list">
                     ${this.renderFilteredTolerations()}
@@ -241,8 +241,8 @@ export class Dashboard extends BaseComponent {
         if (this.activeFilter === 'all' || this.activeFilter === 'expiring') {
             items = items.concat(this.renderExpiringTolerations());
         }
-        if (this.activeFilter === 'all' || this.activeFilter === 'unused') {
-            items = items.concat(this.renderUnusedTolerations());
+        if (this.activeFilter === 'all' || this.activeFilter === 'inactive') {
+            items = items.concat(this.renderInactiveTolerations());
         }
 
         return items.join('');
@@ -330,9 +330,9 @@ export class Dashboard extends BaseComponent {
     }
 
     /**
-     * Render unused (inactive) tolerations
+     * Render inactive tolerations
      */
-    renderUnusedTolerations() {
+    renderInactiveTolerations() {
         if (this.data.inactiveTolerationsDetails.length === 0) {
             return [];
         }
@@ -353,10 +353,10 @@ export class Dashboard extends BaseComponent {
             const expiryDateStr = expiryDate ? expiryDate.toLocaleDateString() : 'Never';
 
             return `
-                <div class="toleration-attention-item toleration-unused" data-cve="${escapeHtml(toleration.CVEID)}" data-type="unused">
+                <div class="toleration-attention-item toleration-inactive" data-cve="${escapeHtml(toleration.CVEID)}" data-type="inactive">
                     <div class="toleration-attention-header">
                         <span class="toleration-attention-cve">${escapeHtml(toleration.CVEID)}</span>
-                        <span class="status-badge status-secondary">📋 UNUSED</span>
+                        <span class="status-badge status-secondary">📋 INACTIVE</span>
                     </div>
                     <div class="toleration-attention-repo">${repoDisplay}</div>
                     <div class="toleration-attention-statement">${escapeHtml(toleration.Statement || 'No statement provided')}</div>
