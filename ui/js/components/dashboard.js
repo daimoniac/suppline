@@ -152,7 +152,7 @@ export class Dashboard extends BaseComponent {
                     </div>
                     <div class="summary-card-content">
                         <div class="summary-card-value">${this.data.failedImages.toLocaleString()}</div>
-                        <div class="summary-card-label">Failed Scans (24h)</div>
+                        <div class="summary-card-label">Policy failures</div>
                     </div>
                 </div>
 
