@@ -131,6 +131,8 @@ func (s *SQLiteStore) initSchema() error {
 	CREATE INDEX IF NOT EXISTS idx_vulnerabilities_scan ON vulnerabilities(scan_record_id);
 	CREATE INDEX IF NOT EXISTS idx_vulnerabilities_cve ON vulnerabilities(cve_id);
 	CREATE INDEX IF NOT EXISTS idx_vulnerabilities_severity ON vulnerabilities(severity);
+	CREATE INDEX IF NOT EXISTS idx_artifacts_last_scan ON artifacts(last_scan_id);
+	CREATE INDEX IF NOT EXISTS idx_vulnerabilities_scan_severity_cve ON vulnerabilities(scan_record_id, severity, cve_id);
 	`
 
 	_, err := s.db.Exec(schema)
@@ -507,11 +509,18 @@ func (s *SQLiteStore) GetTagsForDigest(ctx context.Context, digest string) ([]Ta
 // This deduplicates vulnerabilities so that a CVE ID is counted only once for the whole configuration,
 // even if it appears in multiple repositories or multiple tags.
 func (s *SQLiteStore) GetUniqueVulnerabilityCounts(ctx context.Context) (map[string]int, error) {
+	// Use a subquery to first collect the set of active scan IDs from artifacts, then
+	// filter vulnerabilities by that set. This avoids a full JOIN + sort and allows
+	// SQLite to use idx_artifacts_last_scan + idx_vulnerabilities_scan_severity_cve.
+	// The inner SELECT DISTINCT also ensures each CVE is counted only once even when
+	// the same scan_record_id is referenced by multiple artifact rows (multi-tag digests).
 	query := `
-		SELECT v.severity, COUNT(DISTINCT v.cve_id)
-		FROM vulnerabilities v
-		JOIN artifacts a ON v.scan_record_id = a.last_scan_id
-		GROUP BY v.severity
+		SELECT severity, COUNT(DISTINCT cve_id)
+		FROM vulnerabilities
+		WHERE scan_record_id IN (
+			SELECT last_scan_id FROM artifacts WHERE last_scan_id IS NOT NULL
+		)
+		GROUP BY severity
 	`
 
 	rows, err := s.db.QueryContext(ctx, query)
