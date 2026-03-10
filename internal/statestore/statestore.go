@@ -103,6 +103,7 @@ type TagInfo struct {
 	NextScanTime       *int64 // Unix timestamp in seconds
 	VulnerabilityCount VulnerabilityCountSummary
 	PolicyPassed       bool
+	ScanError          string // Non-empty when the last scan failed with an error
 }
 
 // TagRef represents a repository+tag combination pointing to a digest

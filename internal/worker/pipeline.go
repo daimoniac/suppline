@@ -65,6 +65,9 @@ func (p *Pipeline) Execute(ctx context.Context, task *queue.ScanTask) error {
 				}
 				// Permanent cleanup errors are already logged in performManifestCleanup
 			}
+		} else if !errors.IsTransient(err) {
+			// Permanent scan failure – record it so the image shows up as FAILED in the UI
+			p.recordScanError(ctx, task, err)
 		}
 		return err
 	}
@@ -350,6 +353,20 @@ func (p *Pipeline) logCompletion(task *queue.ScanTask, imageRef string, startTim
 		"scai_attestation_duration", attestDurations["scai_attest"],
 		"scai_attested", scaiAttested,
 		"policy_passed", policyDecision.Passed)
+}
+
+// recordScanError persists a failed-scan record so the image appears as FAILED in the UI.
+// Errors here are only logged – we don't want to change the original error being returned.
+func (p *Pipeline) recordScanError(ctx context.Context, task *queue.ScanTask, scanErr error) {
+	if p.worker.stateStore == nil {
+		return
+	}
+	errRecord := buildErrorScanRecord(task, scanErr)
+	if err := p.worker.stateStore.RecordScan(ctx, errRecord); err != nil {
+		p.logger.Error("failed to record scan error in state store",
+			"image_ref", fmt.Sprintf("%s@%s", task.Repository, task.Digest),
+			"error", err)
+	}
 }
 
 // performManifestCleanup handles cleanup when MANIFEST_UNKNOWN errors occur
