@@ -22,6 +22,7 @@ type TrivyScanner struct {
 	customHeaders    map[string]string
 	timeout          time.Duration
 	insecure         bool
+	localFallback    bool // retry without --server when server-mode scan fails
 	dockerConfigPath string
 	logger           *slog.Logger
 }
@@ -32,13 +33,14 @@ func NewTrivyScanner(cfg config.ScannerConfig) (*TrivyScanner, error) {
 	if logger == nil {
 		logger = slog.Default()
 	}
-	
+
 	scanner := &TrivyScanner{
 		serverAddr:    cfg.ServerAddr,
 		token:         cfg.Token,
 		customHeaders: cfg.CustomHeaders,
 		timeout:       cfg.Timeout,
 		insecure:      cfg.Insecure,
+		localFallback: cfg.LocalFallback,
 		logger:        logger,
 	}
 
@@ -70,7 +72,7 @@ func (s *TrivyScanner) HealthCheck(ctx context.Context) error {
 func (s *TrivyScanner) GenerateSBOM(ctx context.Context, imageRef string) (*SBOM, error) {
 	startTime := time.Now()
 	s.logger.Debug("invoking Trivy for SBOM generation", "image_ref", imageRef, "start_time", startTime)
-	
+
 	ctx, cancel := context.WithTimeout(ctx, s.timeout)
 	defer cancel()
 
@@ -102,17 +104,36 @@ func (s *TrivyScanner) GenerateSBOM(ctx context.Context, imageRef string) (*SBOM
 
 	if err := cmd.Run(); err != nil {
 		duration := time.Since(startTime)
-		s.logger.Error("Trivy SBOM generation failed", 
-			"image_ref", imageRef, 
+		s.logger.Error("Trivy SBOM generation failed",
+			"image_ref", imageRef,
 			"duration", duration,
 			"error", err)
+		serverStderr := stderr.String()
+
+		// If local fallback is enabled, retry without --server using local Trivy DB
+		if s.localFallback {
+			s.logger.Warn("retrying SBOM generation without server (local fallback)",
+				"image_ref", imageRef,
+				"server_stderr", serverStderr)
+			result, fallbackErr := s.generateSBOMLocal(ctx, imageRef)
+			if fallbackErr != nil {
+				s.logger.Error("local fallback SBOM generation also failed",
+					"image_ref", imageRef,
+					"error", fallbackErr)
+				// Return original server error so the error message reflects the root cause
+				return nil, errors.NewTransientf("failed to generate SBOM for %s: %w, stderr: %s", imageRef, err, serverStderr)
+			}
+			s.logger.Info("SBOM generation succeeded via local fallback", "image_ref", imageRef)
+			return result, nil
+		}
+
 		// SBOM generation failures are typically transient (network, timeout, registry issues)
-		return nil, errors.NewTransientf("failed to generate SBOM for %s: %w, stderr: %s", imageRef, err, stderr.String())
+		return nil, errors.NewTransientf("failed to generate SBOM for %s: %w, stderr: %s", imageRef, err, serverStderr)
 	}
 
 	duration := time.Since(startTime)
-	s.logger.Debug("Trivy SBOM generation completed", 
-		"image_ref", imageRef, 
+	s.logger.Debug("Trivy SBOM generation completed",
+		"image_ref", imageRef,
 		"duration", duration,
 		"sbom_size_bytes", len(stdout.Bytes()))
 
@@ -130,7 +151,7 @@ type trivyScanResponse struct {
 }
 
 type trivyResult struct {
-	Target          string                `json:"Target"`
+	Target          string               `json:"Target"`
 	Vulnerabilities []trivyVulnerability `json:"Vulnerabilities"`
 }
 
@@ -151,7 +172,7 @@ type trivyVulnerability struct {
 func (s *TrivyScanner) ScanVulnerabilities(ctx context.Context, imageRef string) (*ScanResult, error) {
 	startTime := time.Now()
 	s.logger.Debug("invoking Trivy for vulnerability scan (JSON + cosign-vuln)", "image_ref", imageRef, "start_time", startTime)
-	
+
 	ctx, cancel := context.WithTimeout(ctx, s.timeout)
 	defer cancel()
 
@@ -194,12 +215,31 @@ func (s *TrivyScanner) ScanVulnerabilities(ctx context.Context, imageRef string)
 
 	if err := cmd.Run(); err != nil {
 		duration := time.Since(startTime)
-		s.logger.Error("Trivy vulnerability scan failed", 
-			"image_ref", imageRef, 
+		s.logger.Error("Trivy vulnerability scan failed",
+			"image_ref", imageRef,
 			"duration", duration,
 			"error", err)
+		serverStderr := stderr.String()
+
+		// If local fallback is enabled, retry without --server using local Trivy DB
+		if s.localFallback {
+			s.logger.Warn("retrying vulnerability scan without server (local fallback)",
+				"image_ref", imageRef,
+				"server_stderr", serverStderr)
+			result, fallbackErr := s.scanVulnerabilitiesLocal(ctx, imageRef, tmpFile.Name())
+			if fallbackErr != nil {
+				s.logger.Error("local fallback vulnerability scan also failed",
+					"image_ref", imageRef,
+					"error", fallbackErr)
+				// Return original server error so the error message reflects the root cause
+				return nil, errors.NewTransientf("failed to scan vulnerabilities for %s: %w, stderr: %s", imageRef, err, serverStderr)
+			}
+			s.logger.Info("vulnerability scan succeeded via local fallback", "image_ref", imageRef)
+			return result, nil
+		}
+
 		// Vulnerability scan failures are typically transient (network, timeout, registry issues)
-		return nil, errors.NewTransientf("failed to scan vulnerabilities for %s: %w, stderr: %s", imageRef, err, stderr.String())
+		return nil, errors.NewTransientf("failed to scan vulnerabilities for %s: %w, stderr: %s", imageRef, err, serverStderr)
 	}
 
 	// Parse JSON response
@@ -257,8 +297,8 @@ func (s *TrivyScanner) ScanVulnerabilities(ctx context.Context, imageRef string)
 	}
 
 	if err := cosignCmd.Run(); err != nil {
-		s.logger.Warn("failed to generate cosign-vuln format (continuing without it)", 
-			"image_ref", imageRef, 
+		s.logger.Warn("failed to generate cosign-vuln format (continuing without it)",
+			"image_ref", imageRef,
 			"error", err,
 			"stderr", cosignStderr.String())
 		// Don't fail the entire scan if cosign-vuln generation fails
@@ -268,14 +308,14 @@ func (s *TrivyScanner) ScanVulnerabilities(ctx context.Context, imageRef string)
 	var cosignVulnData []byte
 	if data, err := os.ReadFile(tmpFile.Name()); err == nil {
 		cosignVulnData = data
-		s.logger.Debug("cosign-vuln format generated", 
-			"image_ref", imageRef, 
+		s.logger.Debug("cosign-vuln format generated",
+			"image_ref", imageRef,
 			"size_bytes", len(cosignVulnData))
 	}
 
 	duration := time.Since(startTime)
-	s.logger.Debug("Trivy vulnerability scan completed", 
-		"image_ref", imageRef, 
+	s.logger.Debug("Trivy vulnerability scan completed",
+		"image_ref", imageRef,
 		"duration", duration,
 		"vulnerability_count", len(vulnerabilities),
 		"cosign_vuln_generated", len(cosignVulnData) > 0)
@@ -288,4 +328,125 @@ func (s *TrivyScanner) ScanVulnerabilities(ctx context.Context, imageRef string)
 	}, nil
 }
 
+// generateSBOMLocal retries SBOM generation without --server, using the local Trivy DB.
+func (s *TrivyScanner) generateSBOMLocal(ctx context.Context, imageRef string) (*SBOM, error) {
+	args := []string{
+		"image",
+		"--format", "cyclonedx",
+		"--image-src", "remote",
+	}
+	if s.insecure {
+		args = append(args, "--insecure")
+	}
+	args = append(args, imageRef)
 
+	cmd := exec.CommandContext(ctx, "trivy", args...)
+	var stdout, stderr bytes.Buffer
+	cmd.Stdout = &stdout
+	cmd.Stderr = &stderr
+	if s.dockerConfigPath != "" {
+		cmd.Env = append(os.Environ(), fmt.Sprintf("DOCKER_CONFIG=%s", s.dockerConfigPath))
+	}
+
+	if err := cmd.Run(); err != nil {
+		return nil, errors.NewTransientf("local fallback SBOM failed for %s: %w, stderr: %s", imageRef, err, stderr.String())
+	}
+
+	return &SBOM{
+		Format:  "cyclonedx",
+		Version: "1.5",
+		Data:    stdout.Bytes(),
+		Created: time.Now(),
+	}, nil
+}
+
+// scanVulnerabilitiesLocal retries vulnerability scanning without --server, using the local Trivy DB.
+// cosignOutPath is the temp file path to write cosign-vuln output to.
+func (s *TrivyScanner) scanVulnerabilitiesLocal(ctx context.Context, imageRef string, cosignOutPath string) (*ScanResult, error) {
+	// JSON scan (no --quiet so Trivy can print DB download progress if needed)
+	args := []string{
+		"image",
+		"--format", "json",
+		"--scanners", "vuln",
+		"--image-src", "remote",
+	}
+	if s.insecure {
+		args = append(args, "--insecure")
+	}
+	args = append(args, imageRef)
+
+	cmd := exec.CommandContext(ctx, "trivy", args...)
+	var stdout, stderr bytes.Buffer
+	cmd.Stdout = &stdout
+	cmd.Stderr = &stderr
+	if s.dockerConfigPath != "" {
+		cmd.Env = append(os.Environ(), fmt.Sprintf("DOCKER_CONFIG=%s", s.dockerConfigPath))
+	}
+
+	if err := cmd.Run(); err != nil {
+		return nil, errors.NewTransientf("local fallback vuln scan failed for %s: %w, stderr: %s", imageRef, err, stderr.String())
+	}
+
+	var response trivyScanResponse
+	if err := json.Unmarshal(stdout.Bytes(), &response); err != nil {
+		return nil, errors.NewPermanentf("failed to parse local fallback trivy output: %w", err)
+	}
+
+	var vulnerabilities []types.Vulnerability
+	for _, result := range response.Results {
+		for _, vuln := range result.Vulnerabilities {
+			primaryURL := vuln.PrimaryURL
+			if primaryURL == "" && len(vuln.References) > 0 {
+				primaryURL = vuln.References[0]
+			}
+			vulnerabilities = append(vulnerabilities, types.Vulnerability{
+				ID:           vuln.VulnerabilityID,
+				Severity:     vuln.Severity,
+				PackageName:  vuln.PkgName,
+				Version:      vuln.InstalledVersion,
+				FixedVersion: vuln.FixedVersion,
+				Title:        vuln.Title,
+				Description:  vuln.Description,
+				PrimaryURL:   primaryURL,
+			})
+		}
+	}
+
+	// cosign-vuln format (best-effort)
+	cosignArgs := []string{
+		"image",
+		"--format", "cosign-vuln",
+		"--output", cosignOutPath,
+		"--scanners", "vuln",
+		"--image-src", "remote",
+	}
+	if s.insecure {
+		cosignArgs = append(cosignArgs, "--insecure")
+	}
+	cosignArgs = append(cosignArgs, imageRef)
+
+	cosignCmd := exec.CommandContext(ctx, "trivy", cosignArgs...)
+	var cosignStderr bytes.Buffer
+	cosignCmd.Stderr = &cosignStderr
+	if s.dockerConfigPath != "" {
+		cosignCmd.Env = append(os.Environ(), fmt.Sprintf("DOCKER_CONFIG=%s", s.dockerConfigPath))
+	}
+	if err := cosignCmd.Run(); err != nil {
+		s.logger.Warn("local fallback cosign-vuln generation failed (continuing without it)",
+			"image_ref", imageRef,
+			"error", err,
+			"stderr", cosignStderr.String())
+	}
+
+	var cosignVulnData []byte
+	if data, err := os.ReadFile(cosignOutPath); err == nil {
+		cosignVulnData = data
+	}
+
+	return &ScanResult{
+		ImageRef:        imageRef,
+		Vulnerabilities: vulnerabilities,
+		ScannedAt:       time.Now(),
+		CosignVulnData:  cosignVulnData,
+	}, nil
+}

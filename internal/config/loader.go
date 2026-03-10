@@ -73,6 +73,7 @@ func Load() (*Config, error) {
 			CustomHeaders: make(map[string]string),
 			Timeout:       getEnvDuration("TRIVY_TIMEOUT", 5*time.Minute),
 			Insecure:      getEnvBool("TRIVY_INSECURE", false),
+			LocalFallback: getEnvBool("TRIVY_LOCAL_FALLBACK", true),
 			RegsyncPath:   getEnv("SUPPLINE_CONFIG", "suppline.yml"),
 		},
 		Attestation: AttestationConfig{

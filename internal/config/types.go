@@ -39,6 +39,7 @@ type ScannerConfig struct {
 	CustomHeaders map[string]string
 	Timeout       time.Duration
 	Insecure      bool
+	LocalFallback bool         // If true, retry without --server when server-mode scan fails
 	RegsyncPath   string       // Path to suppline.yml for registry credentials
 	Logger        *slog.Logger // Logger instance for structured logging
 }
