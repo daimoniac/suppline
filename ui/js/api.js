@@ -141,6 +141,13 @@ class APIClient {
     }
 
     /**
+     * Get scans currently waiting in the scan queue
+     */
+    async getQueuedScans() {
+        return this.request('/api/v1/queue');
+    }
+
+    /**
      * Trigger a scan for an image or repository
      * @param {Object} params - Scan parameters
      * @param {string} params.digest - Image digest (optional)

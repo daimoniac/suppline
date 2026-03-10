@@ -280,7 +280,7 @@ func TestContextCancellation(t *testing.T) {
 
 	// Verify task2 was not added to pending map
 	q.pendingMu.RLock()
-	if q.pending["sha256:second"] {
+	if q.pending["sha256:second"] != nil {
 		t.Error("expected task2 to not be in pending map")
 	}
 	q.pendingMu.RUnlock()

@@ -30,6 +30,9 @@ type TaskQueue interface {
 	// HasPendingTask checks if there's a pending task for the given digest
 	HasPendingTask(ctx context.Context, digest string) (bool, error)
 
+	// ListPendingTasks returns all tasks currently waiting in the queue
+	ListPendingTasks(ctx context.Context) ([]*ScanTask, error)
+
 	// Close shuts down the queue gracefully
 	Close() error
 }
@@ -58,9 +61,9 @@ type ScanTask struct {
 
 // InMemoryQueue implements TaskQueue using priority queues
 type InMemoryQueue struct {
-	highPriorityTasks chan *ScanTask  // For rescans and urgent tasks
-	normalTasks       chan *ScanTask  // For regular scans
-	pending           map[string]bool // Deduplication map: digest -> exists
+	highPriorityTasks chan *ScanTask    // For rescans and urgent tasks
+	normalTasks       chan *ScanTask    // For regular scans
+	pending           map[string]*ScanTask // Deduplication map: digest -> task
 	pendingMu         sync.RWMutex
 	metrics           *QueueMetrics
 	metricsMu         sync.RWMutex
@@ -93,7 +96,7 @@ func NewInMemoryQueue(bufferSize int) *InMemoryQueue {
 	return &InMemoryQueue{
 		highPriorityTasks: make(chan *ScanTask, highPriorityBuffer),
 		normalTasks:       make(chan *ScanTask, normalBuffer),
-		pending:           make(map[string]bool),
+		pending:           make(map[string]*ScanTask),
 		metrics:           &QueueMetrics{},
 		bufferSize:        bufferSize,
 	}
@@ -117,12 +120,12 @@ func (q *InMemoryQueue) Enqueue(ctx context.Context, task *ScanTask) error {
 	}
 
 	q.pendingMu.Lock()
-	if q.pending[task.Digest] {
+	if q.pending[task.Digest] != nil {
 		q.pendingMu.Unlock()
 		q.incrementMetric("dropped")
 		return nil
 	}
-	q.pending[task.Digest] = true
+	q.pending[task.Digest] = task
 	q.pendingMu.Unlock()
 
 	// Set priority based on task type
@@ -241,7 +244,19 @@ func (q *InMemoryQueue) HasPendingTask(ctx context.Context, digest string) (bool
 	q.pendingMu.RLock()
 	defer q.pendingMu.RUnlock()
 
-	return q.pending[digest], nil
+	return q.pending[digest] != nil, nil
+}
+
+// ListPendingTasks returns a snapshot of all tasks currently waiting in the queue
+func (q *InMemoryQueue) ListPendingTasks(ctx context.Context) ([]*ScanTask, error) {
+	q.pendingMu.RLock()
+	defer q.pendingMu.RUnlock()
+
+	tasks := make([]*ScanTask, 0, len(q.pending))
+	for _, task := range q.pending {
+		tasks = append(tasks, task)
+	}
+	return tasks, nil
 }
 
 // Close shuts down the queue gracefully

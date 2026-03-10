@@ -705,6 +705,58 @@ func (s *APIServer) handleReevaluatePolicy(w http.ResponseWriter, r *http.Reques
 	s.respondJSON(w, http.StatusOK, response)
 }
 
+// QueuedScanItem is a simplified view of a pending scan task exposed via the API
+type QueuedScanItem struct {
+	ID         string    `json:"id"`
+	Repository string    `json:"repository"`
+	Tag        string    `json:"tag"`
+	Digest     string    `json:"digest"`
+	EnqueuedAt time.Time `json:"enqueued_at"`
+	IsRescan   bool      `json:"is_rescan"`
+}
+
+// handleListQueuedScans returns all scans currently waiting in the scan queue
+// @Summary List queued scans
+// @Description Returns all scan tasks currently pending in the queue
+// @Tags Scans
+// @Produce json
+// @Success 200 {array} QueuedScanItem
+// @Failure 401 {object} map[string]string "Unauthorized"
+// @Failure 500 {object} map[string]string "Internal server error"
+// @Security BearerAuth
+// @Router /queue [get]
+func (s *APIServer) handleListQueuedScans(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		s.respondError(w, http.StatusMethodNotAllowed, "Method not allowed")
+		return
+	}
+
+	tasks, err := s.taskQueue.ListPendingTasks(r.Context())
+	if err != nil {
+		s.respondError(w, http.StatusInternalServerError, fmt.Sprintf("Failed to list queued scans: %v", err))
+		return
+	}
+
+	items := make([]QueuedScanItem, 0, len(tasks))
+	for _, t := range tasks {
+		items = append(items, QueuedScanItem{
+			ID:         t.ID,
+			Repository: t.Repository,
+			Tag:        t.Tag,
+			Digest:     t.Digest,
+			EnqueuedAt: t.EnqueuedAt,
+			IsRescan:   t.IsRescan,
+		})
+	}
+
+	// Sort by enqueue time, oldest first
+	sort.Slice(items, func(i, j int) bool {
+		return items[i].EnqueuedAt.Before(items[j].EnqueuedAt)
+	})
+
+	s.respondJSON(w, http.StatusOK, items)
+}
+
 // handleHealth provides health check endpoint
 // @Summary Health check
 // @Description Check the health status of the API server

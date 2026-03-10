@@ -364,6 +364,20 @@
     color: #065f46;
 }
 
+.status-scanning {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.4em;
+    background-color: #ede9fe;
+    color: #5b21b6;
+}
+
+.status-scanning .spinner-small {
+    border-color: rgba(91, 33, 182, 0.25);
+    border-top-color: #5b21b6;
+    flex-shrink: 0;
+}
+
 .badge-warning,
 .failure-reason-warning {
     background-color: #fef3c7;
@@ -976,6 +990,27 @@ tr:hover {
 
 .scans-table tbody tr:hover {
     background-color: var(--bg-color);
+}
+
+.scan-row-queued {
+    cursor: default !important;
+    opacity: 0.85;
+    background-color: rgba(237, 233, 254, 0.25);
+}
+
+.scan-row-queued:hover {
+    background-color: rgba(237, 233, 254, 0.35) !important;
+}
+
+.queued-scans-count {
+    font-size: 0.8rem;
+    font-weight: 500;
+    color: #5b21b6;
+    background-color: #ede9fe;
+    padding: 0.15rem 0.6rem;
+    border-radius: 10px;
+    vertical-align: middle;
+    margin-left: 0.5rem;
 }
 
 .digest-cell,

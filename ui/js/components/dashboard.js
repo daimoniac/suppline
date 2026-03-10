@@ -23,6 +23,7 @@ export class Dashboard extends BaseComponent {
             expiredTolerationsDetails: [],
             inactiveTolerationsDetails: [],
             recentScans: [],
+            queuedScans: [],
             vulnerabilityBreakdown: {
                 critical: 0,
                 high: 0,
@@ -45,17 +46,22 @@ export class Dashboard extends BaseComponent {
                 failedScans,
                 allTolerations,
                 inactiveTolerations,
-                uniqueVulnStats
+                uniqueVulnStats,
+                queuedScans
             ] = await Promise.all([
                 this.apiClient.getScans({ limit: 20 }),
                 this.apiClient.getScans({ policy_passed: false }),
                 this.apiClient.getTolerations({}),
                 this.apiClient.getInactiveTolerations(),
-                this.apiClient.getVulnerabilityStats()
+                this.apiClient.getVulnerabilityStats(),
+                this.apiClient.getQueuedScans().catch(() => [])
             ]);
 
             // Process recent scans (API returns array directly)
             this.data.recentScans = Array.isArray(recentScans) ? recentScans : [];
+
+            // Process queued/running scans
+            this.data.queuedScans = Array.isArray(queuedScans) ? queuedScans : [];
 
             // Process failed images
             const failedScansArray = Array.isArray(failedScans) ? failedScans : [];
@@ -499,7 +505,10 @@ export class Dashboard extends BaseComponent {
      * Render recent scans table
      */
     renderRecentScans() {
-        if (this.data.recentScans.length === 0) {
+        const hasQueued = this.data.queuedScans.length > 0;
+        const hasCompleted = this.data.recentScans.length > 0;
+
+        if (!hasQueued && !hasCompleted) {
             return `
                 <div class="dashboard-section">
                     <h2>Recent Scans</h2>
@@ -512,7 +521,7 @@ export class Dashboard extends BaseComponent {
 
         return `
             <div class="dashboard-section">
-                <h2>Recent Scans</h2>
+                <h2>Recent Scans${hasQueued ? ` <span class="queued-scans-count">${this.data.queuedScans.length} scanning…</span>` : ''}</h2>
                 <div class="table-container">
                     <table class="scans-table">
                         <thead>
@@ -526,11 +535,35 @@ export class Dashboard extends BaseComponent {
                             </tr>
                         </thead>
                         <tbody>
+                            ${this.data.queuedScans.map(scan => this.renderQueuedScanRow(scan)).join('')}
                             ${this.data.recentScans.map(scan => this.renderScanRow(scan)).join('')}
                         </tbody>
                     </table>
                 </div>
             </div>
+        `;
+    }
+
+    /**
+     * Render a queued/running scan row with a spinning indicator
+     */
+    renderQueuedScanRow(scan) {
+        const tag = scan.tag || 'N/A';
+        const repo = scan.repository || 'N/A';
+        const digest = scan.digest || '';
+        const truncatedDigest = digest ? digest.substring(0, 19) + '...' : 'N/A';
+        const enqueuedTime = formatRelativeTime(scan.enqueued_at);
+        const label = scan.is_rescan ? 'Rescanning' : 'Scanning';
+
+        return `
+            <tr class="scan-row scan-row-queued">
+                <td><span class="repository-link-cell" data-repository="${escapeHtml(repo)}">${escapeHtml(repo)}</span></td>
+                <td>${escapeHtml(tag)}</td>
+                <td class="digest-cell"><span class="digest-text" title="${escapeHtml(digest)}">${escapeHtml(truncatedDigest)}</span></td>
+                <td>${enqueuedTime}</td>
+                <td><span class="status-badge status-scanning"><span class="spinner-small"></span> ${label}</span></td>
+                <td class="vulnerabilities-cell"><span class="text-muted">—</span></td>
+            </tr>
         `;
     }
 
@@ -623,8 +656,8 @@ export class Dashboard extends BaseComponent {
             });
         });
 
-        // Add click handlers for scan rows
-        document.querySelectorAll('.scan-row').forEach(row => {
+        // Add click handlers for scan rows (completed only; queued rows are not clickable)
+        document.querySelectorAll('.scan-row:not(.scan-row-queued)').forEach(row => {
             row.addEventListener('click', (e) => {
                 // If clicking on the repository link cell, navigate to repository details instead
                 if (e.target.classList.contains('repository-link-cell')) {
