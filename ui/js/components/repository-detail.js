@@ -284,16 +284,8 @@ export class RepositoryDetail extends BaseComponent {
      */
     renderTagRow(tag) {
         // Go API returns PascalCase property names
-        let statusClass, statusText, statusTitle;
-        if (tag.ScanError) {
-            statusClass = 'status-danger';
-            statusText = 'Scan Error';
-            statusTitle = tag.ScanError;
-        } else {
-            statusClass = tag.PolicyPassed ? 'status-success' : 'status-danger';
-            statusText = tag.PolicyPassed ? 'Passed' : 'Failed';
-            statusTitle = '';
-        }
+        const statusClass = tag.PolicyPassed ? 'status-success' : 'status-danger';
+        const statusText = tag.PolicyPassed ? 'Passed' : 'Failed';
         const lastScanTime = tag.LastScanTime ? formatRelativeTime(tag.LastScanTime) : 'Never';
 
         const vulnCounts = [
@@ -315,7 +307,7 @@ export class RepositoryDetail extends BaseComponent {
                 <td class="vulnerabilities-cell">
                     ${vulnDisplay}
                 </td>
-                <td><span class="status-badge ${statusClass}"${statusTitle ? ` title="${escapeHtml(statusTitle)}"` : ''}>${statusText}</span></td>
+                <td><span class="status-badge ${statusClass}">${statusText}</span></td>
                 <td>
                     <button class="btn btn-sm btn-warning rescan-tag-btn" data-tag="${escapeHtml(tag.Name)}">
                         Rescan

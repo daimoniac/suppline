@@ -1198,8 +1198,7 @@ func (s *SQLiteStore) GetRepository(ctx context.Context, name string, filter Rep
 			COALESCE(sr.high_vuln_count, 0) as high,
 			COALESCE(sr.medium_vuln_count, 0) as medium,
 			COALESCE(sr.low_vuln_count, 0) as low,
-			COALESCE(sr.policy_passed, 1) as policy_passed,
-			COALESCE(sr.error_message, '') as error_message
+			COALESCE(sr.policy_passed, 1) as policy_passed
 		FROM artifacts a
 		JOIN repositories r ON a.repository_id = r.id
 		LEFT JOIN scan_records sr ON a.last_scan_id = sr.id
@@ -1259,7 +1258,6 @@ func (s *SQLiteStore) GetRepository(ctx context.Context, name string, filter Rep
 			&tag.VulnerabilityCount.Medium,
 			&tag.VulnerabilityCount.Low,
 			&policyPassed,
-			&tag.ScanError,
 		)
 		if err != nil {
 			return nil, errors.NewTransientf("failed to scan tag row: %w", err)

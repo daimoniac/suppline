@@ -79,21 +79,6 @@ func buildScanRecord(
 	}
 }
 
-// buildErrorScanRecord constructs a ScanRecord representing a permanently failed scan.
-// This is used when the scan phase itself fails (e.g. Trivy error after all retries) so
-// the image still appears in the UI with a visible error state.
-func buildErrorScanRecord(task *queue.ScanTask, scanErr error) *statestore.ScanRecord {
-	return &statestore.ScanRecord{
-		Digest:     task.Digest,
-		Repository: task.Repository,
-		Tag:        task.Tag,
-		CreatedAt:  time.Now().Unix(),
-		// Zero vuln counts – we never got results
-		PolicyPassed: false,
-		ErrorMessage: scanErr.Error(),
-	}
-}
-
 // extractRepository extracts the repository from an image reference
 func extractRepository(imageRef string) string {
 	// Format: repository@digest
