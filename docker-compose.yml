@@ -69,7 +69,7 @@ services:
 
   # Trivy server
   trivy:
-    image: aquasec/trivy:0.58.2
+    image: aquasec/trivy:0.69.3
     container_name: trivy-server
     command: ["server", "--listen", "0.0.0.0:4954"]
     ports:

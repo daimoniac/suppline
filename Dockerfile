@@ -1,6 +1,6 @@
 # Multi-stage Dockerfile for suppline
 # Stage 1: Build the Go binary
-FROM golang:1.25.4-alpine AS builder
+FROM golang:1.26.1-alpine AS builder
 
 # Install build dependencies
 RUN apk add --no-cache git ca-certificates gcc musl-dev sqlite-dev
@@ -39,14 +39,14 @@ RUN --mount=type=cache,target=/go/pkg/mod \
 RUN mkdir -p /build/data /build/config
 
 # Stage 2: Create minimal runtime image
-FROM alpine:3.22
+FROM alpine:3.23.3
 
 # Install runtime dependencies including trivy client
 RUN apk add --no-cache ca-certificates sqlite-libs wget cosign && \
-    wget https://github.com/aquasecurity/trivy/releases/download/v0.58.1/trivy_0.58.1_Linux-64bit.tar.gz && \
-    tar zxvf trivy_0.58.1_Linux-64bit.tar.gz && \
+    wget https://github.com/aquasecurity/trivy/releases/download/v0.69.3/trivy_0.69.3_Linux-64bit.tar.gz && \
+    tar zxvf trivy_0.69.3_Linux-64bit.tar.gz trivy && \
     mv trivy /usr/local/bin/ && \
-    rm trivy_0.58.1_Linux-64bit.tar.gz
+    rm trivy_0.69.3_Linux-64bit.tar.gz
 
 # Create non-root user
 RUN addgroup -g 1000 suppline && \
