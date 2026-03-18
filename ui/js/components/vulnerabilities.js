@@ -4,6 +4,7 @@
  */
 
 import { BaseComponent } from './base-component.js';
+import { navigateOrOpen } from '../router.js';
 import { escapeHtml } from '../utils/security.js';
 import { formatDate, formatRelativeTime } from '../utils/date.js';
 import { truncateDigest } from '../utils/severity.js';
@@ -477,12 +478,14 @@ export class Vulnerabilities extends BaseComponent {
 
         // Affected image row click handlers
         document.querySelectorAll('.affected-image-row').forEach(row => {
-            row.addEventListener('click', () => {
+            const handler = (e) => {
                 const digest = row.dataset.digest;
                 if (digest) {
-                    window.router.navigate(`/scans/${encodeURIComponent(digest)}`);
+                    navigateOrOpen(e, `/scans/${encodeURIComponent(digest)}`);
                 }
-            });
+            };
+            row.addEventListener('click', handler);
+            row.addEventListener('auxclick', handler);
         });
 
         // Pagination controls

@@ -4,6 +4,7 @@
  */
 
 import { BaseComponent } from './base-component.js';
+import { navigateOrOpen } from '../router.js';
 import { escapeHtml } from '../utils/security.js';
 import { formatDate, formatRelativeTime, isPast, daysUntil, isWithinDays } from '../utils/date.js';
 import { truncateText } from '../utils/helpers.js';
@@ -397,12 +398,14 @@ export class Tolerations extends BaseComponent {
 
         // Toleration row click handlers - navigate to scans filtered by repository
         document.querySelectorAll('.toleration-row').forEach(row => {
-            row.addEventListener('click', () => {
+            const handler = (e) => {
                 const repository = row.dataset.repository;
                 if (repository) {
-                    window.router.navigate(`/scans?repository=${encodeURIComponent(repository)}`);
+                    navigateOrOpen(e, `/scans?repository=${encodeURIComponent(repository)}`);
                 }
-            });
+            };
+            row.addEventListener('click', handler);
+            row.addEventListener('auxclick', handler);
         });
     }
 
@@ -714,12 +717,14 @@ export class ExpiringTolerations extends BaseComponent {
 
         // Toleration row click handlers - navigate to scans filtered by repository
         document.querySelectorAll('.toleration-row').forEach(row => {
-            row.addEventListener('click', () => {
+            const handler = (e) => {
                 const repository = row.dataset.repository;
                 if (repository) {
-                    window.router.navigate(`/scans?repository=${encodeURIComponent(repository)}`);
+                    navigateOrOpen(e, `/scans?repository=${encodeURIComponent(repository)}`);
                 }
-            });
+            };
+            row.addEventListener('click', handler);
+            row.addEventListener('auxclick', handler);
         });
     }
 

@@ -4,6 +4,7 @@
  */
 
 import { BaseComponent } from './base-component.js';
+import { navigateOrOpen } from '../router.js';
 import { escapeHtml } from '../utils/security.js';
 import { formatDate, formatRelativeTime } from '../utils/date.js';
 import { Modal } from './common.js';
@@ -384,12 +385,14 @@ export class RepositoriesList extends BaseComponent {
 
         // Repository name click handlers - navigate to detail view
         document.querySelectorAll('.repository-name-cell').forEach(cell => {
-            cell.addEventListener('click', () => {
+            const handler = (e) => {
                 const repositoryName = cell.dataset.repository;
                 if (repositoryName) {
-                    window.router.navigate(`/repositories/${encodeURIComponent(repositoryName)}`);
+                    navigateOrOpen(e, `/repositories/${encodeURIComponent(repositoryName)}`);
                 }
-            });
+            };
+            cell.addEventListener('click', handler);
+            cell.addEventListener('auxclick', handler);
         });
 
         // Rescan button handlers

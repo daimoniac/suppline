@@ -5,6 +5,7 @@
  */
 
 import { BaseComponent } from './base-component.js';
+import { navigateOrOpen } from '../router.js';
 import { escapeHtml } from '../utils/security.js';
 import { formatRelativeTime } from '../utils/date.js';
 import { getSeverityBadge, renderDigestCell } from '../utils/severity.js';
@@ -573,23 +574,23 @@ export class Dashboard extends BaseComponent {
     attachEventListeners() {
         const failedScansCard = document.getElementById('card-failed-scans');
         if (failedScansCard) {
-            failedScansCard.addEventListener('click', () => {
-                window.router.navigate('/failed');
-            });
+            const handler = (e) => navigateOrOpen(e, '/failed');
+            failedScansCard.addEventListener('click', handler);
+            failedScansCard.addEventListener('auxclick', handler);
         }
 
         const activeTolerationsCard = document.getElementById('card-active-tolerations');
         if (activeTolerationsCard) {
-            activeTolerationsCard.addEventListener('click', () => {
-                window.router.navigate('/tolerations');
-            });
+            const handler = (e) => navigateOrOpen(e, '/tolerations');
+            activeTolerationsCard.addEventListener('click', handler);
+            activeTolerationsCard.addEventListener('auxclick', handler);
         }
 
         const expiringSoonCard = document.getElementById('card-expiring-soon');
         if (expiringSoonCard) {
-            expiringSoonCard.addEventListener('click', () => {
-                window.router.navigate('/tolerations?expiration_status=expiring');
-            });
+            const handler = (e) => navigateOrOpen(e, '/tolerations?expiration_status=expiring');
+            expiringSoonCard.addEventListener('click', handler);
+            expiringSoonCard.addEventListener('auxclick', handler);
         }
 
         // Add click handlers for filter badges
@@ -624,22 +625,25 @@ export class Dashboard extends BaseComponent {
         });
 
         // Add click handlers for scan rows
-        document.querySelectorAll('.scan-row').forEach(row => {
-            row.addEventListener('click', (e) => {
-                // If clicking on the repository link cell, navigate to repository details instead
-                if (e.target.classList.contains('repository-link-cell')) {
-                    const repository = e.target.dataset.repository;
-                    if (repository && repository !== 'N/A') {
-                        window.router.navigate(`/repositories/${encodeURIComponent(repository)}`);
-                    }
-                } else {
-                    // Otherwise navigate to tag details
-                    const digest = row.dataset.digest;
-                    if (digest) {
-                        window.router.navigate(`/scans/${digest}`);
-                    }
+        const scanRowHandler = (e) => {
+            const row = e.currentTarget;
+            // If clicking on the repository link cell, navigate to repository details instead
+            if (e.target.classList.contains('repository-link-cell')) {
+                const repository = e.target.dataset.repository;
+                if (repository && repository !== 'N/A') {
+                    navigateOrOpen(e, `/repositories/${encodeURIComponent(repository)}`);
                 }
-            });
+            } else {
+                // Otherwise navigate to tag details
+                const digest = row.dataset.digest;
+                if (digest) {
+                    navigateOrOpen(e, `/scans/${digest}`);
+                }
+            }
+        };
+        document.querySelectorAll('.scan-row').forEach(row => {
+            row.addEventListener('click', scanRowHandler);
+            row.addEventListener('auxclick', scanRowHandler);
         });
 
         // Add click handlers for copy buttons
@@ -661,13 +665,15 @@ export class Dashboard extends BaseComponent {
 
         // Add click handlers for repository names in failed scans chart
         document.querySelectorAll('.repository-link').forEach(link => {
-            link.addEventListener('click', (e) => {
+            const handler = (e) => {
                 e.stopPropagation();
                 const repository = link.dataset.repository;
                 if (repository) {
-                    window.router.navigate(`/repositories/${encodeURIComponent(repository)}`);
+                    navigateOrOpen(e, `/repositories/${encodeURIComponent(repository)}`);
                 }
-            });
+            };
+            link.addEventListener('click', handler);
+            link.addEventListener('auxclick', handler);
         });
 
         // Add click handlers for toleration items
@@ -695,12 +701,14 @@ export class Dashboard extends BaseComponent {
      */
     attachTolerationItemHandlers() {
         document.querySelectorAll('.toleration-attention-item').forEach(item => {
-            item.addEventListener('click', () => {
+            const handler = (e) => {
                 const cveId = item.dataset.cve;
                 if (cveId) {
-                    window.router.navigate(`/vulnerabilities?cve_id=${encodeURIComponent(cveId)}`);
+                    navigateOrOpen(e, `/vulnerabilities?cve_id=${encodeURIComponent(cveId)}`);
                 }
-            });
+            };
+            item.addEventListener('click', handler);
+            item.addEventListener('auxclick', handler);
         });
     }
 }

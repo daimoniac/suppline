@@ -4,6 +4,7 @@
  */
 
 import { BaseComponent } from './base-component.js';
+import { navigateOrOpen } from '../router.js';
 import { escapeHtml } from '../utils/security.js';
 import { formatDate, formatRelativeTime } from '../utils/date.js';
 import { Modal } from './common.js';
@@ -468,12 +469,14 @@ export class RepositoryDetail extends BaseComponent {
 
         // Tag name click handlers - navigate to tag detail view
         document.querySelectorAll('.tag-name-cell').forEach(cell => {
-            cell.addEventListener('click', () => {
+            const handler = (e) => {
                 const digest = cell.dataset.digest;
                 if (digest) {
-                    window.router.navigate(`/repositories/${encodeURIComponent(this.repositoryName)}/tags/${encodeURIComponent(digest)}`);
+                    navigateOrOpen(e, `/repositories/${encodeURIComponent(this.repositoryName)}/tags/${encodeURIComponent(digest)}`);
                 }
-            });
+            };
+            cell.addEventListener('click', handler);
+            cell.addEventListener('auxclick', handler);
         });
 
         // Rescan button handlers

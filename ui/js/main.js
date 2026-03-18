@@ -833,7 +833,9 @@ class Application {
         });
 
         // Intercept all clicks on links with data-link attribute
+        // Allow middle-click and Ctrl+click to open in a new tab/window natively
         document.addEventListener('click', (e) => {
+            if (e.button === 1 || e.ctrlKey || e.metaKey) return;
             if (e.target.matches('a[data-link]')) {
                 e.preventDefault();
                 const href = e.target.getAttribute('href');

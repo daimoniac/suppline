@@ -4,6 +4,7 @@
  */
 
 import { BaseComponent } from './base-component.js';
+import { navigateOrOpen } from '../router.js';
 import { escapeHtml } from '../utils/security.js';
 import { formatDate, formatRelativeTime } from '../utils/date.js';
 import { truncateDigest, renderDigestCell } from '../utils/severity.js';
@@ -415,13 +416,15 @@ export class ScansList extends BaseComponent {
 
         // Scan row click handlers
         document.querySelectorAll('.scan-row').forEach(row => {
-            row.addEventListener('click', () => {
+            const handler = (e) => {
                 const digest = row.dataset.digest;
                 if (digest) {
                     // Don't encode here - the API client will encode it
-                    window.router.navigate(`/scans/${digest}`);
+                    navigateOrOpen(e, `/scans/${digest}`);
                 }
-            });
+            };
+            row.addEventListener('click', handler);
+            row.addEventListener('auxclick', handler);
         });
 
         // Copy button handlers

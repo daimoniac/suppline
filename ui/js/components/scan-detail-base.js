@@ -5,6 +5,7 @@
  */
 
 import { BaseComponent } from './base-component.js';
+import { navigateOrOpen } from '../router.js';
 import { escapeHtml } from '../utils/security.js';
 import { formatDate, formatRelativeTime, formatExpirationStatus, getExpirationStatusClass } from '../utils/date.js';
 import {
@@ -469,13 +470,15 @@ export class ScanDetailBase extends BaseComponent {
     attachCommonEventListeners() {
         // Repository link click handler
         document.querySelectorAll('.repository-link-cell').forEach(link => {
-            link.addEventListener('click', (e) => {
+            const handler = (e) => {
                 e.stopPropagation();
                 const repository = link.dataset.repository;
                 if (repository && repository !== 'N/A') {
-                    window.router.navigate(`/repositories/${encodeURIComponent(repository)}`);
+                    navigateOrOpen(e, `/repositories/${encodeURIComponent(repository)}`);
                 }
-            });
+            };
+            link.addEventListener('click', handler);
+            link.addEventListener('auxclick', handler);
         });
 
         // Vulnerability group expand/collapse

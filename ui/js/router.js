@@ -11,7 +11,9 @@ class Router {
         window.addEventListener('popstate', () => this.handleRoute());
 
         // Intercept link clicks for client-side navigation
+        // Allow middle-click and Ctrl+click to open in a new tab/window natively
         document.addEventListener('click', (e) => {
+            if (e.button === 1 || e.ctrlKey || e.metaKey) return;
             const link = e.target.closest('a[data-link]');
             if (link) {
                 e.preventDefault();
@@ -177,5 +179,21 @@ class Router {
     }
 }
 
+/**
+ * Navigate to a URL or open it in a new tab/window.
+ * Respects middle-click (button===1) and Ctrl/Meta+click by opening a new tab natively.
+ * For regular left-clicks, uses client-side router navigation.
+ *
+ * @param {MouseEvent} e - The click event
+ * @param {string} url - The URL to navigate to
+ */
+function navigateOrOpen(e, url) {
+    if (e.button === 1 || e.ctrlKey || e.metaKey) {
+        window.open(url, '_blank', 'noopener,noreferrer');
+    } else {
+        window.router.navigate(url);
+    }
+}
+
 // Export for use in other modules
-export { Router };
+export { Router, navigateOrOpen };

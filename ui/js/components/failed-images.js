@@ -5,6 +5,7 @@
  */
 
 import { ScansList } from './scans.js';
+import { navigateOrOpen } from '../router.js';
 import { escapeHtml } from '../utils/security.js';
 import { formatDate, formatRelativeTime } from '../utils/date.js';
 import { truncateDigest, renderDigestCell } from '../utils/severity.js';
@@ -295,12 +296,14 @@ export class FailedImages extends ScansList {
 
         // Failed image row click handlers
         document.querySelectorAll('.failed-image-row').forEach(row => {
-            row.addEventListener('click', () => {
+            const handler = (e) => {
                 const digest = row.dataset.digest;
                 if (digest) {
-                    window.router.navigate(`/scans/${encodeURIComponent(digest)}`);
+                    navigateOrOpen(e, `/scans/${encodeURIComponent(digest)}`);
                 }
-            });
+            };
+            row.addEventListener('click', handler);
+            row.addEventListener('auxclick', handler);
         });
 
         // Copy button handlers
