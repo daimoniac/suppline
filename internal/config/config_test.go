@@ -1078,3 +1078,86 @@ sync:
 		t.Errorf("expected 3 active (non-expired) tolerations, got %d", activeCount)
 	}
 }
+
+func TestSupplineIgnore_IsIgnored(t *testing.T) {
+	active := SyncEntry{Source: "nginx", Target: "registry/nginx", Type: "repository", Ignore: false}
+	ignored := SyncEntry{Source: "alpine", Target: "registry/alpine", Type: "repository", Ignore: true}
+
+	if active.IsIgnored() {
+		t.Error("expected IsIgnored() = false for entry without x-supplineIgnore")
+	}
+	if !ignored.IsIgnored() {
+		t.Error("expected IsIgnored() = true for entry with x-supplineIgnore: true")
+	}
+}
+
+func TestSupplineIgnore_ParseYAML(t *testing.T) {
+	content := `version: 1
+sync:
+  - source: nginx
+    target: myregistry/nginx
+    type: repository
+  - source: alpine
+    target: myregistry/alpine
+    type: repository
+    x-supplineIgnore: true
+  - source: redis
+    target: myregistry/redis
+    type: repository
+    x-supplineIgnore: false
+`
+	tmpfile, err := os.CreateTemp("", "regsync-*.yml")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer os.Remove(tmpfile.Name())
+
+	if _, err := tmpfile.Write([]byte(content)); err != nil {
+		t.Fatal(err)
+	}
+	if err := tmpfile.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	cfg, err := ParseRegsync(tmpfile.Name())
+	if err != nil {
+		t.Fatalf("ParseRegsync failed: %v", err)
+	}
+
+	if cfg.Sync[0].Ignore {
+		t.Error("nginx entry: expected Ignore=false (default), got true")
+	}
+	if !cfg.Sync[1].Ignore {
+		t.Error("alpine entry: expected Ignore=true, got false")
+	}
+	if cfg.Sync[2].Ignore {
+		t.Error("redis entry: expected Ignore=false (explicit), got true")
+	}
+}
+
+func TestSupplineIgnore_GetTargetRepositories(t *testing.T) {
+	cfg := &RegsyncConfig{
+		Sync: []SyncEntry{
+			{Source: "nginx", Target: "myregistry/nginx", Type: "repository", Ignore: false},
+			{Source: "alpine", Target: "myregistry/alpine", Type: "repository", Ignore: true},
+			{Source: "redis", Target: "myregistry/redis", Type: "repository", Ignore: false},
+			{Source: "busybox", Target: "myregistry/busybox:latest", Type: "image", Ignore: true},
+		},
+	}
+
+	targets := cfg.GetTargetRepositories()
+
+	if len(targets) != 2 {
+		t.Fatalf("expected 2 non-ignored targets, got %d: %v", len(targets), targets)
+	}
+
+	expected := map[string]bool{
+		"myregistry/nginx": true,
+		"myregistry/redis": true,
+	}
+	for _, target := range targets {
+		if !expected[target] {
+			t.Errorf("unexpected target %q in results", target)
+		}
+	}
+}

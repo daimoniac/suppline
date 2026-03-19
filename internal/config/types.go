@@ -123,6 +123,7 @@ type SyncEntry struct {
 	RescanInterval        string                `yaml:"x-rescanInterval,omitempty"`
 	SCAIValidityExtension string                `yaml:"x-scaiValidityExtension,omitempty"`
 	Policy                *PolicyConfig         `yaml:"x-policy,omitempty"`
+	Ignore                bool                  `yaml:"x-supplineIgnore,omitempty"` // If true, suppline skips this entry entirely
 }
 
 // TagFilter defines tag filtering rules

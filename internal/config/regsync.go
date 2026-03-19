@@ -144,13 +144,24 @@ func (c *RegsyncConfig) GetTolerationsForTarget(target string) []types.CVETolera
 	return allTolerations
 }
 
+// IsIgnored returns true if the sync entry has x-supplineIgnore set to true.
+func (s *SyncEntry) IsIgnored() bool {
+	return s.Ignore
+}
+
 // GetTargetRepositories returns all target repositories from sync entries
 // For type=image entries, strips the tag to return just the repository name
+// Entries with x-supplineIgnore: true are excluded.
 func (c *RegsyncConfig) GetTargetRepositories() []string {
 	seen := make(map[string]bool)
 	targets := make([]string, 0, len(c.Sync))
 
 	for _, sync := range c.Sync {
+		// Skip entries that are marked as ignored
+		if sync.Ignore {
+			continue
+		}
+
 		target := sync.Target
 
 		// For type=image, strip the tag from the target
