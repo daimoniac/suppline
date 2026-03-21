@@ -393,10 +393,8 @@ export class RepositoryDetail extends BaseComponent {
         if (this.currentPage > 1) {
             queryParams.page = this.currentPage;
         }
-        if (this.sortColumn !== 'name') {
+        if (this.sortColumn !== 'name' || this.sortDirection !== 'asc') {
             queryParams.sort = this.sortColumn;
-        }
-        if (this.sortDirection !== 'asc') {
             queryParams.order = this.sortDirection;
         }
 

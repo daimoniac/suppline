@@ -181,18 +181,20 @@ class Router {
 
 /**
  * Navigate to a URL or open it in a new tab/window.
- * Respects middle-click (button===1) and Ctrl/Meta+click by opening a new tab natively.
- * For regular left-clicks, uses client-side router navigation.
+ * - Middle-click (button===1) or Ctrl/Meta+left-click → opens in new tab
+ * - Regular left-click (button===0) → client-side navigation
+ * - Right-click and other buttons → do nothing
  *
  * @param {MouseEvent} e - The click event
  * @param {string} url - The URL to navigate to
  */
 function navigateOrOpen(e, url) {
-    if (e.button === 1 || e.ctrlKey || e.metaKey) {
+    if (e.button === 1 || ((e.button === 0) && (e.ctrlKey || e.metaKey))) {
         window.open(url, '_blank', 'noopener,noreferrer');
-    } else {
+    } else if (e.button === 0) {
         window.router.navigate(url);
     }
+    // button >= 2 (right-click etc.): do nothing
 }
 
 // Export for use in other modules
