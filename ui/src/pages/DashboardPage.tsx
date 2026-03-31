@@ -135,7 +135,8 @@ export default function DashboardPage() {
           </div>
           <div className="grid grid-cols-4 gap-4">
             {(['critical', 'high', 'medium', 'low'] as const).map(sev => (
-              <div key={sev} className="text-center">
+              <div key={sev} className="text-center cursor-pointer rounded-lg p-2 -m-2 hover:bg-bg-secondary transition-colors"
+                onClick={() => navigate(`/vulnerabilities?severity=${sev}`)}>
                 <SeverityBadge severity={sev} />
                 <div className="text-lg font-bold mt-1">{data.vulnBreakdown[sev]}</div>
                 <div className="text-xs text-text-muted">{totalVulns > 0 ? ((data.vulnBreakdown[sev] / totalVulns) * 100).toFixed(0) : 0}%</div>
