@@ -1,9 +1,0 @@
-.git
-.gitignore
-.vscode
-docker-compose.yml
-Dockerfile
-.dockerignore
-cmd
-README.md
-*.md

@@ -1,0 +1,122 @@
+import { useEffect, useState, useCallback } from 'react';
+import { useSearchParams, useNavigate } from 'react-router-dom';
+import { useAuth } from '../lib/auth';
+import { formatRelativeTime, truncateDigest } from '../lib/utils';
+import { LoadingState, ErrorState, PageHeader, SeverityBadge, Pagination } from '../components/ui';
+import type { VulnerabilityGroup } from '../lib/api';
+import { ChevronDown, ChevronRight, ExternalLink } from 'lucide-react';
+
+export default function VulnerabilitiesPage() {
+  const { apiClient } = useAuth();
+  const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
+  const [groups, setGroups] = useState<VulnerabilityGroup[]>([]);
+  const [total, setTotal] = useState(0);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState('');
+  const [cveId, setCveId] = useState(searchParams.get('cve_id') || '');
+  const [severity, setSeverity] = useState(searchParams.get('severity') || 'all');
+  const [page, setPage] = useState(1);
+  const pageSize = 20;
+  const [expanded, setExpanded] = useState<Set<string>>(new Set());
+
+  const load = useCallback(async () => {
+    setLoading(true);
+    setError('');
+    try {
+      const filters: Record<string, unknown> = { limit: pageSize, offset: (page - 1) * pageSize };
+      if (cveId) filters.cve_id = cveId;
+      if (severity !== 'all') filters.severity = severity.toUpperCase();
+      const resp = await apiClient.queryVulnerabilities(filters);
+      setGroups(resp.vulnerabilities);
+      setTotal(resp.total);
+    } catch (e: unknown) {
+      setError(e instanceof Error ? e.message : 'Failed');
+    } finally {
+      setLoading(false);
+    }
+  }, [apiClient, cveId, severity, page]);
+
+  useEffect(() => { load(); }, [load]);
+
+  const toggle = (id: string) => {
+    setExpanded(prev => { const n = new Set(prev); n.has(id) ? n.delete(id) : n.add(id); return n; });
+  };
+
+  const totalPages = Math.ceil(total / pageSize);
+
+  if (loading && groups.length === 0) return <LoadingState />;
+  if (error) return <ErrorState message={error} onRetry={load} />;
+
+  return (
+    <div>
+      <PageHeader title="Vulnerabilities" subtitle="Search and browse vulnerabilities across all images" />
+      <div className="flex gap-3 mb-4 flex-wrap">
+        <input value={cveId} onChange={e => setCveId(e.target.value)} onKeyDown={e => e.key === 'Enter' && (setPage(1), load())}
+          placeholder="Search CVE ID…" className="flex-1 max-w-xs px-3 py-2 bg-bg-secondary border border-border rounded-lg text-sm text-text-primary placeholder:text-text-muted focus:outline-none focus:border-accent/50 transition-colors" />
+        <select value={severity} onChange={e => { setSeverity(e.target.value); setPage(1); }}
+          className="px-3 py-2 bg-bg-secondary border border-border rounded-lg text-sm text-text-primary focus:outline-none focus:border-accent/50 transition-colors">
+          <option value="all">All Severities</option>
+          <option value="critical">Critical</option>
+          <option value="high">High</option>
+          <option value="medium">Medium</option>
+          <option value="low">Low</option>
+        </select>
+        <button onClick={() => { setPage(1); load(); }} className="px-4 py-2 bg-accent text-bg-primary rounded-lg text-sm font-medium hover:bg-accent-hover transition-colors">Search</button>
+        <button onClick={() => { setCveId(''); setSeverity('all'); setPage(1); load(); }} className="px-4 py-2 border border-border rounded-lg text-sm text-text-secondary hover:bg-bg-tertiary transition-colors">Clear</button>
+      </div>
+
+      <div className="bg-bg-primary border border-border rounded-xl overflow-hidden">
+        {groups.length === 0 ? (
+          <div className="p-12 text-center text-text-secondary text-sm">No vulnerabilities found</div>
+        ) : (
+          <div className="divide-y divide-border">
+            {groups.map(g => (
+              <div key={g.CVEID}>
+                <button onClick={() => toggle(g.CVEID)} className="w-full flex items-center gap-3 px-4 py-3 hover:bg-bg-secondary transition-colors text-left">
+                  {expanded.has(g.CVEID) ? <ChevronDown className="w-4 h-4 flex-shrink-0" /> : <ChevronRight className="w-4 h-4 flex-shrink-0" />}
+                  <SeverityBadge severity={g.Severity} />
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-2">
+                      <span className="text-sm font-mono font-medium">{g.CVEID}</span>
+                      {g.PrimaryURL && (
+                        <a href={g.PrimaryURL} target="_blank" rel="noopener noreferrer" className="text-text-muted hover:text-accent" onClick={e => e.stopPropagation()}>
+                          <ExternalLink className="w-3 h-3" />
+                        </a>
+                      )}
+                    </div>
+                    {g.Title && <div className="text-xs text-text-secondary truncate">{g.Title}</div>}
+                  </div>
+                  <span className="text-xs text-text-muted">{(g.affected || []).reduce((s, a) => s + a.digests.length, 0)} image{(g.affected || []).reduce((s, a) => s + a.digests.length, 0) !== 1 ? 's' : ''}</span>
+                </button>
+                {expanded.has(g.CVEID) && (
+                  <div className="border-t border-border bg-bg-secondary px-4 py-3">
+                    {g.Description && <p className="text-xs text-text-muted mb-3 line-clamp-3">{g.Description}</p>}
+                    {(g.affected || []).map((aff, ai) => (
+                      <div key={ai} className="mb-3">
+                        <div className="text-xs font-medium text-text-secondary mb-1">{aff.repository}</div>
+                        <div className="space-y-1">
+                          {aff.digests.map((d, di) => (
+                            <div key={di} className="flex items-center gap-3 text-xs px-3 py-2 rounded bg-bg-tertiary hover:bg-border cursor-pointer transition-colors"
+                              onClick={() => navigate(`/scans/${d.digest}`)}>
+                              <code className="text-text-muted font-mono">{truncateDigest(d.digest)}</code>
+                              {d.tags && d.tags.length > 0 && <span className="text-text-secondary">{d.tags.join(', ')}</span>}
+                              <span className="text-text-muted">{d.packageName} {d.installedVersion}</span>
+                              {d.fixedVersion && <span className="text-accent">→ {d.fixedVersion}</span>}
+                              <span className="text-text-muted ml-auto">{formatRelativeTime(d.scannedAt)}</span>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            ))}
+          </div>
+        )}
+        <Pagination currentPage={page} totalPages={totalPages} total={total} pageSize={pageSize} onPageChange={p => { setPage(p); }} itemLabel="CVEs" />
+      </div>
+    </div>
+  );
+}

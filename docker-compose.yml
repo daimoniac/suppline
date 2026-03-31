@@ -7,9 +7,9 @@ services:
       dockerfile: Dockerfile
     container_name: suppline
     ports:
-      - "8080:8080"  # API
-      - "9090:9090"  # Metrics
-      - "8081:8081"  # Health
+      - "8080:8080" # API
+      - "9090:9090" # Metrics
+      - "8081:8081" # Health
     # Note: DOCKER_USERNAME and DOCKER_PASSWORD are used for Go template expansion
     # in suppline.yml credentials. Make sure to set these in your .env file.
     env_file:
@@ -38,7 +38,7 @@ services:
       - suppline
     restart: unless-stopped
     healthcheck:
-      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:8081/health"]
+      test: [ "CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:8081/health" ]
       interval: 30s
       timeout: 10s
       retries: 3
@@ -48,20 +48,20 @@ services:
   ui:
     image: daimoniac/suppline-ui
     build:
-      context: ui
+      context: claude-ui
       dockerfile: Dockerfile
     container_name: suppline-ui
     ports:
       - "3000:80"
     environment:
-      - API_BASE_URL=http://localhost:8080
+      - API_BASE_URL=http://suppline:8080
     depends_on:
       - suppline
     networks:
       - suppline
     restart: unless-stopped
     healthcheck:
-      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:80/"]
+      test: [ "CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:80/" ]
       interval: 30s
       timeout: 5s
       retries: 3
@@ -71,7 +71,7 @@ services:
   trivy:
     image: aquasec/trivy:0.69.3
     container_name: trivy-server
-    command: ["server", "--listen", "0.0.0.0:4954"]
+    command: [ "server", "--listen", "0.0.0.0:4954" ]
     ports:
       - "4954:4954"
     environment:
@@ -82,7 +82,7 @@ services:
       - suppline
     restart: unless-stopped
     healthcheck:
-      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:4954/healthz"]
+      test: [ "CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:4954/healthz" ]
       interval: 30s
       timeout: 10s
       retries: 3
@@ -92,7 +92,7 @@ services:
   regsync:
     image: daimoniac/regsync:latest
     container_name: regsync
-    command: ["server", "-c", "/config/suppline.yml"]
+    command: [ "server", "-c", "/config/suppline.yml" ]
     env_file:
       - .env
     volumes:

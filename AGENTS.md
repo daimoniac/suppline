@@ -136,13 +136,13 @@ sync:
 
 ## Web UI
 
-The frontend is a **vanilla HTML/CSS/ES-module SPA** (no build step, no npm) served by `nginx:alpine`. Full details in [ui/AGENTS.md](ui/AGENTS.md). Key facts:
+The frontend is a **SPA built with a modern framework (Vite/React)** served by `nginx:alpine`. Full details in [ui/AGENTS.md](ui/AGENTS.md). Key facts:
 
 - **Entry point**: `ui/index.html` — single shell; all navigation is client-side via History API
 - **API client**: `ui/js/api.js` — all `fetch()` calls; reads backend URL from `/config.json` (runtime-generated from `$API_BASE_URL`)
 - **Auth**: API key stored in `localStorage` (`stk_api_key`); validated against the backend at login
 - **XSS guard**: `ui/js/utils/security.js:escapeHtml()` — must be used whenever API data is interpolated into HTML strings
-- **Build**: `make build-ui` (docker build). No npm, no bundler. Files are static.
+- **Build**: `make build-ui` (docker build). Built artifacts are served as static files.
 - **Local dev**: `docker run -p 3000:80 -e API_BASE_URL=http://localhost:8080 suppline-ui`
 - **Tests**: `node ui/test.js` (hand-rolled, no framework)
 
