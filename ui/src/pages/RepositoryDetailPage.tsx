@@ -103,10 +103,15 @@ export default function RepositoryDetailPage() {
       <div className="bg-bg-primary border border-border rounded-xl overflow-hidden">
         {tags.length === 0 ? (
           <div className="p-12 text-center text-text-secondary text-sm">
-            {error ? (
+            {search ? (
+              <>
+                <p className="mb-3">No tags matching &ldquo;{search}&rdquo;</p>
+                <button onClick={() => { setSearch(''); setError(''); setPage(1); }} className="px-4 py-2 bg-accent text-bg-primary rounded-lg text-sm font-medium hover:bg-accent-hover transition-colors">Clear search</button>
+              </>
+            ) : error ? (
               <>
                 <p className="mb-3">{error}</p>
-                <button onClick={() => { setSearch(''); setError(''); setPage(1); }} className="px-4 py-2 bg-accent text-bg-primary rounded-lg text-sm font-medium hover:bg-accent-hover transition-colors">Clear search</button>
+                <button onClick={() => { setError(''); load(); }} className="px-4 py-2 bg-accent text-bg-primary rounded-lg text-sm font-medium hover:bg-accent-hover transition-colors">Retry</button>
               </>
             ) : 'No tags found'}
           </div>
