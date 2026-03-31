@@ -74,8 +74,10 @@ export default function RepositoryDetailPage() {
 
   const totalPages = Math.ceil(total / pageSize);
 
-  if (loading && tags.length === 0) return <LoadingState />;
-  if (error) return <ErrorState message={error} onRetry={load} />;
+  if (loading && tags.length === 0 && !search) return <LoadingState />;
+  // A search-triggered error (e.g. no matches → 404) should not hijack the
+  // whole page — keep the shell visible so the user can clear the filter.
+  if (error && !search) return <ErrorState message={error} onRetry={load} />;
 
   return (
     <div>
@@ -93,14 +95,21 @@ export default function RepositoryDetailPage() {
       </div>
       {/* Search */}
       <div className="flex gap-3 mb-4">
-        <input value={search} onChange={e => setSearch(e.target.value)} onKeyDown={e => { if (e.key === 'Enter') { setPage(1); load(); } }}
+        <input value={search} onChange={e => { setSearch(e.target.value); setError(''); }} onKeyDown={e => { if (e.key === 'Enter') { setPage(1); load(); } }}
           placeholder="Filter tags…" className="flex-1 max-w-xs px-3 py-2 bg-bg-secondary border border-border rounded-lg text-sm text-text-primary placeholder:text-text-muted focus:outline-none focus:border-accent/50 transition-colors" />
         <button onClick={() => { setPage(1); load(); }} className="px-4 py-2 bg-accent text-bg-primary rounded-lg text-sm font-medium hover:bg-accent-hover transition-colors">Filter</button>
       </div>
       {/* Table */}
       <div className="bg-bg-primary border border-border rounded-xl overflow-hidden">
         {tags.length === 0 ? (
-          <div className="p-12 text-center text-text-secondary text-sm">No tags found</div>
+          <div className="p-12 text-center text-text-secondary text-sm">
+            {error ? (
+              <>
+                <p className="mb-3">{error}</p>
+                <button onClick={() => { setSearch(''); setError(''); setPage(1); }} className="px-4 py-2 bg-accent text-bg-primary rounded-lg text-sm font-medium hover:bg-accent-hover transition-colors">Clear search</button>
+              </>
+            ) : 'No tags found'}
+          </div>
         ) : (
           <div className="overflow-x-auto"><table className="w-full"><thead><tr className="border-b border-border">
             <SortHeader column="name" label="Tag" sortColumn={sortCol} sortDirection={sortDir} onSort={handleSort} />

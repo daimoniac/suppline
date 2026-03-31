@@ -910,8 +910,10 @@ func (s *APIServer) handleGetRepository(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
-	// Check if repository exists (has tags)
-	if detail.Total == 0 {
+	// Only 404 when the repository genuinely doesn't exist.
+	// If a search filter is active and returned zero results that is still a
+	// valid (empty) response — the repository exists, just no tags matched.
+	if detail.Total == 0 && filter.Search == "" {
 		s.respondError(w, http.StatusNotFound, "Repository not found")
 		return
 	}
