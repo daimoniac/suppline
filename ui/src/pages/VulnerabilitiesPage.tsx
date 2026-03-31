@@ -130,7 +130,16 @@ export default function VulnerabilitiesPage() {
                               {d.tags && d.tags.length > 0 && <span className="text-text-secondary">{d.tags.join(', ')}</span>}
                               <span className="text-text-muted">{d.packageName} {d.installedVersion}</span>
                               {d.fixedVersion && <span className="text-accent">→ {d.fixedVersion}</span>}
-                              <span className="text-text-muted ml-auto">{formatRelativeTime(d.scannedAt)}</span>
+                              <div className="ml-auto flex items-center gap-3 shrink-0">
+                                {d.firstSeenAt && d.firstSeenAt !== d.scannedAt && (
+                                  <span className="text-text-muted" title={`First seen: ${new Date(d.firstSeenAt * 1000).toLocaleString()}`}>
+                                    first seen {formatRelativeTime(d.firstSeenAt)}
+                                  </span>
+                                )}
+                                <span className="text-text-muted" title={`Last scanned: ${new Date(d.scannedAt * 1000).toLocaleString()}`}>
+                                  {formatRelativeTime(d.scannedAt)}
+                                </span>
+                              </div>
                             </div>
                           ))}
                         </div>

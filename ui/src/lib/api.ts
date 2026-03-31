@@ -186,6 +186,7 @@ export interface VulnerabilityGroup {
       installedVersion: string;
       fixedVersion: string;
       scannedAt: number;
+      firstSeenAt: number;
     }[];
   }[];
 }

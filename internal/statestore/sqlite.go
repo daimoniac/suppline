@@ -557,7 +557,13 @@ func (s *SQLiteStore) QueryVulnerabilities(ctx context.Context, filter VulnFilte
 	query := `
 		SELECT v.cve_id, v.severity, v.package_name,
 			v.installed_version, v.fixed_version, v.title, v.description, v.primary_url,
-			r.name, a.tag, a.digest, sr.created_at
+			r.name, a.tag, a.digest, sr.created_at,
+			COALESCE((
+				SELECT MIN(sr2.created_at)
+				FROM scan_records sr2
+				JOIN vulnerabilities v2 ON v2.scan_record_id = sr2.id
+				WHERE sr2.artifact_id = a.id AND v2.cve_id = v.cve_id
+			), sr.created_at) as first_seen_at
 		FROM vulnerabilities v
 		JOIN scan_records sr ON v.scan_record_id = sr.id
 		JOIN artifacts a ON sr.artifact_id = a.id
@@ -605,7 +611,7 @@ func (s *SQLiteStore) QueryVulnerabilities(ctx context.Context, filter VulnFilte
 		err := rows.Scan(
 			&vuln.CVEID, &vuln.Severity, &vuln.PackageName,
 			&vuln.InstalledVersion, &vuln.FixedVersion, &vuln.Title, &vuln.Description, &vuln.PrimaryURL,
-			&vuln.Repository, &vuln.Tag, &vuln.Digest, &vuln.ScannedAt,
+			&vuln.Repository, &vuln.Tag, &vuln.Digest, &vuln.ScannedAt, &vuln.FirstSeenAt,
 		)
 		if err != nil {
 			return nil, errors.NewTransientf("failed to scan vulnerability: %w", err)

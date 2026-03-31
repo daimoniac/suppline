@@ -1356,6 +1356,7 @@ func (s *APIServer) groupVulnerabilitiesByCVE(vulnerabilities []*types.Vulnerabi
 		installedVersion string
 		fixedVersion     string
 		scannedAt        int64
+		firstSeenAt      int64
 	}
 	type affectedTracking struct {
 		repos map[string]map[string]*digestDetail
@@ -1391,6 +1392,7 @@ func (s *APIServer) groupVulnerabilitiesByCVE(vulnerabilities []*types.Vulnerabi
 				installedVersion: v.InstalledVersion,
 				fixedVersion:     v.FixedVersion,
 				scannedAt:        v.ScannedAt,
+				firstSeenAt:      v.FirstSeenAt,
 			}
 		}
 		cveTracking.repos[v.Repository][v.Digest].tags[v.Tag] = true
@@ -1413,6 +1415,7 @@ func (s *APIServer) groupVulnerabilitiesByCVE(vulnerabilities []*types.Vulnerabi
 					InstalledVersion: detail.installedVersion,
 					FixedVersion:     detail.fixedVersion,
 					ScannedAt:        detail.scannedAt,
+					FirstSeenAt:      detail.firstSeenAt,
 				}
 				for tag := range detail.tags {
 					affectedDigest.Tags = append(affectedDigest.Tags, tag)
