@@ -174,9 +174,10 @@ type RepositoriesListResponse struct {
 
 // RepositoryTagFilter defines criteria for listing tags in a repository
 type RepositoryTagFilter struct {
-	Search string
-	Limit  int
-	Offset int
+	Search     string
+	ExactMatch bool // use exact equality instead of prefix match (used for rescan lookups)
+	Limit      int
+	Offset     int
 }
 
 // ScanRecord represents a complete scan result for an image digest

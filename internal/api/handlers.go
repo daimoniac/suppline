@@ -1099,8 +1099,9 @@ func (s *APIServer) handleRescanTag(w http.ResponseWriter, r *http.Request) {
 
 	// Get repository detail to find the digest for this tag
 	detail, err := s.stateStore.GetRepository(ctx, name, statestore.RepositoryTagFilter{
-		Search: tag,
-		Limit:  1,
+		Search:     tag,
+		ExactMatch: true,
+		Limit:      1,
 	})
 	if err != nil {
 		s.respondError(w, http.StatusInternalServerError, fmt.Sprintf("Failed to get repository: %v", err))

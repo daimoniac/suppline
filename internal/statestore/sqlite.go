@@ -1179,8 +1179,13 @@ func (s *SQLiteStore) GetRepository(ctx context.Context, name string, filter Rep
 	countArgs := []interface{}{name}
 
 	if filter.Search != "" {
-		countQuery += " AND a.tag LIKE ?"
-		countArgs = append(countArgs, "%"+filter.Search+"%")
+		if filter.ExactMatch {
+			countQuery += " AND a.tag = ?"
+			countArgs = append(countArgs, filter.Search)
+		} else {
+			countQuery += " AND a.tag LIKE ?"
+			countArgs = append(countArgs, filter.Search+"%")
+		}
 	}
 
 	var total int
@@ -1221,8 +1226,13 @@ func (s *SQLiteStore) GetRepository(ctx context.Context, name string, filter Rep
 	args := []interface{}{name, name}
 
 	if filter.Search != "" {
-		query += " AND a.tag LIKE ?"
-		args = append(args, "%"+filter.Search+"%")
+		if filter.ExactMatch {
+			query += " AND a.tag = ?"
+			args = append(args, filter.Search)
+		} else {
+			query += " AND a.tag LIKE ?"
+			args = append(args, filter.Search+"%")
+		}
 	}
 
 	query += " ORDER BY a.tag ASC"
