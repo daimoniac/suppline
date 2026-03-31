@@ -104,7 +104,11 @@ export default function FailedImagesPage() {
           </tr></thead><tbody>
             {pagedScans.map(s => (
               <tr key={s.Digest} className="border-b border-border/50 hover:bg-bg-secondary cursor-pointer transition-colors" onClick={() => navigate(`/scans/${s.Digest}`)}>
-                <td className="px-4 py-3 text-sm">{s.Repository || 'N/A'}</td>
+                <td className="px-4 py-3 text-sm">
+                  <span className="text-accent hover:underline cursor-pointer" onClick={e => { e.stopPropagation(); navigate(`/repositories/${encodeURIComponent(s.Repository)}`); }}>
+                    {s.Repository || 'N/A'}
+                  </span>
+                </td>
                 <td className="px-4 py-3 text-sm text-text-secondary">{s.Tag || 'N/A'}</td>
                 <td className="px-4 py-3 text-sm">
                   <div className="flex items-center gap-1"><code className="text-xs text-text-muted font-mono">{truncateDigest(s.Digest)}</code>
