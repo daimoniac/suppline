@@ -48,7 +48,7 @@ services:
   ui:
     image: daimoniac/suppline-ui
     build:
-      context: claude-ui
+      context: ui
       dockerfile: Dockerfile
     container_name: suppline-ui
     ports:

@@ -6,6 +6,7 @@ OUTPUT_FILE="/etc/nginx/conf.d/default.conf"
 CONFIG_JSON="/usr/share/nginx/html/config.json"
 
 # Generate config.json for frontend
+# NOTE: API_BASE_URL should be a base URL without a trailing /api path.
 echo "Generating $CONFIG_JSON with API_BASE_URL=$API_BASE_URL"
 echo "{\"apiBaseURL\": \"$API_BASE_URL\"}" > "$CONFIG_JSON"
 
