@@ -172,8 +172,18 @@ func (s *APIServer) handleQueryVulnerabilities(w http.ResponseWriter, r *http.Re
 		return
 	}
 
+	// Sort parameters
+	sortBy := parseQueryParam(r, "sort_by")   // "images" (default), "cve_id", "severity"
+	sortDir := parseQueryParam(r, "sort_dir") // "desc" (default), "asc"
+	if sortBy == "" {
+		sortBy = "images"
+	}
+	if sortDir == "" {
+		sortDir = "desc"
+	}
+
 	// Group vulnerabilities by CVE ID
-	grouped := s.groupVulnerabilitiesByCVE(vulnerabilities)
+	grouped := s.groupVulnerabilitiesByCVE(vulnerabilities, sortBy, sortDir)
 
 	// Apply pagination on grouped results
 	limit := parseQueryParamInt(r, "limit", 10)
@@ -1334,7 +1344,7 @@ func (s *APIServer) groupTolerationsByCVE(tolerations []*types.TolerationInfo) [
 }
 
 // groupVulnerabilitiesByCVE groups vulnerabilities by CVE ID, with nested affected repositories and digests
-func (s *APIServer) groupVulnerabilitiesByCVE(vulnerabilities []*types.VulnerabilityRecord) []*types.VulnerabilityGroup {
+func (s *APIServer) groupVulnerabilitiesByCVE(vulnerabilities []*types.VulnerabilityRecord, sortBy, sortDir string) []*types.VulnerabilityGroup {
 	// Group by CVE ID
 	groups := make(map[string]*types.VulnerabilityGroup)
 
@@ -1423,22 +1433,42 @@ func (s *APIServer) groupVulnerabilitiesByCVE(vulnerabilities []*types.Vulnerabi
 		result = append(result, group)
 	}
 
-	// Sort final result by affected count (descending)
+	// Sort final result according to sortBy / sortDir
+	sevOrder := map[string]int{"CRITICAL": 0, "HIGH": 1, "MEDIUM": 2, "LOW": 3}
 	sort.Slice(result, func(i, j int) bool {
-		countI := 0
-		for _, repo := range result[i].Affected {
-			countI += len(repo.Digests)
+		switch sortBy {
+		case "cve_id":
+			if sortDir == "asc" {
+				return result[i].CVEID < result[j].CVEID
+			}
+			return result[i].CVEID > result[j].CVEID
+		case "severity":
+			si := sevOrder[result[i].Severity]
+			sj := sevOrder[result[j].Severity]
+			if si != sj {
+				if sortDir == "asc" {
+					return si > sj // asc = LOW first
+				}
+				return si < sj // desc = CRITICAL first
+			}
+			return result[i].CVEID < result[j].CVEID
+		default: // "images"
+			countI := 0
+			for _, repo := range result[i].Affected {
+				countI += len(repo.Digests)
+			}
+			countJ := 0
+			for _, repo := range result[j].Affected {
+				countJ += len(repo.Digests)
+			}
+			if countI != countJ {
+				if sortDir == "asc" {
+					return countI < countJ
+				}
+				return countI > countJ
+			}
+			return result[i].CVEID < result[j].CVEID
 		}
-		countJ := 0
-		for _, repo := range result[j].Affected {
-			countJ += len(repo.Digests)
-		}
-
-		if countI != countJ {
-			return countI > countJ // Higher count first
-		}
-		// Fallback to CVE ID
-		return result[i].CVEID < result[j].CVEID
 	})
 
 	return result

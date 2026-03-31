@@ -4,7 +4,7 @@ import { useAuth } from '../lib/auth';
 import { formatRelativeTime, truncateDigest } from '../lib/utils';
 import { LoadingState, ErrorState, PageHeader, SeverityBadge, Pagination } from '../components/ui';
 import type { VulnerabilityGroup } from '../lib/api';
-import { ChevronDown, ChevronRight, ExternalLink } from 'lucide-react';
+import { ChevronDown, ChevronRight, ExternalLink, ArrowUpDown, ArrowUp, ArrowDown } from 'lucide-react';
 
 export default function VulnerabilitiesPage() {
   const { apiClient } = useAuth();
@@ -16,15 +16,27 @@ export default function VulnerabilitiesPage() {
   const [error, setError] = useState('');
   const [cveId, setCveId] = useState(searchParams.get('cve_id') || '');
   const [severity, setSeverity] = useState(searchParams.get('severity') || 'all');
+  const [sortBy, setSortBy] = useState('images');
+  const [sortDir, setSortDir] = useState<'asc' | 'desc'>('desc');
   const [page, setPage] = useState(1);
   const pageSize = 20;
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
+
+  const handleSort = (col: string) => {
+    if (col === sortBy) {
+      setSortDir(d => d === 'asc' ? 'desc' : 'asc');
+    } else {
+      setSortBy(col);
+      setSortDir(col === 'images' ? 'desc' : 'asc');
+    }
+    setPage(1);
+  };
 
   const load = useCallback(async () => {
     setLoading(true);
     setError('');
     try {
-      const filters: Record<string, unknown> = { limit: pageSize, offset: (page - 1) * pageSize };
+      const filters: Record<string, unknown> = { limit: pageSize, offset: (page - 1) * pageSize, sort_by: sortBy, sort_dir: sortDir };
       if (cveId) filters.cve_id = cveId;
       if (severity !== 'all') filters.severity = severity.toUpperCase();
       const resp = await apiClient.queryVulnerabilities(filters);
@@ -35,7 +47,7 @@ export default function VulnerabilitiesPage() {
     } finally {
       setLoading(false);
     }
-  }, [apiClient, cveId, severity, page]);
+  }, [apiClient, cveId, severity, sortBy, sortDir, page]);
 
   useEffect(() => { load(); }, [load]);
 
@@ -67,6 +79,21 @@ export default function VulnerabilitiesPage() {
       </div>
 
       <div className="bg-bg-primary border border-border rounded-xl overflow-hidden">
+        {/* Sort bar */}
+        <div className="flex items-center gap-1 px-4 py-2 border-b border-border bg-bg-secondary text-xs font-medium text-text-secondary uppercase">
+          <span className="flex-1 pl-7">CVE</span>
+          {(['images', 'severity', 'cve_id'] as const).map(col => {
+            const labels: Record<string, string> = { images: 'Affected Images', severity: 'Severity', cve_id: 'CVE ID' };
+            const active = sortBy === col;
+            const Icon = active ? (sortDir === 'asc' ? ArrowUp : ArrowDown) : ArrowUpDown;
+            return (
+              <button key={col} onClick={() => handleSort(col)}
+                className={`flex items-center gap-1 px-2 py-1 rounded hover:bg-bg-tertiary transition-colors select-none ${active ? 'text-accent' : ''}`}>
+                {labels[col]} <Icon className="w-3 h-3" />
+              </button>
+            );
+          })}
+        </div>
         {groups.length === 0 ? (
           <div className="p-12 text-center text-text-secondary text-sm">No vulnerabilities found</div>
         ) : (
