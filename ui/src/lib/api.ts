@@ -106,6 +106,9 @@ export class APIClient {
     const total = parseInt(response.headers.get('X-Total-Count') || '0', 10) || data.length;
     return { vulnerabilities: data, total };
   }
+  async getVulnerabilityDetails(cveId: string, filters: Record<string, unknown> = {}) {
+    return this.request<VulnerabilityGroup>(`/api/v1/vulnerabilities/${encodeURIComponent(cveId)}${this.qs(filters)}`);
+  }
   async getVulnerabilityStats() {
     return this.request<Record<string, number>>('/api/v1/vulnerabilities/stats');
   }
@@ -177,6 +180,7 @@ export interface VulnerabilityGroup {
   Title: string;
   Description: string;
   PrimaryURL: string;
+  affectedImageCount: number;
   affected: {
     repository: string;
     digests: {

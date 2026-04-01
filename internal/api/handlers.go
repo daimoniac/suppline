@@ -161,16 +161,6 @@ func (s *APIServer) handleQueryVulnerabilities(w http.ResponseWriter, r *http.Re
 		PackageName: parseQueryParam(r, "package_name"),
 		Repository:  parseQueryParam(r, "repository"),
 	}
-	// Query vulnerabilities from state store
-	// We use a larger limit for the raw query to ensure we capture enough data for grouping
-	rawFilter := filter
-	rawFilter.Limit = 10000 // Large buffer for grouping
-
-	vulnerabilities, err := s.stateStore.QueryVulnerabilities(r.Context(), rawFilter)
-	if err != nil {
-		s.respondError(w, http.StatusInternalServerError, fmt.Sprintf("Failed to query vulnerabilities: %v", err))
-		return
-	}
 
 	// Sort parameters
 	sortBy := parseQueryParam(r, "sort_by")   // "images" (default), "cve_id", "severity"
@@ -182,24 +172,43 @@ func (s *APIServer) handleQueryVulnerabilities(w http.ResponseWriter, r *http.Re
 		sortDir = "desc"
 	}
 
-	// Group vulnerabilities by CVE ID
-	grouped := s.groupVulnerabilitiesByCVE(vulnerabilities, sortBy, sortDir)
-
-	// Apply pagination on grouped results
+	// Pagination parameters apply to grouped CVE results.
 	limit := parseQueryParamInt(r, "limit", 10)
 	offset := parseQueryParamInt(r, "offset", 0)
-	totalGroups := len(grouped)
+	includeDigestsParam := parseQueryParamBool(r, "include_digests")
+	includeDigests := includeDigestsParam != nil && *includeDigestsParam
 
-	start := offset
-	if start > totalGroups {
-		start = totalGroups
-	}
-	end := start + limit
-	if end > totalGroups {
-		end = totalGroups
+	cveIDs, totalGroups, err := s.stateStore.ListVulnerabilityCVEPage(r.Context(), filter, sortBy, sortDir, limit, offset)
+	if err != nil {
+		s.respondError(w, http.StatusInternalServerError, fmt.Sprintf("Failed to list vulnerability groups: %v", err))
+		return
 	}
 
-	pagedGroups := grouped[start:end]
+	pagedGroups := []*types.VulnerabilityGroup{}
+	if len(cveIDs) > 0 {
+		vulnerabilities, err := s.stateStore.QueryVulnerabilitiesByCVEIDs(r.Context(), filter, cveIDs)
+		if err != nil {
+			s.respondError(w, http.StatusInternalServerError, fmt.Sprintf("Failed to query vulnerabilities: %v", err))
+			return
+		}
+
+		maxDigests := parseQueryParamInt(r, "max_digests", 200)
+		if !includeDigests {
+			maxDigests = 0
+		}
+		grouped := s.groupVulnerabilitiesByCVE(vulnerabilities, sortBy, sortDir, maxDigests, includeDigests)
+		groupMap := make(map[string]*types.VulnerabilityGroup, len(grouped))
+		for _, group := range grouped {
+			groupMap[group.CVEID] = group
+		}
+
+		// Preserve SQL page order exactly.
+		for _, cveID := range cveIDs {
+			if group, ok := groupMap[cveID]; ok {
+				pagedGroups = append(pagedGroups, group)
+			}
+		}
+	}
 
 	// Add total count header for UI pagination
 	w.Header().Set("X-Total-Count", fmt.Sprintf("%d", totalGroups))
@@ -212,6 +221,66 @@ func (s *APIServer) handleQueryVulnerabilities(w http.ResponseWriter, r *http.Re
 			"error", err,
 			"path", r.URL.Path)
 	}
+}
+
+// handleGetVulnerabilityDetails returns detailed affected digests for a single CVE.
+// @Summary Get vulnerability details
+// @Description Retrieve repository and digest details for a specific CVE ID
+// @Tags Vulnerabilities
+// @Accept json
+// @Produce json
+// @Param cve_id path string true "CVE ID"
+// @Success 200 {object} types.VulnerabilityGroup
+// @Failure 400 {object} map[string]string "Invalid request"
+// @Failure 401 {object} map[string]string "Unauthorized"
+// @Failure 404 {object} map[string]string "Vulnerability not found"
+// @Failure 500 {object} map[string]string "Internal server error"
+// @Security BearerAuth
+// @Router /vulnerabilities/{cve_id} [get]
+func (s *APIServer) handleGetVulnerabilityDetails(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		s.respondError(w, http.StatusMethodNotAllowed, "Method not allowed")
+		return
+	}
+
+	prefix := "/api/v1/vulnerabilities/"
+	if !strings.HasPrefix(r.URL.Path, prefix) {
+		s.respondError(w, http.StatusBadRequest, "Invalid path")
+		return
+	}
+
+	cveID := strings.TrimPrefix(r.URL.Path, prefix)
+	if cveID == "" || cveID == "stats" {
+		s.respondError(w, http.StatusBadRequest, "CVE ID is required")
+		return
+	}
+
+	maxDigests := parseQueryParamInt(r, "max_digests", 500)
+
+	filter := statestore.VulnFilter{
+		Repository:  parseQueryParam(r, "repository"),
+		Severity:    parseQueryParam(r, "severity"),
+		PackageName: parseQueryParam(r, "package_name"),
+	}
+
+	vulnerabilities, err := s.stateStore.QueryVulnerabilitiesByCVEIDs(r.Context(), filter, []string{cveID})
+	if err != nil {
+		s.respondError(w, http.StatusInternalServerError, fmt.Sprintf("Failed to query vulnerabilities: %v", err))
+		return
+	}
+
+	if len(vulnerabilities) == 0 {
+		s.respondError(w, http.StatusNotFound, "Vulnerability not found")
+		return
+	}
+
+	groups := s.groupVulnerabilitiesByCVE(vulnerabilities, "cve_id", "asc", maxDigests, true)
+	if len(groups) == 0 {
+		s.respondError(w, http.StatusNotFound, "Vulnerability not found")
+		return
+	}
+
+	s.respondJSON(w, http.StatusOK, groups[0])
 }
 
 // handleListInactiveTolerations lists tolerations defined in config but not applied to any digests
@@ -1347,7 +1416,7 @@ func (s *APIServer) groupTolerationsByCVE(tolerations []*types.TolerationInfo) [
 }
 
 // groupVulnerabilitiesByCVE groups vulnerabilities by CVE ID, with nested affected repositories and digests
-func (s *APIServer) groupVulnerabilitiesByCVE(vulnerabilities []*types.VulnerabilityRecord, sortBy, sortDir string) []*types.VulnerabilityGroup {
+func (s *APIServer) groupVulnerabilitiesByCVE(vulnerabilities []*types.VulnerabilityRecord, sortBy, sortDir string, maxDigests int, includeDigests bool) []*types.VulnerabilityGroup {
 	// Group by CVE ID
 	groups := make(map[string]*types.VulnerabilityGroup)
 
@@ -1369,15 +1438,16 @@ func (s *APIServer) groupVulnerabilitiesByCVE(vulnerabilities []*types.Vulnerabi
 	for _, v := range vulnerabilities {
 		if _, exists := groups[v.CVEID]; !exists {
 			groups[v.CVEID] = &types.VulnerabilityGroup{
-				CVEID:            v.CVEID,
-				Severity:         v.Severity,
-				PackageName:      v.PackageName,
-				InstalledVersion: v.InstalledVersion,
-				FixedVersion:     v.FixedVersion,
-				Title:            v.Title,
-				Description:      v.Description,
-				PrimaryURL:       v.PrimaryURL,
-				Affected:         []types.AffectedRepository{},
+				CVEID:              v.CVEID,
+				Severity:           v.Severity,
+				PackageName:        v.PackageName,
+				InstalledVersion:   v.InstalledVersion,
+				FixedVersion:       v.FixedVersion,
+				Title:              v.Title,
+				Description:        v.Description,
+				PrimaryURL:         v.PrimaryURL,
+				AffectedImageCount: 0,
+				Affected:           []types.AffectedRepository{},
 			}
 			tracking[v.CVEID] = &affectedTracking{
 				repos: make(map[string]map[string]*digestDetail),
@@ -1405,37 +1475,72 @@ func (s *APIServer) groupVulnerabilitiesByCVE(vulnerabilities []*types.Vulnerabi
 	result := make([]*types.VulnerabilityGroup, 0, len(groups))
 	for cveID, group := range groups {
 		cveTracking := tracking[cveID]
-		for repoName, digestMap := range cveTracking.repos {
-			affectedRepo := types.AffectedRepository{
-				Repository: repoName,
-				Digests:    []types.AffectedDigest{},
-			}
-			for digest, detail := range digestMap {
-				affectedDigest := types.AffectedDigest{
-					Digest:           digest,
-					Tags:             make([]string, 0, len(detail.tags)),
-					PackageName:      detail.packageName,
-					InstalledVersion: detail.installedVersion,
-					FixedVersion:     detail.fixedVersion,
-					ScannedAt:        detail.scannedAt,
-					FirstSeenAt:      detail.firstSeenAt,
-				}
-				for tag := range detail.tags {
-					affectedDigest.Tags = append(affectedDigest.Tags, tag)
-				}
-				sort.Strings(affectedDigest.Tags)
-				affectedRepo.Digests = append(affectedRepo.Digests, affectedDigest)
-			}
-			// Sort digests
-			sort.Slice(affectedRepo.Digests, func(i, j int) bool {
-				return affectedRepo.Digests[i].Digest < affectedRepo.Digests[j].Digest
-			})
-			group.Affected = append(group.Affected, affectedRepo)
+		count := 0
+		for _, digestMap := range cveTracking.repos {
+			count += len(digestMap)
 		}
-		// Sort repositories
-		sort.Slice(group.Affected, func(i, j int) bool {
-			return group.Affected[i].Repository < group.Affected[j].Repository
-		})
+		group.AffectedImageCount = count
+
+		if includeDigests {
+			for repoName, digestMap := range cveTracking.repos {
+				affectedRepo := types.AffectedRepository{
+					Repository: repoName,
+					Digests:    []types.AffectedDigest{},
+				}
+				for digest, detail := range digestMap {
+					affectedDigest := types.AffectedDigest{
+						Digest:           digest,
+						Tags:             make([]string, 0, len(detail.tags)),
+						PackageName:      detail.packageName,
+						InstalledVersion: detail.installedVersion,
+						FixedVersion:     detail.fixedVersion,
+						ScannedAt:        detail.scannedAt,
+						FirstSeenAt:      detail.firstSeenAt,
+					}
+					for tag := range detail.tags {
+						affectedDigest.Tags = append(affectedDigest.Tags, tag)
+					}
+					sort.Strings(affectedDigest.Tags)
+					affectedRepo.Digests = append(affectedRepo.Digests, affectedDigest)
+				}
+				// Sort digests
+				sort.Slice(affectedRepo.Digests, func(i, j int) bool {
+					return affectedRepo.Digests[i].Digest < affectedRepo.Digests[j].Digest
+				})
+				group.Affected = append(group.Affected, affectedRepo)
+			}
+			// Sort repositories
+			sort.Slice(group.Affected, func(i, j int) bool {
+				return group.Affected[i].Repository < group.Affected[j].Repository
+			})
+
+			// Cap total returned digests per CVE to keep payloads bounded for heavily affected CVEs.
+			if maxDigests > 0 {
+				remaining := maxDigests
+				for idx := range group.Affected {
+					if remaining <= 0 {
+						group.Affected[idx].Digests = []types.AffectedDigest{}
+						continue
+					}
+					digests := group.Affected[idx].Digests
+					if len(digests) > remaining {
+						group.Affected[idx].Digests = digests[:remaining]
+						remaining = 0
+					} else {
+						remaining -= len(digests)
+					}
+				}
+
+				trimmedRepos := make([]types.AffectedRepository, 0, len(group.Affected))
+				for _, repo := range group.Affected {
+					if len(repo.Digests) > 0 {
+						trimmedRepos = append(trimmedRepos, repo)
+					}
+				}
+				group.Affected = trimmedRepos
+			}
+		}
+
 		result = append(result, group)
 	}
 
@@ -1459,14 +1564,8 @@ func (s *APIServer) groupVulnerabilitiesByCVE(vulnerabilities []*types.Vulnerabi
 			}
 			return result[i].CVEID < result[j].CVEID
 		default: // "images"
-			countI := 0
-			for _, repo := range result[i].Affected {
-				countI += len(repo.Digests)
-			}
-			countJ := 0
-			for _, repo := range result[j].Affected {
-				countJ += len(repo.Digests)
-			}
+			countI := result[i].AffectedImageCount
+			countJ := result[j].AffectedImageCount
 			if countI != countJ {
 				if sortDir == "asc" {
 					return countI < countJ

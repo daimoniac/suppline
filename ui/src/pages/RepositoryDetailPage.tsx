@@ -1,4 +1,4 @@
-import { useEffect, useState, useCallback } from 'react';
+import { useEffect, useState, useCallback, useMemo } from 'react';
 import { useParams, useNavigate, useSearchParams } from 'react-router-dom';
 import { useAuth } from '../lib/auth';
 import { useToast } from '../lib/toast';
@@ -15,7 +15,7 @@ export default function RepositoryDetailPage() {
   const { toast } = useToast();
   const [searchParams] = useSearchParams();
 
-  const [tags, setTags] = useState<RepositoryTag[]>([]);
+  const [allTags, setAllTags] = useState<RepositoryTag[]>([]);
   const [total, setTotal] = useState(0);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
@@ -31,32 +31,71 @@ export default function RepositoryDetailPage() {
     setLoading(true);
     setError('');
     try {
-      const resp = await apiClient.getRepository(decodedName, { limit: pageSize, offset: (page - 1) * pageSize, ...(search && { search }) });
-      const t = resp?.Tags || [];
-      // Client-side sort
-      const colMap: Record<string, keyof RepositoryTag> = { name: 'Name', lastScanTime: 'LastScanTime', status: 'PolicyPassed' };
-      const apiCol = colMap[sortCol] || 'Name';
-      t.sort((a, b) => {
-        const av = a[apiCol as keyof RepositoryTag] as any;
-        const bv = b[apiCol as keyof RepositoryTag] as any;
-        if (typeof av === 'number' && typeof bv === 'number') return sortDir === 'asc' ? av - bv : bv - av;
-        return sortDir === 'asc' ? String(av || '').localeCompare(String(bv || '')) : String(bv || '').localeCompare(String(av || ''));
-      });
-      setTags(t);
-      setTotal(resp?.Total || t.length);
+      const fetchSize = 200;
+      let offset = 0;
+      let expectedTotal = 0;
+      const collected: RepositoryTag[] = [];
+
+      do {
+        const resp = await apiClient.getRepository(decodedName, {
+          limit: fetchSize,
+          offset,
+          ...(search && { search }),
+        });
+        const pageTags = resp?.Tags || [];
+        expectedTotal = resp?.Total || 0;
+        collected.push(...pageTags);
+        offset += pageTags.length;
+
+        if (pageTags.length === 0) break;
+      } while (offset < expectedTotal);
+
+      setAllTags(collected);
+      setTotal(expectedTotal || collected.length);
     } catch (e: unknown) {
       setError(e instanceof Error ? e.message : 'Failed to load');
     } finally {
       setLoading(false);
     }
-  }, [apiClient, decodedName, page, search, sortCol, sortDir]);
+  }, [apiClient, decodedName, search]);
+
+  const sortedTags = useMemo(() => {
+    const colMap: Record<string, keyof RepositoryTag> = {
+      name: 'Name',
+      lastScanTime: 'LastScanTime',
+      status: 'PolicyPassed',
+    };
+    const apiCol = colMap[sortCol] || 'Name';
+    return [...allTags].sort((a, b) => {
+      const av = a[apiCol as keyof RepositoryTag] as unknown;
+      const bv = b[apiCol as keyof RepositoryTag] as unknown;
+      if (typeof av === 'number' && typeof bv === 'number') return sortDir === 'asc' ? av - bv : bv - av;
+      if (typeof av === 'boolean' && typeof bv === 'boolean') {
+        const an = av ? 1 : 0;
+        const bn = bv ? 1 : 0;
+        return sortDir === 'asc' ? an - bn : bn - an;
+      }
+      return sortDir === 'asc'
+        ? String(av || '').localeCompare(String(bv || ''))
+        : String(bv || '').localeCompare(String(av || ''));
+    });
+  }, [allTags, sortCol, sortDir]);
+
+  const tags = useMemo(() => {
+    const start = (page - 1) * pageSize;
+    return sortedTags.slice(start, start + pageSize);
+  }, [sortedTags, page]);
 
   useEffect(() => { load(); }, [load]);
+
+  useEffect(() => {
+    const maxPage = Math.max(1, Math.ceil(total / pageSize));
+    if (page > maxPage) setPage(maxPage);
+  }, [page, total]);
 
   const handleSort = (col: string) => {
     if (col === sortCol) setSortDir(d => d === 'asc' ? 'desc' : 'asc');
     else { setSortCol(col); setSortDir('asc'); }
-    setPage(1);
   };
 
   const handleRescan = async (type: 'repo' | 'tag', n: string) => {

@@ -21,6 +21,8 @@ export default function VulnerabilitiesPage() {
   const [page, setPage] = useState(1);
   const pageSize = 20;
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
+  const [detailsByCVE, setDetailsByCVE] = useState<Record<string, VulnerabilityGroup>>({});
+  const [loadingDetails, setLoadingDetails] = useState<Set<string>>(new Set());
 
   const handleSort = (col: string) => {
     if (col === sortBy) {
@@ -36,12 +38,20 @@ export default function VulnerabilitiesPage() {
     setLoading(true);
     setError('');
     try {
-      const filters: Record<string, unknown> = { limit: pageSize, offset: (page - 1) * pageSize, sort_by: sortBy, sort_dir: sortDir };
+      const filters: Record<string, unknown> = {
+        limit: pageSize,
+        offset: (page - 1) * pageSize,
+        sort_by: sortBy,
+        sort_dir: sortDir,
+        include_digests: false,
+      };
       if (cveId) filters.cve_id = cveId;
       if (severity !== 'all') filters.severity = severity.toUpperCase();
       const resp = await apiClient.queryVulnerabilities(filters);
       setGroups(resp.vulnerabilities);
       setTotal(resp.total);
+      setDetailsByCVE({});
+      setExpanded(new Set());
     } catch (e: unknown) {
       setError(e instanceof Error ? e.message : 'Failed');
     } finally {
@@ -51,8 +61,38 @@ export default function VulnerabilitiesPage() {
 
   useEffect(() => { load(); }, [load]);
 
+  const loadDetails = useCallback(async (id: string) => {
+    setLoadingDetails(prev => {
+      const n = new Set(prev);
+      n.add(id);
+      return n;
+    });
+
+    try {
+      const details = await apiClient.getVulnerabilityDetails(id, { max_digests: 500 });
+      setDetailsByCVE(prev => ({ ...prev, [id]: details }));
+    } catch (e: unknown) {
+      setError(e instanceof Error ? e.message : 'Failed to load vulnerability details');
+    } finally {
+      setLoadingDetails(prev => {
+        const n = new Set(prev);
+        n.delete(id);
+        return n;
+      });
+    }
+  }, [apiClient]);
+
   const toggle = (id: string) => {
-    setExpanded(prev => { const n = new Set(prev); n.has(id) ? n.delete(id) : n.add(id); return n; });
+    const isExpanded = expanded.has(id);
+    setExpanded(prev => {
+      const n = new Set(prev);
+      if (n.has(id)) n.delete(id); else n.add(id);
+      return n;
+    });
+
+    if (!isExpanded && !detailsByCVE[id] && !loadingDetails.has(id)) {
+      loadDetails(id);
+    }
   };
 
   const totalPages = Math.ceil(total / pageSize);
@@ -114,12 +154,18 @@ export default function VulnerabilitiesPage() {
                     </div>
                     {g.Title && <div className="text-xs text-text-secondary truncate">{g.Title}</div>}
                   </div>
-                  <span className="text-xs text-text-muted">{(g.affected || []).reduce((s, a) => s + a.digests.length, 0)} image{(g.affected || []).reduce((s, a) => s + a.digests.length, 0) !== 1 ? 's' : ''}</span>
+                  <span className="text-xs text-text-muted">{g.affectedImageCount || 0} image{(g.affectedImageCount || 0) !== 1 ? 's' : ''}</span>
                 </button>
                 {expanded.has(g.CVEID) && (
                   <div className="border-t border-border bg-bg-secondary px-4 py-3">
                     {g.Description && <p className="text-xs text-text-muted mb-3 line-clamp-3">{g.Description}</p>}
-                    {(g.affected || []).map((aff, ai) => (
+                    {loadingDetails.has(g.CVEID) && (
+                      <div className="text-xs text-text-muted mb-2">Loading affected digests...</div>
+                    )}
+                    {!loadingDetails.has(g.CVEID) && ((detailsByCVE[g.CVEID]?.affected || []).length === 0) && (
+                      <div className="text-xs text-text-muted mb-2">No digest details available.</div>
+                    )}
+                    {(detailsByCVE[g.CVEID]?.affected || []).map((aff, ai) => (
                       <div key={ai} className="mb-3">
                         <div className="text-xs font-medium text-text-secondary mb-1">{aff.repository}</div>
                         <div className="space-y-1">

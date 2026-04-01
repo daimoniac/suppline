@@ -1,4 +1,4 @@
-import { useEffect, useState, useCallback } from 'react';
+import { useEffect, useState, useCallback, useMemo } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { useAuth } from '../lib/auth';
 import { useToast } from '../lib/toast';
@@ -13,7 +13,7 @@ export default function FailedImagesPage() {
   const { toast } = useToast();
   const [searchParams] = useSearchParams();
 
-  const [scans, setScans] = useState<Scan[]>([]);
+  const [allScans, setAllScans] = useState<Scan[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [repository, setRepository] = useState(searchParams.get('repository') || '');
@@ -26,10 +26,26 @@ export default function FailedImagesPage() {
     setLoading(true);
     setError('');
     try {
-      const filters: Record<string, unknown> = { policy_passed: false };
-      if (repository) filters.repository = repository;
-      const result = await apiClient.getScans(filters);
-      setScans(result);
+      const fetchSize = 200;
+      let offset = 0;
+      const collected: Scan[] = [];
+
+      while (true) {
+        const filters: Record<string, unknown> = {
+          policy_passed: false,
+          limit: fetchSize,
+          offset,
+        };
+        if (repository) filters.repository = repository;
+
+        const batch = await apiClient.getScans(filters);
+        collected.push(...batch);
+
+        if (batch.length < fetchSize) break;
+        offset += batch.length;
+      }
+
+      setAllScans(collected);
     } catch (e: unknown) {
       setError(e instanceof Error ? e.message : 'Failed');
     } finally {
@@ -44,35 +60,53 @@ export default function FailedImagesPage() {
     else { setSortCol(col); setSortDir('desc'); }
   };
 
-  const totalCritical = scans.reduce((s, sc) => s + (sc.CriticalVulnCount || 0), 0);
-  const totalHigh = scans.reduce((s, sc) => s + (sc.HighVulnCount || 0), 0);
+  const totalCritical = allScans.reduce((s, sc) => s + (sc.CriticalVulnCount || 0), 0);
+  const totalHigh = allScans.reduce((s, sc) => s + (sc.HighVulnCount || 0), 0);
 
-  // Client-side sort
-  const sorted = [...scans].sort((a, b) => {
-    const colMap: Record<string, keyof Scan> = { scanned_at: 'CreatedAt', repository: 'Repository', tag: 'Tag' };
-    const key = colMap[sortCol] || 'CreatedAt';
-    const av = a[key as keyof Scan] as any;
-    const bv = b[key as keyof Scan] as any;
-    if (typeof av === 'number' && typeof bv === 'number') return sortDir === 'asc' ? av - bv : bv - av;
-    return sortDir === 'asc' ? String(av || '').localeCompare(String(bv || '')) : String(bv || '').localeCompare(String(av || ''));
-  });
-  const pagedScans = sorted.slice((page - 1) * pageSize, page * pageSize);
+  const sorted = useMemo(() => {
+    const colMap: Record<string, keyof Scan> = { scanned_at: 'ScannedAt', repository: 'Repository', tag: 'Tag' };
+    const key = colMap[sortCol] || 'ScannedAt';
+    return [...allScans].sort((a, b) => {
+      const av = a[key as keyof Scan] as unknown;
+      const bv = b[key as keyof Scan] as unknown;
+      if (typeof av === 'number' && typeof bv === 'number') return sortDir === 'asc' ? av - bv : bv - av;
+      if (typeof av === 'boolean' && typeof bv === 'boolean') {
+        const an = av ? 1 : 0;
+        const bn = bv ? 1 : 0;
+        return sortDir === 'asc' ? an - bn : bn - an;
+      }
+      return sortDir === 'asc'
+        ? String(av || '').localeCompare(String(bv || ''))
+        : String(bv || '').localeCompare(String(av || ''));
+    });
+  }, [allScans, sortCol, sortDir]);
+
+  const pagedScans = useMemo(() => {
+    const start = (page - 1) * pageSize;
+    return sorted.slice(start, start + pageSize);
+  }, [sorted, page]);
+
   const totalPages = Math.ceil(sorted.length / pageSize);
 
-  if (loading && scans.length === 0) return <LoadingState />;
+  useEffect(() => {
+    const maxPage = Math.max(1, Math.ceil(sorted.length / pageSize));
+    if (page > maxPage) setPage(maxPage);
+  }, [page, sorted.length]);
+
+  if (loading && allScans.length === 0) return <LoadingState />;
   if (error) return <ErrorState message={error} onRetry={load} />;
 
   return (
     <div>
       <PageHeader title="Failed Images" subtitle="Images that failed security policy evaluation" />
 
-      {scans.length > 0 && (
+      {allScans.length > 0 && (
         <div className="flex items-center gap-3 p-4 mb-4 rounded-xl border border-danger/30 bg-danger-bg">
           <AlertTriangle className="w-5 h-5 text-danger flex-shrink-0" />
           <div>
             <div className="text-sm font-medium text-danger">Policy Failures Detected</div>
             <div className="text-xs text-text-secondary">
-              {scans.length} image{scans.length !== 1 ? 's' : ''} failed.
+              {allScans.length} image{allScans.length !== 1 ? 's' : ''} failed.
               {totalCritical > 0 && ` ${totalCritical} critical`}{totalCritical > 0 && totalHigh > 0 && ','}{totalHigh > 0 && ` ${totalHigh} high`} vulnerabilities.
             </div>
           </div>
@@ -87,7 +121,7 @@ export default function FailedImagesPage() {
       </div>
 
       <div className="bg-bg-primary border border-border rounded-xl overflow-hidden">
-        {scans.length === 0 ? (
+        {allScans.length === 0 ? (
           <div className="p-12 text-center">
             <div className="text-3xl mb-2">✅</div>
             <h3 className="font-semibold text-accent">No Failed Images</h3>
@@ -115,7 +149,7 @@ export default function FailedImagesPage() {
                     <button className="text-text-muted hover:text-text-primary p-0.5" onClick={e => { e.stopPropagation(); copyToClipboard(s.Digest).then(ok => toast(ok ? 'Copied!' : 'Fail', ok ? 'success' : 'error')); }}>
                       <Copy className="w-3 h-3" /></button></div>
                 </td>
-                <td className="px-4 py-3 text-sm text-text-secondary">{formatRelativeTime(s.CreatedAt)}</td>
+                <td className="px-4 py-3 text-sm text-text-secondary">{formatRelativeTime(s.ScannedAt)}</td>
                 <td className="px-4 py-3"><VulnCounts critical={s.CriticalVulnCount} high={s.HighVulnCount} medium={s.MediumVulnCount} low={s.LowVulnCount} /></td>
                 <td className="px-4 py-3">
                   <div className="flex flex-wrap gap-1">

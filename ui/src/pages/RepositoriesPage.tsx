@@ -57,10 +57,10 @@ export default function RepositoriesPage() {
   useEffect(() => { load(); }, [load]);
 
   const handleSort = (col: string) => {
+    const nextDir = col === sortCol ? (sortDir === 'asc' ? 'desc' : 'asc') : 'asc';
     if (col === sortCol) setSortDir(d => d === 'asc' ? 'desc' : 'asc');
     else { setSortCol(col); setSortDir('asc'); }
-    setPage(1);
-    updateURL(col, col === sortCol ? (sortDir === 'asc' ? 'desc' : 'asc') : 'asc', search, 1);
+    updateURL(col, nextDir, search, page);
   };
 
   const updateURL = (s: string, d: string, q: string, p: number) => {

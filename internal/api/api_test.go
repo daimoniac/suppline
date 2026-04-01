@@ -83,6 +83,14 @@ func (m *mockStateStore) QueryVulnerabilities(ctx context.Context, filter states
 	return nil, nil
 }
 
+func (m *mockStateStore) ListVulnerabilityCVEPage(ctx context.Context, filter statestore.VulnFilter, sortBy, sortDir string, limit, offset int) ([]string, int, error) {
+	return []string{}, 0, nil
+}
+
+func (m *mockStateStore) QueryVulnerabilitiesByCVEIDs(ctx context.Context, filter statestore.VulnFilter, cveIDs []string) ([]*types.VulnerabilityRecord, error) {
+	return []*types.VulnerabilityRecord{}, nil
+}
+
 func (m *mockStateStore) GetImagesByCVE(ctx context.Context, cveID string) ([]*statestore.ScanRecord, error) {
 	return nil, nil
 }

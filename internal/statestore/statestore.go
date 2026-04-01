@@ -125,6 +125,14 @@ type StateStoreQuery interface {
 	// QueryVulnerabilities searches vulnerabilities across all scans
 	QueryVulnerabilities(ctx context.Context, filter VulnFilter) ([]*types.VulnerabilityRecord, error)
 
+	// ListVulnerabilityCVEPage returns a paginated, sorted list of distinct CVE IDs
+	// matching the filter, along with the total number of matching CVE groups.
+	ListVulnerabilityCVEPage(ctx context.Context, filter VulnFilter, sortBy, sortDir string, limit, offset int) ([]string, int, error)
+
+	// QueryVulnerabilitiesByCVEIDs returns vulnerability records for the selected CVE IDs
+	// (typically from a paged group query), with image context.
+	QueryVulnerabilitiesByCVEIDs(ctx context.Context, filter VulnFilter, cveIDs []string) ([]*types.VulnerabilityRecord, error)
+
 	// GetImagesByCVE returns all images affected by a specific CVE
 	GetImagesByCVE(ctx context.Context, cveID string) ([]*ScanRecord, error)
 
