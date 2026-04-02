@@ -54,6 +54,9 @@ type ScanTask struct {
 	IsFirstScan bool // True when image has never been scanned before
 	Priority    TaskPriority
 	Tolerations []types.CVEToleration // Using canonical type from internal/types
+	// UseVEXRepo, when true, passes --vex repo to Trivy during vulnerability scanning
+	// to apply the Aqua VEX Hub and suppress not_affected CVEs before policy evaluation.
+	UseVEXRepo bool
 }
 
 // InMemoryQueue implements TaskQueue using priority queues

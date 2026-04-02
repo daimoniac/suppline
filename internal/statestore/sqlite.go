@@ -673,7 +673,7 @@ func (s *SQLiteStore) ListVulnerabilityCVEPage(ctx context.Context, filter VulnF
 		return nil, 0, errors.NewTransientf("failed to count vulnerability groups: %w", err)
 	}
 
-	orderBy := "image_count DESC, cve_id ASC"
+	var orderBy string
 	switch sortBy {
 	case "cve_id":
 		if sortDir == "asc" {

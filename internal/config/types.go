@@ -108,6 +108,7 @@ type Defaults struct {
 	QueueBufferSize       int                   `yaml:"x-queue-buffer-size,omitempty"`
 	SCAIValidityExtension string                `yaml:"x-scaiValidityExtension,omitempty"`
 	Policy                *PolicyConfig         `yaml:"x-policy,omitempty"`
+	VEXRepo               *bool                 `yaml:"x-vex-repo,omitempty"`
 	Tolerate              []types.CVEToleration `yaml:"x-tolerate,omitempty"` // Default tolerations merged with sync-specific ones
 }
 
@@ -123,6 +124,7 @@ type SyncEntry struct {
 	RescanInterval        string                `yaml:"x-rescanInterval,omitempty"`
 	SCAIValidityExtension string                `yaml:"x-scaiValidityExtension,omitempty"`
 	Policy                *PolicyConfig         `yaml:"x-policy,omitempty"`
+	VEXRepo               *bool                 `yaml:"x-vex-repo,omitempty"`
 	Ignore                bool                  `yaml:"x-supplineIgnore,omitempty"` // If true, suppline skips this entry entirely
 }
 

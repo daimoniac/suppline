@@ -158,7 +158,7 @@ func (p *Pipeline) scanPhase(ctx context.Context, task *queue.ScanTask, imageRef
 	// Scan vulnerabilities
 	vulnStart := time.Now()
 	p.logger.Debug("scanning vulnerabilities", "image_ref", imageRef)
-	scanResult, err := p.worker.scanner.ScanVulnerabilities(ctx, imageRef)
+	scanResult, err := p.worker.scanner.ScanVulnerabilities(ctx, imageRef, task.UseVEXRepo)
 	if err != nil {
 		// Classify scanner errors to detect MANIFEST_UNKNOWN
 		classifiedErr := errors.ClassifyRegistryError(err)

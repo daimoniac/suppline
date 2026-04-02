@@ -588,6 +588,7 @@ func (s *APIServer) handleTriggerScan(w http.ResponseWriter, r *http.Request) {
 			Attempts:    0,
 			IsRescan:    true,
 			Tolerations: queueTolerations,
+			UseVEXRepo:  s.regsyncConfig.GetVEXRepoForTarget(lastScan.Repository),
 		}
 
 		if err := s.taskQueue.Enqueue(ctx, task); err != nil {
@@ -642,6 +643,7 @@ func (s *APIServer) handleTriggerScan(w http.ResponseWriter, r *http.Request) {
 				Attempts:    0,
 				IsRescan:    true,
 				Tolerations: queueTolerations,
+				UseVEXRepo:  s.regsyncConfig.GetVEXRepoForTarget(scan.Repository),
 			}
 
 			if err := s.taskQueue.Enqueue(ctx, task); err != nil {
@@ -759,6 +761,7 @@ func (s *APIServer) handleReevaluatePolicy(w http.ResponseWriter, r *http.Reques
 			Attempts:    0,
 			IsRescan:    true,
 			Tolerations: queueTolerations,
+			UseVEXRepo:  s.regsyncConfig.GetVEXRepoForTarget(scan.Repository),
 		}
 
 		if err := s.taskQueue.Enqueue(ctx, task); err != nil {
@@ -1069,6 +1072,7 @@ func (s *APIServer) handleRescanRepository(w http.ResponseWriter, r *http.Reques
 			Attempts:    0,
 			IsRescan:    true,
 			Tolerations: queueTolerations,
+			UseVEXRepo:  s.regsyncConfig.GetVEXRepoForTarget(scan.Repository),
 		}
 
 		if err := s.taskQueue.Enqueue(ctx, task); err != nil {
@@ -1218,6 +1222,7 @@ func (s *APIServer) handleRescanTag(w http.ResponseWriter, r *http.Request) {
 		Attempts:    0,
 		IsRescan:    true,
 		Tolerations: queueTolerations,
+		UseVEXRepo:  s.regsyncConfig.GetVEXRepoForTarget(lastScan.Repository),
 	}
 
 	if err := s.taskQueue.Enqueue(ctx, task); err != nil {

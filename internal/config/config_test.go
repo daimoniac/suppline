@@ -1161,3 +1161,121 @@ func TestSupplineIgnore_GetTargetRepositories(t *testing.T) {
 		}
 	}
 }
+
+func boolPtr(b bool) *bool { return &b }
+
+func TestGetVEXRepoForTarget(t *testing.T) {
+	tests := []struct {
+		name     string
+		cfg      RegsyncConfig
+		target   string
+		expected bool
+	}{
+		{
+			name: "defaults only true",
+			cfg: RegsyncConfig{
+				Defaults: Defaults{VEXRepo: boolPtr(true)},
+				Sync:     []SyncEntry{{Source: "nginx", Target: "myregistry/nginx", Type: "repository"}},
+			},
+			target:   "myregistry/nginx",
+			expected: true,
+		},
+		{
+			name: "sync entry overrides default to true",
+			cfg: RegsyncConfig{
+				Defaults: Defaults{VEXRepo: boolPtr(false)},
+				Sync:     []SyncEntry{{Source: "nginx", Target: "myregistry/nginx", Type: "repository", VEXRepo: boolPtr(true)}},
+			},
+			target:   "myregistry/nginx",
+			expected: true,
+		},
+		{
+			name: "sync entry overrides default to false",
+			cfg: RegsyncConfig{
+				Defaults: Defaults{VEXRepo: boolPtr(true)},
+				Sync:     []SyncEntry{{Source: "nginx", Target: "myregistry/nginx", Type: "repository", VEXRepo: boolPtr(false)}},
+			},
+			target:   "myregistry/nginx",
+			expected: false,
+		},
+		{
+			name: "neither configured returns false",
+			cfg: RegsyncConfig{
+				Sync: []SyncEntry{{Source: "nginx", Target: "myregistry/nginx", Type: "repository"}},
+			},
+			target:   "myregistry/nginx",
+			expected: false,
+		},
+		{
+			name: "type=image strips tag before matching",
+			cfg: RegsyncConfig{
+				Sync: []SyncEntry{{Source: "nginx", Target: "myregistry/nginx:latest", Type: "image", VEXRepo: boolPtr(true)}},
+			},
+			target:   "myregistry/nginx",
+			expected: true,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			got := tc.cfg.GetVEXRepoForTarget(tc.target)
+			if got != tc.expected {
+				t.Errorf("GetVEXRepoForTarget(%q) = %v, want %v", tc.target, got, tc.expected)
+			}
+		})
+	}
+}
+
+func TestIsVEXRepoEnabledAnywhere(t *testing.T) {
+	tests := []struct {
+		name     string
+		cfg      RegsyncConfig
+		expected bool
+	}{
+		{
+			name: "all false returns false",
+			cfg: RegsyncConfig{
+				Defaults: Defaults{VEXRepo: boolPtr(false)},
+				Sync: []SyncEntry{
+					{Source: "nginx", Target: "myregistry/nginx", Type: "repository", VEXRepo: boolPtr(false)},
+				},
+			},
+			expected: false,
+		},
+		{
+			name: "nil everywhere returns false",
+			cfg: RegsyncConfig{
+				Sync: []SyncEntry{
+					{Source: "nginx", Target: "myregistry/nginx", Type: "repository"},
+				},
+			},
+			expected: false,
+		},
+		{
+			name: "defaults true returns true",
+			cfg: RegsyncConfig{
+				Defaults: Defaults{VEXRepo: boolPtr(true)},
+			},
+			expected: true,
+		},
+		{
+			name: "one sync entry true returns true",
+			cfg: RegsyncConfig{
+				Defaults: Defaults{VEXRepo: boolPtr(false)},
+				Sync: []SyncEntry{
+					{Source: "nginx", Target: "myregistry/nginx", Type: "repository", VEXRepo: boolPtr(true)},
+				},
+			},
+			expected: true,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			got := tc.cfg.IsVEXRepoEnabledAnywhere()
+			if got != tc.expected {
+				t.Errorf("IsVEXRepoEnabledAnywhere() = %v, want %v", got, tc.expected)
+			}
+		})
+	}
+}

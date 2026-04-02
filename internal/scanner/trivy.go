@@ -168,8 +168,9 @@ type trivyVulnerability struct {
 }
 
 // ScanVulnerabilities performs vulnerability analysis via Trivy
-// This method now generates BOTH JSON and cosign-vuln formats in a single scan to avoid redundant calls
-func (s *TrivyScanner) ScanVulnerabilities(ctx context.Context, imageRef string) (*ScanResult, error) {
+// This method now generates BOTH JSON and cosign-vuln formats in a single scan to avoid redundant calls.
+// When useVEXRepo is true, --vex repo is passed to Trivy to apply the Aqua VEX Hub.
+func (s *TrivyScanner) ScanVulnerabilities(ctx context.Context, imageRef string, useVEXRepo bool) (*ScanResult, error) {
 	startTime := time.Now()
 	s.logger.Debug("invoking Trivy for vulnerability scan (JSON + cosign-vuln)", "image_ref", imageRef, "start_time", startTime)
 
@@ -200,6 +201,10 @@ func (s *TrivyScanner) ScanVulnerabilities(ctx context.Context, imageRef string)
 		args = append(args, "--token", s.token)
 	}
 
+	if useVEXRepo {
+		args = append(args, "--vex", "repo")
+	}
+
 	args = append(args, imageRef)
 
 	// Execute trivy command for JSON output
@@ -226,7 +231,7 @@ func (s *TrivyScanner) ScanVulnerabilities(ctx context.Context, imageRef string)
 			s.logger.Warn("retrying vulnerability scan without server (local fallback)",
 				"image_ref", imageRef,
 				"server_stderr", serverStderr)
-			result, fallbackErr := s.scanVulnerabilitiesLocal(ctx, imageRef, tmpFile.Name())
+			result, fallbackErr := s.scanVulnerabilitiesLocal(ctx, imageRef, tmpFile.Name(), useVEXRepo)
 			if fallbackErr != nil {
 				s.logger.Error("local fallback vulnerability scan also failed",
 					"image_ref", imageRef,
@@ -284,6 +289,10 @@ func (s *TrivyScanner) ScanVulnerabilities(ctx context.Context, imageRef string)
 
 	if s.token != "" {
 		trivyArgs = append(trivyArgs, "--token", s.token)
+	}
+
+	if useVEXRepo {
+		trivyArgs = append(trivyArgs, "--vex", "repo")
 	}
 
 	trivyArgs = append(trivyArgs, imageRef)
@@ -362,7 +371,7 @@ func (s *TrivyScanner) generateSBOMLocal(ctx context.Context, imageRef string) (
 
 // scanVulnerabilitiesLocal retries vulnerability scanning without --server, using the local Trivy DB.
 // cosignOutPath is the temp file path to write cosign-vuln output to.
-func (s *TrivyScanner) scanVulnerabilitiesLocal(ctx context.Context, imageRef string, cosignOutPath string) (*ScanResult, error) {
+func (s *TrivyScanner) scanVulnerabilitiesLocal(ctx context.Context, imageRef string, cosignOutPath string, useVEXRepo bool) (*ScanResult, error) {
 	// JSON scan (no --quiet so Trivy can print DB download progress if needed)
 	args := []string{
 		"image",
@@ -372,6 +381,9 @@ func (s *TrivyScanner) scanVulnerabilitiesLocal(ctx context.Context, imageRef st
 	}
 	if s.insecure {
 		args = append(args, "--insecure")
+	}
+	if useVEXRepo {
+		args = append(args, "--vex", "repo")
 	}
 	args = append(args, imageRef)
 
@@ -422,6 +434,9 @@ func (s *TrivyScanner) scanVulnerabilitiesLocal(ctx context.Context, imageRef st
 	}
 	if s.insecure {
 		cosignArgs = append(cosignArgs, "--insecure")
+	}
+	if useVEXRepo {
+		cosignArgs = append(cosignArgs, "--vex", "repo")
 	}
 	cosignArgs = append(cosignArgs, imageRef)
 

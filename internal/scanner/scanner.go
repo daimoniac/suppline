@@ -12,8 +12,10 @@ type Scanner interface {
 	// GenerateSBOM creates CycloneDX SBOM via Trivy server
 	GenerateSBOM(ctx context.Context, imageRef string) (*SBOM, error)
 
-	// ScanVulnerabilities performs vulnerability analysis via Trivy server
-	ScanVulnerabilities(ctx context.Context, imageRef string) (*ScanResult, error)
+	// ScanVulnerabilities performs vulnerability analysis via Trivy server.
+	// When useVEXRepo is true, --vex repo is passed to Trivy to apply the Aqua VEX
+	// repository and suppress CVEs with matching not_affected statements.
+	ScanVulnerabilities(ctx context.Context, imageRef string, useVEXRepo bool) (*ScanResult, error)
 
 	// HealthCheck reports Trivy connectivity status for health endpoint integration
 	HealthCheck(ctx context.Context) error

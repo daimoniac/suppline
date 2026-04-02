@@ -134,6 +134,9 @@ func (w *watcherImpl) processRepository(ctx context.Context, repo string) error 
 	// Check for expiring tolerations and log warnings
 	w.checkExpiringTolerations(repo, tolerations)
 
+	// Resolve VEX repo flag once per repository (not per tag)
+	useVEXRepo := w.regsyncConfig.GetVEXRepoForTarget(repo)
+
 	// Check if this repository has specific tags defined (type=image entries)
 	specificTags := w.regsyncConfig.GetTagsForRepository(repo)
 
@@ -161,7 +164,7 @@ func (w *watcherImpl) processRepository(ctx context.Context, repo string) error 
 
 	// Process each tag
 	for _, tag := range tags {
-		if err := w.processTag(ctx, repo, tag, queueTolerations); err != nil {
+		if err := w.processTag(ctx, repo, tag, queueTolerations, useVEXRepo); err != nil {
 			w.logger.Error("failed to process tag",
 				"repo", repo,
 				"tag", tag,
@@ -220,7 +223,7 @@ func (w *watcherImpl) shouldScanImage(
 }
 
 // processTag processes a single image tag
-func (w *watcherImpl) processTag(ctx context.Context, repo, tag string, tolerations []types.CVEToleration) error {
+func (w *watcherImpl) processTag(ctx context.Context, repo, tag string, tolerations []types.CVEToleration, useVEXRepo bool) error {
 	// Get current digest from registry
 	currentDigest, err := w.registryClient.GetDigest(ctx, repo, tag)
 	if err != nil {
@@ -317,6 +320,7 @@ func (w *watcherImpl) processTag(ctx context.Context, repo, tag string, tolerati
 		IsRescan:    isRescan,
 		IsFirstScan: !isRescan && reason == "never scanned before",
 		Tolerations: tolerations,
+		UseVEXRepo:  useVEXRepo,
 	}
 
 	if err := w.taskQueue.Enqueue(ctx, task); err != nil {

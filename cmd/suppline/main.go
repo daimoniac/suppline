@@ -144,6 +144,10 @@ func run() error {
 	logger.Debug("trivy scanner initialized and connected",
 		"server_addr", cfg.Scanner.ServerAddr)
 
+	if regsyncCfg.IsVEXRepoEnabledAnywhere() {
+		downloadVEXRepo(ctx, logger)
+	}
+
 	logger.Debug("initializing attestor",
 		"key_configured", cfg.Attestation.KeyBased.Key != "")
 	attestorConfig := attestation.AttestationConfig{
@@ -387,6 +391,7 @@ func enqueueFailedArtifacts(ctx context.Context, store statestore.StateStore, ta
 			IsFirstScan: false,
 			Priority:    queue.PriorityHigh,
 			Tolerations: queueTolerations,
+			UseVEXRepo:  regsyncCfg.GetVEXRepoForTarget(artifact.Repository),
 		}
 
 		if err := taskQueue.Enqueue(ctx, task); err != nil {
@@ -411,6 +416,22 @@ func enqueueFailedArtifacts(ctx context.Context, store statestore.StateStore, ta
 		"total", len(failedArtifacts))
 
 	return nil
+}
+
+func downloadVEXRepo(ctx context.Context, logger *slog.Logger) {
+	logger.Info("downloading Trivy VEX repository (Aqua VEX Hub)")
+	cmd := exec.CommandContext(ctx, "trivy", "vex", "repo", "download")
+	var stderr bytes.Buffer
+	cmd.Stderr = &stderr
+	if err := cmd.Run(); err != nil {
+		// Non-fatal: VEX repo download failure should not prevent scanning.
+		// Trivy will fall back to non-VEX scanning for affected tasks.
+		logger.Warn("failed to download VEX repository; VEX filtering will be unavailable",
+			"error", err,
+			"stderr", stderr.String())
+	} else {
+		logger.Info("VEX repository downloaded successfully")
+	}
 }
 
 func authenticateCosignRegistries(ctx context.Context, regsyncCfg *config.RegsyncConfig, logger *slog.Logger) error {

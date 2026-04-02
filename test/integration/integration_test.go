@@ -210,7 +210,7 @@ func TestTrivyScanner(t *testing.T) {
 		// Use a known vulnerable image for testing
 		imageRef := "alpine:3.7"
 
-		result, err := scanner.ScanVulnerabilities(ctx, imageRef)
+		result, err := scanner.ScanVulnerabilities(ctx, imageRef, false)
 		if err != nil {
 			t.Fatalf("Failed to scan vulnerabilities: %v", err)
 		}
@@ -275,7 +275,7 @@ func TestTrivyScanner(t *testing.T) {
 		t.Logf("Testing private image authentication: %s", privateImage)
 
 		// Try to scan the private image
-		result, err := scanner.ScanVulnerabilities(ctx, privateImage)
+		result, err := scanner.ScanVulnerabilities(ctx, privateImage, false)
 		if err != nil {
 			// If this fails, it likely means authentication isn't working
 			t.Logf("Private image scan failed (may indicate auth issue): %v", err)
@@ -611,7 +611,7 @@ func TestEndToEndWorkflow(t *testing.T) {
 		}
 
 		// 3. Scan for vulnerabilities
-		scanResult, err := trivyScanner.ScanVulnerabilities(ctx, imageRef)
+		scanResult, err := trivyScanner.ScanVulnerabilities(ctx, imageRef, false)
 		if err != nil {
 			t.Fatalf("Failed to scan vulnerabilities: %v", err)
 		}
@@ -1396,7 +1396,7 @@ func TestOptimizedAttestationFlow(t *testing.T) {
 		// Step 2: Scan vulnerabilities (once)
 		t.Log("Step 2: Scanning vulnerabilities...")
 		scanStartTime := time.Now()
-		scanResult, err := trivyScanner.ScanVulnerabilities(ctx, imageRef)
+		scanResult, err := trivyScanner.ScanVulnerabilities(ctx, imageRef, false)
 		if err != nil {
 			t.Fatalf("Failed to scan vulnerabilities: %v", err)
 		}
@@ -1493,7 +1493,7 @@ func TestCompleteWorkerWorkflow(t *testing.T) {
 
 		// Step 1: Scan for vulnerabilities
 		t.Log("Step 1: Scanning for vulnerabilities...")
-		scanResult, err := trivyScanner.ScanVulnerabilities(ctx, imageRef)
+		scanResult, err := trivyScanner.ScanVulnerabilities(ctx, imageRef, false)
 		if err != nil {
 			t.Fatalf("Failed to scan vulnerabilities: %v", err)
 		}
@@ -1601,7 +1601,7 @@ func TestCompleteWorkerWorkflow(t *testing.T) {
 
 		// Step 1: Scan for vulnerabilities
 		t.Log("Step 1: Scanning vulnerable image...")
-		scanResult, err := trivyScanner.ScanVulnerabilities(ctx, imageRef)
+		scanResult, err := trivyScanner.ScanVulnerabilities(ctx, imageRef, false)
 		if err != nil {
 			t.Fatalf("Failed to scan vulnerabilities: %v", err)
 		}
@@ -1709,7 +1709,7 @@ func TestCompleteWorkerWorkflow(t *testing.T) {
 
 		// Step 1: Scan for vulnerabilities
 		t.Log("Step 1: Scanning image...")
-		scanResult, err := trivyScanner.ScanVulnerabilities(ctx, imageRef)
+		scanResult, err := trivyScanner.ScanVulnerabilities(ctx, imageRef, false)
 		if err != nil {
 			t.Fatalf("Failed to scan vulnerabilities: %v", err)
 		}
@@ -1864,7 +1864,7 @@ func TestCompleteWorkerWorkflow(t *testing.T) {
 
 		// First scan: with toleration (should pass and sign)
 		t.Log("First scan: with toleration...")
-		scanResult, err := trivyScanner.ScanVulnerabilities(ctx, imageRef)
+		scanResult, err := trivyScanner.ScanVulnerabilities(ctx, imageRef, false)
 		if err != nil {
 			t.Fatalf("Failed to scan vulnerabilities: %v", err)
 		}
@@ -1998,7 +1998,7 @@ func (m *mockWorkerScanner) GenerateSBOM(ctx context.Context, imageRef string) (
 	}, nil
 }
 
-func (m *mockWorkerScanner) ScanVulnerabilities(ctx context.Context, imageRef string) (*scanner.ScanResult, error) {
+func (m *mockWorkerScanner) ScanVulnerabilities(ctx context.Context, imageRef string, useVEXRepo bool) (*scanner.ScanResult, error) {
 	if m.vulnError != nil {
 		return nil, m.vulnError
 	}
@@ -2035,11 +2035,11 @@ func (m *mockWorkerAttestor) AttestSCAI(ctx context.Context, imageRef string, sc
 }
 
 type mockWorkerStateStore struct {
-	recordScanError    error
-	getLastScanError   error
-	lastScanID         int64
-	cleanupCalled      map[string]bool
-	cleanupErrors      map[string]error
+	recordScanError  error
+	getLastScanError error
+	lastScanID       int64
+	cleanupCalled    map[string]bool
+	cleanupErrors    map[string]error
 }
 
 func newMockWorkerStateStore() *mockWorkerStateStore {
@@ -2076,8 +2076,6 @@ func (m *mockWorkerStateStore) CleanupArtifactScans(ctx context.Context, digest 
 	return nil
 }
 
-
-
 func (m *mockWorkerStateStore) CleanupOrphanedRepositories(ctx context.Context) ([]string, error) {
 	m.cleanupCalled["repositories"] = true
 	if err, exists := m.cleanupErrors["repositories"]; exists {
@@ -2094,10 +2092,10 @@ func TestWorkerPipelineIntegration(t *testing.T) {
 		t.Skip("Skipping integration test: INTEGRATION_TEST not set to true")
 	}
 
-	// Note: The worker pipeline integration tests that were previously in 
+	// Note: The worker pipeline integration tests that were previously in
 	// internal/worker/worker_test.go should be moved here, but they require
 	// importing the worker package which creates a circular dependency.
-	// 
+	//
 	// These tests should be restructured as follows:
 	// 1. Create a separate test package (e.g., test/worker_integration)
 	// 2. Import both worker and integration test utilities
@@ -2105,7 +2103,7 @@ func TestWorkerPipelineIntegration(t *testing.T) {
 	//
 	// The tests should cover:
 	// - Pipeline_ManifestNotFoundCleanup
-	// - Pipeline_SuccessfulScanCleanup  
+	// - Pipeline_SuccessfulScanCleanup
 	// - Pipeline_CleanupErrorHandling
 	// - Pipeline_TransientCleanupErrorRetry
 	// - Pipeline_PermanentCleanupErrorNoRetry
@@ -2117,7 +2115,7 @@ func TestWorkerPipelineIntegration(t *testing.T) {
 		// Setup mocks that would be used for worker pipeline tests
 		mockQ := queue.NewInMemoryQueue(10)
 		defer mockQ.Close()
-		
+
 		mockReg := &mockWorkerRegistry{
 			manifestError: fmt.Errorf("MANIFEST_UNKNOWN: manifest not found"),
 		}
@@ -2141,7 +2139,7 @@ func TestWorkerPipelineIntegration(t *testing.T) {
 		if mockReg.manifestError == nil {
 			t.Error("Expected manifest error to be set")
 		}
-		
+
 		if len(mockStore.cleanupErrors) == 0 {
 			t.Error("Expected cleanup errors to be configured")
 		}
@@ -2165,7 +2163,7 @@ func TestWorkerPipelineIntegration(t *testing.T) {
 		t.Logf("Mock setup complete for worker pipeline tests with task: %+v", task)
 		t.Log("These mocks would be used to test:")
 		t.Log("- Manifest not found cleanup behavior")
-		t.Log("- Successful scan cleanup behavior") 
+		t.Log("- Successful scan cleanup behavior")
 		t.Log("- Cleanup error handling and retry logic")
 		t.Log("- Error classification (transient vs permanent)")
 	})

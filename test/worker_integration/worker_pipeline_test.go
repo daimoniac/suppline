@@ -77,7 +77,7 @@ func (m *mockScanner) GenerateSBOM(ctx context.Context, imageRef string) (*scann
 	}, nil
 }
 
-func (m *mockScanner) ScanVulnerabilities(ctx context.Context, imageRef string) (*scanner.ScanResult, error) {
+func (m *mockScanner) ScanVulnerabilities(ctx context.Context, imageRef string, useVEXRepo bool) (*scanner.ScanResult, error) {
 	if m.vulnError != nil {
 		return nil, m.vulnError
 	}

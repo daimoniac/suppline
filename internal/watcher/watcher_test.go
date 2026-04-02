@@ -738,7 +738,7 @@ func TestProcessTag_FailSafeBehavior(t *testing.T) {
 	}
 
 	// Process tag - should enqueue despite error (fail-safe)
-	err := w.processTag(ctx, "myorg/app1", "v1.0", nil)
+	err := w.processTag(ctx, "myorg/app1", "v1.0", nil, false)
 	if err != nil {
 		t.Fatalf("processTag failed: %v", err)
 	}

@@ -390,3 +390,38 @@ func (c *RegsyncConfig) GetQueueBufferSize() int {
 	}
 	return 1000 // Default buffer size
 }
+
+// GetVEXRepoForTarget returns whether the Aqua VEX repository should be used
+// for Trivy scans of a specific target. The sync entry's setting takes precedence
+// over defaults. Returns false if neither is configured.
+func (c *RegsyncConfig) GetVEXRepoForTarget(target string) bool {
+	for _, sync := range c.Sync {
+		syncTarget := sync.Target
+		if sync.Type == "image" {
+			if idx := strings.LastIndex(syncTarget, ":"); idx != -1 {
+				syncTarget = syncTarget[:idx]
+			}
+		}
+		if syncTarget == target && sync.VEXRepo != nil {
+			return *sync.VEXRepo
+		}
+	}
+	if c.Defaults.VEXRepo != nil {
+		return *c.Defaults.VEXRepo
+	}
+	return false
+}
+
+// IsVEXRepoEnabledAnywhere returns true if any sync entry or the defaults
+// enables the VEX repository. Used at startup to decide whether to pre-download.
+func (c *RegsyncConfig) IsVEXRepoEnabledAnywhere() bool {
+	if c.Defaults.VEXRepo != nil && *c.Defaults.VEXRepo {
+		return true
+	}
+	for _, sync := range c.Sync {
+		if sync.VEXRepo != nil && *sync.VEXRepo {
+			return true
+		}
+	}
+	return false
+}

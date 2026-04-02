@@ -31,6 +31,7 @@ defaults:
   x-policy:                   # Default policy for all sync entries (optional)
     expression: "criticalCount == 0"
     failureMessage: "critical vulnerabilities found"
+  x-vex-repo: true            # Apply Aqua VEX Hub to all scans by default (optional)
 
 sync:
   - source: nginx
@@ -60,6 +61,11 @@ sync:
       - id: CVE-2024-12345
         statement: false positive, not applicable to our use case
         expires_at: 2025-06-30T23:59:59Z
+
+  - source: internal-tool
+    target: myprivateregistry/internal-tool
+    type: repository
+    x-vex-repo: false         # Disable VEX for images with no upstream OSS VEX data (optional)
 
   - source: legacy-app
     target: myprivateregistry/legacy-app
