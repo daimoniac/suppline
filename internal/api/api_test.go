@@ -166,6 +166,14 @@ func (m *mockStateStore) GetUniqueVulnerabilityCounts(ctx context.Context) (map[
 	}, nil
 }
 
+func (m *mockStateStore) GetRuntimeUsageForScans(ctx context.Context, scans []statestore.RuntimeLookupInput) (map[string]statestore.RuntimeUsage, error) {
+	return map[string]statestore.RuntimeUsage{}, nil
+}
+
+func (m *mockStateStore) GetRuntimeUsageForScan(ctx context.Context, digest, repository, tag string) (*statestore.RuntimeUsage, error) {
+	return &statestore.RuntimeUsage{}, nil
+}
+
 func TestNewAPIServer(t *testing.T) {
 	cfg := &config.APIConfig{
 		Enabled:  true,

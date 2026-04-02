@@ -98,9 +98,14 @@ export default function ScansPage() {
                 <td className="px-4 py-3 text-sm text-text-primary">{s.Repository || 'N/A'}</td>
                 <td className="px-4 py-3 text-sm text-text-secondary">{s.Tag || 'N/A'}</td>
                 <td className="px-4 py-3 text-sm">
-                  <div className="flex items-center gap-1"><code className="text-xs text-text-muted font-mono">{truncateDigest(s.Digest)}</code>
+                  <div className="flex items-center gap-1 flex-wrap"><code className="text-xs text-text-muted font-mono">{truncateDigest(s.Digest)}</code>
                     <button className="text-text-muted hover:text-text-primary p-0.5" onClick={e => { e.stopPropagation(); copyToClipboard(s.Digest).then(ok => toast(ok ? 'Copied!' : 'Failed', ok ? 'success' : 'error')); }}>
-                      <Copy className="w-3 h-3" /></button></div>
+                      <Copy className="w-3 h-3" /></button>
+                    <span
+                      className={`px-1.5 py-0.5 rounded text-[10px] font-semibold ${s.RuntimeUsed ? 'bg-success-bg text-success' : 'bg-bg-tertiary text-text-muted'}`}
+                      title={s.RuntimeUsed && s.RuntimeClusters && s.RuntimeClusters.length > 0 ? `Running on: ${s.RuntimeClusters.join(', ')}` : 'Not currently reported in runtime inventory'}>
+                      {s.RuntimeUsed ? `In use (${s.RuntimeClusters?.length || 0})` : 'Not in use'}
+                    </span></div>
                 </td>
                 <td className="px-4 py-3 text-sm text-text-secondary">{formatRelativeTime(s.ScannedAt)}</td>
                 <td className="px-4 py-3"><StatusBadge passed={s.PolicyPassed} /></td>

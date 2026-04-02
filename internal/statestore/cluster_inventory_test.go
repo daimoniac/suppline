@@ -6,6 +6,8 @@ import (
 	"os"
 	"testing"
 	"time"
+
+	"github.com/daimoniac/suppline/internal/types"
 )
 
 func TestRecordClusterInventory_ReplacesSnapshot(t *testing.T) {
@@ -90,6 +92,137 @@ func TestRecordClusterInventory_EmptyImagesClearsExisting(t *testing.T) {
 	}
 	if len(rows) != 0 {
 		t.Fatalf("Expected 0 image rows after empty replacement, got %d", len(rows))
+	}
+}
+
+func TestGetRuntimeUsageForScan_DigestMatch(t *testing.T) {
+	dbPath := "test_cluster_runtime_digest_" + t.Name() + ".db"
+	_ = os.Remove(dbPath)
+	defer os.Remove(dbPath)
+
+	store, err := NewSQLiteStore(dbPath)
+	if err != nil {
+		t.Fatalf("Failed to create SQLite store: %v", err)
+	}
+	defer store.Close()
+
+	ctx := context.Background()
+	record := &ScanRecord{
+		Repository:      "docker.io/library/nginx",
+		Tag:             "1.25",
+		Digest:          "sha256:scan-digest",
+		PolicyPassed:    true,
+		SBOMAttested:    true,
+		VulnAttested:    true,
+		SCAIAttested:    true,
+		Vulnerabilities: []types.VulnerabilityRecord{},
+		ToleratedCVEs:   []types.ToleratedCVE{},
+	}
+	if err := store.RecordScan(ctx, record); err != nil {
+		t.Fatalf("RecordScan failed: %v", err)
+	}
+
+	if err := store.RecordClusterInventory(ctx, "cluster-a", []ClusterImageEntry{
+		{Namespace: "default", ImageRef: "docker.io/library/nginx", Tag: "1.25", Digest: "sha256:scan-digest"},
+	}, time.Now().UTC()); err != nil {
+		t.Fatalf("RecordClusterInventory failed: %v", err)
+	}
+
+	usage, err := store.GetRuntimeUsageForScan(ctx, record.Digest, record.Repository, record.Tag)
+	if err != nil {
+		t.Fatalf("GetRuntimeUsageForScan failed: %v", err)
+	}
+	if !usage.RuntimeUsed {
+		t.Fatalf("Expected runtime usage to be true")
+	}
+	if len(usage.RuntimeClusters) != 1 || usage.RuntimeClusters[0] != "cluster-a" {
+		t.Fatalf("Unexpected runtime clusters: %+v", usage.RuntimeClusters)
+	}
+
+	bulk, err := store.GetRuntimeUsageForScans(ctx, []RuntimeLookupInput{{
+		Digest:     record.Digest,
+		Repository: record.Repository,
+		Tag:        record.Tag,
+	}})
+	if err != nil {
+		t.Fatalf("GetRuntimeUsageForScans failed: %v", err)
+	}
+
+	bulkUsage, ok := bulk[record.Digest]
+	if !ok || !bulkUsage.RuntimeUsed {
+		t.Fatalf("Expected digest runtime usage in bulk map, got: %+v", bulk)
+	}
+}
+
+func TestGetRuntimeUsageForScan_FallbackRepositoryTagMatch(t *testing.T) {
+	dbPath := "test_cluster_runtime_fallback_" + t.Name() + ".db"
+	_ = os.Remove(dbPath)
+	defer os.Remove(dbPath)
+
+	store, err := NewSQLiteStore(dbPath)
+	if err != nil {
+		t.Fatalf("Failed to create SQLite store: %v", err)
+	}
+	defer store.Close()
+
+	ctx := context.Background()
+	record := &ScanRecord{
+		Repository:      "docker.io/library/nginx",
+		Tag:             "1.26",
+		Digest:          "sha256:unmatched-scan-digest",
+		PolicyPassed:    true,
+		SBOMAttested:    true,
+		VulnAttested:    true,
+		SCAIAttested:    true,
+		Vulnerabilities: []types.VulnerabilityRecord{},
+		ToleratedCVEs:   []types.ToleratedCVE{},
+	}
+	if err := store.RecordScan(ctx, record); err != nil {
+		t.Fatalf("RecordScan failed: %v", err)
+	}
+
+	if err := store.RecordClusterInventory(ctx, "cluster-b", []ClusterImageEntry{
+		{Namespace: "kube-system", ImageRef: "nginx", Tag: "1.26", Digest: ""},
+	}, time.Now().UTC()); err != nil {
+		t.Fatalf("RecordClusterInventory failed: %v", err)
+	}
+
+	usage, err := store.GetRuntimeUsageForScan(ctx, record.Digest, record.Repository, record.Tag)
+	if err != nil {
+		t.Fatalf("GetRuntimeUsageForScan failed: %v", err)
+	}
+	if !usage.RuntimeUsed {
+		t.Fatalf("Expected fallback runtime usage to be true")
+	}
+	if len(usage.RuntimeClusters) != 1 || usage.RuntimeClusters[0] != "cluster-b" {
+		t.Fatalf("Unexpected runtime clusters: %+v", usage.RuntimeClusters)
+	}
+}
+
+func TestGetRuntimeUsageForScan_NoMatch(t *testing.T) {
+	dbPath := "test_cluster_runtime_nomatch_" + t.Name() + ".db"
+	_ = os.Remove(dbPath)
+	defer os.Remove(dbPath)
+
+	store, err := NewSQLiteStore(dbPath)
+	if err != nil {
+		t.Fatalf("Failed to create SQLite store: %v", err)
+	}
+	defer store.Close()
+
+	ctx := context.Background()
+	if err := store.RecordClusterInventory(ctx, "cluster-c", []ClusterImageEntry{
+		{Namespace: "default", ImageRef: "busybox", Tag: "latest", Digest: "sha256:busybox"},
+	}, time.Now().UTC()); err != nil {
+		t.Fatalf("RecordClusterInventory failed: %v", err)
+	}
+
+	usage, err := store.GetRuntimeUsageForScan(ctx, "sha256:not-found", "docker.io/library/nginx", "1.25")
+	if err != nil {
+		t.Fatalf("GetRuntimeUsageForScan failed: %v", err)
+	}
+	if usage.RuntimeUsed {
+		t.Fatalf("Expected no runtime usage, got %+v", usage)
 	}
 }
 

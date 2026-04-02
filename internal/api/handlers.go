@@ -74,6 +74,15 @@ func (s *APIServer) handleGetScan(w http.ResponseWriter, r *http.Request) {
 	// Enrich with current tolerations from config instead of stale DB values
 	s.enrichScanRecord(record)
 
+	runtimeUsage, err := s.stateStore.GetRuntimeUsageForScan(r.Context(), record.Digest, record.Repository, record.Tag)
+	if err != nil {
+		s.logger.Error("failed to get runtime usage for scan", "digest", digest, "error", err)
+	} else if runtimeUsage != nil {
+		record.RuntimeUsed = runtimeUsage.RuntimeUsed
+		record.RuntimeClusters = runtimeUsage.RuntimeClusters
+		record.RuntimeNamespaces = runtimeUsage.RuntimeNamespaces
+	}
+
 	s.respondJSON(w, http.StatusOK, record)
 }
 
@@ -129,6 +138,30 @@ func (s *APIServer) handleListScans(w http.ResponseWriter, r *http.Request) {
 	// Enrich each record with current tolerations from config
 	for _, record := range records {
 		s.enrichScanRecord(record)
+	}
+
+	lookupInputs := make([]statestore.RuntimeLookupInput, 0, len(records))
+	for _, record := range records {
+		lookupInputs = append(lookupInputs, statestore.RuntimeLookupInput{
+			Digest:     record.Digest,
+			Repository: record.Repository,
+			Tag:        record.Tag,
+		})
+	}
+
+	runtimeUsageByDigest, err := s.stateStore.GetRuntimeUsageForScans(r.Context(), lookupInputs)
+	if err != nil {
+		s.logger.Error("failed to get runtime usage for scan list", "error", err)
+	} else {
+		for _, record := range records {
+			usage, ok := runtimeUsageByDigest[record.Digest]
+			if !ok {
+				continue
+			}
+			record.RuntimeUsed = usage.RuntimeUsed
+			record.RuntimeClusters = usage.RuntimeClusters
+			record.RuntimeNamespaces = usage.RuntimeNamespaces
+		}
 	}
 
 	// Stream JSON response to avoid buffering large payloads

@@ -102,6 +102,22 @@ export default function ScanDetailPage() {
               </button>
             </div>
           } />
+          <InfoItem label="Runtime" value={
+            <div className="space-y-1">
+              <span className={`inline-flex px-1.5 py-0.5 rounded text-[10px] font-semibold ${scan.RuntimeUsed ? 'bg-success-bg text-success' : 'bg-bg-tertiary text-text-muted'}`}>
+                {scan.RuntimeUsed ? `In use on ${scan.RuntimeClusters?.length || 0} cluster(s)` : 'Not in use'}
+              </span>
+              {scan.RuntimeUsed && scan.RuntimeNamespaces && scan.RuntimeNamespaces.length > 0 && (
+                <div className="text-xs text-text-secondary">
+                  {scan.RuntimeNamespaces.map((entry, idx) => (
+                    <span key={`${entry.Cluster}-${entry.Namespace}-${idx}`} className="mr-2">
+                      {entry.Cluster}/{entry.Namespace}
+                    </span>
+                  ))}
+                </div>
+              )}
+            </div>
+          } />
           <InfoItem label="Scanned" value={<span title={formatDate(scan.CreatedAt)}>{formatRelativeTime(scan.CreatedAt)}</span>} />
           <InfoItem label="Policy" value={<StatusBadge passed={scan.PolicyPassed} />} />
           <InfoItem label="Attestation" value={

@@ -59,6 +59,26 @@ type ClusterImageEntry struct {
 	Digest    string
 }
 
+// RuntimeLocation describes where an image is currently running.
+type RuntimeLocation struct {
+	Cluster   string
+	Namespace string
+}
+
+// RuntimeLookupInput identifies a scanned image for runtime matching.
+type RuntimeLookupInput struct {
+	Digest     string
+	Repository string
+	Tag        string
+}
+
+// RuntimeUsage contains runtime usage details for one scanned image.
+type RuntimeUsage struct {
+	RuntimeUsed       bool
+	RuntimeClusters   []string
+	RuntimeNamespaces []RuntimeLocation
+}
+
 // ClusterInventoryStore persists runtime cluster image inventory snapshots.
 type ClusterInventoryStore interface {
 	// RecordClusterInventory replaces the current image inventory snapshot for a cluster.
@@ -185,6 +205,12 @@ type StateStoreQuery interface {
 
 	// GetUniqueVulnerabilityCounts returns the count of unique CVE IDs by severity across all latest scans
 	GetUniqueVulnerabilityCounts(ctx context.Context) (map[string]int, error)
+
+	// GetRuntimeUsageForScans returns runtime usage keyed by digest for a list endpoint.
+	GetRuntimeUsageForScans(ctx context.Context, scans []RuntimeLookupInput) (map[string]RuntimeUsage, error)
+
+	// GetRuntimeUsageForScan returns runtime usage for a single image detail endpoint.
+	GetRuntimeUsageForScan(ctx context.Context, digest, repository, tag string) (*RuntimeUsage, error)
 }
 
 // RepositoryFilter defines criteria for listing repositories
@@ -226,12 +252,15 @@ type ScanRecord struct {
 	ErrorMessage      string
 	CreatedAt         int64 // Unix timestamp in seconds
 	// Denormalized for convenience (loaded via joins)
-	Digest          string
-	Repository      string
-	Tag             string                      // Primary tag from the artifact that was scanned
-	Tags            []TagRef                    // All tags pointing to this digest (loaded separately)
-	Vulnerabilities []types.VulnerabilityRecord // Using canonical type
-	ToleratedCVEs   []types.ToleratedCVE        // Using canonical type
+	Digest            string
+	Repository        string
+	Tag               string                      // Primary tag from the artifact that was scanned
+	Tags              []TagRef                    // All tags pointing to this digest (loaded separately)
+	Vulnerabilities   []types.VulnerabilityRecord // Using canonical type
+	ToleratedCVEs     []types.ToleratedCVE        // Using canonical type
+	RuntimeUsed       bool
+	RuntimeClusters   []string
+	RuntimeNamespaces []RuntimeLocation
 }
 
 // VulnFilter defines criteria for querying vulnerabilities

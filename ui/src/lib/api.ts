@@ -153,6 +153,14 @@ export interface Scan {
   LowVulnCount: number;
   SBOMAttested: boolean;
   VulnAttested: boolean;
+  RuntimeUsed?: boolean;
+  RuntimeClusters?: string[];
+  RuntimeNamespaces?: RuntimeLocation[];
+}
+
+export interface RuntimeLocation {
+  Cluster: string;
+  Namespace: string;
 }
 
 export interface Vulnerability {

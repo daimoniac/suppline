@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"encoding/json"
 	"fmt"
+	"sort"
 	"strings"
 	"time"
 
@@ -155,6 +156,7 @@ func (s *SQLiteStore) initSchema() error {
 	CREATE INDEX IF NOT EXISTS idx_artifacts_last_scan_repo_digest ON artifacts(last_scan_id, repository_id, digest);
 	CREATE INDEX IF NOT EXISTS idx_cluster_images_cluster ON cluster_images(cluster_id);
 	CREATE INDEX IF NOT EXISTS idx_cluster_images_digest ON cluster_images(digest);
+	CREATE INDEX IF NOT EXISTS idx_cluster_images_image_ref_tag ON cluster_images(image_ref, tag);
 	`
 
 	_, err := s.db.Exec(schema)
@@ -590,6 +592,275 @@ func (s *SQLiteStore) GetTagsForDigest(ctx context.Context, digest string) ([]Ta
 	}
 
 	return tags, nil
+}
+
+// GetRuntimeUsageForScans returns runtime usage keyed by digest for scan list responses.
+func (s *SQLiteStore) GetRuntimeUsageForScans(ctx context.Context, scans []RuntimeLookupInput) (map[string]RuntimeUsage, error) {
+	usageByDigest := make(map[string]RuntimeUsage)
+	if len(scans) == 0 {
+		return usageByDigest, nil
+	}
+
+	digests := make([]string, 0, len(scans))
+	seenDigests := make(map[string]struct{}, len(scans))
+	for _, scan := range scans {
+		digest := strings.TrimSpace(scan.Digest)
+		if digest == "" {
+			continue
+		}
+		if _, exists := seenDigests[digest]; exists {
+			continue
+		}
+		seenDigests[digest] = struct{}{}
+		digests = append(digests, digest)
+	}
+
+	byDigest, err := s.queryRuntimeUsageByDigests(ctx, digests)
+	if err != nil {
+		return nil, err
+	}
+
+	fallbackCache := make(map[string]RuntimeUsage)
+	for _, scan := range scans {
+		digest := strings.TrimSpace(scan.Digest)
+		if usage, ok := byDigest[digest]; ok && usage.RuntimeUsed {
+			usageByDigest[digest] = usage
+			continue
+		}
+
+		repo := strings.TrimSpace(scan.Repository)
+		tag := strings.TrimSpace(scan.Tag)
+		if repo == "" || tag == "" || digest == "" {
+			continue
+		}
+
+		cacheKey := normalizeRepositoryRef(repo) + "|" + tag
+		usage, ok := fallbackCache[cacheKey]
+		if !ok {
+			usage, err = s.queryRuntimeUsageByRepoTag(ctx, repo, tag)
+			if err != nil {
+				return nil, err
+			}
+			fallbackCache[cacheKey] = usage
+		}
+
+		if usage.RuntimeUsed {
+			usageByDigest[digest] = usage
+		}
+	}
+
+	return usageByDigest, nil
+}
+
+// GetRuntimeUsageForScan returns runtime usage for one scan detail response.
+func (s *SQLiteStore) GetRuntimeUsageForScan(ctx context.Context, digest, repository, tag string) (*RuntimeUsage, error) {
+	digest = strings.TrimSpace(digest)
+	repository = strings.TrimSpace(repository)
+	tag = strings.TrimSpace(tag)
+
+	if digest != "" {
+		byDigest, err := s.queryRuntimeUsageByDigests(ctx, []string{digest})
+		if err != nil {
+			return nil, err
+		}
+		if usage, ok := byDigest[digest]; ok && usage.RuntimeUsed {
+			return &usage, nil
+		}
+	}
+
+	usage, err := s.queryRuntimeUsageByRepoTag(ctx, repository, tag)
+	if err != nil {
+		return nil, err
+	}
+
+	return &usage, nil
+}
+
+func (s *SQLiteStore) queryRuntimeUsageByDigests(ctx context.Context, digests []string) (map[string]RuntimeUsage, error) {
+	result := make(map[string]RuntimeUsage)
+	if len(digests) == 0 {
+		return result, nil
+	}
+
+	placeholders := strings.TrimSuffix(strings.Repeat("?,", len(digests)), ",")
+	query := `
+		SELECT ci.digest, c.name, ci.namespace
+		FROM cluster_images ci
+		JOIN clusters c ON c.id = ci.cluster_id
+		WHERE ci.digest IN (` + placeholders + `)
+	`
+
+	args := make([]interface{}, 0, len(digests))
+	for _, digest := range digests {
+		args = append(args, digest)
+	}
+
+	rows, err := s.db.QueryContext(ctx, query, args...)
+	if err != nil {
+		return nil, errors.NewTransientf("failed to query runtime usage by digest: %w", err)
+	}
+	defer rows.Close()
+
+	locationsByDigest := make(map[string][]RuntimeLocation)
+	for rows.Next() {
+		var digest, cluster, namespace string
+		if err := rows.Scan(&digest, &cluster, &namespace); err != nil {
+			return nil, errors.NewTransientf("failed to scan runtime usage by digest: %w", err)
+		}
+		locationsByDigest[digest] = append(locationsByDigest[digest], RuntimeLocation{Cluster: cluster, Namespace: namespace})
+	}
+
+	if err := rows.Err(); err != nil {
+		return nil, errors.NewTransientf("error iterating runtime usage by digest rows: %w", err)
+	}
+
+	for digest, locations := range locationsByDigest {
+		result[digest] = buildRuntimeUsage(locations)
+	}
+
+	return result, nil
+}
+
+func (s *SQLiteStore) queryRuntimeUsageByRepoTag(ctx context.Context, repository, tag string) (RuntimeUsage, error) {
+	repository = normalizeRepositoryRef(repository)
+	tag = strings.TrimSpace(tag)
+	if repository == "" || tag == "" {
+		return RuntimeUsage{}, nil
+	}
+
+	rows, err := s.db.QueryContext(ctx, `
+		SELECT ci.image_ref, COALESCE(ci.tag, ''), c.name, ci.namespace
+		FROM cluster_images ci
+		JOIN clusters c ON c.id = ci.cluster_id
+		WHERE COALESCE(ci.tag, '') = ?
+	`, tag)
+	if err != nil {
+		return RuntimeUsage{}, errors.NewTransientf("failed to query runtime fallback usage: %w", err)
+	}
+	defer rows.Close()
+
+	locations := make([]RuntimeLocation, 0)
+	for rows.Next() {
+		var imageRef, imageTag, cluster, namespace string
+		if err := rows.Scan(&imageRef, &imageTag, &cluster, &namespace); err != nil {
+			return RuntimeUsage{}, errors.NewTransientf("failed to scan runtime fallback usage: %w", err)
+		}
+
+		if imageTag != tag {
+			continue
+		}
+		if normalizeRepositoryRef(imageRef) != repository {
+			continue
+		}
+
+		locations = append(locations, RuntimeLocation{Cluster: cluster, Namespace: namespace})
+	}
+
+	if err := rows.Err(); err != nil {
+		return RuntimeUsage{}, errors.NewTransientf("error iterating runtime fallback usage rows: %w", err)
+	}
+
+	return buildRuntimeUsage(locations), nil
+}
+
+func buildRuntimeUsage(locations []RuntimeLocation) RuntimeUsage {
+	if len(locations) == 0 {
+		return RuntimeUsage{}
+	}
+
+	clusterSet := make(map[string]struct{}, len(locations))
+	locationSet := make(map[string]RuntimeLocation, len(locations))
+	clusters := make([]string, 0, len(locations))
+	runtimeNamespaces := make([]RuntimeLocation, 0, len(locations))
+
+	for _, location := range locations {
+		cluster := strings.TrimSpace(location.Cluster)
+		namespace := strings.TrimSpace(location.Namespace)
+		if cluster == "" {
+			continue
+		}
+
+		if _, ok := clusterSet[cluster]; !ok {
+			clusterSet[cluster] = struct{}{}
+			clusters = append(clusters, cluster)
+		}
+
+		key := cluster + "|" + namespace
+		if _, ok := locationSet[key]; ok {
+			continue
+		}
+		locationSet[key] = RuntimeLocation{Cluster: cluster, Namespace: namespace}
+		runtimeNamespaces = append(runtimeNamespaces, RuntimeLocation{Cluster: cluster, Namespace: namespace})
+	}
+
+	sort.Strings(clusters)
+	sort.Slice(runtimeNamespaces, func(i, j int) bool {
+		if runtimeNamespaces[i].Cluster == runtimeNamespaces[j].Cluster {
+			return runtimeNamespaces[i].Namespace < runtimeNamespaces[j].Namespace
+		}
+		return runtimeNamespaces[i].Cluster < runtimeNamespaces[j].Cluster
+	})
+
+	if len(clusters) == 0 {
+		return RuntimeUsage{}
+	}
+
+	return RuntimeUsage{
+		RuntimeUsed:       true,
+		RuntimeClusters:   clusters,
+		RuntimeNamespaces: runtimeNamespaces,
+	}
+}
+
+func normalizeRepositoryRef(imageRef string) string {
+	ref := strings.ToLower(strings.TrimSpace(imageRef))
+	if ref == "" {
+		return ""
+	}
+
+	if at := strings.Index(ref, "@"); at >= 0 {
+		ref = ref[:at]
+	}
+
+	lastSlash := strings.LastIndex(ref, "/")
+	lastColon := strings.LastIndex(ref, ":")
+	if lastColon > lastSlash {
+		ref = ref[:lastColon]
+	}
+
+	parts := strings.Split(ref, "/")
+	if len(parts) == 0 {
+		return ""
+	}
+
+	hasRegistry := false
+	if len(parts) > 1 {
+		first := parts[0]
+		hasRegistry = strings.Contains(first, ".") || strings.Contains(first, ":") || first == "localhost"
+	}
+
+	registry := "docker.io"
+	path := ""
+	if hasRegistry {
+		registry = parts[0]
+		path = strings.Join(parts[1:], "/")
+	} else {
+		path = strings.Join(parts, "/")
+	}
+
+	if registry == "index.docker.io" || registry == "registry-1.docker.io" {
+		registry = "docker.io"
+	}
+
+	if registry == "docker.io" && !strings.Contains(path, "/") {
+		path = "library/" + path
+	}
+
+	if path == "" {
+		return ""
+	}
+
+	return registry + "/" + path
 }
 
 // GetUniqueVulnerabilityCounts returns the count of unique CVE IDs by severity across all latest scans.
