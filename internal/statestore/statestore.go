@@ -133,6 +133,10 @@ type StateStoreQuery interface {
 	// (typically from a paged group query), with image context.
 	QueryVulnerabilitiesByCVEIDs(ctx context.Context, filter VulnFilter, cveIDs []string) ([]*types.VulnerabilityRecord, error)
 
+	// ListVulnerabilityGroupSummariesByCVEIDs returns one grouped summary per CVE ID
+	// with affected image counts, without loading per-image digest details.
+	ListVulnerabilityGroupSummariesByCVEIDs(ctx context.Context, filter VulnFilter, cveIDs []string) ([]*types.VulnerabilityGroup, error)
+
 	// GetImagesByCVE returns all images affected by a specific CVE
 	GetImagesByCVE(ctx context.Context, cveID string) ([]*ScanRecord, error)
 

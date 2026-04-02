@@ -196,17 +196,24 @@ func (s *APIServer) handleQueryVulnerabilities(w http.ResponseWriter, r *http.Re
 
 	pagedGroups := []*types.VulnerabilityGroup{}
 	if len(cveIDs) > 0 {
-		vulnerabilities, err := s.stateStore.QueryVulnerabilitiesByCVEIDs(r.Context(), filter, cveIDs)
-		if err != nil {
-			s.respondError(w, http.StatusInternalServerError, fmt.Sprintf("Failed to query vulnerabilities: %v", err))
-			return
+		var grouped []*types.VulnerabilityGroup
+		if includeDigests {
+			vulnerabilities, err := s.stateStore.QueryVulnerabilitiesByCVEIDs(r.Context(), filter, cveIDs)
+			if err != nil {
+				s.respondError(w, http.StatusInternalServerError, fmt.Sprintf("Failed to query vulnerabilities: %v", err))
+				return
+			}
+
+			maxDigests := parseQueryParamInt(r, "max_digests", 200)
+			grouped = s.groupVulnerabilitiesByCVE(vulnerabilities, sortBy, sortDir, maxDigests, true)
+		} else {
+			grouped, err = s.stateStore.ListVulnerabilityGroupSummariesByCVEIDs(r.Context(), filter, cveIDs)
+			if err != nil {
+				s.respondError(w, http.StatusInternalServerError, fmt.Sprintf("Failed to list vulnerability group summaries: %v", err))
+				return
+			}
 		}
 
-		maxDigests := parseQueryParamInt(r, "max_digests", 200)
-		if !includeDigests {
-			maxDigests = 0
-		}
-		grouped := s.groupVulnerabilitiesByCVE(vulnerabilities, sortBy, sortDir, maxDigests, includeDigests)
 		groupMap := make(map[string]*types.VulnerabilityGroup, len(grouped))
 		for _, group := range grouped {
 			groupMap[group.CVEID] = group

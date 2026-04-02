@@ -134,6 +134,7 @@ func (s *SQLiteStore) initSchema() error {
 	CREATE INDEX IF NOT EXISTS idx_vulnerabilities_severity ON vulnerabilities(severity);
 	CREATE INDEX IF NOT EXISTS idx_artifacts_last_scan ON artifacts(last_scan_id);
 	CREATE INDEX IF NOT EXISTS idx_vulnerabilities_scan_severity_cve ON vulnerabilities(scan_record_id, severity, cve_id);
+	CREATE INDEX IF NOT EXISTS idx_artifacts_last_scan_repo_digest ON artifacts(last_scan_id, repository_id, digest);
 	`
 
 	_, err := s.db.Exec(schema)
@@ -639,11 +640,14 @@ func (s *SQLiteStore) ListVulnerabilityCVEPage(ctx context.Context, filter VulnF
 	}
 
 	base := `
-		FROM vulnerabilities v
-		JOIN scan_records sr ON v.scan_record_id = sr.id
-		JOIN artifacts a ON sr.artifact_id = a.id
-		JOIN repositories r ON a.repository_id = r.id
-		WHERE sr.id = a.last_scan_id
+		FROM (
+			SELECT DISTINCT last_scan_id AS scan_record_id, repository_id, digest
+			FROM artifacts
+			WHERE last_scan_id IS NOT NULL
+		) la
+		JOIN vulnerabilities v ON v.scan_record_id = la.scan_record_id
+		JOIN repositories r ON la.repository_id = r.id
+		WHERE 1 = 1
 	`
 	args := []interface{}{}
 
@@ -706,7 +710,7 @@ func (s *SQLiteStore) ListVulnerabilityCVEPage(ctx context.Context, filter VulnF
 					WHEN 'LOW' THEN 3
 					ELSE 4
 				END) AS severity_rank,
-				COUNT(DISTINCT a.digest) AS image_count
+				COUNT(DISTINCT la.digest) AS image_count
 			` + base + `
 			GROUP BY v.cve_id
 		)
@@ -816,6 +820,104 @@ func (s *SQLiteStore) QueryVulnerabilitiesByCVEIDs(ctx context.Context, filter V
 	}
 
 	return vulnerabilities, nil
+}
+
+// ListVulnerabilityGroupSummariesByCVEIDs returns grouped summaries for the selected CVE IDs.
+// This avoids loading per-image rows when only counts/metadata are needed.
+func (s *SQLiteStore) ListVulnerabilityGroupSummariesByCVEIDs(ctx context.Context, filter VulnFilter, cveIDs []string) ([]*types.VulnerabilityGroup, error) {
+	if len(cveIDs) == 0 {
+		return []*types.VulnerabilityGroup{}, nil
+	}
+
+	placeholders := strings.TrimSuffix(strings.Repeat("?,", len(cveIDs)), ",")
+	query := `
+		SELECT v.cve_id,
+			CASE MIN(CASE v.severity
+				WHEN 'CRITICAL' THEN 0
+				WHEN 'HIGH' THEN 1
+				WHEN 'MEDIUM' THEN 2
+				WHEN 'LOW' THEN 3
+				ELSE 4
+			END)
+				WHEN 0 THEN 'CRITICAL'
+				WHEN 1 THEN 'HIGH'
+				WHEN 2 THEN 'MEDIUM'
+				WHEN 3 THEN 'LOW'
+				ELSE 'UNKNOWN'
+			END AS severity,
+			MIN(v.package_name) AS package_name,
+			MIN(v.installed_version) AS installed_version,
+			MIN(v.fixed_version) AS fixed_version,
+			MIN(v.title) AS title,
+			MIN(v.description) AS description,
+			MIN(v.primary_url) AS primary_url,
+			COUNT(DISTINCT la.digest) AS affected_image_count
+		FROM (
+			SELECT DISTINCT last_scan_id AS scan_record_id, repository_id, digest
+			FROM artifacts
+			WHERE last_scan_id IS NOT NULL
+		) la
+		JOIN vulnerabilities v ON v.scan_record_id = la.scan_record_id
+		JOIN repositories r ON la.repository_id = r.id
+		WHERE 1 = 1
+			AND v.cve_id IN (` + placeholders + `)
+	`
+
+	args := make([]interface{}, 0, len(cveIDs)+3)
+	for _, cveID := range cveIDs {
+		args = append(args, cveID)
+	}
+
+	if filter.Severity != "" {
+		query += " AND v.severity = ?"
+		args = append(args, filter.Severity)
+	}
+
+	if filter.PackageName != "" {
+		query += " AND v.package_name LIKE ?"
+		args = append(args, "%"+filter.PackageName+"%")
+	}
+
+	if filter.Repository != "" {
+		query += " AND r.name LIKE ?"
+		args = append(args, "%"+filter.Repository+"%")
+	}
+
+	query += " GROUP BY v.cve_id"
+
+	rows, err := s.db.QueryContext(ctx, query, args...)
+	if err != nil {
+		return nil, errors.NewTransientf("failed to query vulnerability group summaries by cve ids: %w", err)
+	}
+	defer rows.Close()
+
+	groups := make([]*types.VulnerabilityGroup, 0, len(cveIDs))
+	for rows.Next() {
+		group := &types.VulnerabilityGroup{}
+		err := rows.Scan(
+			&group.CVEID,
+			&group.Severity,
+			&group.PackageName,
+			&group.InstalledVersion,
+			&group.FixedVersion,
+			&group.Title,
+			&group.Description,
+			&group.PrimaryURL,
+			&group.AffectedImageCount,
+		)
+		if err != nil {
+			return nil, errors.NewTransientf("failed to scan vulnerability group summary: %w", err)
+		}
+
+		group.Affected = []types.AffectedRepository{}
+		groups = append(groups, group)
+	}
+
+	if err := rows.Err(); err != nil {
+		return nil, errors.NewTransientf("error iterating vulnerability group summary rows: %w", err)
+	}
+
+	return groups, nil
 }
 
 // GetImagesByCVE returns all images affected by a specific CVE

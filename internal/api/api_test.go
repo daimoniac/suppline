@@ -92,6 +92,10 @@ func (m *mockStateStore) QueryVulnerabilitiesByCVEIDs(ctx context.Context, filte
 	return []*types.VulnerabilityRecord{}, nil
 }
 
+func (m *mockStateStore) ListVulnerabilityGroupSummariesByCVEIDs(ctx context.Context, filter statestore.VulnFilter, cveIDs []string) ([]*types.VulnerabilityGroup, error) {
+	return []*types.VulnerabilityGroup{}, nil
+}
+
 func (m *mockStateStore) GetImagesByCVE(ctx context.Context, cveID string) ([]*statestore.ScanRecord, error) {
 	return nil, nil
 }

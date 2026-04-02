@@ -108,7 +108,7 @@ export default function VulnerabilitiesPage() {
           placeholder="Search CVE ID…" className="flex-1 max-w-xs px-3 py-2 bg-bg-secondary border border-border rounded-lg text-sm text-text-primary placeholder:text-text-muted focus:outline-none focus:border-accent/50 transition-colors" />
         <select value={severity} onChange={e => { setSeverity(e.target.value); setPage(1); }}
           className="px-3 py-2 bg-bg-secondary border border-border rounded-lg text-sm text-text-primary focus:outline-none focus:border-accent/50 transition-colors">
-          <option value="all">All Severities</option>
+          <option value="all" disabled>All Severities</option>
           <option value="critical">Critical</option>
           <option value="high">High</option>
           <option value="medium">Medium</option>

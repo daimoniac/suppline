@@ -10,7 +10,7 @@ const navItems = [
   { to: '/repositories', icon: Layers, label: 'Repositories' },
   { to: '/scans', icon: ScanSearch, label: 'Scans' },
   { to: '/failed', icon: ShieldAlert, label: 'Failed Images' },
-  { to: '/vulnerabilities', icon: Bug, label: 'Vulnerabilities' },
+  { to: '/vulnerabilities?severity=critical', icon: Bug, label: 'Vulnerabilities' },
   { to: '/tolerations', icon: FileWarning, label: 'Tolerations' },
   { to: '/integrations', icon: Plug, label: 'Integrations' },
 ];
