@@ -33,11 +33,6 @@ export class APIClient {
     return data;
   }
 
-  private async requestArray<T>(endpoint: string, opts: RequestInit = {}): Promise<T[]> {
-    const data = await this.request<T[] | null>(endpoint, opts);
-    return Array.isArray(data) ? data : [];
-  }
-
   private async requestWithResponse<T>(endpoint: string, opts: RequestInit = {}, retryCount = 0): Promise<{ data: T; response: Response }> {
     const url = `${this.baseURL}${endpoint}`;
     try {
@@ -82,7 +77,7 @@ export class APIClient {
 
   // Scans
   async getScans(filters: Record<string, unknown> = {}) {
-    return this.requestArray<Scan>(`/api/v1/scans${this.qs(filters)}`);
+    return this.request<Scan[]>(`/api/v1/scans${this.qs(filters)}`);
   }
   async getScanByDigest(digest: string) {
     return this.request<ScanDetail>(`/api/v1/scans/${encodeURIComponent(digest)}`);
@@ -107,10 +102,9 @@ export class APIClient {
 
   // Vulnerabilities
   async queryVulnerabilities(filters: Record<string, unknown> = {}) {
-    const { data, response } = await this.requestWithResponse<VulnerabilityGroup[] | null>(`/api/v1/vulnerabilities${this.qs(filters)}`);
-    const vulnerabilities = Array.isArray(data) ? data : [];
-    const total = parseInt(response.headers.get('X-Total-Count') || '0', 10) || vulnerabilities.length;
-    return { vulnerabilities, total };
+    const { data, response } = await this.requestWithResponse<VulnerabilityGroup[]>(`/api/v1/vulnerabilities${this.qs(filters)}`);
+    const total = parseInt(response.headers.get('X-Total-Count') || '0', 10) || data.length;
+    return { vulnerabilities: data, total };
   }
   async getVulnerabilityDetails(cveId: string, filters: Record<string, unknown> = {}) {
     return this.request<VulnerabilityGroup>(`/api/v1/vulnerabilities/${encodeURIComponent(cveId)}${this.qs(filters)}`);
@@ -121,10 +115,10 @@ export class APIClient {
 
   // Tolerations
   async getTolerations(filters: Record<string, unknown> = {}) {
-    return this.requestArray<Toleration>(`/api/v1/tolerations${this.qs(filters)}`);
+    return this.request<Toleration[]>(`/api/v1/tolerations${this.qs(filters)}`);
   }
   async getInactiveTolerations() {
-    return this.requestArray<Toleration>('/api/v1/tolerations/inactive');
+    return this.request<Toleration[]>('/api/v1/tolerations/inactive');
   }
 
   // Policy
