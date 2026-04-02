@@ -222,6 +222,7 @@ export interface Repository {
   LastScanTime: number;
   PolicyPassed: boolean;
   VulnerabilityCount: VulnCount;
+  RuntimeUsed?: boolean;
 }
 
 export interface RepositoriesResponse {

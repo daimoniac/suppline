@@ -111,6 +111,7 @@ type RepositoryInfo struct {
 	LastScanTime       *int64 // Unix timestamp in seconds
 	VulnerabilityCount VulnerabilityCountSummary
 	PolicyPassed       bool
+	RuntimeUsed        bool
 }
 
 // VulnerabilityCountSummary represents aggregated vulnerability counts
@@ -219,6 +220,7 @@ type StateStoreQuery interface {
 type RepositoryFilter struct {
 	Search string
 	MaxAge int    // Maximum age of last scan in seconds (0 = no limit)
+	InUse  *bool  // nil = all, true = only in use, false = only not in use
 	SortBy string // Sorting option: "age_desc" (default), "name_asc", "name_desc"
 	Limit  int
 	Offset int
@@ -279,7 +281,7 @@ type VulnFilter struct {
 type ScanFilter struct {
 	Repository   string
 	PolicyPassed *bool
-	InUseOnly    bool
+	InUse        *bool  // nil = all, true = only in use, false = only not in use
 	MaxAge       int    // Maximum age of scans in seconds (0 = no limit)
 	SortBy       string // Sorting option: "age_desc" (default)
 	Limit        int

@@ -110,15 +110,12 @@ func (s *APIServer) handleListScans(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Parse query parameters
-	inUseOnly := false
-	if inUse := parseQueryParamBool(r, "in_use"); inUse != nil {
-		inUseOnly = *inUse
-	}
+	inUse := parseQueryParamBool(r, "in_use")
 
 	filter := statestore.ScanFilter{
 		Repository:   parseQueryParam(r, "repository"),
 		PolicyPassed: parseQueryParamBool(r, "policy_passed"),
-		InUseOnly:    inUseOnly,
+		InUse:        inUse,
 		MaxAge:       parseQueryParamInt(r, "max_age", 0),
 		SortBy:       parseQueryParam(r, "sort_by"),
 		Limit:        parseQueryParamInt(r, "limit", 100),
@@ -972,9 +969,11 @@ func (s *APIServer) handleListRepositories(w http.ResponseWriter, r *http.Reques
 	}
 
 	// Parse query parameters
+	inUse := parseQueryParamBool(r, "in_use")
 	filter := statestore.RepositoryFilter{
 		Search: parseQueryParam(r, "search"),
 		MaxAge: parseQueryParamInt(r, "max_age", 0),
+		InUse:  inUse,
 		SortBy: parseQueryParam(r, "sort_by"),
 		Limit:  parseQueryParamInt(r, "limit", 100),
 		Offset: parseQueryParamInt(r, "offset", 0),

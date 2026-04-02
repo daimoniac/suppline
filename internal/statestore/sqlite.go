@@ -1402,8 +1402,12 @@ func (s *SQLiteStore) ListScans(ctx context.Context, filter ScanFilter) ([]*Scan
 		args = append(args, *filter.PolicyPassed)
 	}
 
-	if filter.InUseOnly {
-		query += " AND EXISTS (SELECT 1 FROM cluster_images ci WHERE ci.digest = a.digest)"
+	if filter.InUse != nil {
+		if *filter.InUse {
+			query += " AND EXISTS (SELECT 1 FROM cluster_images ci WHERE ci.digest = a.digest)"
+		} else {
+			query += " AND NOT EXISTS (SELECT 1 FROM cluster_images ci WHERE ci.digest = a.digest)"
+		}
 	}
 
 	// Add age filter if specified
@@ -1505,8 +1509,12 @@ func (s *SQLiteStore) CountScans(ctx context.Context, filter ScanFilter) (int, e
 		args = append(args, *filter.PolicyPassed)
 	}
 
-	if filter.InUseOnly {
-		query += " AND EXISTS (SELECT 1 FROM cluster_images ci WHERE ci.digest = a.digest)"
+	if filter.InUse != nil {
+		if *filter.InUse {
+			query += " AND EXISTS (SELECT 1 FROM cluster_images ci WHERE ci.digest = a.digest)"
+		} else {
+			query += " AND NOT EXISTS (SELECT 1 FROM cluster_images ci WHERE ci.digest = a.digest)"
+		}
 	}
 
 	if filter.MaxAge > 0 {
@@ -1738,6 +1746,14 @@ func (s *SQLiteStore) ListRepositories(ctx context.Context, filter RepositoryFil
 		countArgs = append(countArgs, time.Now().Unix()-int64(filter.MaxAge))
 	}
 
+	if filter.InUse != nil {
+		if *filter.InUse {
+			countQuery += " AND EXISTS (SELECT 1 FROM artifacts ai JOIN cluster_images ci ON ci.digest = ai.digest WHERE ai.repository_id = r.id)"
+		} else {
+			countQuery += " AND NOT EXISTS (SELECT 1 FROM artifacts ai JOIN cluster_images ci ON ci.digest = ai.digest WHERE ai.repository_id = r.id)"
+		}
+	}
+
 	var total int
 	err := s.db.QueryRowContext(ctx, countQuery, countArgs...).Scan(&total)
 	if err != nil {
@@ -1757,7 +1773,8 @@ func (s *SQLiteStore) ListRepositories(ctx context.Context, filter RepositoryFil
 			MAX(sr.high_vuln_count) as max_high,
 			MAX(sr.medium_vuln_count) as max_medium,
 			MAX(sr.low_vuln_count) as max_low,
-			CASE WHEN COUNT(CASE WHEN sr.policy_passed = 0 THEN 1 END) > 0 THEN 0 ELSE 1 END as policy_passed
+			CASE WHEN COUNT(CASE WHEN sr.policy_passed = 0 THEN 1 END) > 0 THEN 0 ELSE 1 END as policy_passed,
+			CASE WHEN EXISTS (SELECT 1 FROM artifacts ai JOIN cluster_images ci ON ci.digest = ai.digest WHERE ai.repository_id = r.id) THEN 1 ELSE 0 END as runtime_used
 		FROM repositories r
 		LEFT JOIN artifacts a ON r.id = a.repository_id
 		LEFT JOIN scan_records sr ON a.last_scan_id = sr.id
@@ -1773,6 +1790,14 @@ func (s *SQLiteStore) ListRepositories(ctx context.Context, filter RepositoryFil
 	if filter.MaxAge > 0 {
 		query += " AND (SELECT MAX(sr2.created_at) FROM scan_records sr2 JOIN artifacts a2 ON sr2.artifact_id = a2.id WHERE a2.repository_id = r.id) >= ?"
 		args = append(args, time.Now().Unix()-int64(filter.MaxAge))
+	}
+
+	if filter.InUse != nil {
+		if *filter.InUse {
+			query += " AND EXISTS (SELECT 1 FROM artifacts ai JOIN cluster_images ci ON ci.digest = ai.digest WHERE ai.repository_id = r.id)"
+		} else {
+			query += " AND NOT EXISTS (SELECT 1 FROM artifacts ai JOIN cluster_images ci ON ci.digest = ai.digest WHERE ai.repository_id = r.id)"
+		}
 	}
 
 	query += " GROUP BY r.id, r.name"
@@ -1829,6 +1854,7 @@ func (s *SQLiteStore) ListRepositories(ctx context.Context, filter RepositoryFil
 		var maxMedium sql.NullInt64
 		var maxLow sql.NullInt64
 		var policyPassed int
+		var runtimeUsed int
 
 		err := rows.Scan(
 			&repoID, // repository id (not needed in response)
@@ -1840,6 +1866,7 @@ func (s *SQLiteStore) ListRepositories(ctx context.Context, filter RepositoryFil
 			&maxMedium,
 			&maxLow,
 			&policyPassed,
+			&runtimeUsed,
 		)
 		if err != nil {
 			return nil, errors.NewTransientf("failed to scan repository row: %w", err)
@@ -1865,6 +1892,7 @@ func (s *SQLiteStore) ListRepositories(ctx context.Context, filter RepositoryFil
 		}
 
 		repo.PolicyPassed = policyPassed == 1
+		repo.RuntimeUsed = runtimeUsed == 1
 
 		repositories = append(repositories, repo)
 	}

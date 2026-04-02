@@ -20,7 +20,9 @@ export default function ScansPage() {
   const [repositoryInput, setRepositoryInput] = useState(searchParams.get('repository') || '');
   const [repository, setRepository] = useState(searchParams.get('repository') || '');
   const [policyFilter, setPolicyFilter] = useState(searchParams.get('policy_passed') || 'all');
-  const [inUseOnly, setInUseOnly] = useState(searchParams.get('in_use') === 'true');
+  const [inUseFilter, setInUseFilter] = useState<'all' | 'in-use' | 'not-in-use'>(
+    searchParams.get('in_use') === 'true' ? 'in-use' : searchParams.get('in_use') === 'false' ? 'not-in-use' : 'all'
+  );
   const [sortCol, setSortCol] = useState('scanned_at');
   const [sortDir, setSortDir] = useState<'asc' | 'desc'>('desc');
   const [page, setPage] = useState(1);
@@ -38,7 +40,7 @@ export default function ScansPage() {
       };
       if (repository) filters.repository = repository;
       if (policyFilter !== 'all') filters.policy_passed = policyFilter === 'passed';
-      if (inUseOnly) filters.in_use = true;
+      if (inUseFilter !== 'all') filters.in_use = inUseFilter === 'in-use';
 
       const result = await apiClient.getScansPage(filters);
       setScans(result.scans);
@@ -48,7 +50,7 @@ export default function ScansPage() {
     } finally {
       setLoading(false);
     }
-  }, [apiClient, inUseOnly, page, pageSize, policyFilter, repository, sortCol, sortDir]);
+  }, [apiClient, inUseFilter, page, pageSize, policyFilter, repository, sortCol, sortDir]);
 
   useEffect(() => { load(); }, [load]);
 
@@ -80,12 +82,14 @@ export default function ScansPage() {
           <option value="passed">Passed</option>
           <option value="failed">Failed</option>
         </select>
-        <label className="px-3 py-2 bg-bg-secondary border border-border rounded-lg text-sm text-text-primary inline-flex items-center gap-2">
-          <input type="checkbox" checked={inUseOnly} onChange={e => { setInUseOnly(e.target.checked); setPage(1); }} />
-          Only in use
-        </label>
+        <select value={inUseFilter} onChange={e => { setInUseFilter(e.target.value as 'all' | 'in-use' | 'not-in-use'); setPage(1); }}
+          className="px-3 py-2 bg-bg-secondary border border-border rounded-lg text-sm text-text-primary focus:outline-none focus:border-accent/50 transition-colors">
+          <option value="all">All usage</option>
+          <option value="in-use">Only in use</option>
+          <option value="not-in-use">Only not in use</option>
+        </select>
         <button onClick={() => { setRepository(repositoryInput.trim()); setPage(1); }} className="px-4 py-2 bg-accent text-bg-primary rounded-lg text-sm font-medium hover:bg-accent-hover transition-colors">Filter</button>
-        <button onClick={() => { setRepositoryInput(''); setRepository(''); setPolicyFilter('all'); setInUseOnly(false); setPage(1); }} className="px-4 py-2 border border-border rounded-lg text-sm text-text-secondary hover:bg-bg-tertiary transition-colors">Clear</button>
+        <button onClick={() => { setRepositoryInput(''); setRepository(''); setPolicyFilter('all'); setInUseFilter('all'); setPage(1); }} className="px-4 py-2 border border-border rounded-lg text-sm text-text-secondary hover:bg-bg-tertiary transition-colors">Clear</button>
       </div>
       <div className="bg-bg-primary border border-border rounded-xl overflow-hidden">
         {scans.length === 0 ? (
