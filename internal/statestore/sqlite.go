@@ -384,7 +384,7 @@ func (s *SQLiteStore) GetFailedArtifacts(ctx context.Context) ([]*ScanRecord, er
 	}
 	defer rows.Close()
 
-	var records []*ScanRecord
+	records := make([]*ScanRecord, 0)
 	for rows.Next() {
 		var record ScanRecord
 
@@ -950,12 +950,30 @@ func (s *SQLiteStore) ListScans(ctx context.Context, filter ScanFilter) ([]*Scan
 		args = append(args, filter.MaxAge)
 	}
 
-	// Add sorting - currently only age_desc is supported (and is the default)
+	// Add sorting for scans list views
 	switch filter.SortBy {
-	case "age_desc", "":
+	case "scanned_at_desc", "age_desc", "":
 		query += " ORDER BY sr.created_at DESC"
+	case "scanned_at_asc", "age_asc":
+		query += " ORDER BY sr.created_at ASC"
+	case "repository_asc":
+		query += " ORDER BY r.name ASC, a.tag ASC, sr.created_at DESC"
+	case "repository_desc":
+		query += " ORDER BY r.name DESC, a.tag DESC, sr.created_at DESC"
+	case "tag_asc":
+		query += " ORDER BY a.tag ASC, r.name ASC, sr.created_at DESC"
+	case "tag_desc":
+		query += " ORDER BY a.tag DESC, r.name DESC, sr.created_at DESC"
+	case "digest_asc":
+		query += " ORDER BY a.digest ASC"
+	case "digest_desc":
+		query += " ORDER BY a.digest DESC"
+	case "policy_passed_asc":
+		query += " ORDER BY sr.policy_passed ASC, sr.created_at DESC"
+	case "policy_passed_desc":
+		query += " ORDER BY sr.policy_passed DESC, sr.created_at DESC"
 	default:
-		// Default to age_desc for any unrecognized sort option
+		// Default to age_desc for any unrecognized sort option.
 		query += " ORDER BY sr.created_at DESC"
 	}
 
@@ -1001,6 +1019,42 @@ func (s *SQLiteStore) ListScans(ctx context.Context, filter ScanFilter) ([]*Scan
 	}
 
 	return records, nil
+}
+
+// CountScans returns the total number of scan records that match the filters.
+// Pagination fields (Limit/Offset) are intentionally ignored.
+func (s *SQLiteStore) CountScans(ctx context.Context, filter ScanFilter) (int, error) {
+	query := `
+		SELECT COUNT(*)
+		FROM artifacts a
+		JOIN repositories r ON a.repository_id = r.id
+		JOIN scan_records sr ON a.last_scan_id = sr.id
+		WHERE 1=1
+	`
+	args := []interface{}{}
+
+	if filter.Repository != "" {
+		query += " AND r.name = ?"
+		args = append(args, filter.Repository)
+	}
+
+	if filter.PolicyPassed != nil {
+		query += " AND sr.policy_passed = ?"
+		args = append(args, *filter.PolicyPassed)
+	}
+
+	if filter.MaxAge > 0 {
+		query += " AND sr.created_at >= strftime('%s', 'now', '-' || ? || ' seconds')"
+		args = append(args, filter.MaxAge)
+	}
+
+	var total int
+	err := s.db.QueryRowContext(ctx, query, args...).Scan(&total)
+	if err != nil {
+		return 0, errors.NewTransientf("failed to count scans: %w", err)
+	}
+
+	return total, nil
 }
 
 // ListTolerations returns unique tolerated CVEs from scan history

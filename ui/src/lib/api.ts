@@ -79,6 +79,11 @@ export class APIClient {
   async getScans(filters: Record<string, unknown> = {}) {
     return this.request<Scan[]>(`/api/v1/scans${this.qs(filters)}`);
   }
+  async getScansPage(filters: Record<string, unknown> = {}) {
+    const { data, response } = await this.requestWithResponse<Scan[]>(`/api/v1/scans${this.qs(filters)}`);
+    const total = parseInt(response.headers.get('X-Total-Count') || '0', 10);
+    return { scans: data, total: Number.isNaN(total) ? data.length : total };
+  }
   async getScanByDigest(digest: string) {
     return this.request<ScanDetail>(`/api/v1/scans/${encodeURIComponent(digest)}`);
   }

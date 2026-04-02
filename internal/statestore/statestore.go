@@ -139,6 +139,10 @@ type StateStoreQuery interface {
 	// ListScans returns scan records with optional filters
 	ListScans(ctx context.Context, filter ScanFilter) ([]*ScanRecord, error)
 
+	// CountScans returns the total number of scans matching the filters.
+	// Limit/Offset in ScanFilter are ignored for counting.
+	CountScans(ctx context.Context, filter ScanFilter) (int, error)
+
 	// ListTolerations returns tolerated CVEs with optional filters
 	ListTolerations(ctx context.Context, filter TolerationFilter) ([]*types.TolerationInfo, error)
 

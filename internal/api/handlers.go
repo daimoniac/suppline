@@ -86,7 +86,7 @@ func (s *APIServer) handleGetScan(w http.ResponseWriter, r *http.Request) {
 // @Param repository query string false "Filter by repository name"
 // @Param policy_passed query boolean false "Filter by policy status"
 // @Param max_age query int false "Maximum age of scans in seconds (e.g., 86400 for last 24 hours)"
-// @Param sort_by query string false "Sort order: age_desc (default)" Enums(age_desc)
+// @Param sort_by query string false "Sort order: scanned_at_desc (default), scanned_at_asc, repository_asc, repository_desc, tag_asc, tag_desc, digest_asc, digest_desc, policy_passed_asc, policy_passed_desc" Enums(scanned_at_desc,scanned_at_asc,repository_asc,repository_desc,tag_asc,tag_desc,digest_asc,digest_desc,policy_passed_asc,policy_passed_desc)
 // @Param limit query int false "Maximum number of results" default(100)
 // @Param offset query int false "Pagination offset" default(0)
 // @Success 200 {array} statestore.ScanRecord
@@ -117,12 +117,22 @@ func (s *APIServer) handleListScans(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	total, err := s.stateStore.CountScans(r.Context(), filter)
+	if err != nil {
+		s.respondError(w, http.StatusInternalServerError, fmt.Sprintf("Failed to count scans: %v", err))
+		return
+	}
+	if records == nil {
+		records = make([]*statestore.ScanRecord, 0)
+	}
+
 	// Enrich each record with current tolerations from config
 	for _, record := range records {
 		s.enrichScanRecord(record)
 	}
 
 	// Stream JSON response to avoid buffering large payloads
+	w.Header().Set("X-Total-Count", fmt.Sprintf("%d", total))
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
 	encoder := json.NewEncoder(w)
@@ -485,6 +495,9 @@ func (s *APIServer) handleListFailedImages(w http.ResponseWriter, r *http.Reques
 	if err != nil {
 		s.respondError(w, http.StatusInternalServerError, fmt.Sprintf("Failed to list failed images: %v", err))
 		return
+	}
+	if records == nil {
+		records = make([]*statestore.ScanRecord, 0)
 	}
 
 	// Stream JSON response to avoid buffering large payloads

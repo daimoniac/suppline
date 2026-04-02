@@ -1,4 +1,4 @@
-import { useEffect, useState, useCallback, useMemo } from 'react';
+import { useEffect, useState, useCallback } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { useAuth } from '../lib/auth';
 import { useToast } from '../lib/toast';
@@ -13,9 +13,11 @@ export default function ScansPage() {
   const { toast } = useToast();
   const [searchParams] = useSearchParams();
 
-  const [allScans, setAllScans] = useState<Scan[]>([]);
+  const [scans, setScans] = useState<Scan[]>([]);
+  const [totalScans, setTotalScans] = useState(0);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
+  const [repositoryInput, setRepositoryInput] = useState(searchParams.get('repository') || '');
   const [repository, setRepository] = useState(searchParams.get('repository') || '');
   const [policyFilter, setPolicyFilter] = useState(searchParams.get('policy_passed') || 'all');
   const [sortCol, setSortCol] = useState('scanned_at');
@@ -27,82 +29,48 @@ export default function ScansPage() {
     setLoading(true);
     setError('');
     try {
-      const fetchSize = 200;
-      let offset = 0;
-      const collected: Scan[] = [];
+      const sortKey = `${sortCol}_${sortDir}`;
+      const filters: Record<string, unknown> = {
+        limit: pageSize,
+        offset: (page - 1) * pageSize,
+        sort_by: sortKey,
+      };
+      if (repository) filters.repository = repository;
+      if (policyFilter !== 'all') filters.policy_passed = policyFilter === 'passed';
 
-      while (true) {
-        const filters: Record<string, unknown> = { limit: fetchSize, offset };
-        if (repository) filters.repository = repository;
-        if (policyFilter !== 'all') filters.policy_passed = policyFilter === 'passed';
-
-        const batch = await apiClient.getScans(filters);
-        collected.push(...batch);
-
-        if (batch.length < fetchSize) break;
-        offset += batch.length;
-      }
-
-      setAllScans(collected);
+      const result = await apiClient.getScansPage(filters);
+      setScans(result.scans);
+      setTotalScans(result.total);
     } catch (e: unknown) {
       setError(e instanceof Error ? e.message : 'Failed');
     } finally {
       setLoading(false);
     }
-  }, [apiClient, repository, policyFilter]);
-
-  const sortedScans = useMemo(() => {
-    const colMap: Record<string, keyof Scan> = {
-      scanned_at: 'ScannedAt',
-      policy_passed: 'PolicyPassed',
-      repository: 'Repository',
-      tag: 'Tag',
-      digest: 'Digest',
-    };
-    const apiCol = colMap[sortCol] || 'ScannedAt';
-
-    return [...allScans].sort((a, b) => {
-      const av = a[apiCol as keyof Scan] as unknown;
-      const bv = b[apiCol as keyof Scan] as unknown;
-      if (typeof av === 'number' && typeof bv === 'number') return sortDir === 'asc' ? av - bv : bv - av;
-      if (typeof av === 'boolean' && typeof bv === 'boolean') {
-        const an = av ? 1 : 0;
-        const bn = bv ? 1 : 0;
-        return sortDir === 'asc' ? an - bn : bn - an;
-      }
-      return sortDir === 'asc'
-        ? String(av || '').localeCompare(String(bv || ''))
-        : String(bv || '').localeCompare(String(av || ''));
-    });
-  }, [allScans, sortCol, sortDir]);
-
-  const scans = useMemo(() => {
-    const start = (page - 1) * pageSize;
-    return sortedScans.slice(start, start + pageSize);
-  }, [sortedScans, page]);
+  }, [apiClient, page, pageSize, policyFilter, repository, sortCol, sortDir]);
 
   useEffect(() => { load(); }, [load]);
 
   useEffect(() => {
-    const totalPages = Math.max(1, Math.ceil(sortedScans.length / pageSize));
+    const totalPages = Math.max(1, Math.ceil(totalScans / pageSize));
     if (page > totalPages) setPage(totalPages);
-  }, [page, sortedScans.length]);
+  }, [page, pageSize, totalScans]);
 
   const handleSort = (col: string) => {
+    setPage(1);
     if (col === sortCol) setSortDir(d => d === 'asc' ? 'desc' : 'asc');
     else { setSortCol(col); setSortDir('desc'); }
   };
 
-  if (loading && allScans.length === 0) return <LoadingState />;
+  if (loading && scans.length === 0) return <LoadingState />;
   if (error) return <ErrorState message={error} onRetry={load} />;
 
-  const totalPages = Math.ceil(sortedScans.length / pageSize);
+  const totalPages = Math.max(1, Math.ceil(totalScans / pageSize));
 
   return (
     <div>
       <PageHeader title="Image Scans" subtitle="View and manage container image security scans" />
       <div className="flex gap-3 mb-4 flex-wrap">
-        <input value={repository} onChange={e => setRepository(e.target.value)} onKeyDown={e => e.key === 'Enter' && (setPage(1), load())}
+        <input value={repositoryInput} onChange={e => setRepositoryInput(e.target.value)} onKeyDown={e => e.key === 'Enter' && (setRepository(repositoryInput.trim()), setPage(1))}
           placeholder="Filter by repository…" className="flex-1 max-w-xs px-3 py-2 bg-bg-secondary border border-border rounded-lg text-sm text-text-primary placeholder:text-text-muted focus:outline-none focus:border-accent/50 transition-colors" />
         <select value={policyFilter} onChange={e => { setPolicyFilter(e.target.value); setPage(1); }}
           className="px-3 py-2 bg-bg-secondary border border-border rounded-lg text-sm text-text-primary focus:outline-none focus:border-accent/50 transition-colors">
@@ -110,11 +78,11 @@ export default function ScansPage() {
           <option value="passed">Passed</option>
           <option value="failed">Failed</option>
         </select>
-        <button onClick={() => { setPage(1); load(); }} className="px-4 py-2 bg-accent text-bg-primary rounded-lg text-sm font-medium hover:bg-accent-hover transition-colors">Filter</button>
-        <button onClick={() => { setRepository(''); setPolicyFilter('all'); setPage(1); load(); }} className="px-4 py-2 border border-border rounded-lg text-sm text-text-secondary hover:bg-bg-tertiary transition-colors">Clear</button>
+        <button onClick={() => { setRepository(repositoryInput.trim()); setPage(1); }} className="px-4 py-2 bg-accent text-bg-primary rounded-lg text-sm font-medium hover:bg-accent-hover transition-colors">Filter</button>
+        <button onClick={() => { setRepositoryInput(''); setRepository(''); setPolicyFilter('all'); setPage(1); }} className="px-4 py-2 border border-border rounded-lg text-sm text-text-secondary hover:bg-bg-tertiary transition-colors">Clear</button>
       </div>
       <div className="bg-bg-primary border border-border rounded-xl overflow-hidden">
-        {sortedScans.length === 0 ? (
+        {scans.length === 0 ? (
           <div className="p-12 text-center text-text-secondary text-sm">No scans found</div>
         ) : (
           <div className="overflow-x-auto"><table className="w-full"><thead><tr className="border-b border-border">
@@ -141,7 +109,7 @@ export default function ScansPage() {
             ))}
           </tbody></table></div>
         )}
-        <Pagination currentPage={page} totalPages={totalPages} total={sortedScans.length} pageSize={pageSize} onPageChange={setPage} itemLabel="scans" />
+        <Pagination currentPage={page} totalPages={totalPages} total={totalScans} pageSize={pageSize} onPageChange={setPage} itemLabel="scans" />
       </div>
     </div>
   );

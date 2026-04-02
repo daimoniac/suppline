@@ -2,6 +2,7 @@ package api
 
 import (
 	"context"
+	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -97,6 +98,10 @@ func (m *mockStateStore) GetImagesByCVE(ctx context.Context, cveID string) ([]*s
 
 func (m *mockStateStore) ListScans(ctx context.Context, filter statestore.ScanFilter) ([]*statestore.ScanRecord, error) {
 	return nil, nil
+}
+
+func (m *mockStateStore) CountScans(ctx context.Context, filter statestore.ScanFilter) (int, error) {
+	return 0, nil
 }
 
 func (m *mockStateStore) ListTolerations(ctx context.Context, filter statestore.TolerationFilter) ([]*types.TolerationInfo, error) {
@@ -337,6 +342,39 @@ func TestAuthMiddleware_ReadOnlyMode(t *testing.T) {
 
 	if w.Code != http.StatusForbidden {
 		t.Errorf("Expected status 403 for write operation in read-only mode, got %d", w.Code)
+	}
+}
+
+func TestListScans_EmptyResultReturnsJSONArray(t *testing.T) {
+	cfg := &config.APIConfig{
+		Enabled:  true,
+		Port:     8080,
+		APIKey:   "",
+		ReadOnly: false,
+	}
+
+	server := NewAPIServer(cfg, mockAttestationConfig(), &mockStateStore{}, queue.NewInMemoryQueue(100), mockRegsyncConfig(), observability.NewLogger("error"))
+
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/scans", nil)
+	w := httptest.NewRecorder()
+	server.router.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("Expected status 200, got %d", w.Code)
+	}
+
+	var payload interface{}
+	if err := json.Unmarshal(w.Body.Bytes(), &payload); err != nil {
+		t.Fatalf("Expected valid JSON response, got error: %v", err)
+	}
+
+	arr, ok := payload.([]interface{})
+	if !ok {
+		t.Fatalf("Expected JSON array response, got %T (%s)", payload, strings.TrimSpace(w.Body.String()))
+	}
+
+	if len(arr) != 0 {
+		t.Fatalf("Expected empty array response, got %d item(s)", len(arr))
 	}
 }
 
