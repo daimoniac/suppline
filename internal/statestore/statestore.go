@@ -51,6 +51,20 @@ type StateStore interface {
 	GetFailedArtifacts(ctx context.Context) ([]*ScanRecord, error)
 }
 
+// ClusterImageEntry represents one runtime image entry reported by a cluster.
+type ClusterImageEntry struct {
+	Namespace string
+	ImageRef  string
+	Tag       string
+	Digest    string
+}
+
+// ClusterInventoryStore persists runtime cluster image inventory snapshots.
+type ClusterInventoryStore interface {
+	// RecordClusterInventory replaces the current image inventory snapshot for a cluster.
+	RecordClusterInventory(ctx context.Context, clusterName string, images []ClusterImageEntry, reportedAt time.Time) error
+}
+
 // StateStoreCleanup extends StateStore with cleanup operations for managing
 // scan data lifecycle and maintaining database integrity.
 type StateStoreCleanup interface {

@@ -1,0 +1,20 @@
+apiVersion: v2
+name: clusterstate-agent
+description: >
+  Kubernetes CronJob that reports running container images to the suppline
+  cluster-inventory webhook for supply-chain security tracking.
+type: application
+version: 0.1.0
+appVersion: "0.1.0"
+keywords:
+  - security
+  - supply-chain
+  - container-security
+  - kubernetes
+  - inventory
+home: https://github.com/daimoniac/suppline
+sources:
+  - https://github.com/daimoniac/suppline
+maintainers:
+  - name: daimoniac
+    url: https://github.com/daimoniac

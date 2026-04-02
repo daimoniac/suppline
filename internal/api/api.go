@@ -45,6 +45,7 @@ type APIServer struct {
 	config            *config.APIConfig
 	attestationConfig *config.AttestationConfig
 	stateStore        statestore.StateStoreQuery
+	clusterInventory  statestore.ClusterInventoryStore
 	taskQueue         queue.TaskQueue
 	regsyncConfig     *config.RegsyncConfig
 	router            *http.ServeMux
@@ -54,10 +55,16 @@ type APIServer struct {
 
 // NewAPIServer creates a new API server instance
 func NewAPIServer(cfg *config.APIConfig, attestationCfg *config.AttestationConfig, store statestore.StateStoreQuery, queue queue.TaskQueue, regsyncConfig *config.RegsyncConfig, logger *slog.Logger) *APIServer {
+	var clusterInventoryStore statestore.ClusterInventoryStore
+	if inventoryStore, ok := store.(statestore.ClusterInventoryStore); ok {
+		clusterInventoryStore = inventoryStore
+	}
+
 	api := &APIServer{
 		config:            cfg,
 		attestationConfig: attestationCfg,
 		stateStore:        store,
+		clusterInventory:  clusterInventoryStore,
 		taskQueue:         queue,
 		regsyncConfig:     regsyncConfig,
 		router:            http.NewServeMux(),
@@ -112,6 +119,7 @@ func (s *APIServer) setupRoutes() {
 	// Action endpoints (POST)
 	s.router.HandleFunc("/api/v1/scans/trigger", s.corsMiddleware(s.authMiddleware(s.handleTriggerScan, true)))
 	s.router.HandleFunc("/api/v1/policy/reevaluate", s.corsMiddleware(s.authMiddleware(s.handleReevaluatePolicy, true)))
+	s.router.HandleFunc("/api/v1/webhook/cluster-inventory", s.corsMiddleware(s.handleClusterInventory))
 
 	// Health and metrics
 	s.router.HandleFunc("/health", s.corsMiddleware(s.handleHealth))

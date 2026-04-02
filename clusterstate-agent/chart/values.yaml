@@ -1,0 +1,53 @@
+# CronJob schedule (standard cron expression).
+# Default: every hour at minute 0.
+schedule: "0 * * * *"
+
+# Name of this cluster — sent as the "cluster" field in the inventory payload.
+# Required.
+clusterName: ""
+
+suppline:
+  # Base URL of the suppline API, e.g.:
+  #   http://suppline.suppline.svc.cluster.local:8080
+  # Required.
+  url: ""
+  # Optional API key. When set, a Secret is created and the value is injected
+  # into the container as SUPPLINE_API_KEY (sent as Authorization: Bearer).
+  apiKey: ""
+
+# Comma-separated list of namespaces to exclude from inventory reporting.
+# Set to "" to report all namespaces.
+excludedNamespaces: "kube-system,kube-public,kube-node-lease"
+
+# Log level: debug | info | warn | error
+logLevel: "info"
+
+image:
+  repository: ghcr.io/daimoniac/clusterstate-agent
+  tag: "latest"
+  pullPolicy: IfNotPresent
+
+imagePullSecrets: []
+nameOverride: ""
+fullnameOverride: ""
+
+serviceAccount:
+  create: true
+  name: ""
+  annotations: {}
+
+rbac:
+  # Create ClusterRole + ClusterRoleBinding granting pods [get, list].
+  create: true
+
+# CronJob history retention
+failedJobsHistoryLimit: 3
+successfulJobsHistoryLimit: 1
+
+resources:
+  requests:
+    cpu: 50m
+    memory: 32Mi
+  limits:
+    cpu: 200m
+    memory: 64Mi

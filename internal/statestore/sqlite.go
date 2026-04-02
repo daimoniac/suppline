@@ -123,6 +123,24 @@ func (s *SQLiteStore) initSchema() error {
 		FOREIGN KEY (scan_record_id) REFERENCES scan_records(id) ON DELETE CASCADE
 	);
 
+	CREATE TABLE IF NOT EXISTS clusters (
+		id INTEGER PRIMARY KEY AUTOINCREMENT,
+		name TEXT NOT NULL UNIQUE,
+		last_reported_at INTEGER,
+		created_at INTEGER NOT NULL DEFAULT (cast(strftime('%s', 'now') as integer))
+	);
+
+	CREATE TABLE IF NOT EXISTS cluster_images (
+		id INTEGER PRIMARY KEY AUTOINCREMENT,
+		cluster_id INTEGER NOT NULL,
+		namespace TEXT NOT NULL,
+		image_ref TEXT NOT NULL,
+		tag TEXT,
+		digest TEXT,
+		reported_at INTEGER NOT NULL,
+		FOREIGN KEY (cluster_id) REFERENCES clusters(id) ON DELETE CASCADE
+	);
+
 	CREATE INDEX IF NOT EXISTS idx_artifacts_repository ON artifacts(repository_id);
 	CREATE INDEX IF NOT EXISTS idx_artifacts_digest ON artifacts(digest);
 	CREATE INDEX IF NOT EXISTS idx_artifacts_next_scan ON artifacts(next_scan_at);
@@ -135,10 +153,77 @@ func (s *SQLiteStore) initSchema() error {
 	CREATE INDEX IF NOT EXISTS idx_artifacts_last_scan ON artifacts(last_scan_id);
 	CREATE INDEX IF NOT EXISTS idx_vulnerabilities_scan_severity_cve ON vulnerabilities(scan_record_id, severity, cve_id);
 	CREATE INDEX IF NOT EXISTS idx_artifacts_last_scan_repo_digest ON artifacts(last_scan_id, repository_id, digest);
+	CREATE INDEX IF NOT EXISTS idx_cluster_images_cluster ON cluster_images(cluster_id);
+	CREATE INDEX IF NOT EXISTS idx_cluster_images_digest ON cluster_images(digest);
 	`
 
 	_, err := s.db.Exec(schema)
 	return err
+}
+
+// RecordClusterInventory replaces the image inventory snapshot for a cluster.
+func (s *SQLiteStore) RecordClusterInventory(ctx context.Context, clusterName string, images []ClusterImageEntry, reportedAt time.Time) error {
+	clusterName = strings.TrimSpace(clusterName)
+	if clusterName == "" {
+		return errors.NewPermanentf("cluster name cannot be empty")
+	}
+
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return errors.NewTransientf("failed to begin transaction: %w", err)
+	}
+	defer func() { _ = tx.Rollback() }()
+
+	reportedAtUnix := reportedAt.UTC().Unix()
+	if _, err := tx.ExecContext(ctx, `
+		INSERT INTO clusters (name, last_reported_at)
+		VALUES (?, ?)
+		ON CONFLICT(name) DO UPDATE SET last_reported_at = excluded.last_reported_at
+	`, clusterName, reportedAtUnix); err != nil {
+		return errors.NewTransientf("failed to upsert cluster: %w", err)
+	}
+
+	var clusterID int64
+	if err := tx.QueryRowContext(ctx, `
+		SELECT id FROM clusters WHERE name = ?
+	`, clusterName).Scan(&clusterID); err != nil {
+		return errors.NewTransientf("failed to query cluster id: %w", err)
+	}
+
+	if _, err := tx.ExecContext(ctx, `
+		DELETE FROM cluster_images WHERE cluster_id = ?
+	`, clusterID); err != nil {
+		return errors.NewTransientf("failed to clear previous cluster inventory: %w", err)
+	}
+
+	insertStmt, err := tx.PrepareContext(ctx, `
+		INSERT INTO cluster_images (cluster_id, namespace, image_ref, tag, digest, reported_at)
+		VALUES (?, ?, ?, ?, ?, ?)
+	`)
+	if err != nil {
+		return errors.NewTransientf("failed to prepare cluster image insert: %w", err)
+	}
+	defer insertStmt.Close()
+
+	for _, image := range images {
+		if _, err := insertStmt.ExecContext(
+			ctx,
+			clusterID,
+			strings.TrimSpace(image.Namespace),
+			strings.TrimSpace(image.ImageRef),
+			strings.TrimSpace(image.Tag),
+			strings.TrimSpace(image.Digest),
+			reportedAtUnix,
+		); err != nil {
+			return errors.NewTransientf("failed to insert cluster image: %w", err)
+		}
+	}
+
+	if err := tx.Commit(); err != nil {
+		return errors.NewTransientf("failed to commit cluster inventory transaction: %w", err)
+	}
+
+	return nil
 }
 
 // RecordScan saves scan results with full vulnerability details in a transaction
