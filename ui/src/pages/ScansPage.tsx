@@ -20,6 +20,7 @@ export default function ScansPage() {
   const [repositoryInput, setRepositoryInput] = useState(searchParams.get('repository') || '');
   const [repository, setRepository] = useState(searchParams.get('repository') || '');
   const [policyFilter, setPolicyFilter] = useState(searchParams.get('policy_passed') || 'all');
+  const [inUseOnly, setInUseOnly] = useState(searchParams.get('in_use') === 'true');
   const [sortCol, setSortCol] = useState('scanned_at');
   const [sortDir, setSortDir] = useState<'asc' | 'desc'>('desc');
   const [page, setPage] = useState(1);
@@ -37,6 +38,7 @@ export default function ScansPage() {
       };
       if (repository) filters.repository = repository;
       if (policyFilter !== 'all') filters.policy_passed = policyFilter === 'passed';
+      if (inUseOnly) filters.in_use = true;
 
       const result = await apiClient.getScansPage(filters);
       setScans(result.scans);
@@ -46,7 +48,7 @@ export default function ScansPage() {
     } finally {
       setLoading(false);
     }
-  }, [apiClient, page, pageSize, policyFilter, repository, sortCol, sortDir]);
+  }, [apiClient, inUseOnly, page, pageSize, policyFilter, repository, sortCol, sortDir]);
 
   useEffect(() => { load(); }, [load]);
 
@@ -78,8 +80,12 @@ export default function ScansPage() {
           <option value="passed">Passed</option>
           <option value="failed">Failed</option>
         </select>
+        <label className="px-3 py-2 bg-bg-secondary border border-border rounded-lg text-sm text-text-primary inline-flex items-center gap-2">
+          <input type="checkbox" checked={inUseOnly} onChange={e => { setInUseOnly(e.target.checked); setPage(1); }} />
+          Only in use
+        </label>
         <button onClick={() => { setRepository(repositoryInput.trim()); setPage(1); }} className="px-4 py-2 bg-accent text-bg-primary rounded-lg text-sm font-medium hover:bg-accent-hover transition-colors">Filter</button>
-        <button onClick={() => { setRepositoryInput(''); setRepository(''); setPolicyFilter('all'); setPage(1); }} className="px-4 py-2 border border-border rounded-lg text-sm text-text-secondary hover:bg-bg-tertiary transition-colors">Clear</button>
+        <button onClick={() => { setRepositoryInput(''); setRepository(''); setPolicyFilter('all'); setInUseOnly(false); setPage(1); }} className="px-4 py-2 border border-border rounded-lg text-sm text-text-secondary hover:bg-bg-tertiary transition-colors">Clear</button>
       </div>
       <div className="bg-bg-primary border border-border rounded-xl overflow-hidden">
         {scans.length === 0 ? (
@@ -100,15 +106,19 @@ export default function ScansPage() {
                 <td className="px-4 py-3 text-sm">
                   <div className="flex items-center gap-1 flex-wrap"><code className="text-xs text-text-muted font-mono">{truncateDigest(s.Digest)}</code>
                     <button className="text-text-muted hover:text-text-primary p-0.5" onClick={e => { e.stopPropagation(); copyToClipboard(s.Digest).then(ok => toast(ok ? 'Copied!' : 'Failed', ok ? 'success' : 'error')); }}>
-                      <Copy className="w-3 h-3" /></button>
-                    <span
-                      className={`px-1.5 py-0.5 rounded text-[10px] font-semibold ${s.RuntimeUsed ? 'bg-success-bg text-success' : 'bg-bg-tertiary text-text-muted'}`}
-                      title={s.RuntimeUsed && s.RuntimeClusters && s.RuntimeClusters.length > 0 ? `Running on: ${s.RuntimeClusters.join(', ')}` : 'Not currently reported in runtime inventory'}>
-                      {s.RuntimeUsed ? `In use (${s.RuntimeClusters?.length || 0})` : 'Not in use'}
-                    </span></div>
+                      <Copy className="w-3 h-3" /></button></div>
                 </td>
                 <td className="px-4 py-3 text-sm text-text-secondary">{formatRelativeTime(s.ScannedAt)}</td>
-                <td className="px-4 py-3"><StatusBadge passed={s.PolicyPassed} /></td>
+                <td className="px-4 py-3">
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <StatusBadge passed={s.PolicyPassed} />
+                    {s.RuntimeUsed && (
+                      <span className="px-1.5 py-0.5 rounded text-[10px] font-semibold bg-success-bg text-success" title={s.RuntimeClusters && s.RuntimeClusters.length > 0 ? `Running on: ${s.RuntimeClusters.join(', ')}` : 'In use'}>
+                        In use
+                      </span>
+                    )}
+                  </div>
+                </td>
                 <td className="px-4 py-3"><VulnCounts critical={s.CriticalVulnCount} high={s.HighVulnCount} medium={s.MediumVulnCount} low={s.LowVulnCount} /></td>
               </tr>
             ))}

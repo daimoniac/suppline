@@ -138,6 +138,8 @@ type TagInfo struct {
 	VulnerabilityCount VulnerabilityCountSummary
 	PolicyPassed       bool
 	ScanError          string // Non-empty when the last scan failed with an error
+	RuntimeUsed        bool
+	RuntimeClusters    []string
 }
 
 // TagRef represents a repository+tag combination pointing to a digest
@@ -232,6 +234,7 @@ type RepositoriesListResponse struct {
 type RepositoryTagFilter struct {
 	Search     string
 	ExactMatch bool // use exact equality instead of prefix match (used for rescan lookups)
+	InUseOnly  bool
 	Limit      int
 	Offset     int
 }
@@ -276,6 +279,7 @@ type VulnFilter struct {
 type ScanFilter struct {
 	Repository   string
 	PolicyPassed *bool
+	InUseOnly    bool
 	MaxAge       int    // Maximum age of scans in seconds (0 = no limit)
 	SortBy       string // Sorting option: "age_desc" (default)
 	Limit        int

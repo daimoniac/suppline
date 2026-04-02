@@ -20,6 +20,7 @@ export default function RepositoryDetailPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [search, setSearch] = useState(searchParams.get('search') || '');
+  const [inUseOnly, setInUseOnly] = useState(searchParams.get('in_use') === 'true');
   const [sortCol, setSortCol] = useState('name');
   const [sortDir, setSortDir] = useState<'asc' | 'desc'>('asc');
   const [page, setPage] = useState(1);
@@ -41,6 +42,7 @@ export default function RepositoryDetailPage() {
           limit: fetchSize,
           offset,
           ...(search && { search }),
+          ...(inUseOnly && { in_use: true }),
         });
         const pageTags = resp?.Tags || [];
         expectedTotal = resp?.Total || 0;
@@ -57,7 +59,7 @@ export default function RepositoryDetailPage() {
     } finally {
       setLoading(false);
     }
-  }, [apiClient, decodedName, search]);
+  }, [apiClient, decodedName, inUseOnly, search]);
 
   const sortedTags = useMemo(() => {
     const colMap: Record<string, keyof RepositoryTag> = {
@@ -136,6 +138,10 @@ export default function RepositoryDetailPage() {
       <div className="flex gap-3 mb-4">
         <input value={search} onChange={e => { setSearch(e.target.value); setError(''); }} onKeyDown={e => { if (e.key === 'Enter') { setPage(1); load(); } }}
           placeholder="Filter tags…" className="flex-1 max-w-xs px-3 py-2 bg-bg-secondary border border-border rounded-lg text-sm text-text-primary placeholder:text-text-muted focus:outline-none focus:border-accent/50 transition-colors" />
+        <label className="px-3 py-2 bg-bg-secondary border border-border rounded-lg text-sm text-text-primary inline-flex items-center gap-2">
+          <input type="checkbox" checked={inUseOnly} onChange={e => { setInUseOnly(e.target.checked); setPage(1); }} />
+          Only in use
+        </label>
         <button onClick={() => { setPage(1); load(); }} className="px-4 py-2 bg-accent text-bg-primary rounded-lg text-sm font-medium hover:bg-accent-hover transition-colors">Filter</button>
       </div>
       {/* Table */}
@@ -167,7 +173,16 @@ export default function RepositoryDetailPage() {
                 <td className="px-4 py-3 text-sm text-accent cursor-pointer hover:underline" onClick={() => tag.Digest && navigate(`/repositories/${encodeURIComponent(decodedName)}/tags/${encodeURIComponent(tag.Digest)}`)}>{tag.Name}</td>
                 <td className="px-4 py-3 text-sm text-text-secondary">{tag.LastScanTime ? formatRelativeTime(tag.LastScanTime) : 'Never'}</td>
                 <td className="px-4 py-3"><VulnCounts critical={tag.VulnerabilityCount?.Critical} high={tag.VulnerabilityCount?.High} medium={tag.VulnerabilityCount?.Medium} low={tag.VulnerabilityCount?.Low} tolerated={tag.VulnerabilityCount?.Tolerated} /></td>
-                <td className="px-4 py-3">{tag.ScanError ? <span className="text-xs text-danger" title={tag.ScanError}>Error</span> : <StatusBadge passed={tag.PolicyPassed} />}</td>
+                <td className="px-4 py-3">
+                  <div className="flex items-center gap-2 flex-wrap">
+                    {tag.ScanError ? <span className="text-xs text-danger" title={tag.ScanError}>Error</span> : <StatusBadge passed={tag.PolicyPassed} />}
+                    {tag.RuntimeUsed && (
+                      <span className="px-1.5 py-0.5 rounded text-[10px] font-semibold bg-success-bg text-success" title={tag.RuntimeClusters && tag.RuntimeClusters.length > 0 ? `Running on: ${tag.RuntimeClusters.join(', ')}` : 'In use'}>
+                        In use
+                      </span>
+                    )}
+                  </div>
+                </td>
                 <td className="px-4 py-3">
                   <button onClick={() => setConfirmRescan({ type: 'tag', name: tag.Name })} className="px-3 py-1 text-xs rounded border border-warning/30 text-warning hover:bg-warning-bg flex items-center gap-1 transition-colors">
                     <RefreshCw className="w-3 h-3" /> Rescan

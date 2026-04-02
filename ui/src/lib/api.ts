@@ -237,6 +237,8 @@ export interface RepositoryTag {
   PolicyPassed: boolean;
   ScanError: string;
   VulnerabilityCount: VulnCount;
+  RuntimeUsed?: boolean;
+  RuntimeClusters?: string[];
 }
 
 export interface RepositoryDetailResponse {

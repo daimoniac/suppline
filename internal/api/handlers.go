@@ -110,9 +110,15 @@ func (s *APIServer) handleListScans(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Parse query parameters
+	inUseOnly := false
+	if inUse := parseQueryParamBool(r, "in_use"); inUse != nil {
+		inUseOnly = *inUse
+	}
+
 	filter := statestore.ScanFilter{
 		Repository:   parseQueryParam(r, "repository"),
 		PolicyPassed: parseQueryParamBool(r, "policy_passed"),
+		InUseOnly:    inUseOnly,
 		MaxAge:       parseQueryParamInt(r, "max_age", 0),
 		SortBy:       parseQueryParam(r, "sort_by"),
 		Limit:        parseQueryParamInt(r, "limit", 100),
@@ -1022,10 +1028,16 @@ func (s *APIServer) handleGetRepository(w http.ResponseWriter, r *http.Request) 
 	}
 
 	// Parse query parameters
+	repoInUseOnly := false
+	if inUse := parseQueryParamBool(r, "in_use"); inUse != nil {
+		repoInUseOnly = *inUse
+	}
+
 	filter := statestore.RepositoryTagFilter{
-		Search: parseQueryParam(r, "search"),
-		Limit:  parseQueryParamInt(r, "limit", 100),
-		Offset: parseQueryParamInt(r, "offset", 0),
+		Search:    parseQueryParam(r, "search"),
+		InUseOnly: repoInUseOnly,
+		Limit:     parseQueryParamInt(r, "limit", 100),
+		Offset:    parseQueryParamInt(r, "offset", 0),
 	}
 
 	// Get repository from state store
@@ -1038,9 +1050,32 @@ func (s *APIServer) handleGetRepository(w http.ResponseWriter, r *http.Request) 
 	// Only 404 when the repository genuinely doesn't exist.
 	// If a search filter is active and returned zero results that is still a
 	// valid (empty) response — the repository exists, just no tags matched.
-	if detail.Total == 0 && filter.Search == "" {
+	if detail.Total == 0 && filter.Search == "" && !filter.InUseOnly {
 		s.respondError(w, http.StatusNotFound, "Repository not found")
 		return
+	}
+
+	lookups := make([]statestore.RuntimeLookupInput, 0, len(detail.Tags))
+	for _, tag := range detail.Tags {
+		lookups = append(lookups, statestore.RuntimeLookupInput{
+			Digest:     tag.Digest,
+			Repository: name,
+			Tag:        tag.Name,
+		})
+	}
+
+	runtimeUsageByDigest, err := s.stateStore.GetRuntimeUsageForScans(r.Context(), lookups)
+	if err != nil {
+		s.logger.Error("failed to get runtime usage for repository tags", "repository", name, "error", err)
+	} else {
+		for i := range detail.Tags {
+			usage, ok := runtimeUsageByDigest[detail.Tags[i].Digest]
+			if !ok {
+				continue
+			}
+			detail.Tags[i].RuntimeUsed = usage.RuntimeUsed
+			detail.Tags[i].RuntimeClusters = usage.RuntimeClusters
+		}
 	}
 
 	s.respondJSON(w, http.StatusOK, detail)

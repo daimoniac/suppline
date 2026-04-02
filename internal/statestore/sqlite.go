@@ -1402,6 +1402,10 @@ func (s *SQLiteStore) ListScans(ctx context.Context, filter ScanFilter) ([]*Scan
 		args = append(args, *filter.PolicyPassed)
 	}
 
+	if filter.InUseOnly {
+		query += " AND EXISTS (SELECT 1 FROM cluster_images ci WHERE ci.digest = a.digest)"
+	}
+
 	// Add age filter if specified
 	if filter.MaxAge > 0 {
 		query += " AND sr.created_at >= strftime('%s', 'now', '-' || ? || ' seconds')"
@@ -1499,6 +1503,10 @@ func (s *SQLiteStore) CountScans(ctx context.Context, filter ScanFilter) (int, e
 	if filter.PolicyPassed != nil {
 		query += " AND sr.policy_passed = ?"
 		args = append(args, *filter.PolicyPassed)
+	}
+
+	if filter.InUseOnly {
+		query += " AND EXISTS (SELECT 1 FROM cluster_images ci WHERE ci.digest = a.digest)"
 	}
 
 	if filter.MaxAge > 0 {
@@ -1892,6 +1900,10 @@ func (s *SQLiteStore) GetRepository(ctx context.Context, name string, filter Rep
 		}
 	}
 
+	if filter.InUseOnly {
+		countQuery += " AND EXISTS (SELECT 1 FROM cluster_images ci WHERE ci.digest = a.digest)"
+	}
+
 	var total int
 	err := s.db.QueryRowContext(ctx, countQuery, countArgs...).Scan(&total)
 	if err != nil {
@@ -1923,11 +1935,16 @@ func (s *SQLiteStore) GetRepository(ctx context.Context, name string, filter Rep
 			FROM artifacts a2
 			JOIN repositories r2 ON a2.repository_id = r2.id
 			WHERE r2.name = ?
+				AND (? = 0 OR EXISTS (SELECT 1 FROM cluster_images ci2 WHERE ci2.digest = a2.digest))
 			GROUP BY a2.tag
 		) latest ON a.tag = latest.tag AND a.id = latest.max_id
 		WHERE r.name = ?
 	`
-	args := []interface{}{name, name}
+	inUseOnly := 0
+	if filter.InUseOnly {
+		inUseOnly = 1
+	}
+	args := []interface{}{name, inUseOnly, name}
 
 	if filter.Search != "" {
 		if filter.ExactMatch {
@@ -1937,6 +1954,10 @@ func (s *SQLiteStore) GetRepository(ctx context.Context, name string, filter Rep
 			query += " AND a.tag LIKE ?"
 			args = append(args, filter.Search+"%")
 		}
+	}
+
+	if filter.InUseOnly {
+		query += " AND EXISTS (SELECT 1 FROM cluster_images ci WHERE ci.digest = a.digest)"
 	}
 
 	query += " ORDER BY a.tag ASC"

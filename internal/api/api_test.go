@@ -763,6 +763,33 @@ func TestHandleGetRepository_WithSearch(t *testing.T) {
 		t.Errorf("Expected status 200, got %d", w.Code)
 	}
 }
+
+func TestHandleGetRepository_WithInUseFilterAndNoMatches(t *testing.T) {
+	cfg := &config.APIConfig{
+		Enabled:  true,
+		Port:     8080,
+		APIKey:   "",
+		ReadOnly: false,
+	}
+
+	// Reuse empty repository mock: when in_use=true this should be a valid empty result, not 404.
+	mockStore := &emptyRepositoryMockStore{mockStateStore: &mockStateStore{}}
+	server := NewAPIServer(cfg, mockAttestationConfig(), mockStore, queue.NewInMemoryQueue(100), mockRegsyncConfig(), observability.NewLogger("error"))
+
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/repositories/test-repo?in_use=true", nil)
+	w := httptest.NewRecorder()
+
+	server.router.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Errorf("Expected status 200, got %d", w.Code)
+	}
+
+	if !strings.Contains(w.Body.String(), "\"Tags\":[]") {
+		t.Errorf("Expected empty tags array in response, got: %s", w.Body.String())
+	}
+}
+
 func TestHandleListRepositories_WithNewFilters(t *testing.T) {
 	cfg := &config.APIConfig{
 		Enabled:  true,
