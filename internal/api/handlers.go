@@ -883,6 +883,35 @@ func (s *APIServer) handleMetrics(w http.ResponseWriter, r *http.Request) {
 	_, _ = w.Write([]byte("# Metrics endpoint - to be implemented\n"))
 }
 
+// handleListKubernetesClusters lists cluster inventory summaries.
+// @Summary List Kubernetes clusters
+// @Description List known Kubernetes clusters with latest inventory sync time and image count
+// @Tags Integration
+// @Produce json
+// @Success 200 {array} statestore.ClusterSummary
+// @Failure 501 {object} map[string]string "Cluster inventory not configured"
+// @Failure 500 {object} map[string]string "Internal server error"
+// @Router /integration/kubernetes/clusters [get]
+func (s *APIServer) handleListKubernetesClusters(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		s.respondError(w, http.StatusMethodNotAllowed, "Method not allowed")
+		return
+	}
+
+	if s.clusterInventory == nil {
+		s.respondError(w, http.StatusNotImplemented, "cluster inventory storage is not configured")
+		return
+	}
+
+	summaries, err := s.clusterInventory.ListClusterSummaries(r.Context())
+	if err != nil {
+		s.respondError(w, http.StatusInternalServerError, fmt.Sprintf("Failed to list cluster summaries: %v", err))
+		return
+	}
+
+	s.respondJSON(w, http.StatusOK, summaries)
+}
+
 // handleGetPublicKey returns the cosign public key
 // @Summary Get cosign public key
 // @Description Retrieve the public key used for image signing and attestation verification

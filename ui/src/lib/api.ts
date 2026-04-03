@@ -132,6 +132,9 @@ export class APIClient {
   }
 
   // Integration
+  async getKubernetesClusters() {
+    return this.request<KubernetesClusterSummary[]>('/api/v1/integration/kubernetes/clusters');
+  }
   async getPublicKey() { return this.requestText('/api/v1/integration/publickey'); }
   async getKyvernoPolicy() { return this.requestText('/api/v1/integration/kyverno/policy'); }
 
@@ -257,4 +260,10 @@ export interface Toleration {
   Statement: string;
   ExpiresAt: number;
   Repositories: TolerationRepository[];
+}
+
+export interface KubernetesClusterSummary {
+  Name: string;
+  LastReported?: number;
+  ImageCount: number;
 }

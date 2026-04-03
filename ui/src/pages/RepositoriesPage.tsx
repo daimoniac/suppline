@@ -33,13 +33,15 @@ export default function RepositoriesPage() {
     status: sortDir === 'asc' ? 'status_asc' : 'status_desc',
   };
 
-  const load = useCallback(async () => {
+  const load = useCallback(async (opts?: { page?: number; search?: string }) => {
     setLoading(true);
     setError('');
     try {
+      const effectivePage = opts?.page ?? page;
+      const effectiveSearch = opts?.search ?? search;
       const resp = await apiClient.getRepositories({
-        limit: pageSize, offset: (page - 1) * pageSize,
-        ...(search && { search }),
+        limit: pageSize, offset: (effectivePage - 1) * pageSize,
+        ...(effectiveSearch && { search: effectiveSearch }),
         ...(inUseQuery !== undefined && { in_use: inUseQuery }),
         sort_by: sortMap[sortCol] || 'age_desc',
       });
@@ -87,6 +89,20 @@ export default function RepositoriesPage() {
 
   const totalPages = Math.ceil(total / pageSize);
 
+  const applySearch = (nextSearch: string) => {
+    setPage(1);
+    updateURL(sortCol, sortDir, nextSearch, 1);
+    void load({ page: 1, search: nextSearch });
+  };
+
+  const handleSearchInputChange = (nextSearch: string) => {
+    setSearch(nextSearch);
+    if (page !== 1) {
+      setPage(1);
+      updateURL(sortCol, sortDir, nextSearch, 1);
+    }
+  };
+
   if (loading && repos.length === 0) return <LoadingState />;
   if (error) return <ErrorState message={error} onRetry={load} />;
 
@@ -95,10 +111,10 @@ export default function RepositoriesPage() {
       <PageHeader title="Repositories" subtitle="View all repositories and their scanning status" />
       {/* Filters */}
       <div className="flex gap-3 mb-4">
-        <input value={search} onChange={e => setSearch(e.target.value)} onKeyDown={e => e.key === 'Enter' && (setPage(1), updateURL(sortCol, sortDir, search, 1), load())}
+        <input value={search} onChange={e => handleSearchInputChange(e.target.value)} onKeyDown={e => e.key === 'Enter' && applySearch(search)}
           placeholder="Filter by name…" className="flex-1 max-w-xs px-3 py-2 bg-bg-secondary border border-border rounded-lg text-sm text-text-primary placeholder:text-text-muted focus:outline-none focus:border-accent/50 transition-colors" />
-        <button onClick={() => { setPage(1); updateURL(sortCol, sortDir, search, 1); load(); }} className="px-4 py-2 bg-accent text-bg-primary rounded-lg text-sm font-medium hover:bg-accent-hover transition-colors">Filter</button>
-        <button onClick={() => { setSearch(''); setPage(1); updateURL(sortCol, sortDir, '', 1); load(); }} className="px-4 py-2 border border-border rounded-lg text-sm text-text-secondary hover:bg-bg-tertiary transition-colors">Clear</button>
+        <button onClick={() => applySearch(search)} className="px-4 py-2 bg-accent text-bg-primary rounded-lg text-sm font-medium hover:bg-accent-hover transition-colors">Filter</button>
+        <button onClick={() => { setSearch(''); applySearch(''); }} className="px-4 py-2 border border-border rounded-lg text-sm text-text-secondary hover:bg-bg-tertiary transition-colors">Clear</button>
       </div>
       {/* Table */}
       <div className="bg-bg-primary border border-border rounded-xl overflow-hidden">

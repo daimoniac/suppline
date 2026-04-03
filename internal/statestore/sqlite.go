@@ -228,6 +228,41 @@ func (s *SQLiteStore) RecordClusterInventory(ctx context.Context, clusterName st
 	return nil
 }
 
+// ListClusterSummaries returns one summary row per cluster.
+func (s *SQLiteStore) ListClusterSummaries(ctx context.Context) ([]ClusterSummary, error) {
+	rows, err := s.db.QueryContext(ctx, `
+		SELECT c.name, c.last_reported_at, COUNT(ci.id) AS image_count
+		FROM clusters c
+		LEFT JOIN cluster_images ci ON ci.cluster_id = c.id
+		GROUP BY c.id, c.name, c.last_reported_at
+		ORDER BY c.name ASC
+	`)
+	if err != nil {
+		return nil, errors.NewTransientf("failed to query cluster summaries: %w", err)
+	}
+	defer rows.Close()
+
+	summaries := make([]ClusterSummary, 0)
+	for rows.Next() {
+		var summary ClusterSummary
+		var lastReported sql.NullInt64
+		if err := rows.Scan(&summary.Name, &lastReported, &summary.ImageCount); err != nil {
+			return nil, errors.NewTransientf("failed to scan cluster summary row: %w", err)
+		}
+		if lastReported.Valid {
+			v := lastReported.Int64
+			summary.LastReported = &v
+		}
+		summaries = append(summaries, summary)
+	}
+
+	if err := rows.Err(); err != nil {
+		return nil, errors.NewTransientf("error iterating cluster summary rows: %w", err)
+	}
+
+	return summaries, nil
+}
+
 // RecordScan saves scan results with full vulnerability details in a transaction
 func (s *SQLiteStore) RecordScan(ctx context.Context, record *ScanRecord) error {
 	tx, err := s.db.BeginTx(ctx, nil)

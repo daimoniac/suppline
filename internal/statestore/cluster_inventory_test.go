@@ -95,6 +95,58 @@ func TestRecordClusterInventory_EmptyImagesClearsExisting(t *testing.T) {
 	}
 }
 
+func TestListClusterSummaries(t *testing.T) {
+	dbPath := "test_cluster_summary_" + t.Name() + ".db"
+	_ = os.Remove(dbPath)
+	defer os.Remove(dbPath)
+
+	store, err := NewSQLiteStore(dbPath)
+	if err != nil {
+		t.Fatalf("Failed to create SQLite store: %v", err)
+	}
+	defer store.Close()
+
+	ctx := context.Background()
+	tA := time.Now().UTC().Add(-2 * time.Minute)
+	tB := time.Now().UTC().Add(-1 * time.Minute)
+
+	if err := store.RecordClusterInventory(ctx, "cluster-b", []ClusterImageEntry{
+		{Namespace: "default", ImageRef: "nginx:1.26", Tag: "1.26", Digest: "sha256:b1"},
+		{Namespace: "payments", ImageRef: "redis:7", Tag: "7", Digest: "sha256:b2"},
+	}, tB); err != nil {
+		t.Fatalf("RecordClusterInventory(cluster-b) failed: %v", err)
+	}
+
+	if err := store.RecordClusterInventory(ctx, "cluster-a", []ClusterImageEntry{
+		{Namespace: "default", ImageRef: "busybox:latest", Tag: "latest", Digest: "sha256:a1"},
+	}, tA); err != nil {
+		t.Fatalf("RecordClusterInventory(cluster-a) failed: %v", err)
+	}
+
+	summaries, err := store.ListClusterSummaries(ctx)
+	if err != nil {
+		t.Fatalf("ListClusterSummaries failed: %v", err)
+	}
+
+	if len(summaries) != 2 {
+		t.Fatalf("Expected 2 cluster summaries, got %d", len(summaries))
+	}
+
+	if summaries[0].Name != "cluster-a" || summaries[0].ImageCount != 1 {
+		t.Fatalf("Unexpected first summary: %+v", summaries[0])
+	}
+	if summaries[0].LastReported == nil || *summaries[0].LastReported != tA.Unix() {
+		t.Fatalf("Unexpected first last reported: %+v", summaries[0].LastReported)
+	}
+
+	if summaries[1].Name != "cluster-b" || summaries[1].ImageCount != 2 {
+		t.Fatalf("Unexpected second summary: %+v", summaries[1])
+	}
+	if summaries[1].LastReported == nil || *summaries[1].LastReported != tB.Unix() {
+		t.Fatalf("Unexpected second last reported: %+v", summaries[1].LastReported)
+	}
+}
+
 func TestGetRuntimeUsageForScan_DigestMatch(t *testing.T) {
 	dbPath := "test_cluster_runtime_digest_" + t.Name() + ".db"
 	_ = os.Remove(dbPath)

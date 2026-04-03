@@ -14,6 +14,7 @@ import {
 interface DashboardData {
   recentScans: Scan[];
   failedCount: number;
+  failedInUseCount: number;
   activeTolerations: number;
   expiringTolerations: Toleration[];
   expiredTolerations: Toleration[];
@@ -58,6 +59,7 @@ export default function DashboardPage() {
       setData({
         recentScans,
         failedCount: failedScans.length,
+        failedInUseCount: failedScans.filter(s => !!s.RuntimeUsed).length,
         activeTolerations: allTolerations.length,
         expiringTolerations: expiring,
         expiredTolerations: expired,
@@ -96,7 +98,14 @@ export default function DashboardPage() {
 
       {/* Summary Cards */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-        <SummaryCard icon={<ShieldAlert className="w-5 h-5" />} value={data.failedCount} label="Policy Failures" variant="danger" onClick={() => navigate('/failed')} />
+        <SummaryCard
+          icon={<ShieldAlert className="w-5 h-5" />}
+          value={data.failedCount}
+          label="Policy Failures"
+          detail={`${data.failedInUseCount} in use`}
+          variant="danger"
+          onClick={() => navigate('/failed')}
+        />
         <SummaryCard icon={<FileWarning className="w-5 h-5" />} value={data.activeTolerations} label="Active Tolerations" variant="info" onClick={() => navigate('/tolerations')} />
         <SummaryCard icon={<Clock className="w-5 h-5" />} value={data.expiringTolerations.length} label="Expiring Soon" variant="warning" onClick={() => navigate('/tolerations?expiration_status=expiring')} />
         <SummaryCard icon={<CheckSquare className="w-5 h-5" />} value={data.inactiveTolerations.length} label="Inactive Tolerations" variant="muted" />
@@ -228,8 +237,9 @@ export default function DashboardPage() {
   );
 }
 
-function SummaryCard({ icon, value, label, variant, onClick }: {
+function SummaryCard({ icon, value, label, detail, variant, onClick }: {
   icon: React.ReactNode; value: number; label: string;
+  detail?: string;
   variant: 'danger' | 'warning' | 'info' | 'muted';
   onClick?: () => void;
 }) {
@@ -249,6 +259,7 @@ function SummaryCard({ icon, value, label, variant, onClick }: {
       <div className={`${iconColors[variant]} mb-3`}>{icon}</div>
       <div className="text-2xl font-bold">{value.toLocaleString()}</div>
       <div className="text-xs text-text-secondary mt-0.5">{label}</div>
+      {detail && <div className="text-xs text-text-muted mt-1">{detail}</div>}
     </div>
   );
 }

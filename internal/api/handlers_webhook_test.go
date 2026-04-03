@@ -23,6 +23,7 @@ type mockClusterInventoryStore struct {
 	cluster    string
 	images     []statestore.ClusterImageEntry
 	reportedAt time.Time
+	summaries  []statestore.ClusterSummary
 }
 
 func (m *mockClusterInventoryStore) RecordClusterInventory(ctx context.Context, clusterName string, images []statestore.ClusterImageEntry, reportedAt time.Time) error {
@@ -31,6 +32,10 @@ func (m *mockClusterInventoryStore) RecordClusterInventory(ctx context.Context, 
 	m.images = images
 	m.reportedAt = reportedAt
 	return m.err
+}
+
+func (m *mockClusterInventoryStore) ListClusterSummaries(ctx context.Context) ([]statestore.ClusterSummary, error) {
+	return m.summaries, m.err
 }
 
 func webhookTestServer(t *testing.T, store statestore.StateStoreQuery) *APIServer {
@@ -121,5 +126,48 @@ func TestHandleClusterInventory_AcceptsBothImageRefFormats(t *testing.T) {
 	}
 	if resp["status"] != "ok" {
 		t.Fatalf("Expected response status ok, got %v", resp["status"])
+	}
+}
+
+func TestHandleListKubernetesClusters(t *testing.T) {
+	now := time.Now().UTC().Unix()
+	store := &mockClusterInventoryStore{
+		mockStateStore: &mockStateStore{},
+		summaries: []statestore.ClusterSummary{
+			{Name: "prod-a", LastReported: &now, ImageCount: 12},
+			{Name: "prod-b", LastReported: &now, ImageCount: 3},
+		},
+	}
+	server := webhookTestServer(t, store)
+
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/integration/kubernetes/clusters", nil)
+	w := httptest.NewRecorder()
+
+	server.router.ServeHTTP(w, req)
+	if w.Code != http.StatusOK {
+		t.Fatalf("Expected status %d, got %d body=%s", http.StatusOK, w.Code, w.Body.String())
+	}
+
+	var resp []statestore.ClusterSummary
+	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("failed to decode response JSON: %v", err)
+	}
+	if len(resp) != 2 {
+		t.Fatalf("Expected 2 clusters, got %d", len(resp))
+	}
+	if resp[0].Name != "prod-a" || resp[0].ImageCount != 12 {
+		t.Fatalf("Unexpected first cluster summary: %+v", resp[0])
+	}
+}
+
+func TestHandleListKubernetesClusters_NotConfigured(t *testing.T) {
+	server := webhookTestServer(t, &mockStateStore{})
+
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/integration/kubernetes/clusters", nil)
+	w := httptest.NewRecorder()
+
+	server.router.ServeHTTP(w, req)
+	if w.Code != http.StatusNotImplemented {
+		t.Fatalf("Expected status %d, got %d", http.StatusNotImplemented, w.Code)
 	}
 }

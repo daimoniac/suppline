@@ -1,15 +1,17 @@
 import { useEffect, useState } from 'react';
 import { useAuth } from '../lib/auth';
 import { useToast } from '../lib/toast';
-import { copyToClipboard } from '../lib/utils';
+import { copyToClipboard, formatDate, formatRelativeTime } from '../lib/utils';
 import { LoadingState, ErrorState, PageHeader } from '../components/ui';
-import { Copy, Download, Key, Shield } from 'lucide-react';
+import type { KubernetesClusterSummary } from '../lib/api';
+import { Boxes, Copy, Download, Key, Shield } from 'lucide-react';
 
 export default function IntegrationsPage() {
   const { apiClient } = useAuth();
   const { toast } = useToast();
   const [publicKey, setPublicKey] = useState('');
   const [kyvernoPolicy, setKyvernoPolicy] = useState('');
+  const [clusters, setClusters] = useState<KubernetesClusterSummary[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
 
@@ -17,10 +19,12 @@ export default function IntegrationsPage() {
     setLoading(true);
     setError('');
     try {
-      const [key, policy] = await Promise.all([
+      const [clusterData, key, policy] = await Promise.all([
+        apiClient.getKubernetesClusters().catch(() => []),
         apiClient.getPublicKey().catch(() => ''),
         apiClient.getKyvernoPolicy().catch(() => ''),
       ]);
+      setClusters(clusterData);
       setPublicKey(key);
       setKyvernoPolicy(policy);
     } catch (e: unknown) {
@@ -54,6 +58,47 @@ export default function IntegrationsPage() {
   return (
     <div className="space-y-6">
       <PageHeader title="Integrations" subtitle="Export keys and policies for Kubernetes integration" />
+
+      {/* Kubernetes */}
+      <div className="bg-bg-primary border border-border rounded-xl overflow-hidden">
+        <div className="flex items-center justify-between px-5 py-4 border-b border-border">
+          <div className="flex items-center gap-2">
+            <Boxes className="w-4 h-4 text-accent" />
+            <h2 className="text-sm font-semibold">Kubernetes Clusters</h2>
+          </div>
+          {clusters.length > 0 && (
+            <span className="text-xs text-text-muted">{clusters.length} cluster{clusters.length === 1 ? '' : 's'}</span>
+          )}
+        </div>
+        <div className="p-4">
+          {clusters.length > 0 ? (
+            <div className="overflow-x-auto">
+              <table className="min-w-full text-sm">
+                <thead>
+                  <tr className="border-b border-border">
+                    <th className="px-3 py-2 text-left text-xs font-semibold text-text-muted uppercase tracking-wide">Cluster</th>
+                    <th className="px-3 py-2 text-left text-xs font-semibold text-text-muted uppercase tracking-wide">Latest Sync</th>
+                    <th className="px-3 py-2 text-left text-xs font-semibold text-text-muted uppercase tracking-wide">Images</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {clusters.map(cluster => (
+                    <tr key={cluster.Name} className="border-b border-border/50 last:border-0">
+                      <td className="px-3 py-3 text-text-primary font-medium">{cluster.Name}</td>
+                      <td className="px-3 py-3 text-text-secondary" title={cluster.LastReported ? formatDate(cluster.LastReported) : 'N/A'}>
+                        {cluster.LastReported ? formatRelativeTime(cluster.LastReported) : 'Never'}
+                      </td>
+                      <td className="px-3 py-3 text-text-secondary">{cluster.ImageCount}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          ) : (
+            <p className="text-sm text-text-muted">not integrated</p>
+          )}
+        </div>
+      </div>
 
       {/* Public Key */}
       <div className="bg-bg-primary border border-border rounded-xl overflow-hidden">

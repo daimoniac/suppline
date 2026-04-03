@@ -59,6 +59,13 @@ type ClusterImageEntry struct {
 	Digest    string
 }
 
+// ClusterSummary represents one cluster inventory snapshot summary.
+type ClusterSummary struct {
+	Name         string
+	LastReported *int64 // Unix timestamp in seconds
+	ImageCount   int
+}
+
 // RuntimeLocation describes where an image is currently running.
 type RuntimeLocation struct {
 	Cluster   string
@@ -83,6 +90,9 @@ type RuntimeUsage struct {
 type ClusterInventoryStore interface {
 	// RecordClusterInventory replaces the current image inventory snapshot for a cluster.
 	RecordClusterInventory(ctx context.Context, clusterName string, images []ClusterImageEntry, reportedAt time.Time) error
+
+	// ListClusterSummaries returns cluster inventory snapshot summaries.
+	ListClusterSummaries(ctx context.Context) ([]ClusterSummary, error)
 }
 
 // StateStoreCleanup extends StateStore with cleanup operations for managing
