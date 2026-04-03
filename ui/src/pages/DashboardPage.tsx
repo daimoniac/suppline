@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../lib/auth';
 import { useToast } from '../lib/toast';
 import { formatRelativeTime, truncateDigest, copyToClipboard } from '../lib/utils';
+import { useImageUsageFilter } from '../lib/imageUsageFilter';
 import { LoadingState, ErrorState, StatusBadge, SeverityBadge, VulnCounts } from '../components/ui';
 import type { Scan, Toleration } from '../lib/api';
 import {
@@ -25,6 +26,7 @@ export default function DashboardPage() {
   const { apiClient } = useAuth();
   const navigate = useNavigate();
   const { toast } = useToast();
+  const { inUseQuery } = useImageUsageFilter();
   const [data, setData] = useState<DashboardData | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
@@ -34,8 +36,8 @@ export default function DashboardPage() {
     setError('');
     try {
       const [recentScans, failedScans, allTolerations, inactiveTolerations, vulnStats] = await Promise.all([
-        apiClient.getScans({ limit: 20 }),
-        apiClient.getScans({ policy_passed: false }),
+        apiClient.getScans({ limit: 20, ...(inUseQuery !== undefined && { in_use: inUseQuery }) }),
+        apiClient.getScans({ policy_passed: false, ...(inUseQuery !== undefined && { in_use: inUseQuery }) }),
         apiClient.getTolerations({}),
         apiClient.getInactiveTolerations(),
         apiClient.getVulnerabilityStats(),
@@ -75,7 +77,7 @@ export default function DashboardPage() {
     }
   };
 
-  useEffect(() => { load(); }, []); // eslint-disable-line
+  useEffect(() => { load(); }, [inUseQuery]); // eslint-disable-line
 
   if (loading) return <LoadingState message="Loading dashboard…" />;
   if (error) return <ErrorState message={error} onRetry={load} />;

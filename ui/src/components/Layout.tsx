@@ -4,6 +4,7 @@ import {
   LayoutDashboard, Layers, ScanSearch, ShieldAlert, Bug, FileWarning,
   Plug, LogOut,
 } from 'lucide-react';
+import { ImageUsageFilterProvider, useImageUsageFilter } from '../lib/imageUsageFilter';
 
 const navItems = [
   { to: '/', icon: LayoutDashboard, label: 'Dashboard', end: true },
@@ -16,7 +17,16 @@ const navItems = [
 ];
 
 export default function Layout() {
+  return (
+    <ImageUsageFilterProvider>
+      <LayoutContent />
+    </ImageUsageFilterProvider>
+  );
+}
+
+function LayoutContent() {
   const { logout } = useAuth();
+  const { filter, setFilter } = useImageUsageFilter();
 
   return (
     <div className="flex h-screen overflow-hidden">
@@ -49,6 +59,22 @@ export default function Layout() {
               {item.label}
             </NavLink>
           ))}
+
+          <div className="mt-4 px-2">
+            <label htmlFor="global-image-usage-filter" className="block text-[11px] font-medium uppercase tracking-wide text-text-muted mb-1.5">
+              Image Usage
+            </label>
+            <select
+              id="global-image-usage-filter"
+              value={filter}
+              onChange={e => setFilter(e.target.value as 'all' | 'in-use' | 'not-in-use')}
+              className="w-full px-2.5 py-2 bg-bg-secondary border border-border rounded-lg text-sm text-text-primary focus:outline-none focus:border-accent/50 transition-colors"
+            >
+              <option value="all">All images</option>
+              <option value="in-use">In use</option>
+              <option value="not-in-use">Not in use</option>
+            </select>
+          </div>
         </nav>
 
         {/* Logout */}

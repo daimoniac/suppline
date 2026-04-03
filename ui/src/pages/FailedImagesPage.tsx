@@ -3,6 +3,7 @@ import { useNavigate, useSearchParams } from 'react-router-dom';
 import { useAuth } from '../lib/auth';
 import { useToast } from '../lib/toast';
 import { formatRelativeTime, formatDate, truncateDigest, copyToClipboard } from '../lib/utils';
+import { useImageUsageFilter } from '../lib/imageUsageFilter';
 import { LoadingState, ErrorState, PageHeader, VulnCounts, SortHeader, Pagination } from '../components/ui';
 import type { Scan } from '../lib/api';
 import { AlertTriangle, Copy } from 'lucide-react';
@@ -11,6 +12,7 @@ export default function FailedImagesPage() {
   const { apiClient } = useAuth();
   const navigate = useNavigate();
   const { toast } = useToast();
+  const { inUseQuery } = useImageUsageFilter();
   const [searchParams] = useSearchParams();
 
   const [scans, setScans] = useState<Scan[]>([]);
@@ -19,9 +21,6 @@ export default function FailedImagesPage() {
   const [error, setError] = useState('');
   const [repositoryInput, setRepositoryInput] = useState(searchParams.get('repository') || '');
   const [repository, setRepository] = useState(searchParams.get('repository') || '');
-  const [inUseFilter, setInUseFilter] = useState<'all' | 'in-use' | 'not-in-use'>(
-    searchParams.get('in_use') === 'true' ? 'in-use' : searchParams.get('in_use') === 'false' ? 'not-in-use' : 'all'
-  );
   const [sortCol, setSortCol] = useState('scanned_at');
   const [sortDir, setSortDir] = useState<'asc' | 'desc'>('desc');
   const [page, setPage] = useState(1);
@@ -39,7 +38,7 @@ export default function FailedImagesPage() {
         offset: (page - 1) * pageSize,
       };
       if (repository) filters.repository = repository;
-      if (inUseFilter !== 'all') filters.in_use = inUseFilter === 'in-use';
+      if (inUseQuery !== undefined) filters.in_use = inUseQuery;
 
       const result = await apiClient.getScansPage(filters);
       setScans(result.scans);
@@ -49,7 +48,7 @@ export default function FailedImagesPage() {
     } finally {
       setLoading(false);
     }
-  }, [apiClient, inUseFilter, page, pageSize, repository, sortCol, sortDir]);
+  }, [apiClient, inUseQuery, page, pageSize, repository, sortCol, sortDir]);
 
   useEffect(() => { load(); }, [load]);
 
@@ -88,14 +87,8 @@ export default function FailedImagesPage() {
       <div className="flex gap-3 mb-4">
         <input value={repositoryInput} onChange={e => setRepositoryInput(e.target.value)} onKeyDown={e => e.key === 'Enter' && (setRepository(repositoryInput.trim()), setPage(1))}
           placeholder="Filter by repository…" className="flex-1 max-w-xs px-3 py-2 bg-bg-secondary border border-border rounded-lg text-sm text-text-primary placeholder:text-text-muted focus:outline-none focus:border-accent/50 transition-colors" />
-        <select value={inUseFilter} onChange={e => { setInUseFilter(e.target.value as 'all' | 'in-use' | 'not-in-use'); setPage(1); }}
-          className="px-3 py-2 bg-bg-secondary border border-border rounded-lg text-sm text-text-primary focus:outline-none focus:border-accent/50 transition-colors">
-          <option value="all">All usage</option>
-          <option value="in-use">Only in use</option>
-          <option value="not-in-use">Only not in use</option>
-        </select>
         <button onClick={() => { setRepository(repositoryInput.trim()); setPage(1); }} className="px-4 py-2 bg-accent text-bg-primary rounded-lg text-sm font-medium hover:bg-accent-hover transition-colors">Filter</button>
-        <button onClick={() => { setRepositoryInput(''); setRepository(''); setInUseFilter('all'); setPage(1); }} className="px-4 py-2 border border-border rounded-lg text-sm text-text-secondary hover:bg-bg-tertiary transition-colors">Clear</button>
+        <button onClick={() => { setRepositoryInput(''); setRepository(''); setPage(1); }} className="px-4 py-2 border border-border rounded-lg text-sm text-text-secondary hover:bg-bg-tertiary transition-colors">Clear</button>
       </div>
 
       <div className="bg-bg-primary border border-border rounded-xl overflow-hidden">

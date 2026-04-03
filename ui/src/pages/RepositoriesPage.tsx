@@ -3,6 +3,7 @@ import { useNavigate, useSearchParams } from 'react-router-dom';
 import { useAuth } from '../lib/auth';
 import { useToast } from '../lib/toast';
 import { formatRelativeTime } from '../lib/utils';
+import { useImageUsageFilter } from '../lib/imageUsageFilter';
 import { LoadingState, ErrorState, PageHeader, StatusBadge, VulnCounts, SortHeader, Pagination, ConfirmModal } from '../components/ui';
 import type { Repository } from '../lib/api';
 import { RefreshCw } from 'lucide-react';
@@ -11,6 +12,7 @@ export default function RepositoriesPage() {
   const { apiClient } = useAuth();
   const navigate = useNavigate();
   const { toast } = useToast();
+  const { inUseQuery } = useImageUsageFilter();
   const [searchParams, setSearchParams] = useSearchParams();
 
   const [repos, setRepos] = useState<Repository[]>([]);
@@ -18,9 +20,6 @@ export default function RepositoriesPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [search, setSearch] = useState(searchParams.get('search') || '');
-  const [inUseFilter, setInUseFilter] = useState<'all' | 'in-use' | 'not-in-use'>(
-    searchParams.get('in_use') === 'true' ? 'in-use' : searchParams.get('in_use') === 'false' ? 'not-in-use' : 'all'
-  );
   const [sortCol, setSortCol] = useState(searchParams.get('sort') || 'lastScanTime');
   const [sortDir, setSortDir] = useState<'asc' | 'desc'>((searchParams.get('order') as 'asc' | 'desc') || 'desc');
   const [page, setPage] = useState(Number(searchParams.get('page')) || 1);
@@ -41,7 +40,7 @@ export default function RepositoriesPage() {
       const resp = await apiClient.getRepositories({
         limit: pageSize, offset: (page - 1) * pageSize,
         ...(search && { search }),
-        ...(inUseFilter !== 'all' && { in_use: inUseFilter === 'in-use' }),
+        ...(inUseQuery !== undefined && { in_use: inUseQuery }),
         sort_by: sortMap[sortCol] || 'age_desc',
       });
       if (resp && resp.Repositories) {
@@ -56,7 +55,7 @@ export default function RepositoriesPage() {
     } finally {
       setLoading(false);
     }
-  }, [apiClient, inUseFilter, page, search, sortCol, sortDir]); // eslint-disable-line
+  }, [apiClient, inUseQuery, page, search, sortCol, sortDir]); // eslint-disable-line
 
   useEffect(() => { load(); }, [load]);
 
@@ -64,13 +63,12 @@ export default function RepositoriesPage() {
     const nextDir = col === sortCol ? (sortDir === 'asc' ? 'desc' : 'asc') : 'asc';
     if (col === sortCol) setSortDir(d => d === 'asc' ? 'desc' : 'asc');
     else { setSortCol(col); setSortDir('asc'); }
-    updateURL(col, nextDir, search, inUseFilter, page);
+    updateURL(col, nextDir, search, page);
   };
 
-  const updateURL = (s: string, d: string, q: string, inUse: 'all' | 'in-use' | 'not-in-use', p: number) => {
+  const updateURL = (s: string, d: string, q: string, p: number) => {
     const params: Record<string, string> = {};
     if (q) params.search = q;
-    if (inUse !== 'all') params.in_use = inUse === 'in-use' ? 'true' : 'false';
     if (p > 1) params.page = String(p);
     if (s !== 'lastScanTime' || d !== 'desc') { params.sort = s; params.order = d; }
     setSearchParams(params, { replace: true });
@@ -97,16 +95,10 @@ export default function RepositoriesPage() {
       <PageHeader title="Repositories" subtitle="View all repositories and their scanning status" />
       {/* Filters */}
       <div className="flex gap-3 mb-4">
-        <input value={search} onChange={e => setSearch(e.target.value)} onKeyDown={e => e.key === 'Enter' && (setPage(1), updateURL(sortCol, sortDir, search, inUseFilter, 1), load())}
+        <input value={search} onChange={e => setSearch(e.target.value)} onKeyDown={e => e.key === 'Enter' && (setPage(1), updateURL(sortCol, sortDir, search, 1), load())}
           placeholder="Filter by name…" className="flex-1 max-w-xs px-3 py-2 bg-bg-secondary border border-border rounded-lg text-sm text-text-primary placeholder:text-text-muted focus:outline-none focus:border-accent/50 transition-colors" />
-        <select value={inUseFilter} onChange={e => { const v = e.target.value as 'all' | 'in-use' | 'not-in-use'; setInUseFilter(v); setPage(1); updateURL(sortCol, sortDir, search, v, 1); }}
-          className="px-3 py-2 bg-bg-secondary border border-border rounded-lg text-sm text-text-primary focus:outline-none focus:border-accent/50 transition-colors">
-          <option value="all">All usage</option>
-          <option value="in-use">Only in use</option>
-          <option value="not-in-use">Only not in use</option>
-        </select>
-        <button onClick={() => { setPage(1); updateURL(sortCol, sortDir, search, inUseFilter, 1); load(); }} className="px-4 py-2 bg-accent text-bg-primary rounded-lg text-sm font-medium hover:bg-accent-hover transition-colors">Filter</button>
-        <button onClick={() => { setSearch(''); setInUseFilter('all'); setPage(1); updateURL(sortCol, sortDir, '', 'all', 1); load(); }} className="px-4 py-2 border border-border rounded-lg text-sm text-text-secondary hover:bg-bg-tertiary transition-colors">Clear</button>
+        <button onClick={() => { setPage(1); updateURL(sortCol, sortDir, search, 1); load(); }} className="px-4 py-2 bg-accent text-bg-primary rounded-lg text-sm font-medium hover:bg-accent-hover transition-colors">Filter</button>
+        <button onClick={() => { setSearch(''); setPage(1); updateURL(sortCol, sortDir, '', 1); load(); }} className="px-4 py-2 border border-border rounded-lg text-sm text-text-secondary hover:bg-bg-tertiary transition-colors">Clear</button>
       </div>
       {/* Table */}
       <div className="bg-bg-primary border border-border rounded-xl overflow-hidden">
@@ -147,7 +139,7 @@ export default function RepositoriesPage() {
             </table>
           </div>
         )}
-        <Pagination currentPage={page} totalPages={totalPages} total={total} pageSize={pageSize} onPageChange={p => { setPage(p); updateURL(sortCol, sortDir, search, inUseFilter, p); }} itemLabel="repos" />
+        <Pagination currentPage={page} totalPages={totalPages} total={total} pageSize={pageSize} onPageChange={p => { setPage(p); updateURL(sortCol, sortDir, search, p); }} itemLabel="repos" />
       </div>
       <ConfirmModal open={!!confirmRescan} title="Rescan Repository" message={`Trigger rescan for all images in "${confirmRescan}"?`} onConfirm={() => handleRescan(confirmRescan)} onCancel={() => setConfirmRescan('')} />
     </div>

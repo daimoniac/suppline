@@ -1,6 +1,7 @@
 import { cn, severityColor } from '../lib/utils';
 import { Loader2, AlertCircle, Search, ChevronUp, ChevronDown } from 'lucide-react';
 import type { ReactNode } from 'react';
+import { useImageUsageFilter } from '../lib/imageUsageFilter';
 
 // Status Badge
 export function StatusBadge({ passed, label }: { passed: boolean; label?: string }) {
@@ -165,10 +166,18 @@ export function ConfirmModal({ open, title, message, onConfirm, onCancel }: {
 
 // Page header
 export function PageHeader({ title, subtitle }: { title: string; subtitle: string }) {
+  const { filter } = useImageUsageFilter();
+  const filterLabel = filter === 'all' ? 'All images' : filter === 'in-use' ? 'In use' : 'Not in use';
+
   return (
     <div className="mb-6">
       <h1 className="text-2xl font-bold">{title}</h1>
       <p className="text-sm text-text-secondary mt-1">{subtitle}</p>
+      <div className="mt-2">
+        <span className="inline-flex items-center px-2.5 py-1 rounded-md text-xs font-medium bg-bg-secondary border border-border text-text-secondary">
+          Image usage filter: <span className="ml-1 text-text-primary">{filterLabel}</span>
+        </span>
+      </div>
     </div>
   );
 }

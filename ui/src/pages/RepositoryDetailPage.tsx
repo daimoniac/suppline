@@ -3,6 +3,7 @@ import { useParams, useNavigate, useSearchParams } from 'react-router-dom';
 import { useAuth } from '../lib/auth';
 import { useToast } from '../lib/toast';
 import { formatRelativeTime } from '../lib/utils';
+import { useImageUsageFilter } from '../lib/imageUsageFilter';
 import { LoadingState, ErrorState, StatusBadge, VulnCounts, SortHeader, Pagination, ConfirmModal } from '../components/ui';
 import type { RepositoryTag } from '../lib/api';
 import { ArrowLeft, RefreshCw } from 'lucide-react';
@@ -13,6 +14,7 @@ export default function RepositoryDetailPage() {
   const { apiClient } = useAuth();
   const navigate = useNavigate();
   const { toast } = useToast();
+  const { inUseQuery } = useImageUsageFilter();
   const [searchParams] = useSearchParams();
 
   const [allTags, setAllTags] = useState<RepositoryTag[]>([]);
@@ -20,7 +22,6 @@ export default function RepositoryDetailPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [search, setSearch] = useState(searchParams.get('search') || '');
-  const [inUseOnly, setInUseOnly] = useState(searchParams.get('in_use') === 'true');
   const [sortCol, setSortCol] = useState('name');
   const [sortDir, setSortDir] = useState<'asc' | 'desc'>('asc');
   const [page, setPage] = useState(1);
@@ -42,7 +43,7 @@ export default function RepositoryDetailPage() {
           limit: fetchSize,
           offset,
           ...(search && { search }),
-          ...(inUseOnly && { in_use: true }),
+          ...(inUseQuery !== undefined && { in_use: inUseQuery }),
         });
         const pageTags = resp?.Tags || [];
         expectedTotal = resp?.Total || 0;
@@ -59,7 +60,7 @@ export default function RepositoryDetailPage() {
     } finally {
       setLoading(false);
     }
-  }, [apiClient, decodedName, inUseOnly, search]);
+  }, [apiClient, decodedName, inUseQuery, search]);
 
   const sortedTags = useMemo(() => {
     const colMap: Record<string, keyof RepositoryTag> = {
@@ -138,10 +139,6 @@ export default function RepositoryDetailPage() {
       <div className="flex gap-3 mb-4">
         <input value={search} onChange={e => { setSearch(e.target.value); setError(''); }} onKeyDown={e => { if (e.key === 'Enter') { setPage(1); load(); } }}
           placeholder="Filter tags…" className="flex-1 max-w-xs px-3 py-2 bg-bg-secondary border border-border rounded-lg text-sm text-text-primary placeholder:text-text-muted focus:outline-none focus:border-accent/50 transition-colors" />
-        <label className="px-3 py-2 bg-bg-secondary border border-border rounded-lg text-sm text-text-primary inline-flex items-center gap-2">
-          <input type="checkbox" checked={inUseOnly} onChange={e => { setInUseOnly(e.target.checked); setPage(1); }} />
-          Only in use
-        </label>
         <button onClick={() => { setPage(1); load(); }} className="px-4 py-2 bg-accent text-bg-primary rounded-lg text-sm font-medium hover:bg-accent-hover transition-colors">Filter</button>
       </div>
       {/* Table */}
