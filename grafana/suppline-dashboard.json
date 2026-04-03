@@ -1227,8 +1227,8 @@
             "uid": "Prometheus"
           },
           "editorMode": "code",
-          "expr": "sum ( rate(suppline_policy_failed_total[5m])) ",
-          "legendFormat": "Failed (rate)",
+          "expr": "sum(suppline_policy_failed_current{source=\"registry\"})",
+          "legendFormat": "Failed (current, registry)",
           "range": true,
           "refId": "B"
         }

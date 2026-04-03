@@ -37,9 +37,9 @@ func NewDatabaseCollector(store statestore.StateStore, logger *slog.Logger) *Dat
 			nil,
 		),
 		policyFailedDesc: prometheus.NewDesc(
-			"suppline_policy_failed_total",
-			"Current number of artifacts that failed policy evaluation",
-			nil,
+			"suppline_policy_failed_current",
+			"Current number of artifacts that failed policy evaluation by source",
+			[]string{"source"},
 			nil,
 		),
 	}
@@ -89,12 +89,48 @@ func (c *DatabaseCollector) collectPolicyFailed(ctx context.Context, store state
 		return
 	}
 
-	failedCount := len(scans)
+	registryFailedCount := len(scans)
+	runtimeFailedCount := 0
+
+	if len(scans) > 0 {
+		runtimeInputs := make([]statestore.RuntimeLookupInput, 0, len(scans))
+		for _, scan := range scans {
+			runtimeInputs = append(runtimeInputs, statestore.RuntimeLookupInput{
+				Digest:     scan.Digest,
+				Repository: scan.Repository,
+				Tag:        scan.Tag,
+			})
+		}
+
+		runtimeUsageByDigest, err := store.GetRuntimeUsageForScans(ctx, runtimeInputs)
+		if err != nil {
+			if ctx.Err() != nil {
+				c.logger.Debug("runtime policy failed metric collection timed out", "error", err)
+			} else {
+				c.logger.Error("failed to collect runtime policy failed metric", "error", err)
+			}
+			return
+		}
+
+		for _, usage := range runtimeUsageByDigest {
+			if usage.RuntimeUsed {
+				runtimeFailedCount++
+			}
+		}
+	}
 
 	ch <- prometheus.MustNewConstMetric(
 		c.policyFailedDesc,
 		prometheus.GaugeValue,
-		float64(failedCount),
+		float64(registryFailedCount),
+		"registry",
+	)
+
+	ch <- prometheus.MustNewConstMetric(
+		c.policyFailedDesc,
+		prometheus.GaugeValue,
+		float64(runtimeFailedCount),
+		"runtime",
 	)
 }
 

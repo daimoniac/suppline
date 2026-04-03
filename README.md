@@ -284,7 +284,7 @@ GET /metrics
 **Key Metrics:**
 - `suppline_scans_total` - Total scans by status
 - `suppline_policy_passed_total` - Images passing policy
-- `suppline_policy_failed_total` - Images failing policy
+- `suppline_policy_failed_current{source="registry|runtime"}` - Current images failing policy in registry vs runtime
 - `suppline_vulnerabilities_total` - Vulnerabilities by severity
 - `suppline_queue_depth` - Current queue depth
 
@@ -366,7 +366,7 @@ Prometheus metrics on `:9090/metrics`:
 
 - `suppline_scans_total` - Total scans by status
 - `suppline_policy_passed_total` - Images passing policy
-- `suppline_policy_failed_total` - Images failing policy
+- `suppline_policy_failed_current{source="registry|runtime"}` - Current images failing policy in registry vs runtime
 - `suppline_queue_depth` - Current queue depth
 - `suppline_vulnerabilities_total` - Vulnerabilities by severity
 - `suppline_scan_duration_seconds` - Scan duration histogram

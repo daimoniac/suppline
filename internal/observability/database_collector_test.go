@@ -20,6 +20,22 @@ type mockStateStore struct {
 	counts map[string]int
 }
 
+func (m *mockStateStore) GetRuntimeUsageForScans(ctx context.Context, scans []statestore.RuntimeLookupInput) (map[string]statestore.RuntimeUsage, error) {
+	usage := make(map[string]statestore.RuntimeUsage)
+	runtimeByDigest := make(map[string]bool, len(m.scans))
+	for _, s := range m.scans {
+		runtimeByDigest[s.Digest] = s.RuntimeUsed
+	}
+
+	for _, scan := range scans {
+		if runtimeByDigest[scan.Digest] {
+			usage[scan.Digest] = statestore.RuntimeUsage{RuntimeUsed: true}
+		}
+	}
+
+	return usage, nil
+}
+
 func (m *mockStateStore) GetFailedArtifacts(ctx context.Context) ([]*statestore.ScanRecord, error) {
 	var failed []*statestore.ScanRecord
 	for _, s := range m.scans {
@@ -45,8 +61,9 @@ func TestDatabaseCollector(t *testing.T) {
 	}
 
 	scans := []*statestore.ScanRecord{
-		{Digest: "abc", PolicyPassed: true},
-		{Digest: "def", PolicyPassed: false},
+		{Digest: "abc", PolicyPassed: true, RuntimeUsed: true},
+		{Digest: "def", PolicyPassed: false, RuntimeUsed: true},
+		{Digest: "ghi", PolicyPassed: false, RuntimeUsed: false},
 	}
 
 	store := &mockStateStore{
@@ -62,8 +79,8 @@ func TestDatabaseCollector(t *testing.T) {
 
 	// Use CollectAndCount
 	count := testutil.CollectAndCount(collector)
-	if count != 5 { // 1 policy failed + 4 vuln severities
-		t.Errorf("Expected 5 metrics, got %d", count)
+	if count != 6 { // 2 policy failed source labels + 4 vuln severities
+		t.Errorf("Expected 6 metrics, got %d", count)
 	}
 
 	// Verify specific values
@@ -81,12 +98,13 @@ func TestDatabaseCollector(t *testing.T) {
 	}
 
 	expectedPolicyFailed := `
-		# HELP suppline_policy_failed_total Current number of artifacts that failed policy evaluation
-		# TYPE suppline_policy_failed_total gauge
-		suppline_policy_failed_total 1
+		# HELP suppline_policy_failed_current Current number of artifacts that failed policy evaluation by source
+		# TYPE suppline_policy_failed_current gauge
+		suppline_policy_failed_current{source="registry"} 2
+		suppline_policy_failed_current{source="runtime"} 1
 	`
 
-	if err := testutil.GatherAndCompare(reg, strings.NewReader(expectedPolicyFailed), "suppline_policy_failed_total"); err != nil {
+	if err := testutil.GatherAndCompare(reg, strings.NewReader(expectedPolicyFailed), "suppline_policy_failed_current"); err != nil {
 		t.Errorf("Unexpected policy failed metrics: %v", err)
 	}
 }
