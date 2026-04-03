@@ -37,7 +37,6 @@ func TestEngine_Evaluate_NoCriticalVulnerabilities(t *testing.T) {
 		t.Errorf("expected policy to pass, got failed")
 	}
 
-
 	if !decision.ShouldAttest {
 		t.Errorf("expected ShouldAttest to be true")
 	}
@@ -73,7 +72,6 @@ func TestEngine_Evaluate_CriticalVulnerabilitiesPresent(t *testing.T) {
 	if decision.Passed {
 		t.Errorf("expected policy to fail, got passed")
 	}
-
 
 	if !decision.ShouldAttest {
 		t.Errorf("expected ShouldAttest to be true")
@@ -442,7 +440,7 @@ func TestEngine_SetExpiryWarningWindow(t *testing.T) {
 	if err != nil {
 		t.Fatalf("failed to create engine: %v", err)
 	}
-	
+
 	// Set custom warning window to 14 days
 	engine.SetExpiryWarningWindow(14 * 24 * time.Hour)
 
@@ -547,7 +545,7 @@ func TestEngine_CEL_AllowVulnsWithoutFix(t *testing.T) {
 	result := &scanner.ScanResult{
 		ImageRef: "test/image:v1",
 		Vulnerabilities: []types.Vulnerability{
-			{ID: "CVE-2024-0001", Severity: "CRITICAL", PackageName: "pkg1", FixedVersion: ""},     // No fix - should pass
+			{ID: "CVE-2024-0001", Severity: "CRITICAL", PackageName: "pkg1", FixedVersion: ""},      // No fix - should pass
 			{ID: "CVE-2024-0002", Severity: "CRITICAL", PackageName: "pkg2", FixedVersion: "1.2.3"}, // Has fix - should fail
 		},
 	}
@@ -654,7 +652,7 @@ func TestEngine_Evaluate_MixedExpiredAndActiveTolerations(t *testing.T) {
 
 	expiredTime := time.Now().Add(-24 * time.Hour).Unix()
 	futureTime := time.Now().Add(30 * 24 * time.Hour).Unix()
-	
+
 	tolerations := []types.CVEToleration{
 		{
 			ID:        "CVE-2024-0001",
@@ -725,7 +723,7 @@ func TestEngine_Evaluate_AllTolerationsExpired(t *testing.T) {
 
 	expiredTime1 := time.Now().Add(-48 * time.Hour).Unix()
 	expiredTime2 := time.Now().Add(-1 * time.Hour).Unix()
-	
+
 	tolerations := []types.CVEToleration{
 		{
 			ID:        "CVE-2024-0001",
@@ -784,7 +782,7 @@ func TestEngine_Evaluate_ExpiredTolerationWithCELFilter(t *testing.T) {
 
 	expiredTime := time.Now().Add(-24 * time.Hour).Unix()
 	futureTime := time.Now().Add(30 * 24 * time.Hour).Unix()
-	
+
 	tolerations := []types.CVEToleration{
 		{
 			ID:        "CVE-2024-0001",
@@ -811,5 +809,91 @@ func TestEngine_Evaluate_ExpiredTolerationWithCELFilter(t *testing.T) {
 	// Only CVE-2024-0002 should be tolerated
 	if decision.ToleratedVulnCount != 1 {
 		t.Errorf("expected 1 tolerated vulnerability, got %d", decision.ToleratedVulnCount)
+	}
+}
+
+func TestEngine_Evaluate_MinimumReleaseAgePendingFromImageCreatedAt(t *testing.T) {
+	engine, err := NewEngine(slog.Default(), PolicyConfig{
+		Expression:        "criticalCount == 0",
+		MinimumReleaseAge: 7 * 24 * time.Hour,
+	})
+	if err != nil {
+		t.Fatalf("failed to create engine: %v", err)
+	}
+
+	now := time.Now().UTC()
+	createdAt := now.Add(-48 * time.Hour)
+
+	result := &scanner.ScanResult{
+		ImageRef:        "test/image:v1",
+		Vulnerabilities: []types.Vulnerability{},
+		ScannedAt:       now,
+		ImageCreatedAt:  &createdAt,
+	}
+
+	decision, err := engine.Evaluate(context.Background(), "test/image:v1", result, nil)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if decision.Status != PolicyStatusPending {
+		t.Fatalf("expected pending status, got %s", decision.Status)
+	}
+
+	if decision.Passed {
+		t.Fatalf("expected pending decision to be non-passing")
+	}
+
+	if decision.ShouldAttest {
+		t.Fatalf("expected pending decision to disable attestation")
+	}
+
+	if decision.ReleaseAgeSource != "image_created_at" {
+		t.Fatalf("expected release age source image_created_at, got %s", decision.ReleaseAgeSource)
+	}
+
+	if decision.ReleaseAgeSeconds <= 0 {
+		t.Fatalf("expected release age seconds to be populated")
+	}
+
+	if decision.MinimumReleaseAgeSeconds != int64((7 * 24 * time.Hour).Seconds()) {
+		t.Fatalf("expected minimum release age seconds to match config")
+	}
+}
+
+func TestEngine_Evaluate_MinimumReleaseAgeUsesFirstSeenFallback(t *testing.T) {
+	engine, err := NewEngine(slog.Default(), PolicyConfig{
+		Expression:        "criticalCount == 0",
+		MinimumReleaseAge: 24 * time.Hour,
+	})
+	if err != nil {
+		t.Fatalf("failed to create engine: %v", err)
+	}
+
+	now := time.Now().UTC()
+	firstSeen := now.Add(-48 * time.Hour)
+
+	result := &scanner.ScanResult{
+		ImageRef:        "test/image:v1",
+		Vulnerabilities: []types.Vulnerability{},
+		ScannedAt:       now,
+		FirstSeenAt:     &firstSeen,
+	}
+
+	decision, err := engine.Evaluate(context.Background(), "test/image:v1", result, nil)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if decision.Status != PolicyStatusPassed {
+		t.Fatalf("expected passed status from first_seen fallback, got %s", decision.Status)
+	}
+
+	if !decision.Passed {
+		t.Fatalf("expected policy pass with adequate first_seen age")
+	}
+
+	if decision.ReleaseAgeSource != "first_seen" {
+		t.Fatalf("expected first_seen source, got %s", decision.ReleaseAgeSource)
 	}
 }

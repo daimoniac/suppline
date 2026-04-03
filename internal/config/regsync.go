@@ -2,6 +2,7 @@ package config
 
 import (
 	"bytes"
+	"fmt"
 	"os"
 	"strings"
 	"text/template"
@@ -342,6 +343,22 @@ func (c *RegsyncConfig) GetPolicyForTarget(target string) *PolicyConfig {
 
 	// No policy configured, caller should use hardcoded default
 	return nil
+}
+
+// GetMinimumReleaseAgeForTarget returns the configured minimum release age for a specific target repository.
+// Returns (duration, true, nil) when configured, (0, false, nil) when not configured, or an error for invalid formats.
+func (c *RegsyncConfig) GetMinimumReleaseAgeForTarget(target string) (time.Duration, bool, error) {
+	policy := c.GetPolicyForTarget(target)
+	if policy == nil || policy.MinimumReleaseAge == "" {
+		return 0, false, nil
+	}
+
+	duration, err := parseInterval(policy.MinimumReleaseAge)
+	if err != nil {
+		return 0, false, fmt.Errorf("invalid minimumReleaseAge for target %s: %w", target, err)
+	}
+
+	return duration, true, nil
 }
 
 // GetWorkerPollInterval returns the worker poll interval from defaults

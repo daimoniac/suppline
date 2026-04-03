@@ -83,6 +83,7 @@ func (s *SQLiteStore) initSchema() error {
 		tag TEXT,
 		first_seen INTEGER NOT NULL,
 		last_seen INTEGER NOT NULL,
+		image_created_at INTEGER,
 		last_scan_id INTEGER,
 		next_scan_at INTEGER,
 		created_at INTEGER NOT NULL DEFAULT (cast(strftime('%s', 'now') as integer)),
@@ -100,6 +101,11 @@ func (s *SQLiteStore) initSchema() error {
 		medium_vuln_count INTEGER NOT NULL,
 		low_vuln_count INTEGER NOT NULL,
 		policy_passed BOOLEAN NOT NULL,
+		policy_status TEXT NOT NULL DEFAULT '',
+		policy_reason TEXT NOT NULL DEFAULT '',
+		release_age_seconds INTEGER NOT NULL DEFAULT 0,
+		minimum_release_age_seconds INTEGER NOT NULL DEFAULT 0,
+		release_age_source TEXT NOT NULL DEFAULT '',
 		sbom_attested BOOLEAN NOT NULL,
 		vuln_attested BOOLEAN NOT NULL,
 		scai_attested BOOLEAN NOT NULL,
@@ -160,7 +166,86 @@ func (s *SQLiteStore) initSchema() error {
 	`
 
 	_, err := s.db.Exec(schema)
-	return err
+	if err != nil {
+		return err
+	}
+
+	if err := s.ensureSchemaColumns(); err != nil {
+		return err
+	}
+
+	return nil
+}
+
+func (s *SQLiteStore) ensureSchemaColumns() error {
+	type colDef struct {
+		table      string
+		column     string
+		definition string
+	}
+
+	columns := []colDef{
+		{table: "artifacts", column: "image_created_at", definition: "INTEGER"},
+		{table: "scan_records", column: "policy_status", definition: "TEXT NOT NULL DEFAULT ''"},
+		{table: "scan_records", column: "policy_reason", definition: "TEXT NOT NULL DEFAULT ''"},
+		{table: "scan_records", column: "release_age_seconds", definition: "INTEGER NOT NULL DEFAULT 0"},
+		{table: "scan_records", column: "minimum_release_age_seconds", definition: "INTEGER NOT NULL DEFAULT 0"},
+		{table: "scan_records", column: "release_age_source", definition: "TEXT NOT NULL DEFAULT ''"},
+	}
+
+	for _, col := range columns {
+		hasCol, err := s.hasColumn(col.table, col.column)
+		if err != nil {
+			return err
+		}
+		if hasCol {
+			continue
+		}
+
+		if _, err := s.db.Exec(fmt.Sprintf("ALTER TABLE %s ADD COLUMN %s %s", col.table, col.column, col.definition)); err != nil {
+			return err
+		}
+	}
+
+	return nil
+}
+
+func (s *SQLiteStore) hasColumn(tableName, columnName string) (bool, error) {
+	rows, err := s.db.Query(fmt.Sprintf("PRAGMA table_info(%s)", tableName))
+	if err != nil {
+		return false, errors.NewTransientf("failed to inspect schema for table %s: %w", tableName, err)
+	}
+	defer rows.Close()
+
+	for rows.Next() {
+		var (
+			cid        int
+			name       string
+			colType    string
+			notNull    int
+			defaultV   sql.NullString
+			primaryKey int
+		)
+		if err := rows.Scan(&cid, &name, &colType, &notNull, &defaultV, &primaryKey); err != nil {
+			return false, errors.NewTransientf("failed to parse schema info for table %s: %w", tableName, err)
+		}
+		if name == columnName {
+			return true, nil
+		}
+	}
+
+	if err := rows.Err(); err != nil {
+		return false, errors.NewTransientf("failed to iterate schema info for table %s: %w", tableName, err)
+	}
+
+	return false, nil
+}
+
+func nullableInt64(value int64) interface{} {
+	if value <= 0 {
+		return nil
+	}
+	return value
 }
 
 // RecordClusterInventory replaces the image inventory snapshot for a cluster.
@@ -302,9 +387,9 @@ func (s *SQLiteStore) RecordScan(ctx context.Context, record *ScanRecord) error 
 	if err == sql.ErrNoRows {
 		// Artifact doesn't exist, create it
 		result, err := tx.ExecContext(ctx, `
-			INSERT INTO artifacts (repository_id, digest, tag, first_seen, last_seen)
-			VALUES (?, ?, ?, ?, ?)
-		`, repositoryID, record.Digest, record.Tag, nowUnix, nowUnix)
+			INSERT INTO artifacts (repository_id, digest, tag, first_seen, last_seen, image_created_at)
+			VALUES (?, ?, ?, ?, ?, ?)
+		`, repositoryID, record.Digest, record.Tag, nowUnix, nowUnix, nullableInt64(record.ImageCreatedAt))
 		if err != nil {
 			return errors.NewTransientf("failed to insert artifact: %w", err)
 		}
@@ -318,8 +403,13 @@ func (s *SQLiteStore) RecordScan(ctx context.Context, record *ScanRecord) error 
 		// Artifact exists, update last_seen
 		artifactID = existingArtifactID.Int64
 		_, err := tx.ExecContext(ctx, `
-			UPDATE artifacts SET last_seen = ? WHERE id = ?
-		`, nowUnix, artifactID)
+			UPDATE artifacts
+			SET last_seen = ?, image_created_at = CASE
+				WHEN image_created_at IS NULL AND ? IS NOT NULL THEN ?
+				ELSE image_created_at
+			END
+			WHERE id = ?
+		`, nowUnix, nullableInt64(record.ImageCreatedAt), nullableInt64(record.ImageCreatedAt), artifactID)
 		if err != nil {
 			return errors.NewTransientf("failed to update artifact: %w", err)
 		}
@@ -339,13 +429,15 @@ func (s *SQLiteStore) RecordScan(ctx context.Context, record *ScanRecord) error 
 		INSERT INTO scan_records (
 			artifact_id, scan_duration_ms,
 			critical_vuln_count, high_vuln_count, medium_vuln_count, low_vuln_count,
-			policy_passed, sbom_attested, vuln_attested, scai_attested, error_message,
+			policy_passed, policy_status, policy_reason, release_age_seconds, minimum_release_age_seconds, release_age_source,
+			sbom_attested, vuln_attested, scai_attested, error_message,
 			tolerated_cves_json
-		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 	`,
 		artifactID, record.ScanDurationMs,
 		record.CriticalVulnCount, record.HighVulnCount, record.MediumVulnCount, record.LowVulnCount,
-		record.PolicyPassed, record.SBOMAttested, record.VulnAttested, record.SCAIAttested, record.ErrorMessage,
+		record.PolicyPassed, record.PolicyStatus, record.PolicyReason, record.ReleaseAgeSeconds, record.MinimumReleaseAgeSeconds, record.ReleaseAgeSource,
+		record.SBOMAttested, record.VulnAttested, record.SCAIAttested, record.ErrorMessage,
 		toleratedJSON,
 	)
 	if err != nil {
@@ -411,7 +503,9 @@ func (s *SQLiteStore) GetLastScan(ctx context.Context, digest string) (*ScanReco
 	err := s.db.QueryRowContext(ctx, `
 		SELECT sr.id, sr.artifact_id, sr.scan_duration_ms,
 			sr.critical_vuln_count, sr.high_vuln_count, sr.medium_vuln_count, sr.low_vuln_count,
-			sr.policy_passed, sr.sbom_attested, sr.vuln_attested, sr.scai_attested, sr.error_message, sr.created_at,
+			sr.policy_passed, sr.policy_status, sr.policy_reason, sr.release_age_seconds, sr.minimum_release_age_seconds, sr.release_age_source,
+			sr.sbom_attested, sr.vuln_attested, sr.scai_attested, sr.error_message, sr.created_at,
+			COALESCE(a.image_created_at, 0) as image_created_at,
 			a.digest, a.tag, r.name,
 			sr.tolerated_cves_json
 		FROM scan_records sr
@@ -423,7 +517,9 @@ func (s *SQLiteStore) GetLastScan(ctx context.Context, digest string) (*ScanReco
 	`, digest).Scan(
 		&record.ID, &record.ArtifactID, &record.ScanDurationMs,
 		&record.CriticalVulnCount, &record.HighVulnCount, &record.MediumVulnCount, &record.LowVulnCount,
-		&record.PolicyPassed, &record.SBOMAttested, &record.VulnAttested, &record.SCAIAttested, &record.ErrorMessage, &record.CreatedAt,
+		&record.PolicyPassed, &record.PolicyStatus, &record.PolicyReason, &record.ReleaseAgeSeconds, &record.MinimumReleaseAgeSeconds, &record.ReleaseAgeSource,
+		&record.SBOMAttested, &record.VulnAttested, &record.SCAIAttested, &record.ErrorMessage, &record.CreatedAt,
+		&record.ImageCreatedAt,
 		&record.Digest, &record.Tag, &record.Repository,
 		&toleratedJSON,
 	)
@@ -451,6 +547,33 @@ func (s *SQLiteStore) GetLastScan(ctx context.Context, digest string) (*ScanReco
 	}
 
 	return &record, nil
+}
+
+// GetArtifactFirstSeen returns when the artifact was first observed for the given repository and digest.
+func (s *SQLiteStore) GetArtifactFirstSeen(ctx context.Context, digest, repository, tag string) (*time.Time, error) {
+	var firstSeen sql.NullInt64
+
+	err := s.db.QueryRowContext(ctx, `
+		SELECT a.first_seen
+		FROM artifacts a
+		JOIN repositories r ON a.repository_id = r.id
+		WHERE a.digest = ? AND r.name = ?
+		ORDER BY a.first_seen ASC
+		LIMIT 1
+	`, digest, repository).Scan(&firstSeen)
+	if err == sql.ErrNoRows {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, errors.NewTransientf("failed to query artifact first_seen: %w", err)
+	}
+
+	if !firstSeen.Valid || firstSeen.Int64 <= 0 {
+		return nil, nil
+	}
+
+	ts := time.Unix(firstSeen.Int64, 0).UTC()
+	return &ts, nil
 }
 
 // ListDueForRescan returns digests that need rescanning
@@ -491,7 +614,9 @@ func (s *SQLiteStore) GetFailedArtifacts(ctx context.Context) ([]*ScanRecord, er
 	query := `
 		SELECT sr.id, sr.artifact_id, sr.scan_duration_ms,
 			sr.critical_vuln_count, sr.high_vuln_count, sr.medium_vuln_count, sr.low_vuln_count,
-			sr.policy_passed, sr.sbom_attested, sr.vuln_attested, sr.scai_attested, sr.error_message, sr.created_at,
+			sr.policy_passed, sr.policy_status, sr.policy_reason, sr.release_age_seconds, sr.minimum_release_age_seconds, sr.release_age_source,
+			sr.sbom_attested, sr.vuln_attested, sr.scai_attested, sr.error_message, sr.created_at,
+			COALESCE(a.image_created_at, 0) as image_created_at,
 			a.digest, a.tag, r.name
 		FROM scan_records sr
 		JOIN artifacts a ON sr.artifact_id = a.id
@@ -514,7 +639,9 @@ func (s *SQLiteStore) GetFailedArtifacts(ctx context.Context) ([]*ScanRecord, er
 		err := rows.Scan(
 			&record.ID, &record.ArtifactID, &record.ScanDurationMs,
 			&record.CriticalVulnCount, &record.HighVulnCount, &record.MediumVulnCount, &record.LowVulnCount,
-			&record.PolicyPassed, &record.SBOMAttested, &record.VulnAttested, &record.SCAIAttested, &record.ErrorMessage, &record.CreatedAt,
+			&record.PolicyPassed, &record.PolicyStatus, &record.PolicyReason, &record.ReleaseAgeSeconds, &record.MinimumReleaseAgeSeconds, &record.ReleaseAgeSource,
+			&record.SBOMAttested, &record.VulnAttested, &record.SCAIAttested, &record.ErrorMessage, &record.CreatedAt,
+			&record.ImageCreatedAt,
 			&record.Digest, &record.Tag, &record.Repository,
 		)
 		if err != nil {
@@ -536,7 +663,9 @@ func (s *SQLiteStore) GetScanHistory(ctx context.Context, digest string, limit i
 	query := `
 		SELECT sr.id, sr.artifact_id, sr.scan_duration_ms,
 			sr.critical_vuln_count, sr.high_vuln_count, sr.medium_vuln_count, sr.low_vuln_count,
-			sr.policy_passed, sr.sbom_attested, sr.vuln_attested, sr.scai_attested, sr.error_message, sr.created_at,
+			sr.policy_passed, sr.policy_status, sr.policy_reason, sr.release_age_seconds, sr.minimum_release_age_seconds, sr.release_age_source,
+			sr.sbom_attested, sr.vuln_attested, sr.scai_attested, sr.error_message, sr.created_at,
+			COALESCE(a.image_created_at, 0) as image_created_at,
 			a.digest, a.tag, r.name,
 			sr.tolerated_cves_json
 		FROM scan_records sr
@@ -563,7 +692,9 @@ func (s *SQLiteStore) GetScanHistory(ctx context.Context, digest string, limit i
 		err := rows.Scan(
 			&record.ID, &record.ArtifactID, &record.ScanDurationMs,
 			&record.CriticalVulnCount, &record.HighVulnCount, &record.MediumVulnCount, &record.LowVulnCount,
-			&record.PolicyPassed, &record.SBOMAttested, &record.VulnAttested, &record.SCAIAttested, &record.ErrorMessage, &record.CreatedAt,
+			&record.PolicyPassed, &record.PolicyStatus, &record.PolicyReason, &record.ReleaseAgeSeconds, &record.MinimumReleaseAgeSeconds, &record.ReleaseAgeSource,
+			&record.SBOMAttested, &record.VulnAttested, &record.SCAIAttested, &record.ErrorMessage, &record.CreatedAt,
+			&record.ImageCreatedAt,
 			&record.Digest, &record.Tag, &record.Repository,
 			&toleratedJSON,
 		)
@@ -1316,7 +1447,9 @@ func (s *SQLiteStore) GetImagesByCVE(ctx context.Context, cveID string) ([]*Scan
 	query := `
 		SELECT DISTINCT sr.id, sr.artifact_id, sr.scan_duration_ms,
 			sr.critical_vuln_count, sr.high_vuln_count, sr.medium_vuln_count, sr.low_vuln_count,
-			sr.policy_passed, sr.sbom_attested, sr.vuln_attested, sr.scai_attested, sr.error_message, sr.created_at,
+			sr.policy_passed, sr.policy_status, sr.policy_reason, sr.release_age_seconds, sr.minimum_release_age_seconds, sr.release_age_source,
+			sr.sbom_attested, sr.vuln_attested, sr.scai_attested, sr.error_message, sr.created_at,
+			COALESCE(a.image_created_at, 0) as image_created_at,
 			a.digest, a.tag, r.name,
 			sr.tolerated_cves_json
 		FROM scan_records sr
@@ -1341,7 +1474,9 @@ func (s *SQLiteStore) GetImagesByCVE(ctx context.Context, cveID string) ([]*Scan
 		err := rows.Scan(
 			&record.ID, &record.ArtifactID, &record.ScanDurationMs,
 			&record.CriticalVulnCount, &record.HighVulnCount, &record.MediumVulnCount, &record.LowVulnCount,
-			&record.PolicyPassed, &record.SBOMAttested, &record.VulnAttested, &record.SCAIAttested, &record.ErrorMessage, &record.CreatedAt,
+			&record.PolicyPassed, &record.PolicyStatus, &record.PolicyReason, &record.ReleaseAgeSeconds, &record.MinimumReleaseAgeSeconds, &record.ReleaseAgeSource,
+			&record.SBOMAttested, &record.VulnAttested, &record.SCAIAttested, &record.ErrorMessage, &record.CreatedAt,
+			&record.ImageCreatedAt,
 			&record.Digest, &record.Tag, &record.Repository,
 			&toleratedJSON,
 		)
@@ -1418,7 +1553,9 @@ func (s *SQLiteStore) ListScans(ctx context.Context, filter ScanFilter) ([]*Scan
 	query := `
 		SELECT sr.id, sr.artifact_id, sr.scan_duration_ms,
 			sr.critical_vuln_count, sr.high_vuln_count, sr.medium_vuln_count, sr.low_vuln_count,
-			sr.policy_passed, sr.sbom_attested, sr.vuln_attested, sr.scai_attested, sr.error_message, sr.created_at,
+			sr.policy_passed, sr.policy_status, sr.policy_reason, sr.release_age_seconds, sr.minimum_release_age_seconds, sr.release_age_source,
+			sr.sbom_attested, sr.vuln_attested, sr.scai_attested, sr.error_message, sr.created_at,
+			COALESCE(a.image_created_at, 0) as image_created_at,
 			a.digest, a.tag, r.name
 		FROM artifacts a
 		JOIN repositories r ON a.repository_id = r.id
@@ -1501,7 +1638,9 @@ func (s *SQLiteStore) ListScans(ctx context.Context, filter ScanFilter) ([]*Scan
 		err := rows.Scan(
 			&record.ID, &record.ArtifactID, &record.ScanDurationMs,
 			&record.CriticalVulnCount, &record.HighVulnCount, &record.MediumVulnCount, &record.LowVulnCount,
-			&record.PolicyPassed, &record.SBOMAttested, &record.VulnAttested, &record.SCAIAttested, &record.ErrorMessage, &record.CreatedAt,
+			&record.PolicyPassed, &record.PolicyStatus, &record.PolicyReason, &record.ReleaseAgeSeconds, &record.MinimumReleaseAgeSeconds, &record.ReleaseAgeSource,
+			&record.SBOMAttested, &record.VulnAttested, &record.SCAIAttested, &record.ErrorMessage, &record.CreatedAt,
+			&record.ImageCreatedAt,
 			&record.Digest, &record.Tag, &record.Repository,
 		)
 		if err != nil {

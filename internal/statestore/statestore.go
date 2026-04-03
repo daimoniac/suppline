@@ -95,6 +95,13 @@ type ClusterInventoryStore interface {
 	ListClusterSummaries(ctx context.Context) ([]ClusterSummary, error)
 }
 
+// ArtifactMetadataStore exposes optional metadata lookups used by worker policy decisions.
+type ArtifactMetadataStore interface {
+	// GetArtifactFirstSeen returns when a repository+digest artifact was first observed.
+	// Returns (nil, nil) when the artifact is not yet present.
+	GetArtifactFirstSeen(ctx context.Context, digest, repository, tag string) (*time.Time, error)
+}
+
 // StateStoreCleanup extends StateStore with cleanup operations for managing
 // scan data lifecycle and maintaining database integrity.
 type StateStoreCleanup interface {
@@ -253,19 +260,25 @@ type RepositoryTagFilter struct {
 
 // ScanRecord represents a complete scan result for an image digest
 type ScanRecord struct {
-	ID                int64
-	ArtifactID        int64
-	ScanDurationMs    int
-	CriticalVulnCount int
-	HighVulnCount     int
-	MediumVulnCount   int
-	LowVulnCount      int
-	PolicyPassed      bool
-	SBOMAttested      bool
-	VulnAttested      bool
-	SCAIAttested      bool
-	ErrorMessage      string
-	CreatedAt         int64 // Unix timestamp in seconds
+	ID                       int64
+	ArtifactID               int64
+	ScanDurationMs           int
+	CriticalVulnCount        int
+	HighVulnCount            int
+	MediumVulnCount          int
+	LowVulnCount             int
+	PolicyPassed             bool
+	PolicyStatus             string
+	PolicyReason             string
+	SBOMAttested             bool
+	VulnAttested             bool
+	SCAIAttested             bool
+	ErrorMessage             string
+	CreatedAt                int64 // Unix timestamp in seconds
+	ImageCreatedAt           int64 // Unix timestamp in seconds; 0 when unknown
+	ReleaseAgeSeconds        int64
+	MinimumReleaseAgeSeconds int64
+	ReleaseAgeSource         string
 	// Denormalized for convenience (loaded via joins)
 	Digest            string
 	Repository        string

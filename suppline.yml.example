@@ -31,6 +31,7 @@ defaults:
   x-policy:                   # Default policy for all sync entries (optional)
     expression: "criticalCount == 0"
     failureMessage: "critical vulnerabilities found"
+    minimumReleaseAge: "7d"   # Only allow images released at least 7 days ago (optional)
   x-vex-repo: true            # Apply Aqua VEX Hub to all scans by default (optional)
 
 sync:
@@ -57,6 +58,7 @@ sync:
     x-policy:                 # Override default policy for this entry (optional)
       expression: "criticalCount == 0 && highCount == 0"
       failureMessage: "critical or high vulnerabilities found"
+      minimumReleaseAge: "14d" # Override: require images to be at least 14 days old (optional)
     x-tolerate:
       - id: CVE-2024-12345
         statement: false positive, not applicable to our use case

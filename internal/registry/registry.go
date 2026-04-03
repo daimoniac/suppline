@@ -9,12 +9,13 @@ import (
 	"net/http"
 	"os"
 	"strings"
+	"time"
 
+	"github.com/daimoniac/suppline/internal/config"
+	"github.com/daimoniac/suppline/internal/errors"
 	"github.com/google/go-containerregistry/pkg/authn"
 	"github.com/google/go-containerregistry/pkg/name"
 	"github.com/google/go-containerregistry/pkg/v1/remote"
-	"github.com/daimoniac/suppline/internal/config"
-	"github.com/daimoniac/suppline/internal/errors"
 )
 
 // Client defines the interface for interacting with container registries
@@ -47,6 +48,7 @@ type Manifest struct {
 	Annotations  map[string]string
 	Architecture string
 	OS           string
+	CreatedAt    *time.Time
 }
 
 // ConfigDescriptor describes the image config
@@ -145,7 +147,7 @@ func (c *clientImpl) getAuthForRegistry(registry string) authn.Authenticator {
 // parseImageRef parses a repository string into registry and repository components
 func parseImageRef(repo string) (registry, repository string, err error) {
 	parts := strings.SplitN(repo, "/", 2)
-	
+
 	if len(parts) == 2 && (strings.Contains(parts[0], ".") || strings.Contains(parts[0], ":")) {
 		registry = parts[0]
 		repository = parts[1]
@@ -309,6 +311,11 @@ func (c *clientImpl) GetManifest(ctx context.Context, repo, digest string) (*Man
 		},
 		Layers:      layerDescs,
 		Annotations: make(map[string]string),
+	}
+
+	if !configFile.Created.Time.IsZero() {
+		createdAt := configFile.Created.Time.UTC()
+		manifest.CreatedAt = &createdAt
 	}
 
 	return manifest, nil

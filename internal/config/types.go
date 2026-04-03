@@ -136,6 +136,7 @@ type TagFilter struct {
 
 // PolicyConfig represents a CEL-based security policy
 type PolicyConfig struct {
-	Expression     string `yaml:"expression"`
-	FailureMessage string `yaml:"failureMessage,omitempty"`
+	Expression        string `yaml:"expression"`
+	FailureMessage    string `yaml:"failureMessage,omitempty"`
+	MinimumReleaseAge string `yaml:"minimumReleaseAge,omitempty"`
 }

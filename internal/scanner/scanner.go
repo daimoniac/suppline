@@ -36,4 +36,6 @@ type ScanResult struct {
 	ScannedAt       time.Time
 	CosignVulnData  []byte // Pre-generated cosign-vuln format for attestation (avoids redundant Trivy call)
 	SBOM            *SBOM  // Optional: SBOM generated during the same scan (avoids separate SBOM call)
+	ImageCreatedAt  *time.Time
+	FirstSeenAt     *time.Time
 }

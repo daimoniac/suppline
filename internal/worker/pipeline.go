@@ -136,7 +136,8 @@ func (p *Pipeline) scanPhase(ctx context.Context, task *queue.ScanTask, imageRef
 	p.logger.Debug("image metadata fetched",
 		"digest", manifest.Digest,
 		"architecture", manifest.Architecture,
-		"os", manifest.OS)
+		"os", manifest.OS,
+		"created_at", manifest.CreatedAt)
 
 	// Generate SBOM
 	sbomStart := time.Now()
@@ -169,6 +170,15 @@ func (p *Pipeline) scanPhase(ctx context.Context, task *queue.ScanTask, imageRef
 		"image_ref", imageRef,
 		"total_vulnerabilities", len(scanResult.Vulnerabilities),
 		"duration", durations["vuln_scan"])
+
+	scanResult.ImageCreatedAt = manifest.CreatedAt
+	if firstSeenAt, err := p.getArtifactFirstSeen(ctx, task); err != nil {
+		p.logger.Warn("failed to resolve artifact first_seen for release age fallback",
+			"image_ref", imageRef,
+			"error", err)
+	} else {
+		scanResult.FirstSeenAt = firstSeenAt
+	}
 
 	// Record scan metrics
 	metrics.ScansTotal.Inc()
@@ -220,6 +230,14 @@ func (p *Pipeline) policyPhase(ctx context.Context, task *queue.ScanTask, imageR
 func (p *Pipeline) attestationPhase(ctx context.Context, task *queue.ScanTask, imageRef string, sbom *scanner.SBOM, scanResult *scanner.ScanResult, policyDecision *policy.PolicyDecision) (map[string]time.Duration, bool, error) {
 	durations := make(map[string]time.Duration)
 	metrics := observability.GetMetrics()
+
+	if policyDecision != nil && !policyDecision.ShouldAttest {
+		p.logger.Info("skipping attestations due to policy decision",
+			"image_ref", imageRef,
+			"policy_status", policyDecision.Status,
+			"reason", policyDecision.Reason)
+		return durations, false, nil
+	}
 
 	// SBOM attestation
 	sbomStart := time.Now()
@@ -530,10 +548,17 @@ func (p *Pipeline) getPolicyEngineForRepository(repository string) (policy.Polic
 
 	// Try to get policy from regsync config
 	if p.worker.regsyncCfg != nil {
+		if minAge, ok, err := p.worker.regsyncCfg.GetMinimumReleaseAgeForTarget(repository); err != nil {
+			return nil, errors.NewPermanentf("failed to resolve minimum release age for %s: %w", repository, err)
+		} else if ok {
+			policyConfig.MinimumReleaseAge = minAge
+		}
+
 		if regsyncPolicy := p.worker.regsyncCfg.GetPolicyForTarget(repository); regsyncPolicy != nil {
 			policyConfig = policy.PolicyConfig{
-				Expression:     regsyncPolicy.Expression,
-				FailureMessage: regsyncPolicy.FailureMessage,
+				Expression:        regsyncPolicy.Expression,
+				FailureMessage:    regsyncPolicy.FailureMessage,
+				MinimumReleaseAge: policyConfig.MinimumReleaseAge,
 			}
 			p.logger.Debug("using repository-specific policy",
 				"repository", repository,
@@ -541,11 +566,25 @@ func (p *Pipeline) getPolicyEngineForRepository(repository string) (policy.Polic
 		}
 	}
 
-	// If no policy configured, use default from worker
-	if policyConfig.Expression == "" {
+	// If neither custom expression nor minimum release age is configured, use default from worker
+	if policyConfig.Expression == "" && policyConfig.MinimumReleaseAge <= 0 {
 		return p.worker.policy, nil
 	}
 
 	// Create a new policy engine with the repository-specific config
 	return policy.NewEngine(p.logger, policyConfig)
+}
+
+func (p *Pipeline) getArtifactFirstSeen(ctx context.Context, task *queue.ScanTask) (*time.Time, error) {
+	metadataStore, ok := p.worker.stateStore.(statestore.ArtifactMetadataStore)
+	if !ok {
+		return nil, nil
+	}
+
+	firstSeenAt, err := metadataStore.GetArtifactFirstSeen(ctx, task.Digest, task.Repository, task.Tag)
+	if err != nil {
+		return nil, err
+	}
+
+	return firstSeenAt, nil
 }

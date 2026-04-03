@@ -52,6 +52,11 @@ func buildScanRecord(
 		toleratedSet[toleratedID] = true
 	}
 
+	imageCreatedAt := int64(0)
+	if scanResult.ImageCreatedAt != nil {
+		imageCreatedAt = scanResult.ImageCreatedAt.Unix()
+	}
+
 	// Filter and convert tolerations
 	toleratedCVEs := types.FilterToleratedCVEs(
 		task.Tolerations,
@@ -60,22 +65,28 @@ func buildScanRecord(
 	)
 
 	return &statestore.ScanRecord{
-		Digest:            task.Digest,
-		Repository:        task.Repository,
-		Tag:               task.Tag,
-		CreatedAt:         scannedAtUnix,
-		ScanDurationMs:    0, // Will be calculated by pipeline
-		CriticalVulnCount: criticalCount,
-		HighVulnCount:     highCount,
-		MediumVulnCount:   mediumCount,
-		LowVulnCount:      lowCount,
-		PolicyPassed:      policyDecision.Passed,
-		SBOMAttested:      true,
-		VulnAttested:      true,
-		SCAIAttested:      false, // Will be set by pipeline if SCAI attestation succeeds
-		Vulnerabilities:   vulnerabilityRecords,
-		ToleratedCVEs:     toleratedCVEs,
-		ErrorMessage:      "",
+		Digest:                   task.Digest,
+		Repository:               task.Repository,
+		Tag:                      task.Tag,
+		CreatedAt:                scannedAtUnix,
+		ImageCreatedAt:           imageCreatedAt,
+		ScanDurationMs:           0, // Will be calculated by pipeline
+		CriticalVulnCount:        criticalCount,
+		HighVulnCount:            highCount,
+		MediumVulnCount:          mediumCount,
+		LowVulnCount:             lowCount,
+		PolicyPassed:             policyDecision.Passed,
+		PolicyStatus:             policyDecision.Status,
+		PolicyReason:             policyDecision.Reason,
+		ReleaseAgeSeconds:        policyDecision.ReleaseAgeSeconds,
+		MinimumReleaseAgeSeconds: policyDecision.MinimumReleaseAgeSeconds,
+		ReleaseAgeSource:         policyDecision.ReleaseAgeSource,
+		SBOMAttested:             policyDecision.ShouldAttest,
+		VulnAttested:             policyDecision.ShouldAttest,
+		SCAIAttested:             false, // Will be set by pipeline if SCAI attestation succeeds
+		Vulnerabilities:          vulnerabilityRecords,
+		ToleratedCVEs:            toleratedCVEs,
+		ErrorMessage:             "",
 	}
 }
 
@@ -90,6 +101,8 @@ func buildErrorScanRecord(task *queue.ScanTask, scanErr error) *statestore.ScanR
 		CreatedAt:  time.Now().Unix(),
 		// Zero vuln counts – we never got results
 		PolicyPassed: false,
+		PolicyStatus: policy.PolicyStatusFailed,
+		PolicyReason: scanErr.Error(),
 		ErrorMessage: scanErr.Error(),
 	}
 }

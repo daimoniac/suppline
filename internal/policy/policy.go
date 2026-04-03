@@ -6,10 +6,10 @@ import (
 	"log/slog"
 	"time"
 
-	"github.com/google/cel-go/cel"
 	"github.com/daimoniac/suppline/internal/errors"
 	"github.com/daimoniac/suppline/internal/scanner"
 	"github.com/daimoniac/suppline/internal/types"
+	"github.com/google/cel-go/cel"
 )
 
 // PolicyEngine defines the interface for policy evaluation
@@ -31,21 +31,34 @@ type PolicyConfig struct {
 	//   - mediumCount: number of medium vulnerabilities (not tolerated)
 	//   - toleratedCount: number of tolerated vulnerabilities
 	Expression string `yaml:"expression" json:"expression"`
-	
+
 	// FailureMessage is the message to return when the policy fails (optional)
 	FailureMessage string `yaml:"failureMessage" json:"failureMessage"`
+
+	// MinimumReleaseAge blocks policy pass/fail evaluation until the image age reaches this duration.
+	MinimumReleaseAge time.Duration `yaml:"-" json:"-"`
 }
+
+const (
+	PolicyStatusPassed  = "passed"
+	PolicyStatusFailed  = "failed"
+	PolicyStatusPending = "pending"
+)
 
 // PolicyDecision represents the result of policy evaluation
 type PolicyDecision struct {
-	Passed             bool
-	Reason             string
-	ShouldAttest       bool
-	CriticalVulnCount  int
-	ToleratedVulnCount int
-	UnfixedVulnCount   int
-	ToleratedCVEs      []string
-	ExpiringTolerations []ExpiringToleration
+	Passed                   bool
+	Status                   string
+	Reason                   string
+	ShouldAttest             bool
+	CriticalVulnCount        int
+	ToleratedVulnCount       int
+	UnfixedVulnCount         int
+	ToleratedCVEs            []string
+	ExpiringTolerations      []ExpiringToleration
+	ReleaseAgeSeconds        int64
+	MinimumReleaseAgeSeconds int64
+	ReleaseAgeSource         string
 }
 
 // ExpiringToleration represents a toleration that is expiring soon
@@ -70,12 +83,12 @@ func NewEngine(logger *slog.Logger, config PolicyConfig) (*Engine, error) {
 	if logger == nil {
 		logger = slog.Default()
 	}
-	
+
 	if config.Expression == "" {
 		config.Expression = `criticalCount == 0`
 		config.FailureMessage = "critical vulnerabilities found"
 	}
-	
+
 	env, err := cel.NewEnv(
 		cel.Variable("vulnerabilities", cel.ListType(cel.MapType(cel.StringType, cel.AnyType))),
 		cel.Variable("imageRef", cel.StringType),
@@ -88,21 +101,21 @@ func NewEngine(logger *slog.Logger, config PolicyConfig) (*Engine, error) {
 	if err != nil {
 		return nil, errors.NewPermanentf("failed to create CEL environment: %w", err)
 	}
-	
+
 	ast, issues := env.Compile(config.Expression)
 	if issues != nil && issues.Err() != nil {
 		return nil, errors.NewPermanentf("failed to compile policy expression: %w", issues.Err())
 	}
-	
+
 	if ast.OutputType() != cel.BoolType {
 		return nil, errors.NewPermanentf("policy expression must return a boolean, got %v", ast.OutputType())
 	}
-	
+
 	program, err := env.Program(ast)
 	if err != nil {
 		return nil, errors.NewPermanentf("failed to create CEL program: %w", err)
 	}
-	
+
 	return &Engine{
 		logger:              logger,
 		expiryWarningWindow: 7 * 24 * time.Hour,
@@ -120,13 +133,63 @@ func (e *Engine) Evaluate(ctx context.Context, imageRef string, result *scanner.
 
 	decision := &PolicyDecision{
 		ShouldAttest:        true, // Always create attestations
+		Status:              PolicyStatusPassed,
 		ToleratedCVEs:       make([]string, 0),
 		ExpiringTolerations: make([]ExpiringToleration, 0),
 	}
 
+	if result.ScannedAt.IsZero() {
+		result.ScannedAt = time.Now().UTC()
+	}
+
+	if e.config.MinimumReleaseAge > 0 {
+		var ageBase *time.Time
+		ageSource := ""
+
+		if result.ImageCreatedAt != nil {
+			ageBase = result.ImageCreatedAt
+			ageSource = "image_created_at"
+		} else if result.FirstSeenAt != nil {
+			ageBase = result.FirstSeenAt
+			ageSource = "first_seen"
+		}
+
+		decision.MinimumReleaseAgeSeconds = int64(e.config.MinimumReleaseAge.Seconds())
+		decision.ReleaseAgeSource = ageSource
+
+		if ageBase == nil {
+			decision.Passed = false
+			decision.Status = PolicyStatusPending
+			decision.ShouldAttest = false
+			decision.Reason = fmt.Sprintf("policy pending: minimum release age is configured (%s) but no age source is available", e.config.MinimumReleaseAge)
+			return decision, nil
+		}
+
+		releaseAge := result.ScannedAt.Sub(*ageBase)
+		if releaseAge < 0 {
+			releaseAge = 0
+		}
+		decision.ReleaseAgeSeconds = int64(releaseAge.Seconds())
+
+		if releaseAge < e.config.MinimumReleaseAge {
+			decision.Passed = false
+			decision.Status = PolicyStatusPending
+			decision.ShouldAttest = false
+			remaining := e.config.MinimumReleaseAge - releaseAge
+			decision.Reason = fmt.Sprintf(
+				"policy pending: image age %s is below minimum release age %s (remaining %s, source=%s)",
+				releaseAge.Truncate(time.Second),
+				e.config.MinimumReleaseAge,
+				remaining.Truncate(time.Second),
+				ageSource,
+			)
+			return decision, nil
+		}
+	}
+
 	nowUnix := time.Now().Unix()
 	activeTolerations := make(map[string]types.CVEToleration)
-	
+
 	for _, toleration := range tolerations {
 		if toleration.ExpiresAt != nil && *toleration.ExpiresAt < nowUnix {
 			e.logger.Debug("toleration expired",
@@ -135,9 +198,9 @@ func (e *Engine) Evaluate(ctx context.Context, imageRef string, result *scanner.
 				"image", imageRef)
 			continue
 		}
-		
+
 		activeTolerations[toleration.ID] = toleration
-		
+
 		if toleration.ExpiresAt != nil {
 			secondsUntilExpiry := *toleration.ExpiresAt - nowUnix
 			if secondsUntilExpiry > 0 && time.Duration(secondsUntilExpiry)*time.Second <= e.expiryWarningWindow {
@@ -148,7 +211,7 @@ func (e *Engine) Evaluate(ctx context.Context, imageRef string, result *scanner.
 					ExpiresAt: *toleration.ExpiresAt,
 					DaysUntil: daysUntil,
 				})
-				
+
 				e.logger.Warn("toleration expiring soon",
 					"cve_id", toleration.ID,
 					"statement", toleration.Statement,
@@ -167,20 +230,20 @@ func (e *Engine) Evaluate(ctx context.Context, imageRef string, result *scanner.
 	toleratedCount := 0
 	unfixedCriticalCount := 0
 	failingVulns := make([]types.Vulnerability, 0)
-	
+
 	for _, vuln := range result.Vulnerabilities {
 		toleration, isTolerated := activeTolerations[vuln.ID]
-		
+
 		enriched := map[string]interface{}{
-			"id":          vuln.ID,
-			"severity":    vuln.Severity,
-			"packageName": vuln.PackageName,
-			"version":     vuln.Version,
+			"id":           vuln.ID,
+			"severity":     vuln.Severity,
+			"packageName":  vuln.PackageName,
+			"version":      vuln.Version,
 			"fixedVersion": vuln.FixedVersion,
-			"description": vuln.Description,
-			"tolerated":   isTolerated,
+			"description":  vuln.Description,
+			"tolerated":    isTolerated,
 		}
-		
+
 		if isTolerated {
 			enriched["tolerationStatement"] = toleration.Statement
 			if toleration.ExpiresAt != nil {
@@ -188,7 +251,7 @@ func (e *Engine) Evaluate(ctx context.Context, imageRef string, result *scanner.
 			}
 			toleratedCount++
 			decision.ToleratedCVEs = append(decision.ToleratedCVEs, vuln.ID)
-			
+
 			e.logger.Info("vulnerability tolerated",
 				"cve_id", vuln.ID,
 				"severity", vuln.Severity,
@@ -211,7 +274,7 @@ func (e *Engine) Evaluate(ctx context.Context, imageRef string, result *scanner.
 				lowCount++
 			}
 		}
-		
+
 		enrichedVulns = append(enrichedVulns, enriched)
 	}
 
@@ -228,19 +291,24 @@ func (e *Engine) Evaluate(ctx context.Context, imageRef string, result *scanner.
 		"lowCount":        lowCount,
 		"toleratedCount":  toleratedCount,
 	}
-	
+
 	out, _, err := e.celProgram.Eval(celInput)
 	if err != nil {
 		return nil, errors.NewPermanentf("failed to evaluate policy: %w", err)
 	}
-	
+
 	passed, ok := out.Value().(bool)
 	if !ok {
 		return nil, errors.NewPermanentf("policy expression did not return a boolean: %v", out.Value())
 	}
-	
+
 	decision.Passed = passed
-	
+	if passed {
+		decision.Status = PolicyStatusPassed
+	} else {
+		decision.Status = PolicyStatusFailed
+	}
+
 	if passed {
 		if unfixedCriticalCount > 0 {
 			decision.Reason = fmt.Sprintf("policy passed: critical=%d, high=%d, medium=%d, low=%d (tolerated=%d, unfixed=%d)",
@@ -249,7 +317,7 @@ func (e *Engine) Evaluate(ctx context.Context, imageRef string, result *scanner.
 			decision.Reason = fmt.Sprintf("policy passed: critical=%d, high=%d, medium=%d, low=%d (tolerated=%d)",
 				criticalCount, highCount, mediumCount, lowCount, toleratedCount)
 		}
-		
+
 		e.logger.Info("policy evaluation passed",
 			"image", imageRef,
 			"critical", criticalCount,
@@ -269,7 +337,7 @@ func (e *Engine) Evaluate(ctx context.Context, imageRef string, result *scanner.
 					criticalCount, highCount, mediumCount, lowCount, toleratedCount)
 			}
 		}
-		
+
 		e.logger.Warn("policy evaluation failed",
 			"image", imageRef,
 			"critical", criticalCount,
@@ -278,7 +346,7 @@ func (e *Engine) Evaluate(ctx context.Context, imageRef string, result *scanner.
 			"low", lowCount,
 			"tolerated", toleratedCount,
 			"expression", e.config.Expression)
-		
+
 		for _, vuln := range failingVulns {
 			e.logger.Warn("vulnerability details",
 				"cve_id", vuln.ID,
