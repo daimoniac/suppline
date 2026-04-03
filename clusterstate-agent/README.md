@@ -98,7 +98,7 @@ cd clusterstate-agent
 go run .
 ```
 
-## Debug option 2: local run against a real cluster API
+## Debug: local run against a real cluster API
 
 Use this when you want real pod inventory data from an existing cluster, but run the agent binary locally.
 

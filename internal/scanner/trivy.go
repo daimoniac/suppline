@@ -80,7 +80,6 @@ func (s *TrivyScanner) GenerateSBOM(ctx context.Context, imageRef string) (*SBOM
 	args := []string{
 		"image",
 		"--format", "cyclonedx",
-		"--image-src", "remote", // Force remote registry access instead of local Docker daemon
 		"--server", fmt.Sprintf("http://%s", s.serverAddr), // Trivy server is mandatory
 	}
 
@@ -192,7 +191,6 @@ func (s *TrivyScanner) ScanVulnerabilities(ctx context.Context, imageRef string,
 		"--format", "json",
 		"--quiet",
 		"--scanners", "vuln",
-		"--image-src", "remote", // Force remote registry access instead of local Docker daemon
 		"--server", fmt.Sprintf("http://%s", s.serverAddr), // Trivy server is mandatory
 	}
 
@@ -283,7 +281,6 @@ func (s *TrivyScanner) ScanVulnerabilities(ctx context.Context, imageRef string,
 		"--output", tmpFile.Name(),
 		"--quiet",
 		"--scanners", "vuln",
-		"--image-src", "remote",
 		"--server", fmt.Sprintf("http://%s", s.serverAddr), // Trivy server is mandatory
 	}
 
@@ -342,7 +339,6 @@ func (s *TrivyScanner) generateSBOMLocal(ctx context.Context, imageRef string) (
 	args := []string{
 		"image",
 		"--format", "cyclonedx",
-		"--image-src", "remote",
 	}
 	if s.insecure {
 		args = append(args, "--insecure")
@@ -377,7 +373,6 @@ func (s *TrivyScanner) scanVulnerabilitiesLocal(ctx context.Context, imageRef st
 		"image",
 		"--format", "json",
 		"--scanners", "vuln",
-		"--image-src", "remote",
 	}
 	if s.insecure {
 		args = append(args, "--insecure")
@@ -430,7 +425,6 @@ func (s *TrivyScanner) scanVulnerabilitiesLocal(ctx context.Context, imageRef st
 		"--format", "cosign-vuln",
 		"--output", cosignOutPath,
 		"--scanners", "vuln",
-		"--image-src", "remote",
 	}
 	if s.insecure {
 		cosignArgs = append(cosignArgs, "--insecure")
