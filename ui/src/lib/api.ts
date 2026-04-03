@@ -145,7 +145,7 @@ export interface Scan {
   Repository: string;
   Tag: string;
   CreatedAt: number;
-  ScannedAt: number;
+  ScannedAt?: number;
   PolicyPassed: boolean;
   CriticalVulnCount: number;
   HighVulnCount: number;

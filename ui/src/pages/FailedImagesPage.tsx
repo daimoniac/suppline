@@ -2,7 +2,7 @@ import { useEffect, useState, useCallback } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { useAuth } from '../lib/auth';
 import { useToast } from '../lib/toast';
-import { formatRelativeTime, truncateDigest, copyToClipboard } from '../lib/utils';
+import { formatRelativeTime, formatDate, truncateDigest, copyToClipboard } from '../lib/utils';
 import { LoadingState, ErrorState, PageHeader, VulnCounts, SortHeader, Pagination } from '../components/ui';
 import type { Scan } from '../lib/api';
 import { AlertTriangle, Copy } from 'lucide-react';
@@ -115,8 +115,8 @@ export default function FailedImagesPage() {
             <th className="px-4 py-3 text-left text-xs font-medium text-text-secondary uppercase">Vulns</th>
             <th className="px-4 py-3 text-left text-xs font-medium text-text-secondary uppercase">Failure Reasons</th>
           </tr></thead><tbody>
-            {scans.map(s => (
-              <tr key={s.Digest} className="border-b border-border/50 hover:bg-bg-secondary cursor-pointer transition-colors" onClick={() => navigate(`/scans/${s.Digest}`)}>
+            {scans.map((s, idx) => (
+              <tr key={`${s.Repository}:${s.Tag}:${s.Digest}:${idx}`} className="border-b border-border/50 hover:bg-bg-secondary cursor-pointer transition-colors" onClick={() => navigate(`/scans/${s.Digest}`)}>
                 <td className="px-4 py-3 text-sm">
                   <span className="text-accent hover:underline cursor-pointer" onClick={e => { e.stopPropagation(); navigate(`/repositories/${encodeURIComponent(s.Repository)}`); }}>
                     {s.Repository || 'N/A'}
@@ -128,7 +128,7 @@ export default function FailedImagesPage() {
                     <button className="text-text-muted hover:text-text-primary p-0.5" onClick={e => { e.stopPropagation(); copyToClipboard(s.Digest).then(ok => toast(ok ? 'Copied!' : 'Fail', ok ? 'success' : 'error')); }}>
                       <Copy className="w-3 h-3" /></button></div>
                 </td>
-                <td className="px-4 py-3 text-sm text-text-secondary">{formatRelativeTime(s.ScannedAt)}</td>
+                <td className="px-4 py-3 text-sm text-text-secondary" title={formatDate(s.ScannedAt ?? s.CreatedAt)}>{formatRelativeTime(s.ScannedAt ?? s.CreatedAt)}</td>
                 <td className="px-4 py-3">
                   {s.RuntimeUsed && (
                     <span className="px-1.5 py-0.5 rounded text-[10px] font-semibold bg-success-bg text-success" title={s.RuntimeClusters && s.RuntimeClusters.length > 0 ? `Running on: ${s.RuntimeClusters.join(', ')}` : 'In use'}>
