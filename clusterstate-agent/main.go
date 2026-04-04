@@ -78,9 +78,21 @@ func main() {
 	}
 	logger.Info("listed pods", "total", len(podList.Items))
 
-	// --- Collect and deduplicate image entries ---
+	// --- Collect images from running pods and workload definitions ---
 	images := collectImages(podList.Items, excludedNS, logger)
-	logger.Info("collected unique images", "count", len(images))
+	logger.Info("collected images from pods", "count", len(images))
+
+	// --- Collect images from Deployments, StatefulSets, DaemonSets, Jobs, CronJobs ---
+	workloadImages, err := collectWorkloadImages(ctx, kubeClient, excludedNS, logger)
+	if err != nil {
+		logger.Warn("failed to collect workload images", "error", err)
+	} else {
+		logger.Info("collected images from workloads", "count", len(workloadImages))
+	}
+
+	// --- Merge and deduplicate ---
+	images = mergeImages(images, workloadImages)
+	logger.Info("collected unique images total", "count", len(images))
 
 	// --- POST inventory to suppline ---
 	if err := sendInventory(ctx, supplineURL, clusterName, apiKey, debugDumpPayload, images, logger); err != nil {
@@ -228,6 +240,139 @@ func parseImageRef(image, imageID string) (imageRef, tag, digest string) {
 	}
 
 	return
+}
+
+// collectWorkloadImages gathers images from Deployments, StatefulSets, DaemonSets, Jobs, and CronJobs.
+func collectWorkloadImages(ctx context.Context, kubeClient *kubernetes.Clientset, excludedNS map[string]bool, logger *slog.Logger) ([]clusterImageInput, error) {
+	var images []clusterImageInput
+
+	// Collect from Deployments
+	deployments, err := kubeClient.AppsV1().Deployments("").List(ctx, metav1.ListOptions{})
+	if err != nil {
+		logger.Warn("failed to list deployments", "error", err)
+	} else {
+		for _, dep := range deployments.Items {
+			if excludedNS[dep.Namespace] {
+				continue
+			}
+			for _, c := range dep.Spec.Template.Spec.Containers {
+				imageRef, tag, _ := parseImageRef(c.Image, "")
+				images = append(images, clusterImageInput{
+					Namespace: dep.Namespace,
+					ImageRef:  imageRef,
+					Tag:       tag,
+				})
+			}
+		}
+	}
+
+	// Collect from StatefulSets
+	statefulSets, err := kubeClient.AppsV1().StatefulSets("").List(ctx, metav1.ListOptions{})
+	if err != nil {
+		logger.Warn("failed to list statefulsets", "error", err)
+	} else {
+		for _, sts := range statefulSets.Items {
+			if excludedNS[sts.Namespace] {
+				continue
+			}
+			for _, c := range sts.Spec.Template.Spec.Containers {
+				imageRef, tag, _ := parseImageRef(c.Image, "")
+				images = append(images, clusterImageInput{
+					Namespace: sts.Namespace,
+					ImageRef:  imageRef,
+					Tag:       tag,
+				})
+			}
+		}
+	}
+
+	// Collect from DaemonSets
+	daemonSets, err := kubeClient.AppsV1().DaemonSets("").List(ctx, metav1.ListOptions{})
+	if err != nil {
+		logger.Warn("failed to list daemonsets", "error", err)
+	} else {
+		for _, ds := range daemonSets.Items {
+			if excludedNS[ds.Namespace] {
+				continue
+			}
+			for _, c := range ds.Spec.Template.Spec.Containers {
+				imageRef, tag, _ := parseImageRef(c.Image, "")
+				images = append(images, clusterImageInput{
+					Namespace: ds.Namespace,
+					ImageRef:  imageRef,
+					Tag:       tag,
+				})
+			}
+		}
+	}
+
+	// Collect from Jobs
+	jobs, err := kubeClient.BatchV1().Jobs("").List(ctx, metav1.ListOptions{})
+	if err != nil {
+		logger.Warn("failed to list jobs", "error", err)
+	} else {
+		for _, job := range jobs.Items {
+			if excludedNS[job.Namespace] {
+				continue
+			}
+			for _, c := range job.Spec.Template.Spec.Containers {
+				imageRef, tag, _ := parseImageRef(c.Image, "")
+				images = append(images, clusterImageInput{
+					Namespace: job.Namespace,
+					ImageRef:  imageRef,
+					Tag:       tag,
+				})
+			}
+		}
+	}
+
+	// Collect from CronJobs
+	cronJobs, err := kubeClient.BatchV1().CronJobs("").List(ctx, metav1.ListOptions{})
+	if err != nil {
+		logger.Warn("failed to list cronjobs", "error", err)
+	} else {
+		for _, cj := range cronJobs.Items {
+			if excludedNS[cj.Namespace] {
+				continue
+			}
+			for _, c := range cj.Spec.JobTemplate.Spec.Template.Spec.Containers {
+				imageRef, tag, _ := parseImageRef(c.Image, "")
+				images = append(images, clusterImageInput{
+					Namespace: cj.Namespace,
+					ImageRef:  imageRef,
+					Tag:       tag,
+				})
+			}
+		}
+	}
+
+	return images, nil
+}
+
+// mergeImages deduplicates and merges two image lists by (namespace, imageRef, digest).
+func mergeImages(list1, list2 []clusterImageInput) []clusterImageInput {
+	seen := make(map[string]struct{})
+	var merged []clusterImageInput
+
+	for _, img := range list1 {
+		key := img.Namespace + "|" + img.ImageRef + "|" + img.Digest
+		if _, exists := seen[key]; exists {
+			continue
+		}
+		seen[key] = struct{}{}
+		merged = append(merged, img)
+	}
+
+	for _, img := range list2 {
+		key := img.Namespace + "|" + img.ImageRef + "|" + img.Digest
+		if _, exists := seen[key]; exists {
+			continue
+		}
+		seen[key] = struct{}{}
+		merged = append(merged, img)
+	}
+
+	return merged
 }
 
 // sendInventory marshals the payload and POSTs it to the suppline webhook.

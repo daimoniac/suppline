@@ -7,10 +7,13 @@ Kubernetes CronJob that reports the running container image inventory of a clust
 On each run the agent:
 
 1. Lists all pods across all namespaces using in-cluster RBAC (read-only `pods` permission).
-2. Skips pods in excluded namespaces (configurable, defaults to `kube-system`, `kube-public`, `kube-node-lease`).
-3. Extracts each container's image reference, tag, and runtime digest from pod status.
-4. Deduplicates entries by `(namespace, image_ref, digest)`.
-5. POSTs the snapshot to `POST /api/v1/webhook/cluster-inventory` on the suppline API.
+2. Collects image references from Deployments, StatefulSets, DaemonSets, Jobs, and CronJobs.
+3. Skips pods and workloads in excluded namespaces (configurable, defaults to `kube-system`, `kube-public`, `kube-node-lease`).
+4. Extracts each container's image reference, tag, and runtime digest from pod status (digests only available for running pods).
+5. Deduplicates entries by `(namespace, image_ref, digest)`.
+6. POSTs the snapshot to `POST /api/v1/webhook/cluster-inventory` on the suppline API.
+
+This ensures suppline discovers images from scheduled jobs, pending deployments, and other workload definitions—even if no pods are currently running from those resources.
 
 ## Prerequisites
 
@@ -71,13 +74,19 @@ The agent loads configuration from a `.env` file (if present) before checking en
 
 ## RBAC
 
-The chart creates a **ClusterRole** with minimal read permissions:
+The chart creates a **ClusterRole** with read-only permissions for pods and workload resources:
 
 ```yaml
 rules:
 - apiGroups: [""]
   resources: ["pods"]
   verbs: ["get", "list"]
+- apiGroups: ["apps"]
+  resources: ["deployments", "statefulsets", "daemonsets"]
+  verbs: ["list"]
+- apiGroups: ["batch"]
+  resources: ["jobs", "cronjobs"]
+  verbs: ["list"]
 ```
 
 ## Building the image
