@@ -108,7 +108,7 @@ export default function ScansPage() {
                 <td className="px-4 py-3 text-sm text-text-secondary" title={formatDate(s.ScannedAt ?? s.CreatedAt)}>{formatRelativeTime(s.ScannedAt ?? s.CreatedAt)}</td>
                 <td className="px-4 py-3">
                   <div className="flex items-center gap-2 flex-wrap">
-                    <StatusBadge passed={s.PolicyPassed} />
+                    <StatusBadge passed={s.PolicyPassed} status={s.PolicyStatus} />
                     {s.RuntimeUsed && (
                       <span className="px-1.5 py-0.5 rounded text-[10px] font-semibold bg-success-bg text-success" title={s.RuntimeClusters && s.RuntimeClusters.length > 0 ? `Running on: ${s.RuntimeClusters.join(', ')}` : 'In use'}>
                         In use

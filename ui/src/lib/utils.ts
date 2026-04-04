@@ -97,3 +97,17 @@ export function severityTextColor(severity: string): string {
     default: return 'text-gray-400';
   }
 }
+
+export function daysUntilReleaseAge(releaseAgeSeconds?: number, minimumReleaseAgeSeconds?: number): number | null {
+  if (!releaseAgeSeconds || !minimumReleaseAgeSeconds) return null;
+  if (releaseAgeSeconds >= minimumReleaseAgeSeconds) return null;
+  const remainingSeconds = minimumReleaseAgeSeconds - releaseAgeSeconds;
+  return Math.ceil(remainingSeconds / (24 * 60 * 60));
+}
+
+export function formatRemainingDays(days: number | null): string {
+  if (days === null) return '';
+  if (days <= 0) return 'Ready';
+  if (days === 1) return '1 day remaining';
+  return `${days} days remaining`;
+}

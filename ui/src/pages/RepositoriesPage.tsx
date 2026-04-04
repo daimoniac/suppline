@@ -140,7 +140,7 @@ export default function RepositoriesPage() {
                     <td className="px-4 py-3"><VulnCounts critical={r.VulnerabilityCount?.Critical} high={r.VulnerabilityCount?.High} medium={r.VulnerabilityCount?.Medium} low={r.VulnerabilityCount?.Low} tolerated={r.VulnerabilityCount?.Tolerated} /></td>
                     <td className="px-4 py-3">
                       <div className="flex items-center gap-2 flex-wrap">
-                        <StatusBadge passed={r.PolicyPassed} />
+                        <StatusBadge passed={r.PolicyPassed} status={r.PolicyStatus} />
                         {r.RuntimeUsed && <span className="px-1.5 py-0.5 rounded text-[10px] font-semibold bg-success-bg text-success">In use</span>}
                       </div>
                     </td>

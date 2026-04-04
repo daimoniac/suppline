@@ -1948,6 +1948,12 @@ func (s *SQLiteStore) ListRepositories(ctx context.Context, filter RepositoryFil
 			MAX(sr.medium_vuln_count) as max_medium,
 			MAX(sr.low_vuln_count) as max_low,
 			CASE WHEN COUNT(CASE WHEN sr.policy_passed = 0 THEN 1 END) > 0 THEN 0 ELSE 1 END as policy_passed,
+			CASE
+				WHEN COUNT(CASE WHEN sr.policy_status = 'failed' THEN 1 END) > 0 THEN 'failed'
+				WHEN COUNT(CASE WHEN sr.policy_status = 'pending' THEN 1 END) > 0 THEN 'pending'
+				WHEN COUNT(CASE WHEN sr.policy_passed = 0 THEN 1 END) > 0 THEN 'failed'
+				ELSE 'passed'
+			END as policy_status,
 			CASE WHEN EXISTS (SELECT 1 FROM artifacts ai JOIN cluster_images ci ON ci.digest = ai.digest WHERE ai.repository_id = r.id) THEN 1 ELSE 0 END as runtime_used
 		FROM repositories r
 		LEFT JOIN artifacts a ON r.id = a.repository_id
@@ -2028,6 +2034,7 @@ func (s *SQLiteStore) ListRepositories(ctx context.Context, filter RepositoryFil
 		var maxMedium sql.NullInt64
 		var maxLow sql.NullInt64
 		var policyPassed int
+		var policyStatus string
 		var runtimeUsed int
 
 		err := rows.Scan(
@@ -2040,6 +2047,7 @@ func (s *SQLiteStore) ListRepositories(ctx context.Context, filter RepositoryFil
 			&maxMedium,
 			&maxLow,
 			&policyPassed,
+			&policyStatus,
 			&runtimeUsed,
 		)
 		if err != nil {
@@ -2066,6 +2074,7 @@ func (s *SQLiteStore) ListRepositories(ctx context.Context, filter RepositoryFil
 		}
 
 		repo.PolicyPassed = policyPassed == 1
+		repo.PolicyStatus = policyStatus
 		repo.RuntimeUsed = runtimeUsed == 1
 
 		repositories = append(repositories, repo)
@@ -2128,6 +2137,11 @@ func (s *SQLiteStore) GetRepository(ctx context.Context, name string, filter Rep
 			COALESCE(sr.medium_vuln_count, 0) as medium,
 			COALESCE(sr.low_vuln_count, 0) as low,
 			COALESCE(sr.policy_passed, 1) as policy_passed,
+			COALESCE(sr.policy_status, '') as policy_status,
+			COALESCE(sr.policy_reason, '') as policy_reason,
+			COALESCE(sr.release_age_seconds, 0) as release_age_seconds,
+			COALESCE(sr.minimum_release_age_seconds, 0) as minimum_release_age_seconds,
+			COALESCE(sr.release_age_source, '') as release_age_source,
 			COALESCE(sr.error_message, '') as error_message
 		FROM artifacts a
 		JOIN repositories r ON a.repository_id = r.id
@@ -2202,6 +2216,11 @@ func (s *SQLiteStore) GetRepository(ctx context.Context, name string, filter Rep
 			&tag.VulnerabilityCount.Medium,
 			&tag.VulnerabilityCount.Low,
 			&policyPassed,
+			&tag.PolicyStatus,
+			&tag.PolicyReason,
+			&tag.ReleaseAgeSeconds,
+			&tag.MinimumReleaseAgeSeconds,
+			&tag.ReleaseAgeSource,
 			&tag.ScanError,
 		)
 		if err != nil {
@@ -2216,6 +2235,13 @@ func (s *SQLiteStore) GetRepository(ctx context.Context, name string, filter Rep
 		}
 
 		tag.PolicyPassed = policyPassed == 1
+		if tag.PolicyStatus == "" {
+			if tag.PolicyPassed {
+				tag.PolicyStatus = "passed"
+			} else {
+				tag.PolicyStatus = "failed"
+			}
+		}
 
 		detail.Tags = append(detail.Tags, tag)
 	}

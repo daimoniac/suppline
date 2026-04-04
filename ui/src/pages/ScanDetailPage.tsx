@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { useAuth } from '../lib/auth';
 import { useToast } from '../lib/toast';
-import { formatRelativeTime, formatDate, truncateDigest, copyToClipboard } from '../lib/utils';
+import { formatRelativeTime, formatDate, truncateDigest, copyToClipboard, daysUntilReleaseAge, formatRemainingDays } from '../lib/utils';
 import { LoadingState, ErrorState, StatusBadge, SeverityBadge } from '../components/ui';
 import type { ScanDetail, Vulnerability } from '../lib/api';
 import { ArrowLeft, RefreshCw, Copy, CheckCircle, XCircle, ChevronDown, ChevronRight, ExternalLink } from 'lucide-react';
@@ -119,7 +119,20 @@ export default function ScanDetailPage() {
             </div>
           } />
           <InfoItem label="Scanned" value={<span title={formatDate(scan.CreatedAt)}>{formatRelativeTime(scan.CreatedAt)}</span>} />
-          <InfoItem label="Policy" value={<StatusBadge passed={scan.PolicyPassed} />} />
+          <InfoItem label="Policy" value={
+            <div className="flex flex-col gap-1">
+              <StatusBadge
+                passed={scan.PolicyPassed}
+                status={scan.PolicyStatus}
+                label={scan.PolicyStatus === 'pending' ? 'Pending Maturity' : undefined}
+              />
+              {scan.PolicyStatus === 'pending' && (
+                <div className="text-xs text-warning font-medium">
+                  {formatRemainingDays(daysUntilReleaseAge(scan.ReleaseAgeSeconds, scan.MinimumReleaseAgeSeconds))}
+                </div>
+              )}
+            </div>
+          } />
           <InfoItem label="Attestation" value={
             <div className="flex items-center gap-2">
               <AttestBadge label="SBOM" attested={scan.SBOMAttested} />

@@ -4,13 +4,18 @@ import type { ReactNode } from 'react';
 import { useImageUsageFilter } from '../lib/imageUsageFilter';
 
 // Status Badge
-export function StatusBadge({ passed, label }: { passed: boolean; label?: string }) {
+export function StatusBadge({ passed, label, status }: { passed: boolean; label?: string; status?: string }) {
+  const isPending = status === 'pending';
   return (
     <span className={cn(
       'inline-flex items-center px-2 py-0.5 rounded text-xs font-medium',
-      passed ? 'bg-success-bg text-success' : 'bg-danger-bg text-danger'
+      isPending
+        ? 'bg-warning-bg text-warning'
+        : passed
+          ? 'bg-success-bg text-success'
+          : 'bg-danger-bg text-danger'
     )}>
-      {label || (passed ? 'Passed' : 'Failed')}
+      {label || (isPending ? 'Pending' : passed ? 'Passed' : 'Failed')}
     </span>
   );
 }

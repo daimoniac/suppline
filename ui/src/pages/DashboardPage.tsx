@@ -15,12 +15,13 @@ interface DashboardData {
   recentScans: Scan[];
   failedCount: number;
   failedInUseCount: number;
+  pendingCount: number;
   activeTolerations: number;
   expiringTolerations: Toleration[];
   expiredTolerations: Toleration[];
   inactiveTolerations: Toleration[];
   vulnBreakdown: { critical: number; high: number; medium: number; low: number };
-  failedByRepo: Record<string, number>;
+  policyByRepo: Record<string, { failed: number; pending: number }>;
 }
 
 export default function DashboardPage() {
@@ -36,7 +37,7 @@ export default function DashboardPage() {
     setLoading(true);
     setError('');
     try {
-      const [recentScans, failedScans, allTolerations, inactiveTolerations, vulnStats] = await Promise.all([
+      const [recentScans, nonPassedScans, allTolerations, inactiveTolerations, vulnStats] = await Promise.all([
         apiClient.getScans({ limit: 20, ...(inUseQuery !== undefined && { in_use: inUseQuery }) }),
         apiClient.getScans({ policy_passed: false, ...(inUseQuery !== undefined && { in_use: inUseQuery }) }),
         apiClient.getTolerations({}),
@@ -53,13 +54,27 @@ export default function DashboardPage() {
         return ms > now && ms <= now + sevenDays;
       });
 
-      const failedByRepo: Record<string, number> = {};
-      failedScans.forEach(s => { failedByRepo[s.Repository || 'unknown'] = (failedByRepo[s.Repository || 'unknown'] || 0) + 1; });
+      const failedScans = nonPassedScans.filter(s => s.PolicyStatus !== 'pending');
+      const pendingScans = nonPassedScans.filter(s => s.PolicyStatus === 'pending');
+      const policyByRepo: Record<string, { failed: number; pending: number }> = {};
+
+      nonPassedScans.forEach((scan) => {
+        const repo = scan.Repository || 'unknown';
+        if (!policyByRepo[repo]) {
+          policyByRepo[repo] = { failed: 0, pending: 0 };
+        }
+        if (scan.PolicyStatus === 'pending') {
+          policyByRepo[repo].pending += 1;
+        } else {
+          policyByRepo[repo].failed += 1;
+        }
+      });
 
       setData({
         recentScans,
         failedCount: failedScans.length,
         failedInUseCount: failedScans.filter(s => !!s.RuntimeUsed).length,
+        pendingCount: pendingScans.length,
         activeTolerations: allTolerations.length,
         expiringTolerations: expiring,
         expiredTolerations: expired,
@@ -70,7 +85,7 @@ export default function DashboardPage() {
           medium: vulnStats?.MEDIUM || 0,
           low: vulnStats?.LOW || 0,
         },
-        failedByRepo,
+        policyByRepo,
       });
     } catch (e: unknown) {
       setError(e instanceof Error ? e.message : 'Failed to load dashboard');
@@ -106,8 +121,8 @@ export default function DashboardPage() {
           variant="danger"
           onClick={() => navigate('/failed')}
         />
+        <SummaryCard icon={<Clock className="w-5 h-5" />} value={data.pendingCount} label="Pending Release" variant="warning" detail="Waiting to mature" />
         <SummaryCard icon={<FileWarning className="w-5 h-5" />} value={data.activeTolerations} label="Active Tolerations" variant="info" onClick={() => navigate('/tolerations')} />
-        <SummaryCard icon={<Clock className="w-5 h-5" />} value={data.expiringTolerations.length} label="Expiring Soon" variant="warning" onClick={() => navigate('/tolerations?expiration_status=expiring')} />
         <SummaryCard icon={<CheckSquare className="w-5 h-5" />} value={data.inactiveTolerations.length} label="Inactive Tolerations" variant="muted" />
       </div>
 
@@ -157,10 +172,10 @@ export default function DashboardPage() {
         </div>
       )}
 
-      {/* Failed by Repository */}
+      {/* Failed/Pending by Repository */}
       <div className="bg-bg-primary border border-border rounded-xl p-5">
         <h2 className="text-sm font-semibold mb-4">Policy Compliance Status</h2>
-        {Object.keys(data.failedByRepo).length === 0 ? (
+        {Object.keys(data.policyByRepo).length === 0 ? (
           <div className="text-center py-8">
             <div className="text-3xl mb-2">🎆</div>
             <h3 className="font-semibold text-accent">All Compliant</h3>
@@ -168,15 +183,26 @@ export default function DashboardPage() {
           </div>
         ) : (
           <div className="space-y-2">
-            {Object.entries(data.failedByRepo).sort((a, b) => b[1] - a[1]).slice(0, 5).map(([repo, count]) => {
-              const max = Math.max(...Object.values(data.failedByRepo));
+            {Object.entries(data.policyByRepo)
+              .sort((a, b) => (b[1].failed + b[1].pending) - (a[1].failed + a[1].pending))
+              .slice(0, 5)
+              .map(([repo, counts]) => {
+              const max = Math.max(...Object.values(data.policyByRepo).map(v => v.failed + v.pending));
+              const total = counts.failed + counts.pending;
+              const failedWidth = total > 0 ? (counts.failed / total) * 100 : 0;
+              const pendingWidth = total > 0 ? (counts.pending / total) * 100 : 0;
               return (
                 <div key={repo} className="flex items-center gap-3 cursor-pointer hover:bg-bg-secondary rounded px-2 py-1 transition-colors" onClick={() => navigate(`/repositories/${encodeURIComponent(repo)}`)}>
                   <span className="text-sm text-text-primary truncate w-48 flex-shrink-0">{repo}</span>
                   <div className="flex-1 h-2 bg-bg-tertiary rounded-full overflow-hidden">
-                    <div className="h-full bg-danger rounded-full transition-all" style={{ width: `${(count / max) * 100}%` }} />
+                    <div className="h-full flex transition-all" style={{ width: `${(total / max) * 100}%` }}>
+                      {counts.failed > 0 && <div className="h-full bg-danger" style={{ width: `${failedWidth}%` }} />}
+                      {counts.pending > 0 && <div className="h-full bg-warning" style={{ width: `${pendingWidth}%` }} />}
+                    </div>
                   </div>
-                  <span className="text-sm font-medium text-text-secondary w-8 text-right">{count}</span>
+                  <span className="text-xs font-medium text-text-secondary w-20 text-right">
+                    F {counts.failed} / P {counts.pending}
+                  </span>
                 </div>
               );
             })}
@@ -222,7 +248,7 @@ export default function DashboardPage() {
                       </div>
                     </td>
                     <td className="px-4 py-3 text-sm text-text-secondary">{formatRelativeTime(scan.CreatedAt)}</td>
-                    <td className="px-4 py-3"><StatusBadge passed={scan.PolicyPassed} /></td>
+                    <td className="px-4 py-3"><StatusBadge passed={scan.PolicyPassed} status={scan.PolicyStatus} /></td>
                     <td className="px-4 py-3">
                       <VulnCounts critical={scan.CriticalVulnCount} high={scan.HighVulnCount} medium={scan.MediumVulnCount} low={scan.LowVulnCount} />
                     </td>

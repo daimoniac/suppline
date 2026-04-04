@@ -150,6 +150,11 @@ export interface Scan {
   CreatedAt: number;
   ScannedAt?: number;
   PolicyPassed: boolean;
+  PolicyStatus?: string; // "passed", "failed", or "pending"
+  PolicyReason?: string;
+  ReleaseAgeSeconds?: number;
+  MinimumReleaseAgeSeconds?: number;
+  ReleaseAgeSource?: string; // "image_created_at", "first_seen", or empty if unknown
   CriticalVulnCount: number;
   HighVulnCount: number;
   MediumVulnCount: number;
@@ -224,6 +229,7 @@ export interface Repository {
   ArtifactCount: number;
   LastScanTime: number;
   PolicyPassed: boolean;
+  PolicyStatus?: string;
   VulnerabilityCount: VulnCount;
   RuntimeUsed?: boolean;
 }
@@ -239,6 +245,11 @@ export interface RepositoryTag {
   LastScanTime: number;
   NextScanTime: number;
   PolicyPassed: boolean;
+  PolicyStatus?: string; // "passed", "failed", or "pending"
+  PolicyReason?: string;
+  ReleaseAgeSeconds?: number;
+  MinimumReleaseAgeSeconds?: number;
+  ReleaseAgeSource?: string; // "image_created_at", "first_seen", or empty if unknown
   ScanError: string;
   VulnerabilityCount: VulnCount;
   RuntimeUsed?: boolean;
