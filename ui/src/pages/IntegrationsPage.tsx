@@ -120,7 +120,11 @@ export default function IntegrationsPage() {
 
   return (
     <div className="space-y-6">
-      <PageHeader title="Integrations" subtitle="Export keys and policies for Kubernetes integration" />
+      <PageHeader
+        title="Integrations"
+        subtitle="Export keys and policies for Kubernetes integration"
+        showImageUsage={false}
+      />
 
       {/* Kubernetes */}
       <div className="bg-bg-primary border border-border rounded-xl overflow-hidden">

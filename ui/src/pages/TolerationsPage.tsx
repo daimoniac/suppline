@@ -75,7 +75,11 @@ export default function TolerationsPage() {
 
   return (
     <div>
-      <PageHeader title="CVE Tolerations" subtitle="Manage and monitor CVE exception policies" />
+      <PageHeader
+        title="CVE Tolerations"
+        subtitle="Manage and monitor CVE exception policies"
+        showImageUsage={false}
+      />
       <div className="flex gap-3 mb-4 flex-wrap">
         <input value={cveFilter} onChange={e => setCveFilter(e.target.value)} placeholder="CVE ID…"
           className="px-3 py-2 bg-bg-secondary border border-border rounded-lg text-sm text-text-primary placeholder:text-text-muted focus:outline-none focus:border-accent/50 transition-colors w-44" />

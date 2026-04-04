@@ -101,7 +101,11 @@ export default function VulnerabilitiesPage() {
 
   return (
     <div>
-      <PageHeader title="Vulnerabilities" subtitle="Search and browse vulnerabilities across all images" />
+      <PageHeader
+        title="Vulnerabilities"
+        subtitle="Search and browse vulnerabilities across all images"
+        showImageUsage={false}
+      />
       <div className="flex gap-3 mb-4 flex-wrap">
         <input value={cveId} onChange={e => setCveId(e.target.value)} onKeyDown={e => e.key === 'Enter' && (setPage(1), load())}
           placeholder="Search CVE ID…" className="flex-1 max-w-xs px-3 py-2 bg-bg-secondary border border-border rounded-lg text-sm text-text-primary placeholder:text-text-muted focus:outline-none focus:border-accent/50 transition-colors" />
