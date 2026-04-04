@@ -1,5 +1,5 @@
 import { useEffect, useState, useCallback } from 'react';
-import { useNavigate, useSearchParams } from 'react-router-dom';
+import { Link, useSearchParams } from 'react-router-dom';
 import { useAuth } from '../lib/auth';
 import { useToast } from '../lib/toast';
 import { formatRelativeTime, formatDate, truncateDigest, copyToClipboard, daysUntilReleaseAge, formatRemainingDays } from '../lib/utils';
@@ -10,7 +10,6 @@ import { AlertTriangle, Copy } from 'lucide-react';
 
 export default function FailedImagesPage() {
   const { apiClient } = useAuth();
-  const navigate = useNavigate();
   const { toast } = useToast();
   const { inUseQuery } = useImageUsageFilter();
   const [searchParams] = useSearchParams();
@@ -114,16 +113,16 @@ export default function FailedImagesPage() {
             <th className="px-4 py-3 text-left text-xs font-medium text-text-secondary uppercase">Failure Reasons</th>
           </tr></thead><tbody>
             {scans.map((s, idx) => (
-              <tr key={`${s.Repository}:${s.Tag}:${s.Digest}:${idx}`} className="border-b border-border/50 hover:bg-bg-secondary cursor-pointer transition-colors" onClick={() => navigate(`/scans/${s.Digest}`)}>
+              <tr key={`${s.Repository}:${s.Tag}:${s.Digest}:${idx}`} className="border-b border-border/50 hover:bg-bg-secondary transition-colors">
                 <td className="px-4 py-3 text-sm">
-                  <span className="text-accent hover:underline cursor-pointer" onClick={e => { e.stopPropagation(); navigate(`/repositories/${encodeURIComponent(s.Repository)}`); }}>
+                  <Link to={`/repositories/${encodeURIComponent(s.Repository)}`} className="text-accent hover:underline">
                     {s.Repository || 'N/A'}
-                  </span>
+                  </Link>
                 </td>
                 <td className="px-4 py-3 text-sm text-text-secondary">{s.Tag || 'N/A'}</td>
                 <td className="px-4 py-3 text-sm">
-                  <div className="flex items-center gap-1 flex-wrap"><code className="text-xs text-text-muted font-mono">{truncateDigest(s.Digest)}</code>
-                    <button className="text-text-muted hover:text-text-primary p-0.5" onClick={e => { e.stopPropagation(); copyToClipboard(s.Digest).then(ok => toast(ok ? 'Copied!' : 'Fail', ok ? 'success' : 'error')); }}>
+                  <div className="flex items-center gap-1 flex-wrap"><Link to={`/scans/${s.Digest}`} className="text-xs text-accent font-mono hover:underline">{truncateDigest(s.Digest)}</Link>
+                    <button className="text-text-muted hover:text-text-primary p-0.5" onClick={() => { copyToClipboard(s.Digest).then(ok => toast(ok ? 'Copied!' : 'Fail', ok ? 'success' : 'error')); }}>
                       <Copy className="w-3 h-3" /></button></div>
                 </td>
                 <td className="px-4 py-3 text-sm text-text-secondary" title={formatDate(s.ScannedAt ?? s.CreatedAt)}>{formatRelativeTime(s.ScannedAt ?? s.CreatedAt)}</td>

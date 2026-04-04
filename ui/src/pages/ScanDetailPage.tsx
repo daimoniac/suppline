@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { useParams, useNavigate } from 'react-router-dom';
+import { Link, useParams } from 'react-router-dom';
 import { useAuth } from '../lib/auth';
 import { useToast } from '../lib/toast';
 import { formatRelativeTime, formatDate, truncateDigest, copyToClipboard, daysUntilReleaseAge, formatRemainingDays } from '../lib/utils';
@@ -10,7 +10,6 @@ import { ArrowLeft, RefreshCw, Copy, CheckCircle, XCircle, ChevronDown, ChevronR
 export default function ScanDetailPage() {
   const { digest, name } = useParams<{ digest: string; name?: string }>();
   const { apiClient } = useAuth();
-  const navigate = useNavigate();
   const { toast } = useToast();
   const [scan, setScan] = useState<ScanDetail | null>(null);
   const [loading, setLoading] = useState(true);
@@ -50,11 +49,21 @@ export default function ScanDetailPage() {
   };
 
   const toggleSeverity = (sev: string) => {
-    setExpandedSeverities(prev => { const n = new Set(prev); n.has(sev) ? n.delete(sev) : n.add(sev); return n; });
+    setExpandedSeverities(prev => {
+      const n = new Set(prev);
+      if (n.has(sev)) n.delete(sev);
+      else n.add(sev);
+      return n;
+    });
   };
 
   const toggleToleration = (idx: number) => {
-    setExpandedTolerations(prev => { const n = new Set(prev); n.has(idx) ? n.delete(idx) : n.add(idx); return n; });
+    setExpandedTolerations(prev => {
+      const n = new Set(prev);
+      if (n.has(idx)) n.delete(idx);
+      else n.add(idx);
+      return n;
+    });
   };
 
   if (loading) return <LoadingState message="Loading scan details…" />;
@@ -70,9 +79,9 @@ export default function ScanDetailPage() {
     <div className="space-y-6">
       {/* Header */}
       <div className="flex items-center gap-4">
-        <button onClick={() => navigate(isArtifactView ? `/repositories/${encodeURIComponent(name || '')}` : '/scans')} className="p-2 rounded-lg border border-border hover:bg-bg-tertiary transition-colors">
+        <Link to={isArtifactView ? `/repositories/${encodeURIComponent(name || '')}` : '/scans'} className="p-2 rounded-lg border border-border hover:bg-bg-tertiary transition-colors">
           <ArrowLeft className="w-4 h-4" />
-        </button>
+        </Link>
         <div className="flex-1">
           <h1 className="text-2xl font-bold">Scan Detail</h1>
           <p className="text-sm text-text-secondary">{scan.Repository}:{scan.Tag}</p>
@@ -87,7 +96,7 @@ export default function ScanDetailPage() {
         <h2 className="text-sm font-semibold mb-4">Image Information</h2>
         <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
           <InfoItem label="Repository" value={
-            <span className="text-accent cursor-pointer hover:underline" onClick={() => navigate(`/repositories/${encodeURIComponent(scan.Repository)}`)}>{scan.Repository}</span>
+            <Link className="text-accent hover:underline" to={`/repositories/${encodeURIComponent(scan.Repository)}`}>{scan.Repository}</Link>
           } />
           <InfoItem label={scan.Tags && scan.Tags.length > 1 ? 'Tags' : 'Tag'} value={
             scan.Tags && scan.Tags.length > 0

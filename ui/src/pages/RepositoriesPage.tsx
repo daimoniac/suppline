@@ -1,5 +1,5 @@
 import { useEffect, useState, useCallback } from 'react';
-import { useNavigate, useSearchParams } from 'react-router-dom';
+import { Link, useSearchParams } from 'react-router-dom';
 import { useAuth } from '../lib/auth';
 import { useToast } from '../lib/toast';
 import { formatRelativeTime } from '../lib/utils';
@@ -10,7 +10,6 @@ import { RefreshCw } from 'lucide-react';
 
 export default function RepositoriesPage() {
   const { apiClient } = useAuth();
-  const navigate = useNavigate();
   const { toast } = useToast();
   const { inUseQuery } = useImageUsageFilter();
   const [searchParams, setSearchParams] = useSearchParams();
@@ -134,7 +133,7 @@ export default function RepositoriesPage() {
               <tbody>
                 {repos.map(r => (
                   <tr key={r.Name} className="border-b border-border/50 hover:bg-bg-secondary transition-colors">
-                    <td className="px-4 py-3 text-sm text-accent cursor-pointer hover:underline" onClick={() => navigate(`/repositories/${encodeURIComponent(r.Name)}`)}>{r.Name}</td>
+                    <td className="px-4 py-3 text-sm"><Link className="text-accent hover:underline" to={`/repositories/${encodeURIComponent(r.Name)}`}>{r.Name}</Link></td>
                     <td className="px-4 py-3 text-sm text-text-secondary">{r.ArtifactCount || 0}</td>
                     <td className="px-4 py-3 text-sm text-text-secondary">{r.LastScanTime ? formatRelativeTime(r.LastScanTime) : 'Never'}</td>
                     <td className="px-4 py-3"><VulnCounts critical={r.VulnerabilityCount?.Critical} high={r.VulnerabilityCount?.High} medium={r.VulnerabilityCount?.Medium} low={r.VulnerabilityCount?.Low} tolerated={r.VulnerabilityCount?.Tolerated} /></td>

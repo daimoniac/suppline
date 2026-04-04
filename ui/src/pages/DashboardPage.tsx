@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { Link } from 'react-router-dom';
 import { useAuth } from '../lib/auth';
 import { useToast } from '../lib/toast';
 import { formatRelativeTime, truncateDigest, copyToClipboard } from '../lib/utils';
@@ -26,7 +26,6 @@ interface DashboardData {
 
 export default function DashboardPage() {
   const { apiClient } = useAuth();
-  const navigate = useNavigate();
   const { toast } = useToast();
   const { inUseQuery } = useImageUsageFilter();
   const [data, setData] = useState<DashboardData | null>(null);
@@ -119,10 +118,10 @@ export default function DashboardPage() {
           label="Policy Failures"
           detail={`${data.failedInUseCount} in use`}
           variant="danger"
-          onClick={() => navigate('/failed')}
+          to="/failed"
         />
         <SummaryCard icon={<Clock className="w-5 h-5" />} value={data.pendingCount} label="Pending Release" variant="warning" detail="Waiting to mature" />
-        <SummaryCard icon={<FileWarning className="w-5 h-5" />} value={data.activeTolerations} label="Active Tolerations" variant="info" onClick={() => navigate('/tolerations')} />
+        <SummaryCard icon={<FileWarning className="w-5 h-5" />} value={data.activeTolerations} label="Active Tolerations" variant="info" to="/tolerations" />
         <SummaryCard icon={<CheckSquare className="w-5 h-5" />} value={data.inactiveTolerations.length} label="Inactive Tolerations" variant="muted" />
       </div>
 
@@ -137,13 +136,13 @@ export default function DashboardPage() {
           </div>
           <div className="space-y-2 max-h-64 overflow-y-auto">
             {data.expiredTolerations.slice(0, 5).map(t => (
-              <TolerationAttentionItem key={`exp-${t.CVEID}`} toleration={t} status="expired" onClick={() => navigate(`/vulnerabilities?cve_id=${encodeURIComponent(t.CVEID)}`)} />
+              <TolerationAttentionItem key={`exp-${t.CVEID}`} toleration={t} status="expired" to={`/vulnerabilities?cve_id=${encodeURIComponent(t.CVEID)}`} />
             ))}
             {data.expiringTolerations.slice(0, 5).map(t => (
-              <TolerationAttentionItem key={`expiring-${t.CVEID}`} toleration={t} status="expiring" onClick={() => navigate(`/vulnerabilities?cve_id=${encodeURIComponent(t.CVEID)}`)} />
+              <TolerationAttentionItem key={`expiring-${t.CVEID}`} toleration={t} status="expiring" to={`/vulnerabilities?cve_id=${encodeURIComponent(t.CVEID)}`} />
             ))}
             {data.inactiveTolerations.slice(0, 3).map(t => (
-              <TolerationAttentionItem key={`inactive-${t.CVEID}`} toleration={t} status="inactive" onClick={() => navigate(`/vulnerabilities?cve_id=${encodeURIComponent(t.CVEID)}`)} />
+              <TolerationAttentionItem key={`inactive-${t.CVEID}`} toleration={t} status="inactive" to={`/vulnerabilities?cve_id=${encodeURIComponent(t.CVEID)}`} />
             ))}
           </div>
         </div>
@@ -161,12 +160,11 @@ export default function DashboardPage() {
           </div>
           <div className="grid grid-cols-4 gap-4">
             {(['critical', 'high', 'medium', 'low'] as const).map(sev => (
-              <div key={sev} className="text-center cursor-pointer rounded-lg p-2 -m-2 hover:bg-bg-secondary transition-colors"
-                onClick={() => navigate(`/vulnerabilities?severity=${sev}`)}>
+              <Link key={sev} to={`/vulnerabilities?severity=${sev}`} className="text-center rounded-lg p-2 -m-2 hover:bg-bg-secondary transition-colors">
                 <SeverityBadge severity={sev} />
                 <div className="text-lg font-bold mt-1">{data.vulnBreakdown[sev]}</div>
                 <div className="text-xs text-text-muted">{totalVulns > 0 ? ((data.vulnBreakdown[sev] / totalVulns) * 100).toFixed(0) : 0}%</div>
-              </div>
+              </Link>
             ))}
           </div>
         </div>
@@ -192,7 +190,7 @@ export default function DashboardPage() {
               const failedWidth = total > 0 ? (counts.failed / total) * 100 : 0;
               const pendingWidth = total > 0 ? (counts.pending / total) * 100 : 0;
               return (
-                <div key={repo} className="flex items-center gap-3 cursor-pointer hover:bg-bg-secondary rounded px-2 py-1 transition-colors" onClick={() => navigate(`/repositories/${encodeURIComponent(repo)}`)}>
+                <Link key={repo} to={`/repositories/${encodeURIComponent(repo)}`} className="flex items-center gap-3 hover:bg-bg-secondary rounded px-2 py-1 transition-colors">
                   <span className="text-sm text-text-primary truncate w-48 flex-shrink-0">{repo}</span>
                   <div className="flex-1 h-2 bg-bg-tertiary rounded-full overflow-hidden">
                     <div className="h-full flex transition-all" style={{ width: `${(total / max) * 100}%` }}>
@@ -203,7 +201,7 @@ export default function DashboardPage() {
                   <span className="text-xs font-medium text-text-secondary w-20 text-right">
                     F {counts.failed} / P {counts.pending}
                   </span>
-                </div>
+                </Link>
               );
             })}
           </div>
@@ -232,17 +230,17 @@ export default function DashboardPage() {
               </thead>
               <tbody>
                 {data.recentScans.map(scan => (
-                  <tr key={scan.Digest} className="border-b border-border/50 hover:bg-bg-secondary cursor-pointer transition-colors" onClick={() => navigate(`/scans/${scan.Digest}`)}>
+                  <tr key={scan.Digest} className="border-b border-border/50 hover:bg-bg-secondary transition-colors">
                     <td className="px-4 py-3 text-sm">
-                      <span className="text-accent hover:underline cursor-pointer" onClick={e => { e.stopPropagation(); navigate(`/repositories/${encodeURIComponent(scan.Repository)}`); }}>
+                      <Link className="text-accent hover:underline" to={`/repositories/${encodeURIComponent(scan.Repository)}`}>
                         {scan.Repository || 'N/A'}
-                      </span>
+                      </Link>
                     </td>
                     <td className="px-4 py-3 text-sm text-text-secondary">{scan.Tag || 'N/A'}</td>
                     <td className="px-4 py-3 text-sm">
                       <div className="flex items-center gap-1">
-                        <code className="text-xs text-text-muted font-mono">{truncateDigest(scan.Digest)}</code>
-                        <button className="text-text-muted hover:text-text-primary p-0.5" onClick={e => { e.stopPropagation(); copyToClipboard(scan.Digest).then(ok => toast(ok ? 'Copied!' : 'Failed to copy', ok ? 'success' : 'error')); }}>
+                        <Link to={`/scans/${scan.Digest}`} className="text-xs text-accent font-mono hover:underline">{truncateDigest(scan.Digest)}</Link>
+                        <button className="text-text-muted hover:text-text-primary p-0.5" onClick={() => { copyToClipboard(scan.Digest).then(ok => toast(ok ? 'Copied!' : 'Failed to copy', ok ? 'success' : 'error')); }}>
                           <Copy className="w-3 h-3" />
                         </button>
                       </div>
@@ -263,11 +261,11 @@ export default function DashboardPage() {
   );
 }
 
-function SummaryCard({ icon, value, label, detail, variant, onClick }: {
+function SummaryCard({ icon, value, label, detail, variant, to }: {
   icon: React.ReactNode; value: number; label: string;
   detail?: string;
   variant: 'danger' | 'warning' | 'info' | 'muted';
-  onClick?: () => void;
+  to?: string;
 }) {
   const colors = {
     danger: 'border-danger/20 hover:border-danger/40',
@@ -276,22 +274,25 @@ function SummaryCard({ icon, value, label, detail, variant, onClick }: {
     muted: 'border-border hover:border-border-hover',
   };
   const iconColors = { danger: 'text-danger', warning: 'text-warning', info: 'text-info', muted: 'text-text-secondary' };
-
-  return (
-    <div
-      onClick={onClick}
-      className={`bg-bg-primary border ${colors[variant]} rounded-xl p-4 ${onClick ? 'cursor-pointer' : ''} transition-colors`}
-    >
+  const className = `bg-bg-primary border ${colors[variant]} rounded-xl p-4 transition-colors ${to ? 'cursor-pointer' : ''}`;
+  const content = (
+    <>
       <div className={`${iconColors[variant]} mb-3`}>{icon}</div>
       <div className="text-2xl font-bold">{value.toLocaleString()}</div>
       <div className="text-xs text-text-secondary mt-0.5">{label}</div>
       {detail && <div className="text-xs text-text-muted mt-1">{detail}</div>}
-    </div>
+    </>
   );
+
+  if (to) {
+    return <Link to={to} className={className}>{content}</Link>;
+  }
+
+  return <div className={className}>{content}</div>;
 }
 
-function TolerationAttentionItem({ toleration, status, onClick }: {
-  toleration: Toleration; status: 'expired' | 'expiring' | 'inactive'; onClick: () => void;
+function TolerationAttentionItem({ toleration, status, to }: {
+  toleration: Toleration; status: 'expired' | 'expiring' | 'inactive'; to: string;
 }) {
   const repos = toleration.Repositories || [];
   const repoDisplay = repos.length === 0 ? 'No repositories' : repos.length <= 3 ? repos.map(r => r.Repository).join(', ') : 'multiple repos';
@@ -302,7 +303,7 @@ function TolerationAttentionItem({ toleration, status, onClick }: {
   };
 
   return (
-    <div className="flex items-start gap-3 p-3 rounded-lg bg-bg-secondary hover:bg-bg-tertiary cursor-pointer transition-colors" onClick={onClick}>
+    <Link to={to} className="flex items-start gap-3 p-3 rounded-lg bg-bg-secondary hover:bg-bg-tertiary transition-colors">
       <div className="flex-1 min-w-0">
         <div className="flex items-center gap-2 mb-1">
           <span className="text-sm font-mono font-medium">{toleration.CVEID}</span>
@@ -312,6 +313,6 @@ function TolerationAttentionItem({ toleration, status, onClick }: {
         {toleration.Statement && <div className="text-xs text-text-secondary mt-1 truncate">{toleration.Statement}</div>}
       </div>
       <ExternalLink className="w-3.5 h-3.5 text-text-muted flex-shrink-0 mt-1" />
-    </div>
+    </Link>
   );
 }

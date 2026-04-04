@@ -1,5 +1,5 @@
 import { useEffect, useState, useCallback } from 'react';
-import { useSearchParams, useNavigate } from 'react-router-dom';
+import { Link, useSearchParams } from 'react-router-dom';
 import { useAuth } from '../lib/auth';
 import { formatDate, isPast, isWithinDays, daysUntil } from '../lib/utils';
 import { LoadingState, ErrorState, PageHeader, SortHeader, Pagination } from '../components/ui';
@@ -7,7 +7,6 @@ import type { Toleration } from '../lib/api';
 
 export default function TolerationsPage() {
   const { apiClient } = useAuth();
-  const navigate = useNavigate();
   const [searchParams] = useSearchParams();
   const [tolerations, setTolerations] = useState<Toleration[]>([]);
   const [inactive, setInactive] = useState<Toleration[]>([]);
@@ -109,9 +108,8 @@ export default function TolerationsPage() {
               const expiringSoon = t.ExpiresAt && !expired && isWithinDays(t.ExpiresAt, 7);
               const days = daysUntil(t.ExpiresAt);
               return (
-                <tr key={t.CVEID} className="border-b border-border/50 hover:bg-bg-secondary cursor-pointer transition-colors"
-                  onClick={() => navigate(`/vulnerabilities?cve_id=${encodeURIComponent(t.CVEID)}`)}>
-                  <td className="px-4 py-3 text-sm font-mono font-medium text-accent">{t.CVEID}</td>
+                <tr key={t.CVEID} className="border-b border-border/50 hover:bg-bg-secondary transition-colors">
+                  <td className="px-4 py-3 text-sm font-mono font-medium text-accent"><Link className="hover:underline" to={`/vulnerabilities?cve_id=${encodeURIComponent(t.CVEID)}`}>{t.CVEID}</Link></td>
                   <td className="px-4 py-3 text-sm text-text-secondary max-w-xs truncate">{t.Statement || '—'}</td>
                   <td className="px-4 py-3 text-sm text-text-muted">
                     {(t.Repositories || []).length > 0

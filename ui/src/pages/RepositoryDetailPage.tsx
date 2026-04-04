@@ -1,5 +1,5 @@
 import { useEffect, useState, useCallback, useMemo } from 'react';
-import { useParams, useNavigate, useSearchParams } from 'react-router-dom';
+import { Link, useParams, useSearchParams } from 'react-router-dom';
 import { useAuth } from '../lib/auth';
 import { useToast } from '../lib/toast';
 import { formatRelativeTime, daysUntilReleaseAge, formatRemainingDays } from '../lib/utils';
@@ -12,7 +12,6 @@ export default function RepositoryDetailPage() {
   const { name } = useParams<{ name: string }>();
   const decodedName = decodeURIComponent(name || '');
   const { apiClient } = useAuth();
-  const navigate = useNavigate();
   const { toast } = useToast();
   const { inUseQuery } = useImageUsageFilter();
   const [searchParams] = useSearchParams();
@@ -123,9 +122,9 @@ export default function RepositoryDetailPage() {
   return (
     <div>
       <div className="flex items-center gap-4 mb-6">
-        <button onClick={() => navigate('/repositories')} className="p-2 rounded-lg border border-border hover:bg-bg-tertiary transition-colors">
+        <Link to="/repositories" className="p-2 rounded-lg border border-border hover:bg-bg-tertiary transition-colors">
           <ArrowLeft className="w-4 h-4" />
-        </button>
+        </Link>
         <div className="flex-1">
           <h1 className="text-2xl font-bold">{decodedName}</h1>
           <p className="text-sm text-text-secondary">{total} tag{total !== 1 ? 's' : ''}</p>
@@ -173,7 +172,13 @@ export default function RepositoryDetailPage() {
               const isPending = tag.PolicyStatus === 'pending';
               return (
                 <tr key={tag.Name} className="border-b border-border/50 hover:bg-bg-secondary transition-colors">
-                  <td className="px-4 py-3 text-sm text-accent cursor-pointer hover:underline" onClick={() => tag.Digest && navigate(`/repositories/${encodeURIComponent(decodedName)}/tags/${encodeURIComponent(tag.Digest)}`)}>{tag.Name}</td>
+                  <td className="px-4 py-3 text-sm text-accent">
+                    {tag.Digest ? (
+                      <Link className="hover:underline" to={`/repositories/${encodeURIComponent(decodedName)}/tags/${encodeURIComponent(tag.Digest)}`}>{tag.Name}</Link>
+                    ) : (
+                      <span>{tag.Name}</span>
+                    )}
+                  </td>
                   <td className="px-4 py-3 text-sm text-text-secondary">{tag.LastScanTime ? formatRelativeTime(tag.LastScanTime) : 'Never'}</td>
                   <td className="px-4 py-3"><VulnCounts critical={tag.VulnerabilityCount?.Critical} high={tag.VulnerabilityCount?.High} medium={tag.VulnerabilityCount?.Medium} low={tag.VulnerabilityCount?.Low} tolerated={tag.VulnerabilityCount?.Tolerated} /></td>
                   <td className="px-4 py-3">

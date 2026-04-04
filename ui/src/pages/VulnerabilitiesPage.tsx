@@ -1,5 +1,5 @@
 import { useEffect, useState, useCallback } from 'react';
-import { useSearchParams, useNavigate } from 'react-router-dom';
+import { Link, useSearchParams } from 'react-router-dom';
 import { useAuth } from '../lib/auth';
 import { formatRelativeTime, truncateDigest } from '../lib/utils';
 import { LoadingState, ErrorState, PageHeader, SeverityBadge, Pagination } from '../components/ui';
@@ -8,7 +8,6 @@ import { ChevronDown, ChevronRight, ExternalLink, ArrowUpDown, ArrowUp, ArrowDow
 
 export default function VulnerabilitiesPage() {
   const { apiClient } = useAuth();
-  const navigate = useNavigate();
   const [searchParams] = useSearchParams();
   const [groups, setGroups] = useState<VulnerabilityGroup[]>([]);
   const [total, setTotal] = useState(0);
@@ -170,8 +169,7 @@ export default function VulnerabilitiesPage() {
                         <div className="text-xs font-medium text-text-secondary mb-1">{aff.repository}</div>
                         <div className="space-y-1">
                           {aff.digests.map((d, di) => (
-                            <div key={di} className="flex items-center gap-3 text-xs px-3 py-2 rounded bg-bg-tertiary hover:bg-border cursor-pointer transition-colors"
-                              onClick={() => navigate(`/scans/${d.digest}`)}>
+                            <Link key={di} to={`/scans/${d.digest}`} className="flex items-center gap-3 text-xs px-3 py-2 rounded bg-bg-tertiary hover:bg-border transition-colors">
                               <code className="text-text-muted font-mono">{truncateDigest(d.digest)}</code>
                               {d.tags && d.tags.length > 0 && <span className="text-text-secondary">{d.tags.join(', ')}</span>}
                               <span className="text-text-muted">{d.packageName} {d.installedVersion}</span>
@@ -186,7 +184,7 @@ export default function VulnerabilitiesPage() {
                                   {formatRelativeTime(d.scannedAt)}
                                 </span>
                               </div>
-                            </div>
+                            </Link>
                           ))}
                         </div>
                       </div>
