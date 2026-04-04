@@ -41,13 +41,18 @@ type clusterInventoryRequest struct {
 
 var quotedStringRe = regexp.MustCompile(`"([^"]+)"|'([^']+)'`)
 
+type seenEntry struct {
+	img      clusterImageInput
+	lastSeen time.Time
+}
+
 type inventoryBuffer struct {
 	mu   sync.Mutex
-	seen map[string]clusterImageInput
+	seen map[string]seenEntry
 }
 
 func newInventoryBuffer() *inventoryBuffer {
-	return &inventoryBuffer{seen: make(map[string]clusterImageInput)}
+	return &inventoryBuffer{seen: make(map[string]seenEntry)}
 }
 
 func imageKey(img clusterImageInput) string {
@@ -60,14 +65,17 @@ func (b *inventoryBuffer) Add(img clusterImageInput) bool {
 	defer b.mu.Unlock()
 
 	if existing, ok := b.seen[key]; ok {
-		if existing.Tag == "" && img.Tag != "" {
-			b.seen[key] = img
-			return true
+		updated := existing.img
+		tagEnriched := false
+		if existing.img.Tag == "" && img.Tag != "" {
+			updated.Tag = img.Tag
+			tagEnriched = true
 		}
-		return false
+		b.seen[key] = seenEntry{img: updated, lastSeen: time.Now().UTC()}
+		return tagEnriched
 	}
 
-	b.seen[key] = img
+	b.seen[key] = seenEntry{img: img, lastSeen: time.Now().UTC()}
 	return true
 }
 
@@ -76,32 +84,52 @@ func (b *inventoryBuffer) Snapshot() []clusterImageInput {
 	defer b.mu.Unlock()
 
 	out := make([]clusterImageInput, 0, len(b.seen))
-	for _, img := range b.seen {
-		out = append(out, img)
+	for _, entry := range b.seen {
+		out = append(out, entry.img)
 	}
 	return out
 }
 
-func (b *inventoryBuffer) Replace(images []clusterImageInput) bool {
+// TouchAll updates the lastSeen timestamp for every provided image, adding any
+// that are not already present. Returns true if any new image was added or an
+// existing entry was enriched with a tag.
+func (b *inventoryBuffer) TouchAll(images []clusterImageInput) bool {
 	b.mu.Lock()
 	defer b.mu.Unlock()
 
-	next := make(map[string]clusterImageInput, len(images))
+	now := time.Now().UTC()
+	changed := false
 	for _, img := range images {
-		next[imageKey(img)] = img
-	}
-
-	changed := len(next) != len(b.seen)
-	if !changed {
-		for key := range next {
-			if _, ok := b.seen[key]; !ok {
+		key := imageKey(img)
+		if existing, ok := b.seen[key]; ok {
+			updated := existing.img
+			if existing.img.Tag == "" && img.Tag != "" {
+				updated.Tag = img.Tag
 				changed = true
-				break
 			}
+			b.seen[key] = seenEntry{img: updated, lastSeen: now}
+		} else {
+			b.seen[key] = seenEntry{img: img, lastSeen: now}
+			changed = true
 		}
 	}
+	return changed
+}
 
-	b.seen = next
+// Evict removes entries whose lastSeen timestamp is older than ttl. Returns
+// true if any entries were removed.
+func (b *inventoryBuffer) Evict(ttl time.Duration) bool {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+
+	cutoff := time.Now().UTC().Add(-ttl)
+	changed := false
+	for key, entry := range b.seen {
+		if entry.lastSeen.Before(cutoff) {
+			delete(b.seen, key)
+			changed = true
+		}
+	}
 	return changed
 }
 
@@ -167,8 +195,13 @@ func runWatch(
 		return fmt.Errorf("WATCH_REFRESH_INTERVAL must be > 0")
 	}
 
+	staleTTL := parseDurationEnv("IMAGE_STALE_AFTER", 24*time.Hour, logger)
+	if staleTTL <= 0 {
+		return fmt.Errorf("IMAGE_STALE_AFTER must be > 0")
+	}
+
 	buffer := newInventoryBuffer()
-	if _, err := refreshInventoryBuffer(ctx, kubeClient, excludedNS, buffer, logger); err != nil {
+	if _, err := refreshInventoryBuffer(ctx, kubeClient, excludedNS, buffer, staleTTL, logger); err != nil {
 		return fmt.Errorf("initial inventory refresh: %w", err)
 	}
 	watchStartedAt := time.Now().UTC()
@@ -262,7 +295,7 @@ func runWatch(
 	retryTicker := time.NewTicker(retryInterval)
 	defer retryTicker.Stop()
 
-	logger.Info("watch mode started", "refresh_interval", refreshInterval.String(), "retry_interval", retryInterval.String())
+	logger.Info("watch mode started", "refresh_interval", refreshInterval.String(), "retry_interval", retryInterval.String(), "stale_ttl", staleTTL.String())
 
 	for {
 		select {
@@ -291,7 +324,7 @@ func runWatch(
 			}
 			pendingSend = false
 		case <-refreshTicker.C:
-			changed, err := refreshInventoryBuffer(ctx, kubeClient, excludedNS, buffer, logger)
+			changed, err := refreshInventoryBuffer(ctx, kubeClient, excludedNS, buffer, staleTTL, logger)
 			if err != nil {
 				logger.Warn("failed to refresh watched inventory snapshot", "error", err)
 				continue
@@ -507,6 +540,7 @@ func refreshInventoryBuffer(
 	kubeClient *kubernetes.Clientset,
 	excludedNS map[string]bool,
 	buffer *inventoryBuffer,
+	staleTTL time.Duration,
 	logger *slog.Logger,
 ) (bool, error) {
 	images, err := collectClusterInventory(ctx, kubeClient, excludedNS, logger)
@@ -514,7 +548,10 @@ func refreshInventoryBuffer(
 		return false, err
 	}
 
-	changed := buffer.Replace(images)
+	changed := buffer.TouchAll(images)
+	if buffer.Evict(staleTTL) {
+		changed = true
+	}
 	logger.Info("inventory buffer refreshed", "images", len(images), "changed", changed)
 	return changed, nil
 }

@@ -43,36 +43,108 @@ func TestParseDurationEnv(t *testing.T) {
 	})
 }
 
-func TestInventoryBufferSnapshotAndReplace(t *testing.T) {
+func TestInventoryBufferAddAndSnapshot(t *testing.T) {
 	buffer := newInventoryBuffer()
 
-	if !buffer.Add(clusterImageInput{Namespace: "ns", ImageRef: "nginx", Tag: "1.25", Digest: "sha256:a"}) {
+	img1 := clusterImageInput{Namespace: "ns", ImageRef: "nginx", Tag: "1.25", Digest: "sha256:a"}
+	img2 := clusterImageInput{Namespace: "ns", ImageRef: "busybox", Tag: "1.36", Digest: ""}
+
+	if !buffer.Add(img1) {
 		t.Fatalf("expected first add to be a change")
 	}
-	if buffer.Add(clusterImageInput{Namespace: "ns", ImageRef: "nginx", Tag: "1.25", Digest: "sha256:a"}) {
+	if buffer.Add(img1) {
 		t.Fatalf("expected duplicate add to not be a change")
 	}
-	if !buffer.Add(clusterImageInput{Namespace: "ns", ImageRef: "busybox", Tag: "1.36", Digest: ""}) {
+	if !buffer.Add(img2) {
 		t.Fatalf("expected second unique add to be a change")
 	}
 
-	first := buffer.Snapshot()
-	if len(first) != 2 {
-		t.Fatalf("expected 2 unique images, got %d", len(first))
+	got := buffer.Snapshot()
+	if len(got) != 2 {
+		t.Fatalf("expected 2 unique images, got %d", len(got))
+	}
+}
+
+func TestInventoryBufferTouchAll(t *testing.T) {
+	buffer := newInventoryBuffer()
+
+	img1 := clusterImageInput{Namespace: "ns", ImageRef: "nginx", Tag: "1.25", Digest: "sha256:a"}
+	img2 := clusterImageInput{Namespace: "ns", ImageRef: "redis", Tag: "7", Digest: "sha256:r"}
+
+	// TouchAll with two new images should report changed.
+	if !buffer.TouchAll([]clusterImageInput{img1, img2}) {
+		t.Fatalf("expected TouchAll with new images to report changed")
+	}
+	if len(buffer.Snapshot()) != 2 {
+		t.Fatalf("expected 2 images after TouchAll")
 	}
 
-	if changed := buffer.Replace(first); changed {
-		t.Fatalf("expected replace with same snapshot to report unchanged")
+	// TouchAll with the same images should not report changed.
+	if buffer.TouchAll([]clusterImageInput{img1, img2}) {
+		t.Fatalf("expected TouchAll with same images to not report changed")
 	}
 
-	updated := append(first, clusterImageInput{Namespace: "ns", ImageRef: "redis", Tag: "7", Digest: "sha256:r"})
-	if changed := buffer.Replace(updated); !changed {
-		t.Fatalf("expected replace with new data to report changed")
+	// TouchAll with a subset updates timestamps but does not remove the missing entry.
+	if buffer.TouchAll([]clusterImageInput{img1}) {
+		t.Fatalf("expected TouchAll subset to not report changed (no new images)")
+	}
+	if len(buffer.Snapshot()) != 2 {
+		t.Fatalf("expected both images still present after partial TouchAll")
 	}
 
-	third := buffer.Snapshot()
-	if len(third) != 3 {
-		t.Fatalf("expected 3 images after replace, got %d", len(third))
+	// TouchAll with a tag-enriching entry should report changed.
+	noTag := clusterImageInput{Namespace: "ns", ImageRef: "extra", Tag: "", Digest: "sha256:e"}
+	buffer.Add(noTag)
+	withTag := clusterImageInput{Namespace: "ns", ImageRef: "extra", Tag: "latest", Digest: "sha256:e"}
+	if !buffer.TouchAll([]clusterImageInput{withTag}) {
+		t.Fatalf("expected TouchAll with tag enrichment to report changed")
+	}
+}
+
+func TestInventoryBufferEvict(t *testing.T) {
+	buffer := newInventoryBuffer()
+
+	img := clusterImageInput{Namespace: "ns", ImageRef: "nginx", Tag: "1.25", Digest: "sha256:a"}
+	buffer.Add(img)
+
+	// Evict with a long TTL should not remove anything.
+	if buffer.Evict(24 * time.Hour) {
+		t.Fatalf("expected Evict with long TTL to not remove anything")
+	}
+	if len(buffer.Snapshot()) != 1 {
+		t.Fatalf("expected image still present after no-op eviction")
+	}
+
+	// Evict after the TTL has elapsed should remove the entry.
+	time.Sleep(2 * time.Millisecond)
+	if !buffer.Evict(1 * time.Millisecond) {
+		t.Fatalf("expected Evict to remove stale entry")
+	}
+	if len(buffer.Snapshot()) != 0 {
+		t.Fatalf("expected empty buffer after eviction")
+	}
+}
+
+func TestInventoryBufferEvictReportsChangeOnlyWhenRemoved(t *testing.T) {
+	buffer := newInventoryBuffer()
+
+	img1 := clusterImageInput{Namespace: "ns", ImageRef: "nginx", Tag: "1.25", Digest: "sha256:a"}
+	img2 := clusterImageInput{Namespace: "ns", ImageRef: "redis", Tag: "7", Digest: "sha256:r"}
+	buffer.Add(img1)
+	time.Sleep(2 * time.Millisecond)
+	// Touch img2 more recently.
+	buffer.Add(img2)
+
+	// Evict with 1ms TTL: img1 is stale, img2 is fresh.
+	if !buffer.Evict(1 * time.Millisecond) {
+		t.Fatalf("expected Evict to remove img1")
+	}
+	got := buffer.Snapshot()
+	if len(got) != 1 {
+		t.Fatalf("expected 1 image remaining after partial eviction, got %d", len(got))
+	}
+	if got[0].ImageRef != "redis" {
+		t.Fatalf("expected redis to remain, got %s", got[0].ImageRef)
 	}
 }
 
