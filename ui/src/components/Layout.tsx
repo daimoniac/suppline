@@ -1,4 +1,4 @@
-import { NavLink, Outlet } from 'react-router-dom';
+import { NavLink, Outlet, useLocation } from 'react-router-dom';
 import { useAuth } from '../lib/auth';
 import {
   LayoutDashboard, Layers, ScanSearch, ShieldAlert, Bug, FileWarning,
@@ -28,6 +28,11 @@ export default function Layout() {
 function LayoutContent() {
   const { logout } = useAuth();
   const { filter, setFilter } = useImageUsageFilter();
+  const { pathname } = useLocation();
+
+  const showUsageFilter = !pathname.startsWith('/vulnerabilities') &&
+    !pathname.startsWith('/tolerations') &&
+    !pathname.startsWith('/integrations');
 
   return (
     <div className="flex h-screen overflow-hidden">
@@ -59,6 +64,7 @@ function LayoutContent() {
             </NavLink>
           ))}
 
+          {showUsageFilter && (
           <div className="mt-4 px-2">
             <label htmlFor="global-image-usage-filter" className="block text-[11px] font-medium uppercase tracking-wide text-text-muted mb-1.5">
               Image Usage
@@ -74,6 +80,7 @@ function LayoutContent() {
               <option value="not-in-use">Not in use</option>
             </select>
           </div>
+          )}
         </nav>
 
         {/* Logout */}

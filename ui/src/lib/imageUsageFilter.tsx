@@ -23,9 +23,9 @@ function filterToInUseQuery(filter: ImageUsageFilter): boolean | undefined {
 
 export function ImageUsageFilterProvider({ children }: { children: React.ReactNode }) {
   const [filter, setFilter] = useState<ImageUsageFilter>(() => {
-    if (typeof window === 'undefined') return 'all';
+    if (typeof window === 'undefined') return 'in-use';
     const stored = window.localStorage.getItem(STORAGE_KEY);
-    return isValidFilter(stored) ? stored : 'all';
+    return isValidFilter(stored) ? stored : 'in-use';
   });
 
   useEffect(() => {
