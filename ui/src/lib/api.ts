@@ -48,7 +48,24 @@ export class APIClient {
         const err = await response.json().catch(() => ({}));
         throw new APIError(err.error || 'Request failed', response.status, err.details || response.statusText);
       }
-      const data = await response.json() as T;
+
+      // Some write endpoints intentionally return 204 No Content.
+      if (response.status === 204) {
+        return { data: undefined as T, response };
+      }
+
+      const raw = await response.text();
+      if (!raw) {
+        return { data: undefined as T, response };
+      }
+
+      let data: T;
+      try {
+        data = JSON.parse(raw) as T;
+      } catch {
+        throw new APIError('Invalid JSON response', response.status, raw);
+      }
+
       return { data, response };
     } catch (error) {
       if (error instanceof TypeError && retryCount < 3) {
@@ -134,6 +151,9 @@ export class APIClient {
   // Integration
   async getKubernetesClusters() {
     return this.request<KubernetesClusterSummary[]>('/api/v1/integration/kubernetes/clusters');
+  }
+  async deleteKubernetesCluster(name: string) {
+    return this.request<void>(`/api/v1/integration/kubernetes/clusters/${encodeURIComponent(name)}`, { method: 'DELETE' });
   }
   async getPublicKey() { return this.requestText('/api/v1/integration/publickey'); }
   async getKyvernoPolicy() { return this.requestText('/api/v1/integration/kyverno/policy'); }

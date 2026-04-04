@@ -147,6 +147,62 @@ func TestListClusterSummaries(t *testing.T) {
 	}
 }
 
+func TestDeleteClusterInventory(t *testing.T) {
+	dbPath := "test_cluster_delete_" + t.Name() + ".db"
+	_ = os.Remove(dbPath)
+	defer os.Remove(dbPath)
+
+	store, err := NewSQLiteStore(dbPath)
+	if err != nil {
+		t.Fatalf("Failed to create SQLite store: %v", err)
+	}
+	defer store.Close()
+
+	ctx := context.Background()
+
+	if err := store.RecordClusterInventory(ctx, "cluster-a", []ClusterImageEntry{{
+		Namespace: "default",
+		ImageRef:  "nginx:1.25",
+		Tag:       "1.25",
+		Digest:    "sha256:a1",
+	}}, time.Now().UTC()); err != nil {
+		t.Fatalf("RecordClusterInventory(cluster-a) failed: %v", err)
+	}
+
+	if err := store.RecordClusterInventory(ctx, "cluster-b", []ClusterImageEntry{{
+		Namespace: "default",
+		ImageRef:  "busybox:latest",
+		Tag:       "latest",
+		Digest:    "sha256:b1",
+	}}, time.Now().UTC()); err != nil {
+		t.Fatalf("RecordClusterInventory(cluster-b) failed: %v", err)
+	}
+
+	if err := store.DeleteClusterInventory(ctx, "cluster-a"); err != nil {
+		t.Fatalf("DeleteClusterInventory failed: %v", err)
+	}
+
+	summaries, err := store.ListClusterSummaries(ctx)
+	if err != nil {
+		t.Fatalf("ListClusterSummaries failed: %v", err)
+	}
+
+	if len(summaries) != 1 {
+		t.Fatalf("Expected 1 cluster summary after delete, got %d", len(summaries))
+	}
+	if summaries[0].Name != "cluster-b" {
+		t.Fatalf("Expected remaining cluster to be cluster-b, got %s", summaries[0].Name)
+	}
+
+	rows, err := queryClusterImages(store.db, "cluster-a")
+	if err != nil {
+		t.Fatalf("queryClusterImages failed: %v", err)
+	}
+	if len(rows) != 0 {
+		t.Fatalf("Expected deleted cluster to have 0 image rows, got %d", len(rows))
+	}
+}
+
 func TestGetRuntimeUsageForScan_DigestMatch(t *testing.T) {
 	dbPath := "test_cluster_runtime_digest_" + t.Name() + ".db"
 	_ = os.Remove(dbPath)

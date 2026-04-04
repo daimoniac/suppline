@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"net/url"
 	"sort"
 	"strings"
 	"time"
@@ -910,6 +911,66 @@ func (s *APIServer) handleListKubernetesClusters(w http.ResponseWriter, r *http.
 	}
 
 	s.respondJSON(w, http.StatusOK, summaries)
+}
+
+// handleKubernetesClustersRouter routes Kubernetes integration requests by method and path.
+func (s *APIServer) handleKubernetesClustersRouter(w http.ResponseWriter, r *http.Request) {
+	if r.Method == http.MethodDelete {
+		s.handleDeleteKubernetesCluster(w, r)
+		return
+	}
+
+	s.respondError(w, http.StatusMethodNotAllowed, "Method not allowed")
+}
+
+// handleDeleteKubernetesCluster removes a Kubernetes cluster integration entry.
+// @Summary Delete Kubernetes cluster
+// @Description Delete a known Kubernetes cluster inventory snapshot
+// @Tags Integration
+// @Produce json
+// @Param name path string true "Cluster name"
+// @Success 204 "Cluster deleted"
+// @Failure 400 {object} map[string]string "Invalid cluster name"
+// @Failure 501 {object} map[string]string "Cluster inventory not configured"
+// @Failure 500 {object} map[string]string "Internal server error"
+// @Security BearerAuth
+// @Router /integration/kubernetes/clusters/{name} [delete]
+func (s *APIServer) handleDeleteKubernetesCluster(w http.ResponseWriter, r *http.Request) {
+	if s.clusterInventory == nil {
+		s.respondError(w, http.StatusNotImplemented, "cluster inventory storage is not configured")
+		return
+	}
+
+	prefix := "/api/v1/integration/kubernetes/clusters/"
+	if !strings.HasPrefix(r.URL.Path, prefix) {
+		s.respondError(w, http.StatusBadRequest, "Invalid path")
+		return
+	}
+
+	encodedName := strings.TrimPrefix(r.URL.Path, prefix)
+	if encodedName == "" {
+		s.respondError(w, http.StatusBadRequest, "Cluster name is required")
+		return
+	}
+
+	name, err := url.PathUnescape(encodedName)
+	if err != nil {
+		s.respondError(w, http.StatusBadRequest, "Invalid cluster name")
+		return
+	}
+
+	name = strings.TrimSpace(name)
+	if name == "" {
+		s.respondError(w, http.StatusBadRequest, "Cluster name is required")
+		return
+	}
+
+	if err := s.clusterInventory.DeleteClusterInventory(r.Context(), name); err != nil {
+		s.respondError(w, http.StatusInternalServerError, fmt.Sprintf("Failed to delete cluster: %v", err))
+		return
+	}
+
+	w.WriteHeader(http.StatusNoContent)
 }
 
 // handleGetPublicKey returns the cosign public key

@@ -348,6 +348,22 @@ func (s *SQLiteStore) ListClusterSummaries(ctx context.Context) ([]ClusterSummar
 	return summaries, nil
 }
 
+// DeleteClusterInventory removes a cluster and all of its inventory rows.
+func (s *SQLiteStore) DeleteClusterInventory(ctx context.Context, clusterName string) error {
+	clusterName = strings.TrimSpace(clusterName)
+	if clusterName == "" {
+		return errors.NewPermanentf("cluster name cannot be empty")
+	}
+
+	if _, err := s.db.ExecContext(ctx, `
+		DELETE FROM clusters WHERE name = ?
+	`, clusterName); err != nil {
+		return errors.NewTransientf("failed to delete cluster inventory: %w", err)
+	}
+
+	return nil
+}
+
 // RecordScan saves scan results with full vulnerability details in a transaction
 func (s *SQLiteStore) RecordScan(ctx context.Context, record *ScanRecord) error {
 	tx, err := s.db.BeginTx(ctx, nil)

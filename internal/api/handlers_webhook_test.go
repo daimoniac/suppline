@@ -18,12 +18,14 @@ import (
 type mockClusterInventoryStore struct {
 	*mockStateStore
 
-	err        error
-	called     bool
-	cluster    string
-	images     []statestore.ClusterImageEntry
-	reportedAt time.Time
-	summaries  []statestore.ClusterSummary
+	err           error
+	called        bool
+	cluster       string
+	images        []statestore.ClusterImageEntry
+	reportedAt    time.Time
+	summaries     []statestore.ClusterSummary
+	deleteCalled  bool
+	deleteCluster string
 }
 
 func (m *mockClusterInventoryStore) RecordClusterInventory(ctx context.Context, clusterName string, images []statestore.ClusterImageEntry, reportedAt time.Time) error {
@@ -36,6 +38,12 @@ func (m *mockClusterInventoryStore) RecordClusterInventory(ctx context.Context, 
 
 func (m *mockClusterInventoryStore) ListClusterSummaries(ctx context.Context) ([]statestore.ClusterSummary, error) {
 	return m.summaries, m.err
+}
+
+func (m *mockClusterInventoryStore) DeleteClusterInventory(ctx context.Context, clusterName string) error {
+	m.deleteCalled = true
+	m.deleteCluster = clusterName
+	return m.err
 }
 
 func webhookTestServer(t *testing.T, store statestore.StateStoreQuery) *APIServer {
@@ -164,6 +172,37 @@ func TestHandleListKubernetesClusters_NotConfigured(t *testing.T) {
 	server := webhookTestServer(t, &mockStateStore{})
 
 	req := httptest.NewRequest(http.MethodGet, "/api/v1/integration/kubernetes/clusters", nil)
+	w := httptest.NewRecorder()
+
+	server.router.ServeHTTP(w, req)
+	if w.Code != http.StatusNotImplemented {
+		t.Fatalf("Expected status %d, got %d", http.StatusNotImplemented, w.Code)
+	}
+}
+
+func TestHandleDeleteKubernetesCluster(t *testing.T) {
+	store := &mockClusterInventoryStore{mockStateStore: &mockStateStore{}}
+	server := webhookTestServer(t, store)
+
+	req := httptest.NewRequest(http.MethodDelete, "/api/v1/integration/kubernetes/clusters/prod-a", nil)
+	w := httptest.NewRecorder()
+
+	server.router.ServeHTTP(w, req)
+	if w.Code != http.StatusNoContent {
+		t.Fatalf("Expected status %d, got %d body=%s", http.StatusNoContent, w.Code, w.Body.String())
+	}
+	if !store.deleteCalled {
+		t.Fatal("Expected DeleteClusterInventory to be called")
+	}
+	if store.deleteCluster != "prod-a" {
+		t.Fatalf("Expected delete cluster prod-a, got %s", store.deleteCluster)
+	}
+}
+
+func TestHandleDeleteKubernetesCluster_NotConfigured(t *testing.T) {
+	server := webhookTestServer(t, &mockStateStore{})
+
+	req := httptest.NewRequest(http.MethodDelete, "/api/v1/integration/kubernetes/clusters/prod-a", nil)
 	w := httptest.NewRecorder()
 
 	server.router.ServeHTTP(w, req)

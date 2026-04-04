@@ -93,6 +93,9 @@ type ClusterInventoryStore interface {
 
 	// ListClusterSummaries returns cluster inventory snapshot summaries.
 	ListClusterSummaries(ctx context.Context) ([]ClusterSummary, error)
+
+	// DeleteClusterInventory removes a cluster and its runtime inventory snapshot.
+	DeleteClusterInventory(ctx context.Context, clusterName string) error
 }
 
 // ArtifactMetadataStore exposes optional metadata lookups used by worker policy decisions.

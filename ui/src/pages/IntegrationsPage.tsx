@@ -4,7 +4,7 @@ import { useToast } from '../lib/toast';
 import { copyToClipboard, formatDate, formatRelativeTime } from '../lib/utils';
 import { LoadingState, ErrorState, PageHeader } from '../components/ui';
 import type { KubernetesClusterSummary } from '../lib/api';
-import { Boxes, Copy, Download, Key, Shield } from 'lucide-react';
+import { Boxes, Copy, Download, Key, Shield, Trash2 } from 'lucide-react';
 
 export default function IntegrationsPage() {
   const { apiClient } = useAuth();
@@ -12,6 +12,7 @@ export default function IntegrationsPage() {
   const [publicKey, setPublicKey] = useState('');
   const [kyvernoPolicy, setKyvernoPolicy] = useState('');
   const [clusters, setClusters] = useState<KubernetesClusterSummary[]>([]);
+  const [deletingCluster, setDeletingCluster] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
 
@@ -52,6 +53,21 @@ export default function IntegrationsPage() {
     toast(`Downloaded ${filename}`, 'success');
   };
 
+  const handleDeleteCluster = async (clusterName: string) => {
+    if (!window.confirm(`Delete cluster '${clusterName}' from integrations?`)) return;
+
+    setDeletingCluster(clusterName);
+    try {
+      await apiClient.deleteKubernetesCluster(clusterName);
+      setClusters(prev => prev.filter(cluster => cluster.Name !== clusterName));
+      toast(`Deleted cluster ${clusterName}`, 'success');
+    } catch (e: unknown) {
+      toast(e instanceof Error ? e.message : 'Failed to delete cluster', 'error');
+    } finally {
+      setDeletingCluster(null);
+    }
+  };
+
   if (loading) return <LoadingState />;
   if (error) return <ErrorState message={error} onRetry={load} />;
 
@@ -79,6 +95,7 @@ export default function IntegrationsPage() {
                     <th className="px-3 py-2 text-left text-xs font-semibold text-text-muted uppercase tracking-wide">Cluster</th>
                     <th className="px-3 py-2 text-left text-xs font-semibold text-text-muted uppercase tracking-wide">Latest Sync</th>
                     <th className="px-3 py-2 text-left text-xs font-semibold text-text-muted uppercase tracking-wide">Images</th>
+                    <th className="px-3 py-2 text-right text-xs font-semibold text-text-muted uppercase tracking-wide">Actions</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -89,6 +106,16 @@ export default function IntegrationsPage() {
                         {cluster.LastReported ? formatRelativeTime(cluster.LastReported) : 'Never'}
                       </td>
                       <td className="px-3 py-3 text-text-secondary">{cluster.ImageCount}</td>
+                      <td className="px-3 py-3 text-right">
+                        <button
+                          onClick={() => handleDeleteCluster(cluster.Name)}
+                          disabled={deletingCluster === cluster.Name}
+                          className="px-2.5 py-1.5 text-xs rounded-lg border border-danger/30 text-danger hover:bg-danger-bg disabled:opacity-50 inline-flex items-center gap-1 transition-colors"
+                        >
+                          <Trash2 className="w-3 h-3" />
+                          {deletingCluster === cluster.Name ? 'Deleting...' : 'Delete'}
+                        </button>
+                      </td>
                     </tr>
                   ))}
                 </tbody>
