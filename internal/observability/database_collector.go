@@ -23,6 +23,7 @@ type DatabaseCollector struct {
 	// Metric descriptors
 	vulnerabilitiesFoundDesc *prometheus.Desc
 	policyFailedDesc         *prometheus.Desc
+	policyPendingDesc        *prometheus.Desc
 }
 
 // NewDatabaseCollector creates a new database metrics collector
@@ -42,6 +43,12 @@ func NewDatabaseCollector(store statestore.StateStore, logger *slog.Logger) *Dat
 			[]string{"source"},
 			nil,
 		),
+		policyPendingDesc: prometheus.NewDesc(
+			"suppline_policy_pending_current",
+			"Current number of artifacts with pending policy evaluation by source",
+			[]string{"source"},
+			nil,
+		),
 	}
 }
 
@@ -58,6 +65,7 @@ func RegisterDatabaseCollector(store statestore.StateStore, logger *slog.Logger)
 func (c *DatabaseCollector) Describe(ch chan<- *prometheus.Desc) {
 	ch <- c.vulnerabilitiesFoundDesc
 	ch <- c.policyFailedDesc
+	ch <- c.policyPendingDesc
 }
 
 // Collect queries the database and sends current metrics to the provided channel
@@ -72,25 +80,40 @@ func (c *DatabaseCollector) Collect(ch chan<- prometheus.Metric) {
 	}
 
 	// Collect policy failed metric
-	c.collectPolicyFailed(ctx, queryStore, ch)
+	c.collectPolicyOutcomes(ctx, queryStore, ch)
 
 	// Collect vulnerability metrics
 	c.collectVulnerabilities(ctx, queryStore, ch)
 }
 
-func (c *DatabaseCollector) collectPolicyFailed(ctx context.Context, store statestore.StateStoreQuery, ch chan<- prometheus.Metric) {
+func (c *DatabaseCollector) collectPolicyOutcomes(ctx context.Context, store statestore.StateStoreQuery, ch chan<- prometheus.Metric) {
 	scans, err := store.GetFailedArtifacts(ctx)
 	if err != nil {
 		if ctx.Err() != nil {
-			c.logger.Debug("policy failed metric collection timed out", "error", err)
+			c.logger.Debug("policy outcome metric collection timed out", "error", err)
 		} else {
-			c.logger.Error("failed to collect policy failed metric", "error", err)
+			c.logger.Error("failed to collect policy outcome metric", "error", err)
 		}
 		return
 	}
 
-	registryFailedCount := len(scans)
+	failedScans := make([]*statestore.ScanRecord, 0, len(scans))
+	pendingScans := make([]*statestore.ScanRecord, 0, len(scans))
+
+	for _, scan := range scans {
+		if scan.PolicyStatus == "pending" {
+			pendingScans = append(pendingScans, scan)
+			continue
+		}
+
+		// Backward compatibility: records with empty/non-pending status that did not pass policy are counted as failed.
+		failedScans = append(failedScans, scan)
+	}
+
+	registryFailedCount := len(failedScans)
+	registryPendingCount := len(pendingScans)
 	runtimeFailedCount := 0
+	runtimePendingCount := 0
 
 	if len(scans) > 0 {
 		runtimeInputs := make([]statestore.RuntimeLookupInput, 0, len(scans))
@@ -112,9 +135,17 @@ func (c *DatabaseCollector) collectPolicyFailed(ctx context.Context, store state
 			return
 		}
 
-		for _, usage := range runtimeUsageByDigest {
+		for _, scan := range failedScans {
+			usage := runtimeUsageByDigest[scan.Digest]
 			if usage.RuntimeUsed {
 				runtimeFailedCount++
+			}
+		}
+
+		for _, scan := range pendingScans {
+			usage := runtimeUsageByDigest[scan.Digest]
+			if usage.RuntimeUsed {
+				runtimePendingCount++
 			}
 		}
 	}
@@ -130,6 +161,20 @@ func (c *DatabaseCollector) collectPolicyFailed(ctx context.Context, store state
 		c.policyFailedDesc,
 		prometheus.GaugeValue,
 		float64(runtimeFailedCount),
+		"runtime",
+	)
+
+	ch <- prometheus.MustNewConstMetric(
+		c.policyPendingDesc,
+		prometheus.GaugeValue,
+		float64(registryPendingCount),
+		"registry",
+	)
+
+	ch <- prometheus.MustNewConstMetric(
+		c.policyPendingDesc,
+		prometheus.GaugeValue,
+		float64(runtimePendingCount),
 		"runtime",
 	)
 }

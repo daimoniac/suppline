@@ -61,9 +61,10 @@ func TestDatabaseCollector(t *testing.T) {
 	}
 
 	scans := []*statestore.ScanRecord{
-		{Digest: "abc", PolicyPassed: true, RuntimeUsed: true},
-		{Digest: "def", PolicyPassed: false, RuntimeUsed: true},
-		{Digest: "ghi", PolicyPassed: false, RuntimeUsed: false},
+		{Digest: "abc", PolicyPassed: true, RuntimeUsed: true, PolicyStatus: "passed"},
+		{Digest: "def", PolicyPassed: false, RuntimeUsed: true, PolicyStatus: "failed"},
+		{Digest: "ghi", PolicyPassed: false, RuntimeUsed: false, PolicyStatus: "failed"},
+		{Digest: "jkl", PolicyPassed: false, RuntimeUsed: false, PolicyStatus: "pending"},
 	}
 
 	store := &mockStateStore{
@@ -79,8 +80,8 @@ func TestDatabaseCollector(t *testing.T) {
 
 	// Use CollectAndCount
 	count := testutil.CollectAndCount(collector)
-	if count != 6 { // 2 policy failed source labels + 4 vuln severities
-		t.Errorf("Expected 6 metrics, got %d", count)
+	if count != 8 { // 2 policy failed source labels + 2 policy pending source labels + 4 vuln severities
+		t.Errorf("Expected 8 metrics, got %d", count)
 	}
 
 	// Verify specific values
@@ -106,5 +107,16 @@ func TestDatabaseCollector(t *testing.T) {
 
 	if err := testutil.GatherAndCompare(reg, strings.NewReader(expectedPolicyFailed), "suppline_policy_failed_current"); err != nil {
 		t.Errorf("Unexpected policy failed metrics: %v", err)
+	}
+
+	expectedPolicyPending := `
+		# HELP suppline_policy_pending_current Current number of artifacts with pending policy evaluation by source
+		# TYPE suppline_policy_pending_current gauge
+		suppline_policy_pending_current{source="registry"} 1
+		suppline_policy_pending_current{source="runtime"} 0
+	`
+
+	if err := testutil.GatherAndCompare(reg, strings.NewReader(expectedPolicyPending), "suppline_policy_pending_current"); err != nil {
+		t.Errorf("Unexpected policy pending metrics: %v", err)
 	}
 }

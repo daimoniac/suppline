@@ -5,6 +5,7 @@ import {
   Plug, LogOut,
 } from 'lucide-react';
 import { ImageUsageFilterProvider, useImageUsageFilter } from '../lib/imageUsageFilter';
+import supplineIcon from '../assets/suppline-icon.svg';
 
 const navItems = [
   { to: '/', icon: LayoutDashboard, label: 'Dashboard', end: true },
@@ -34,9 +35,7 @@ function LayoutContent() {
       <aside className="w-56 flex-shrink-0 bg-bg-primary border-r border-border flex flex-col">
         {/* Logo */}
         <div className="h-14 flex items-center gap-2.5 px-4 border-b border-border">
-          <div className="w-7 h-7 bg-accent rounded-lg flex items-center justify-center">
-            <span className="text-bg-primary font-bold text-sm">S</span>
-          </div>
+          <img src={supplineIcon} alt="suppline" className="w-7 h-7" />
           <span className="font-semibold text-sm tracking-tight">suppline</span>
         </div>
 
