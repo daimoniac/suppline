@@ -1,3 +1,4 @@
+{{- if eq .Values.mode "snapshot" -}}
 apiVersion: batch/v1
 kind: CronJob
 metadata:
@@ -47,6 +48,8 @@ spec:
               value: {{ .Values.excludedNamespaces | quote }}
             - name: LOG_LEVEL
               value: {{ .Values.logLevel | quote }}
+            - name: AGENT_MODE
+              value: "snapshot"
             {{- if .Values.suppline.apiKey }}
             - name: SUPPLINE_API_KEY
               valueFrom:
@@ -56,3 +59,4 @@ spec:
             {{- end }}
             resources:
               {{- toYaml .Values.resources | nindent 14 }}
+{{- end }}

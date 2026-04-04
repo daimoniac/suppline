@@ -2,6 +2,17 @@
 # Default: every hour at minute 0.
 schedule: "0 * * * *"
 
+# Runtime mode:
+# - snapshot: one-shot collection (CronJob)
+# - watch: informer-based continuous collection (Deployment)
+mode: "snapshot"
+
+# Used in watch mode; how often buffered observations are POSTed.
+watchFlushInterval: "30s"
+
+# Used in watch mode Deployment.
+replicaCount: 1
+
 # Name of this cluster — sent as the "cluster" field in the inventory payload.
 # Required.
 clusterName: ""
@@ -37,7 +48,7 @@ serviceAccount:
   annotations: {}
 
 rbac:
-  # Create ClusterRole + ClusterRoleBinding granting pods [get, list].
+  # Create ClusterRole + ClusterRoleBinding.
   create: true
 
 # CronJob history retention

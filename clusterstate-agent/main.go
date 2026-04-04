@@ -8,15 +8,21 @@ import (
 	"log/slog"
 	"net/http"
 	"os"
+	"os/signal"
+	"regexp"
 	"strings"
+	"sync"
+	"syscall"
 	"time"
 
 	"github.com/joho/godotenv"
 
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/client-go/informers"
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/rest"
+	"k8s.io/client-go/tools/cache"
 	"k8s.io/client-go/tools/clientcmd"
 )
 
@@ -31,6 +37,49 @@ type clusterImageInput struct {
 type clusterInventoryRequest struct {
 	Cluster string              `json:"cluster"`
 	Images  []clusterImageInput `json:"images"`
+}
+
+var quotedStringRe = regexp.MustCompile(`"([^"]+)"|'([^']+)'`)
+
+type inventoryBuffer struct {
+	mu   sync.Mutex
+	seen map[string]clusterImageInput
+}
+
+func newInventoryBuffer() *inventoryBuffer {
+	return &inventoryBuffer{seen: make(map[string]clusterImageInput)}
+}
+
+func (b *inventoryBuffer) Add(img clusterImageInput) {
+	key := img.Namespace + "|" + img.ImageRef + "|" + img.Digest
+	b.mu.Lock()
+	b.seen[key] = img
+	b.mu.Unlock()
+}
+
+func (b *inventoryBuffer) Flush() []clusterImageInput {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+
+	if len(b.seen) == 0 {
+		return nil
+	}
+
+	out := make([]clusterImageInput, 0, len(b.seen))
+	for _, img := range b.seen {
+		out = append(out, img)
+	}
+	b.seen = make(map[string]clusterImageInput)
+	return out
+}
+
+func (b *inventoryBuffer) Requeue(images []clusterImageInput) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	for _, img := range images {
+		key := img.Namespace + "|" + img.ImageRef + "|" + img.Digest
+		b.seen[key] = img
+	}
 }
 
 func main() {
@@ -53,10 +102,15 @@ func main() {
 	apiKey := os.Getenv("SUPPLINE_API_KEY")
 	debugDumpPayload := isTrueEnv("DEBUG_DUMP_PAYLOAD")
 	excludedNS := parseExcludedNamespaces()
+	mode := strings.ToLower(strings.TrimSpace(os.Getenv("AGENT_MODE")))
+	if mode == "" {
+		mode = "snapshot"
+	}
 
 	logger.Info("starting cluster inventory collection",
 		"cluster", clusterName,
 		"suppline_url", supplineURL,
+		"mode", mode,
 		"excluded_namespaces", os.Getenv("EXCLUDED_NAMESPACES"),
 		"debug_dump_payload", debugDumpPayload,
 	)
@@ -68,13 +122,38 @@ func main() {
 		os.Exit(1)
 	}
 
-	ctx := context.Background()
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer stop()
 
+	switch mode {
+	case "snapshot":
+		if err := runSnapshot(ctx, kubeClient, supplineURL, clusterName, apiKey, debugDumpPayload, excludedNS, logger); err != nil {
+			logger.Error("snapshot mode failed", "error", err)
+			os.Exit(1)
+		}
+	case "watch":
+		if err := runWatch(ctx, kubeClient, supplineURL, clusterName, apiKey, debugDumpPayload, excludedNS, logger); err != nil {
+			logger.Error("watch mode failed", "error", err)
+			os.Exit(1)
+		}
+	default:
+		logger.Error("invalid AGENT_MODE; expected snapshot or watch", "mode", mode)
+		os.Exit(1)
+	}
+}
+
+func runSnapshot(
+	ctx context.Context,
+	kubeClient *kubernetes.Clientset,
+	supplineURL, clusterName, apiKey string,
+	debugDumpPayload bool,
+	excludedNS map[string]bool,
+	logger *slog.Logger,
+) error {
 	// --- List all pods across all namespaces ---
 	podList, err := kubeClient.CoreV1().Pods("").List(ctx, metav1.ListOptions{})
 	if err != nil {
-		logger.Error("failed to list pods", "error", err)
-		os.Exit(1)
+		return fmt.Errorf("list pods: %w", err)
 	}
 	logger.Info("listed pods", "total", len(podList.Items))
 
@@ -94,13 +173,211 @@ func main() {
 	images = mergeImages(images, workloadImages)
 	logger.Info("collected unique images total", "count", len(images))
 
-	// --- POST inventory to suppline ---
 	if err := sendInventory(ctx, supplineURL, clusterName, apiKey, debugDumpPayload, images, logger); err != nil {
-		logger.Error("failed to send inventory to suppline", "error", err)
-		os.Exit(1)
+		return fmt.Errorf("send inventory: %w", err)
 	}
 
 	logger.Info("inventory sent successfully", "cluster", clusterName, "images", len(images))
+	return nil
+}
+
+func runWatch(
+	ctx context.Context,
+	kubeClient *kubernetes.Clientset,
+	supplineURL, clusterName, apiKey string,
+	debugDumpPayload bool,
+	excludedNS map[string]bool,
+	logger *slog.Logger,
+) error {
+	flushInterval := parseDurationEnv("WATCH_FLUSH_INTERVAL", 30*time.Second, logger)
+	if flushInterval <= 0 {
+		return fmt.Errorf("WATCH_FLUSH_INTERVAL must be > 0")
+	}
+
+	buffer := newInventoryBuffer()
+	factory := informers.NewSharedInformerFactory(kubeClient, 0)
+	podInformer := factory.Core().V1().Pods().Informer()
+	eventInformer := factory.Core().V1().Events().Informer()
+
+	podInformer.AddEventHandler(cache.ResourceEventHandlerFuncs{
+		AddFunc: func(obj interface{}) {
+			pod, ok := obj.(*corev1.Pod)
+			if !ok {
+				return
+			}
+			collectPodObservation(pod, excludedNS, buffer)
+		},
+		UpdateFunc: func(_, newObj interface{}) {
+			pod, ok := newObj.(*corev1.Pod)
+			if !ok {
+				return
+			}
+			collectPodObservation(pod, excludedNS, buffer)
+		},
+	})
+
+	eventInformer.AddEventHandler(cache.ResourceEventHandlerFuncs{
+		AddFunc: func(obj interface{}) {
+			event, ok := obj.(*corev1.Event)
+			if !ok {
+				return
+			}
+			collectEventObservation(event, excludedNS, buffer)
+		},
+		UpdateFunc: func(_, newObj interface{}) {
+			event, ok := newObj.(*corev1.Event)
+			if !ok {
+				return
+			}
+			collectEventObservation(event, excludedNS, buffer)
+		},
+	})
+
+	stopCh := make(chan struct{})
+	defer close(stopCh)
+	factory.Start(stopCh)
+
+	if !cache.WaitForCacheSync(stopCh, podInformer.HasSynced, eventInformer.HasSynced) {
+		return fmt.Errorf("failed to sync informer caches")
+	}
+
+	logger.Info("watch mode started", "flush_interval", flushInterval.String())
+	ticker := time.NewTicker(flushInterval)
+	defer ticker.Stop()
+
+	flush := func() {
+		images := buffer.Flush()
+		if len(images) == 0 {
+			return
+		}
+		if err := sendInventory(ctx, supplineURL, clusterName, apiKey, debugDumpPayload, images, logger); err != nil {
+			logger.Warn("failed to send watched inventory batch; re-queueing", "error", err, "images", len(images))
+			buffer.Requeue(images)
+			return
+		}
+		logger.Info("sent watched inventory batch", "images", len(images))
+	}
+
+	for {
+		select {
+		case <-ctx.Done():
+			flush()
+			logger.Info("watch mode stopping", "reason", ctx.Err())
+			return nil
+		case <-ticker.C:
+			flush()
+		}
+	}
+}
+
+func collectPodObservation(pod *corev1.Pod, excludedNS map[string]bool, buffer *inventoryBuffer) {
+	if pod == nil || excludedNS[pod.Namespace] {
+		return
+	}
+
+	imageIDByContainer := buildImageIDLookup(*pod)
+	addObservedContainers(buffer, pod.Namespace, pod.Spec.InitContainers, imageIDByContainer)
+	addObservedContainers(buffer, pod.Namespace, pod.Spec.Containers, imageIDByContainer)
+
+	for _, c := range pod.Spec.EphemeralContainers {
+		imageRef, tag, digest := parseImageRef(c.Image, imageIDByContainer[c.Name])
+		buffer.Add(clusterImageInput{Namespace: pod.Namespace, ImageRef: imageRef, Tag: tag, Digest: digest})
+	}
+}
+
+func collectEventObservation(event *corev1.Event, excludedNS map[string]bool, buffer *inventoryBuffer) {
+	if event == nil || excludedNS[event.Namespace] {
+		return
+	}
+	if !shouldObserveEvent(event) {
+		return
+	}
+
+	image := extractImageFromEventMessage(event.Message)
+	if image == "" {
+		return
+	}
+
+	imageRef, tag, digest := parseImageRef(image, "")
+	buffer.Add(clusterImageInput{Namespace: event.Namespace, ImageRef: imageRef, Tag: tag, Digest: digest})
+}
+
+func shouldObserveEvent(event *corev1.Event) bool {
+	if event == nil {
+		return false
+	}
+	if event.InvolvedObject.Kind != "Pod" {
+		return false
+	}
+
+	// Watch common pod lifecycle events that may mention pull/runtime image refs.
+	allowedReasons := map[string]struct{}{
+		"Pulling": {},
+		"Pulled":  {},
+		"Created": {},
+		"Started": {},
+		"Failed":  {},
+	}
+	_, ok := allowedReasons[event.Reason]
+	return ok
+}
+
+func extractImageFromEventMessage(message string) string {
+	trimmed := strings.TrimSpace(message)
+	if trimmed == "" {
+		return ""
+	}
+
+	matches := quotedStringRe.FindAllStringSubmatch(trimmed, -1)
+	for _, m := range matches {
+		candidate := strings.TrimSpace(m[1])
+		if candidate == "" {
+			candidate = strings.TrimSpace(m[2])
+		}
+		if isLikelyImageRef(candidate) {
+			return candidate
+		}
+	}
+
+	for _, token := range strings.Fields(trimmed) {
+		token = strings.Trim(token, ",.;()[]{}\"")
+		if isLikelyImageRef(token) {
+			return token
+		}
+	}
+
+	return ""
+}
+
+func isLikelyImageRef(v string) bool {
+	v = strings.TrimSpace(v)
+	if v == "" {
+		return false
+	}
+	if strings.Contains(v, " ") {
+		return false
+	}
+	return strings.Contains(v, "/") || strings.Contains(v, ":") || strings.Contains(v, "@sha256:")
+}
+
+func addObservedContainers(buffer *inventoryBuffer, namespace string, containers []corev1.Container, imageIDByContainer map[string]string) {
+	for _, c := range containers {
+		imageRef, tag, digest := parseImageRef(c.Image, imageIDByContainer[c.Name])
+		buffer.Add(clusterImageInput{Namespace: namespace, ImageRef: imageRef, Tag: tag, Digest: digest})
+	}
+}
+
+func parseDurationEnv(key string, fallback time.Duration, logger *slog.Logger) time.Duration {
+	raw := strings.TrimSpace(os.Getenv(key))
+	if raw == "" {
+		return fallback
+	}
+	d, err := time.ParseDuration(raw)
+	if err != nil {
+		logger.Warn("invalid duration env value; using fallback", "key", key, "value", raw, "fallback", fallback.String(), "error", err)
+		return fallback
+	}
+	return d
 }
 
 // buildLogger constructs a JSON slog logger at the configured log level.
@@ -168,9 +445,43 @@ func collectImages(pods []corev1.Pod, excludedNS map[string]bool, logger *slog.L
 			continue
 		}
 
-		imageIDByContainer := buildImageIDLookup(pod.Status.ContainerStatuses)
+		imageIDByContainer := buildImageIDLookup(pod)
+
+		for _, c := range pod.Spec.InitContainers {
+			imageRef, tag, digest := parseImageRef(c.Image, imageIDByContainer[c.Name])
+
+			key := pod.Namespace + "|" + imageRef + "|" + digest
+			if _, exists := seen[key]; exists {
+				continue
+			}
+			seen[key] = struct{}{}
+
+			images = append(images, clusterImageInput{
+				Namespace: pod.Namespace,
+				ImageRef:  imageRef,
+				Tag:       tag,
+				Digest:    digest,
+			})
+		}
 
 		for _, c := range pod.Spec.Containers {
+			imageRef, tag, digest := parseImageRef(c.Image, imageIDByContainer[c.Name])
+
+			key := pod.Namespace + "|" + imageRef + "|" + digest
+			if _, exists := seen[key]; exists {
+				continue
+			}
+			seen[key] = struct{}{}
+
+			images = append(images, clusterImageInput{
+				Namespace: pod.Namespace,
+				ImageRef:  imageRef,
+				Tag:       tag,
+				Digest:    digest,
+			})
+		}
+
+		for _, c := range pod.Spec.EphemeralContainers {
 			imageRef, tag, digest := parseImageRef(c.Image, imageIDByContainer[c.Name])
 
 			key := pod.Namespace + "|" + imageRef + "|" + digest
@@ -192,12 +503,19 @@ func collectImages(pods []corev1.Pod, excludedNS map[string]bool, logger *slog.L
 }
 
 // buildImageIDLookup maps container name → imageID from pod status.
-func buildImageIDLookup(statuses []corev1.ContainerStatus) map[string]string {
-	m := make(map[string]string, len(statuses))
-	for _, s := range statuses {
-		m[s.Name] = s.ImageID
-	}
+func buildImageIDLookup(pod corev1.Pod) map[string]string {
+	total := len(pod.Status.InitContainerStatuses) + len(pod.Status.ContainerStatuses) + len(pod.Status.EphemeralContainerStatuses)
+	m := make(map[string]string, total)
+	addContainerStatuses(m, pod.Status.InitContainerStatuses)
+	addContainerStatuses(m, pod.Status.ContainerStatuses)
+	addContainerStatuses(m, pod.Status.EphemeralContainerStatuses)
 	return m
+}
+
+func addContainerStatuses(lookup map[string]string, statuses []corev1.ContainerStatus) {
+	for _, s := range statuses {
+		lookup[s.Name] = s.ImageID
+	}
 }
 
 // parseImageRef extracts the normalised imageRef, tag, and digest.
@@ -209,22 +527,23 @@ func buildImageIDLookup(statuses []corev1.ContainerStatus) map[string]string {
 //   - registry.example.com:5000/img:tag      → correctly ignores port colon
 //
 // The digest is resolved from the container's runtime imageID (most reliable
-// source), stripping the "docker-pullable://" prefix that Docker adds.
+// source), normalizing common runtime prefixes (docker, containerd, cri-o).
 func parseImageRef(image, imageID string) (imageRef, tag, digest string) {
 	imageRef = image
 
 	// Resolve digest from runtime imageID.
 	if imageID != "" {
-		id := strings.TrimPrefix(imageID, "docker-pullable://")
-		if idx := strings.Index(id, "@sha256:"); idx != -1 {
-			digest = id[idx+1:] // "sha256:..."
-		} else if strings.HasPrefix(id, "sha256:") {
-			digest = id
-		}
+		digest = extractDigestFromImageID(imageID)
 	}
 
-	// Strip inline digest from image reference (e.g. nginx:1.25@sha256:...)
-	if idx := strings.Index(image, "@sha256:"); idx != -1 {
+	// Strip inline digest from image reference (e.g. nginx:1.25@sha256:...).
+	if idx := strings.LastIndex(image, "@"); idx != -1 {
+		if digest == "" {
+			candidate := image[idx+1:]
+			if strings.Contains(candidate, ":") {
+				digest = candidate
+			}
+		}
 		imageRef = image[:idx]
 		image = imageRef // parse tag from the part before the digest
 	}
@@ -242,6 +561,30 @@ func parseImageRef(image, imageID string) (imageRef, tag, digest string) {
 	return
 }
 
+func extractDigestFromImageID(imageID string) string {
+	id := strings.TrimSpace(imageID)
+	if id == "" {
+		return ""
+	}
+
+	prefixes := []string{"docker-pullable://", "docker://", "containerd://", "cri-o://"}
+	for _, p := range prefixes {
+		id = strings.TrimPrefix(id, p)
+	}
+
+	if idx := strings.Index(id, "@sha256:"); idx != -1 {
+		return id[idx+1:]
+	}
+	if strings.HasPrefix(id, "sha256:") {
+		return id
+	}
+	if idx := strings.LastIndex(id, "sha256:"); idx != -1 {
+		return id[idx:]
+	}
+
+	return ""
+}
+
 // collectWorkloadImages gathers images from Deployments, StatefulSets, DaemonSets, Jobs, and CronJobs.
 func collectWorkloadImages(ctx context.Context, kubeClient *kubernetes.Clientset, excludedNS map[string]bool, logger *slog.Logger) ([]clusterImageInput, error) {
 	var images []clusterImageInput
@@ -254,6 +597,14 @@ func collectWorkloadImages(ctx context.Context, kubeClient *kubernetes.Clientset
 		for _, dep := range deployments.Items {
 			if excludedNS[dep.Namespace] {
 				continue
+			}
+			for _, c := range dep.Spec.Template.Spec.InitContainers {
+				imageRef, tag, _ := parseImageRef(c.Image, "")
+				images = append(images, clusterImageInput{
+					Namespace: dep.Namespace,
+					ImageRef:  imageRef,
+					Tag:       tag,
+				})
 			}
 			for _, c := range dep.Spec.Template.Spec.Containers {
 				imageRef, tag, _ := parseImageRef(c.Image, "")
@@ -275,6 +626,14 @@ func collectWorkloadImages(ctx context.Context, kubeClient *kubernetes.Clientset
 			if excludedNS[sts.Namespace] {
 				continue
 			}
+			for _, c := range sts.Spec.Template.Spec.InitContainers {
+				imageRef, tag, _ := parseImageRef(c.Image, "")
+				images = append(images, clusterImageInput{
+					Namespace: sts.Namespace,
+					ImageRef:  imageRef,
+					Tag:       tag,
+				})
+			}
 			for _, c := range sts.Spec.Template.Spec.Containers {
 				imageRef, tag, _ := parseImageRef(c.Image, "")
 				images = append(images, clusterImageInput{
@@ -294,6 +653,14 @@ func collectWorkloadImages(ctx context.Context, kubeClient *kubernetes.Clientset
 		for _, ds := range daemonSets.Items {
 			if excludedNS[ds.Namespace] {
 				continue
+			}
+			for _, c := range ds.Spec.Template.Spec.InitContainers {
+				imageRef, tag, _ := parseImageRef(c.Image, "")
+				images = append(images, clusterImageInput{
+					Namespace: ds.Namespace,
+					ImageRef:  imageRef,
+					Tag:       tag,
+				})
 			}
 			for _, c := range ds.Spec.Template.Spec.Containers {
 				imageRef, tag, _ := parseImageRef(c.Image, "")
@@ -315,6 +682,14 @@ func collectWorkloadImages(ctx context.Context, kubeClient *kubernetes.Clientset
 			if excludedNS[job.Namespace] {
 				continue
 			}
+			for _, c := range job.Spec.Template.Spec.InitContainers {
+				imageRef, tag, _ := parseImageRef(c.Image, "")
+				images = append(images, clusterImageInput{
+					Namespace: job.Namespace,
+					ImageRef:  imageRef,
+					Tag:       tag,
+				})
+			}
 			for _, c := range job.Spec.Template.Spec.Containers {
 				imageRef, tag, _ := parseImageRef(c.Image, "")
 				images = append(images, clusterImageInput{
@@ -334,6 +709,14 @@ func collectWorkloadImages(ctx context.Context, kubeClient *kubernetes.Clientset
 		for _, cj := range cronJobs.Items {
 			if excludedNS[cj.Namespace] {
 				continue
+			}
+			for _, c := range cj.Spec.JobTemplate.Spec.Template.Spec.InitContainers {
+				imageRef, tag, _ := parseImageRef(c.Image, "")
+				images = append(images, clusterImageInput{
+					Namespace: cj.Namespace,
+					ImageRef:  imageRef,
+					Tag:       tag,
+				})
 			}
 			for _, c := range cj.Spec.JobTemplate.Spec.Template.Spec.Containers {
 				imageRef, tag, _ := parseImageRef(c.Image, "")
