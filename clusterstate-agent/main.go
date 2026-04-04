@@ -56,7 +56,57 @@ func newInventoryBuffer() *inventoryBuffer {
 }
 
 func imageKey(img clusterImageInput) string {
-	return img.Namespace + "|" + img.ImageRef + "|" + img.Digest
+	return img.Namespace + "|" + img.ImageRef + "|" + img.Tag + "|" + img.Digest
+}
+
+func imageIdentityKey(img clusterImageInput) string {
+	return img.Namespace + "|" + img.ImageRef + "|" + img.Tag
+}
+
+// normalizeImagesPreferDigests removes digest-less duplicates for an
+// image identity (namespace, imageRef, tag) when digest-bearing entries exist.
+// Distinct digests for the same identity are preserved.
+func normalizeImagesPreferDigests(images []clusterImageInput) []clusterImageInput {
+	if len(images) == 0 {
+		return nil
+	}
+
+	order := make([]string, 0, len(images))
+	groups := make(map[string][]clusterImageInput)
+	hasDigest := make(map[string]bool)
+
+	for _, img := range images {
+		identity := imageIdentityKey(img)
+		if _, ok := groups[identity]; !ok {
+			order = append(order, identity)
+		}
+
+		digest := strings.TrimSpace(img.Digest)
+		img.Digest = digest
+		groups[identity] = append(groups[identity], img)
+		if digest != "" {
+			hasDigest[identity] = true
+		}
+	}
+
+	result := make([]clusterImageInput, 0, len(images))
+	seenFull := make(map[string]struct{})
+	for _, identity := range order {
+		for _, img := range groups[identity] {
+			if hasDigest[identity] && strings.TrimSpace(img.Digest) == "" {
+				continue
+			}
+
+			key := imageKey(img)
+			if _, exists := seenFull[key]; exists {
+				continue
+			}
+			seenFull[key] = struct{}{}
+			result = append(result, img)
+		}
+	}
+
+	return result
 }
 
 func (b *inventoryBuffer) Add(img clusterImageInput) bool {
@@ -87,7 +137,7 @@ func (b *inventoryBuffer) Snapshot() []clusterImageInput {
 	for _, entry := range b.seen {
 		out = append(out, entry.img)
 	}
-	return out
+	return normalizeImagesPreferDigests(out)
 }
 
 // TouchAll updates the lastSeen timestamp for every provided image, adding any
@@ -864,7 +914,8 @@ func appendWorkloadPodSpecImages(images []clusterImageInput, namespace string, s
 	return images
 }
 
-// mergeImages deduplicates and merges two image lists by (namespace, imageRef, digest).
+// mergeImages deduplicates and merges two image lists by
+// (namespace, imageRef, tag, digest), then normalizes digest preference.
 func mergeImages(list1, list2 []clusterImageInput) []clusterImageInput {
 	seen := make(map[string]struct{})
 	var merged []clusterImageInput
@@ -887,7 +938,7 @@ func mergeImages(list1, list2 []clusterImageInput) []clusterImageInput {
 		merged = append(merged, img)
 	}
 
-	return merged
+	return normalizeImagesPreferDigests(merged)
 }
 
 // sendInventory marshals the payload and POSTs it to the suppline webhook.

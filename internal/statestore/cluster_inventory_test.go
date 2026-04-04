@@ -95,6 +95,62 @@ func TestRecordClusterInventory_EmptyImagesClearsExisting(t *testing.T) {
 	}
 }
 
+func TestRecordClusterInventory_PrefersDigestRowsOverDigestlessDuplicates(t *testing.T) {
+	dbPath := "test_cluster_inventory_" + t.Name() + ".db"
+	_ = os.Remove(dbPath)
+	defer os.Remove(dbPath)
+
+	store, err := NewSQLiteStore(dbPath)
+	if err != nil {
+		t.Fatalf("Failed to create SQLite store: %v", err)
+	}
+	defer store.Close()
+
+	ctx := context.Background()
+	cluster := "staging-a"
+
+	images := []ClusterImageEntry{
+		{Namespace: "default", ImageRef: "docker.io/library/nginx", Tag: "1.29.5", Digest: ""},
+		{Namespace: "default", ImageRef: "docker.io/library/nginx", Tag: "1.29.5", Digest: "sha256:a"},
+		{Namespace: "default", ImageRef: "docker.io/library/nginx", Tag: "1.29.5", Digest: "sha256:b"},
+		{Namespace: "default", ImageRef: "docker.io/library/nginx", Tag: "1.29.5", Digest: "sha256:a"},
+		{Namespace: "ops", ImageRef: "busybox", Tag: "latest", Digest: ""},
+		{Namespace: "ops", ImageRef: "busybox", Tag: "latest", Digest: ""},
+	}
+
+	if err := store.RecordClusterInventory(ctx, cluster, images, time.Now().UTC()); err != nil {
+		t.Fatalf("RecordClusterInventory failed: %v", err)
+	}
+
+	rows, err := queryClusterImages(store.db, cluster)
+	if err != nil {
+		t.Fatalf("queryClusterImages failed: %v", err)
+	}
+
+	if len(rows) != 3 {
+		t.Fatalf("Expected 3 deduplicated rows, got %d", len(rows))
+	}
+
+	seen := make(map[string]bool)
+	for _, row := range rows {
+		key := row.namespace + "|" + row.imageRef + "|" + row.tag + "|" + row.digest
+		seen[key] = true
+	}
+
+	if !seen["default|docker.io/library/nginx|1.29.5|sha256:a"] {
+		t.Fatalf("Expected nginx digest sha256:a row")
+	}
+	if !seen["default|docker.io/library/nginx|1.29.5|sha256:b"] {
+		t.Fatalf("Expected nginx digest sha256:b row")
+	}
+	if !seen["ops|busybox|latest|"] {
+		t.Fatalf("Expected single busybox digestless row")
+	}
+	if seen["default|docker.io/library/nginx|1.29.5|"] {
+		t.Fatalf("Did not expect digestless nginx row when digests exist")
+	}
+}
+
 func TestListClusterSummaries(t *testing.T) {
 	dbPath := "test_cluster_summary_" + t.Name() + ".db"
 	_ = os.Remove(dbPath)

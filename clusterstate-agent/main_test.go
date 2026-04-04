@@ -65,6 +65,54 @@ func TestInventoryBufferAddAndSnapshot(t *testing.T) {
 	}
 }
 
+func TestInventoryBufferSnapshotPrefersDigestEntries(t *testing.T) {
+	buffer := newInventoryBuffer()
+
+	withoutDigest := clusterImageInput{Namespace: "staging", ImageRef: "hostingmaloonde/curlimages_curl", Tag: "8.16.0", Digest: ""}
+	withDigestA := clusterImageInput{Namespace: "staging", ImageRef: "hostingmaloonde/curlimages_curl", Tag: "8.16.0", Digest: "sha256:a"}
+	withDigestB := clusterImageInput{Namespace: "staging", ImageRef: "hostingmaloonde/curlimages_curl", Tag: "8.16.0", Digest: "sha256:b"}
+
+	buffer.Add(withoutDigest)
+	buffer.Add(withDigestA)
+	buffer.Add(withDigestB)
+
+	got := buffer.Snapshot()
+	if len(got) != 2 {
+		t.Fatalf("expected 2 digest-bearing entries, got %d", len(got))
+	}
+
+	seen := make(map[string]bool)
+	for _, img := range got {
+		seen[img.Namespace+"|"+img.ImageRef+"|"+img.Tag+"|"+img.Digest] = true
+	}
+
+	if seen["staging|hostingmaloonde/curlimages_curl|8.16.0|"] {
+		t.Fatalf("did not expect digest-less entry when digest entries exist")
+	}
+	if !seen["staging|hostingmaloonde/curlimages_curl|8.16.0|sha256:a"] {
+		t.Fatalf("missing digest entry sha256:a")
+	}
+	if !seen["staging|hostingmaloonde/curlimages_curl|8.16.0|sha256:b"] {
+		t.Fatalf("missing digest entry sha256:b")
+	}
+}
+
+func TestInventoryBufferKeepsDifferentTagsWithoutDigest(t *testing.T) {
+	buffer := newInventoryBuffer()
+
+	if !buffer.Add(clusterImageInput{Namespace: "ns", ImageRef: "nginx", Tag: "1.25", Digest: ""}) {
+		t.Fatalf("expected first tag add to change buffer")
+	}
+	if !buffer.Add(clusterImageInput{Namespace: "ns", ImageRef: "nginx", Tag: "1.26", Digest: ""}) {
+		t.Fatalf("expected second tag add to change buffer")
+	}
+
+	got := buffer.Snapshot()
+	if len(got) != 2 {
+		t.Fatalf("expected 2 entries for distinct tags, got %d", len(got))
+	}
+}
+
 func TestInventoryBufferTouchAll(t *testing.T) {
 	buffer := newInventoryBuffer()
 

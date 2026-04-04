@@ -19,6 +19,19 @@ type SQLiteStore struct {
 	db *sql.DB
 }
 
+type clusterImageIdentity struct {
+	namespace string
+	imageRef  string
+	tag       string
+}
+
+type normalizedClusterImageGroup struct {
+	identity   clusterImageIdentity
+	digests    []string
+	digestSeen map[string]struct{}
+	hasEmpty   bool
+}
+
 // NewSQLiteStore creates a new SQLite state store
 func NewSQLiteStore(dbPath string) (*SQLiteStore, error) {
 	// Add pragmas and optimizations for better concurrent access
@@ -255,6 +268,8 @@ func (s *SQLiteStore) RecordClusterInventory(ctx context.Context, clusterName st
 		return errors.NewPermanentf("cluster name cannot be empty")
 	}
 
+	normalizedImages := normalizeClusterInventoryEntries(images)
+
 	tx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {
 		return errors.NewTransientf("failed to begin transaction: %w", err)
@@ -292,7 +307,7 @@ func (s *SQLiteStore) RecordClusterInventory(ctx context.Context, clusterName st
 	}
 	defer insertStmt.Close()
 
-	for _, image := range images {
+	for _, image := range normalizedImages {
 		if _, err := insertStmt.ExecContext(
 			ctx,
 			clusterID,
@@ -311,6 +326,75 @@ func (s *SQLiteStore) RecordClusterInventory(ctx context.Context, clusterName st
 	}
 
 	return nil
+}
+
+// normalizeClusterInventoryEntries keeps distinct digest variants, but removes
+// digest-less duplicates when any digest was observed for the same
+// namespace/image_ref/tag tuple.
+func normalizeClusterInventoryEntries(images []ClusterImageEntry) []ClusterImageEntry {
+	if len(images) == 0 {
+		return nil
+	}
+
+	groups := make(map[clusterImageIdentity]*normalizedClusterImageGroup)
+	order := make([]clusterImageIdentity, 0, len(images))
+
+	for _, image := range images {
+		namespace := strings.TrimSpace(image.Namespace)
+		imageRef := strings.TrimSpace(image.ImageRef)
+		tag := strings.TrimSpace(image.Tag)
+		digest := strings.TrimSpace(image.Digest)
+
+		id := clusterImageIdentity{namespace: namespace, imageRef: imageRef, tag: tag}
+		group, ok := groups[id]
+		if !ok {
+			group = &normalizedClusterImageGroup{
+				identity:   id,
+				digests:    make([]string, 0, 1),
+				digestSeen: make(map[string]struct{}),
+			}
+			groups[id] = group
+			order = append(order, id)
+		}
+
+		if digest == "" {
+			group.hasEmpty = true
+			continue
+		}
+
+		if _, exists := group.digestSeen[digest]; exists {
+			continue
+		}
+		group.digestSeen[digest] = struct{}{}
+		group.digests = append(group.digests, digest)
+	}
+
+	result := make([]ClusterImageEntry, 0, len(images))
+	for _, id := range order {
+		group := groups[id]
+		if len(group.digests) > 0 {
+			for _, digest := range group.digests {
+				result = append(result, ClusterImageEntry{
+					Namespace: id.namespace,
+					ImageRef:  id.imageRef,
+					Tag:       id.tag,
+					Digest:    digest,
+				})
+			}
+			continue
+		}
+
+		if group.hasEmpty {
+			result = append(result, ClusterImageEntry{
+				Namespace: id.namespace,
+				ImageRef:  id.imageRef,
+				Tag:       id.tag,
+				Digest:    "",
+			})
+		}
+	}
+
+	return result
 }
 
 // ListClusterSummaries returns one summary row per cluster.
