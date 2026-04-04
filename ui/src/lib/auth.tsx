@@ -1,4 +1,4 @@
-import { createContext, useContext, useState, useCallback, useEffect, type ReactNode } from 'react';
+import { createContext, useContext, useState, useCallback, type ReactNode } from 'react';
 import { APIClient } from './api';
 
 interface AuthContextType {
@@ -13,16 +13,15 @@ const AuthContext = createContext<AuthContextType | null>(null);
 const STORAGE_KEY = 'stk_api_key';
 
 export function AuthProvider({ children }: { children: ReactNode }) {
-  const [apiClient] = useState(() => new APIClient());
-  const [isAuthenticated, setIsAuthenticated] = useState(false);
-
-  useEffect(() => {
+  const [apiClient] = useState(() => {
+    const client = new APIClient();
     const stored = localStorage.getItem(STORAGE_KEY);
     if (stored) {
-      apiClient.setAPIKey(stored);
-      setIsAuthenticated(true);
+      client.setAPIKey(stored);
     }
-  }, [apiClient]);
+    return client;
+  });
+  const [isAuthenticated, setIsAuthenticated] = useState(() => Boolean(localStorage.getItem(STORAGE_KEY)));
 
   const login = useCallback(async (key: string) => {
     apiClient.setAPIKey(key);

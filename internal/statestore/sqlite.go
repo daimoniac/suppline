@@ -348,6 +348,41 @@ func (s *SQLiteStore) ListClusterSummaries(ctx context.Context) ([]ClusterSummar
 	return summaries, nil
 }
 
+// ListClusterImages returns all runtime image rows for a specific cluster.
+func (s *SQLiteStore) ListClusterImages(ctx context.Context, clusterName string) ([]ClusterImageSummary, error) {
+	clusterName = strings.TrimSpace(clusterName)
+	if clusterName == "" {
+		return nil, errors.NewPermanentf("cluster name cannot be empty")
+	}
+
+	rows, err := s.db.QueryContext(ctx, `
+		SELECT ci.namespace, ci.image_ref, COALESCE(ci.tag, ''), COALESCE(ci.digest, '')
+		FROM cluster_images ci
+		JOIN clusters c ON c.id = ci.cluster_id
+		WHERE c.name = ?
+		ORDER BY ci.namespace ASC, ci.image_ref ASC
+	`, clusterName)
+	if err != nil {
+		return nil, errors.NewTransientf("failed to query cluster images: %w", err)
+	}
+	defer rows.Close()
+
+	images := make([]ClusterImageSummary, 0)
+	for rows.Next() {
+		var image ClusterImageSummary
+		if err := rows.Scan(&image.Namespace, &image.ImageRef, &image.Tag, &image.Digest); err != nil {
+			return nil, errors.NewTransientf("failed to scan cluster image row: %w", err)
+		}
+		images = append(images, image)
+	}
+
+	if err := rows.Err(); err != nil {
+		return nil, errors.NewTransientf("error iterating cluster image rows: %w", err)
+	}
+
+	return images, nil
+}
+
 // DeleteClusterInventory removes a cluster and all of its inventory rows.
 func (s *SQLiteStore) DeleteClusterInventory(ctx context.Context, clusterName string) error {
 	clusterName = strings.TrimSpace(clusterName)

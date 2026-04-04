@@ -43,27 +43,36 @@ func TestParseDurationEnv(t *testing.T) {
 	})
 }
 
-func TestInventoryBufferFlushAndRequeue(t *testing.T) {
+func TestInventoryBufferSnapshotAndReplace(t *testing.T) {
 	buffer := newInventoryBuffer()
 
-	buffer.Add(clusterImageInput{Namespace: "ns", ImageRef: "nginx", Tag: "1.25", Digest: "sha256:a"})
-	buffer.Add(clusterImageInput{Namespace: "ns", ImageRef: "nginx", Tag: "1.25", Digest: "sha256:a"})
-	buffer.Add(clusterImageInput{Namespace: "ns", ImageRef: "busybox", Tag: "1.36", Digest: ""})
+	if !buffer.Add(clusterImageInput{Namespace: "ns", ImageRef: "nginx", Tag: "1.25", Digest: "sha256:a"}) {
+		t.Fatalf("expected first add to be a change")
+	}
+	if buffer.Add(clusterImageInput{Namespace: "ns", ImageRef: "nginx", Tag: "1.25", Digest: "sha256:a"}) {
+		t.Fatalf("expected duplicate add to not be a change")
+	}
+	if !buffer.Add(clusterImageInput{Namespace: "ns", ImageRef: "busybox", Tag: "1.36", Digest: ""}) {
+		t.Fatalf("expected second unique add to be a change")
+	}
 
-	first := buffer.Flush()
+	first := buffer.Snapshot()
 	if len(first) != 2 {
 		t.Fatalf("expected 2 unique images, got %d", len(first))
 	}
 
-	second := buffer.Flush()
-	if len(second) != 0 {
-		t.Fatalf("expected empty second flush, got %d", len(second))
+	if changed := buffer.Replace(first); changed {
+		t.Fatalf("expected replace with same snapshot to report unchanged")
 	}
 
-	buffer.Requeue(first)
-	third := buffer.Flush()
-	if len(third) != 2 {
-		t.Fatalf("expected 2 images after requeue, got %d", len(third))
+	updated := append(first, clusterImageInput{Namespace: "ns", ImageRef: "redis", Tag: "7", Digest: "sha256:r"})
+	if changed := buffer.Replace(updated); !changed {
+		t.Fatalf("expected replace with new data to report changed")
+	}
+
+	third := buffer.Snapshot()
+	if len(third) != 3 {
+		t.Fatalf("expected 3 images after replace, got %d", len(third))
 	}
 }
 
@@ -93,8 +102,12 @@ func TestCollectPodObservationIncludesAllContainerKinds(t *testing.T) {
 		},
 	}
 
-	collectPodObservation(pod, excluded, buffer)
-	got := buffer.Flush()
+	changed := collectPodObservation(pod, excluded, buffer)
+	if !changed {
+		t.Fatalf("expected pod observation to report change")
+	}
+
+	got := buffer.Snapshot()
 	if len(got) != 3 {
 		t.Fatalf("expected 3 observed images, got %d", len(got))
 	}
@@ -129,8 +142,11 @@ func TestCollectEventObservationPullingImage(t *testing.T) {
 		Message: "Pulling image \"ghcr.io/example/runner:1.2.3\"",
 	}
 
-	collectEventObservation(event, excluded, buffer)
-	got := buffer.Flush()
+	if changed := collectEventObservation(event, excluded, buffer); !changed {
+		t.Fatalf("expected event observation to report change")
+	}
+
+	got := buffer.Snapshot()
 	if len(got) != 1 {
 		t.Fatalf("expected 1 observed event image, got %d", len(got))
 	}
@@ -151,7 +167,9 @@ func TestCollectEventObservationIgnoresNonPodAndUnknownReason(t *testing.T) {
 		Reason:  "Pulling",
 		Message: "Pulling image \"alpine:3.20\"",
 	}
-	collectEventObservation(nonPod, excluded, buffer)
+	if changed := collectEventObservation(nonPod, excluded, buffer); changed {
+		t.Fatalf("expected non-pod event to not change buffer")
+	}
 
 	unknownReason := &corev1.Event{
 		ObjectMeta: metav1.ObjectMeta{Namespace: "ci"},
@@ -161,9 +179,11 @@ func TestCollectEventObservationIgnoresNonPodAndUnknownReason(t *testing.T) {
 		Reason:  "Scheduled",
 		Message: "Pulling image \"alpine:3.20\"",
 	}
-	collectEventObservation(unknownReason, excluded, buffer)
+	if changed := collectEventObservation(unknownReason, excluded, buffer); changed {
+		t.Fatalf("expected unknown reason event to not change buffer")
+	}
 
-	if got := buffer.Flush(); len(got) != 0 {
+	if got := buffer.Snapshot(); len(got) != 0 {
 		t.Fatalf("expected no observations, got %d", len(got))
 	}
 }

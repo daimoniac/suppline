@@ -66,6 +66,14 @@ type ClusterSummary struct {
 	ImageCount   int
 }
 
+// ClusterImageSummary represents one image currently reported by a cluster.
+type ClusterImageSummary struct {
+	Namespace string
+	ImageRef  string
+	Tag       string
+	Digest    string
+}
+
 // RuntimeLocation describes where an image is currently running.
 type RuntimeLocation struct {
 	Cluster   string
@@ -93,6 +101,9 @@ type ClusterInventoryStore interface {
 
 	// ListClusterSummaries returns cluster inventory snapshot summaries.
 	ListClusterSummaries(ctx context.Context) ([]ClusterSummary, error)
+
+	// ListClusterImages returns all runtime images for a cluster snapshot.
+	ListClusterImages(ctx context.Context, clusterName string) ([]ClusterImageSummary, error)
 
 	// DeleteClusterInventory removes a cluster and its runtime inventory snapshot.
 	DeleteClusterInventory(ctx context.Context, clusterName string) error

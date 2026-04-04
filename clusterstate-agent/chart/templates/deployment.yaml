@@ -12,6 +12,8 @@ spec:
       {{- include "clusterstate-agent.selectorLabels" . | nindent 6 }}
   template:
     metadata:
+      annotations:
+        suppline.io/release-revision: {{ .Release.Revision | quote }}
       labels:
         {{- include "clusterstate-agent.selectorLabels" . | nindent 8 }}
     spec:

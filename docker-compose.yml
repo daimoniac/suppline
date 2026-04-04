@@ -101,6 +101,47 @@ services:
       - suppline
     restart: unless-stopped
 
+  # Release helper: build/push clusterstate-agent image via docker compose.
+  # Usage:
+  #   CLUSTERSTATE_AGENT_IMAGE=daimoniac/suppline-clusterstate-agent:0.1.0 \
+  #     docker compose --profile release build clusterstate-agent-image
+  #   CLUSTERSTATE_AGENT_IMAGE=daimoniac/suppline-clusterstate-agent:0.1.0 \
+  #     docker compose --profile release push clusterstate-agent-image
+  clusterstate-agent-image:
+    profiles: ["release"]
+    image: ${CLUSTERSTATE_AGENT_IMAGE:-daimoniac/suppline-clusterstate-agent:latest}
+    build:
+      context: ./clusterstate-agent
+      dockerfile: Dockerfile
+
+  # Deploy helper: install/upgrade clusterstate-agent Helm chart via docker compose.
+  # Usage:
+  #   CLUSTER_NAME=prod-eu-1 \
+  #   SUPPLINE_URL=http://suppline.suppline.svc.cluster.local:8080 \
+  #   SUPPLINE_API_KEY=<key> \
+  #   CLUSTERSTATE_AGENT_IMAGE_TAG=latest \
+  #   docker compose --profile deploy run --rm clusterstate-agent-helm
+  clusterstate-agent-helm:
+    profiles: ["deploy"]
+    image: alpine/helm:3.17.3
+    working_dir: /workspace
+    env_file:
+      - .env
+    volumes:
+      - ./:/workspace:ro
+      - ${HOME}/.kube:/root/.kube:ro
+    environment:
+      - HELM_RELEASE_NAME=${HELM_RELEASE_NAME:-clusterstate-agent}
+      - HELM_NAMESPACE=${HELM_NAMESPACE:-suppline}
+      - AGENT_MODE=${AGENT_MODE:-watch}
+      - WATCH_FLUSH_INTERVAL=${WATCH_FLUSH_INTERVAL:-15s}
+      - CLUSTERSTATE_AGENT_IMAGE_REPOSITORY=${CLUSTERSTATE_AGENT_IMAGE_REPOSITORY:-daimoniac/suppline-clusterstate-agent}
+      - CLUSTERSTATE_AGENT_IMAGE_TAG=${CLUSTERSTATE_AGENT_IMAGE_TAG:-latest}
+      - CLUSTER_NAME=${CLUSTER_NAME:-}
+      - SUPPLINE_URL=${SUPPLINE_URL:-}
+      - SUPPLINE_API_KEY=${SUPPLINE_API_KEY:-}
+    entrypoint: ["/bin/sh", "/workspace/scripts/deploy-clusterstate-agent.sh"]
+
 networks:
   suppline:
     driver: bridge

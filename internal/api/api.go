@@ -127,7 +127,7 @@ func (s *APIServer) setupRoutes() {
 
 	// Integration endpoints
 	s.router.HandleFunc("/api/v1/integration/kubernetes/clusters", s.corsMiddleware(s.handleListKubernetesClusters))
-	s.router.HandleFunc("/api/v1/integration/kubernetes/clusters/", s.corsMiddleware(s.authMiddleware(s.handleKubernetesClustersRouter, true)))
+	s.router.HandleFunc("/api/v1/integration/kubernetes/clusters/", s.corsMiddleware(s.authMiddleware(s.handleKubernetesClustersRouter, false)))
 	s.router.HandleFunc("/api/v1/integration/publickey", s.corsMiddleware(s.handleGetPublicKey))
 	s.router.HandleFunc("/api/v1/integration/kyverno/policy", s.corsMiddleware(s.handleGenerateKyvernoPolicy))
 

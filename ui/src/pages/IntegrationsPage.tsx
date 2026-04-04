@@ -1,10 +1,10 @@
-import { useEffect, useState } from 'react';
+import { Fragment, useEffect, useState } from 'react';
 import { useAuth } from '../lib/auth';
 import { useToast } from '../lib/toast';
 import { copyToClipboard, formatDate, formatRelativeTime } from '../lib/utils';
 import { LoadingState, ErrorState, PageHeader } from '../components/ui';
-import type { KubernetesClusterSummary } from '../lib/api';
-import { Boxes, Copy, Download, Key, Shield, Trash2 } from 'lucide-react';
+import type { KubernetesClusterImageSummary, KubernetesClusterSummary } from '../lib/api';
+import { Boxes, ChevronDown, ChevronRight, Copy, Download, Key, Shield, Trash2 } from 'lucide-react';
 
 export default function IntegrationsPage() {
   const { apiClient } = useAuth();
@@ -12,6 +12,10 @@ export default function IntegrationsPage() {
   const [publicKey, setPublicKey] = useState('');
   const [kyvernoPolicy, setKyvernoPolicy] = useState('');
   const [clusters, setClusters] = useState<KubernetesClusterSummary[]>([]);
+  const [expandedClusters, setExpandedClusters] = useState<Record<string, boolean>>({});
+  const [clusterImages, setClusterImages] = useState<Record<string, KubernetesClusterImageSummary[]>>({});
+  const [clusterImagesLoading, setClusterImagesLoading] = useState<Record<string, boolean>>({});
+  const [clusterImagesError, setClusterImagesError] = useState<Record<string, string>>({});
   const [deletingCluster, setDeletingCluster] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
@@ -32,6 +36,29 @@ export default function IntegrationsPage() {
       setError(e instanceof Error ? e.message : 'Failed');
     } finally {
       setLoading(false);
+    }
+  };
+
+  const handleToggleClusterImages = async (clusterName: string) => {
+    const isExpanded = Boolean(expandedClusters[clusterName]);
+    setExpandedClusters(prev => ({ ...prev, [clusterName]: !isExpanded }));
+
+    if (isExpanded || clusterImages[clusterName] || clusterImagesLoading[clusterName]) {
+      return;
+    }
+
+    setClusterImagesLoading(prev => ({ ...prev, [clusterName]: true }));
+    setClusterImagesError(prev => ({ ...prev, [clusterName]: '' }));
+    try {
+      const images = await apiClient.getKubernetesClusterImages(clusterName);
+      setClusterImages(prev => ({ ...prev, [clusterName]: images }));
+    } catch (e: unknown) {
+      setClusterImagesError(prev => ({
+        ...prev,
+        [clusterName]: e instanceof Error ? e.message : 'Failed to load images',
+      }));
+    } finally {
+      setClusterImagesLoading(prev => ({ ...prev, [clusterName]: false }));
     }
   };
 
@@ -60,6 +87,26 @@ export default function IntegrationsPage() {
     try {
       await apiClient.deleteKubernetesCluster(clusterName);
       setClusters(prev => prev.filter(cluster => cluster.Name !== clusterName));
+      setExpandedClusters(prev => {
+        const next = { ...prev };
+        delete next[clusterName];
+        return next;
+      });
+      setClusterImages(prev => {
+        const next = { ...prev };
+        delete next[clusterName];
+        return next;
+      });
+      setClusterImagesLoading(prev => {
+        const next = { ...prev };
+        delete next[clusterName];
+        return next;
+      });
+      setClusterImagesError(prev => {
+        const next = { ...prev };
+        delete next[clusterName];
+        return next;
+      });
       toast(`Deleted cluster ${clusterName}`, 'success');
     } catch (e: unknown) {
       toast(e instanceof Error ? e.message : 'Failed to delete cluster', 'error');
@@ -100,23 +147,66 @@ export default function IntegrationsPage() {
                 </thead>
                 <tbody>
                   {clusters.map(cluster => (
-                    <tr key={cluster.Name} className="border-b border-border/50 last:border-0">
-                      <td className="px-3 py-3 text-text-primary font-medium">{cluster.Name}</td>
-                      <td className="px-3 py-3 text-text-secondary" title={cluster.LastReported ? formatDate(cluster.LastReported) : 'N/A'}>
-                        {cluster.LastReported ? formatRelativeTime(cluster.LastReported) : 'Never'}
-                      </td>
-                      <td className="px-3 py-3 text-text-secondary">{cluster.ImageCount}</td>
-                      <td className="px-3 py-3 text-right">
-                        <button
-                          onClick={() => handleDeleteCluster(cluster.Name)}
-                          disabled={deletingCluster === cluster.Name}
-                          className="px-2.5 py-1.5 text-xs rounded-lg border border-danger/30 text-danger hover:bg-danger-bg disabled:opacity-50 inline-flex items-center gap-1 transition-colors"
-                        >
-                          <Trash2 className="w-3 h-3" />
-                          {deletingCluster === cluster.Name ? 'Deleting...' : 'Delete'}
-                        </button>
-                      </td>
-                    </tr>
+                    <Fragment key={cluster.Name}>
+                      <tr className="border-b border-border/50">
+                        <td className="px-3 py-3 text-text-primary font-medium">
+                          <button
+                            onClick={() => handleToggleClusterImages(cluster.Name)}
+                            className="inline-flex items-center gap-2 text-left hover:text-accent transition-colors"
+                            aria-expanded={Boolean(expandedClusters[cluster.Name])}
+                          >
+                            {expandedClusters[cluster.Name] ? <ChevronDown className="w-4 h-4" /> : <ChevronRight className="w-4 h-4" />}
+                            <span>{cluster.Name}</span>
+                          </button>
+                        </td>
+                        <td className="px-3 py-3 text-text-secondary" title={cluster.LastReported ? formatDate(cluster.LastReported) : 'N/A'}>
+                          {cluster.LastReported ? formatRelativeTime(cluster.LastReported) : 'Never'}
+                        </td>
+                        <td className="px-3 py-3 text-text-secondary">{cluster.ImageCount}</td>
+                        <td className="px-3 py-3 text-right">
+                          <button
+                            onClick={() => handleDeleteCluster(cluster.Name)}
+                            disabled={deletingCluster === cluster.Name}
+                            className="px-2.5 py-1.5 text-xs rounded-lg border border-danger/30 text-danger hover:bg-danger-bg disabled:opacity-50 inline-flex items-center gap-1 transition-colors"
+                          >
+                            <Trash2 className="w-3 h-3" />
+                            {deletingCluster === cluster.Name ? 'Deleting...' : 'Delete'}
+                          </button>
+                        </td>
+                      </tr>
+                      {expandedClusters[cluster.Name] && (
+                        <tr className="border-b border-border/50 last:border-0">
+                          <td colSpan={4} className="px-3 pb-4">
+                            <div className="mt-2 rounded-lg border border-border bg-bg-secondary/50">
+                              {clusterImagesLoading[cluster.Name] ? (
+                                <p className="px-4 py-3 text-sm text-text-muted">Loading images...</p>
+                              ) : clusterImagesError[cluster.Name] ? (
+                                <p className="px-4 py-3 text-sm text-danger">{clusterImagesError[cluster.Name]}</p>
+                              ) : (clusterImages[cluster.Name] || []).length > 0 ? (
+                                <ul className="divide-y divide-border/60">
+                                  {(clusterImages[cluster.Name] || []).map((image, idx) => (
+                                    <li key={`${image.Namespace}-${image.ImageRef}-${idx}`} className="px-4 py-3 text-xs">
+                                      <div className="text-text-primary break-all">{image.ImageRef}</div>
+                                      <div className="mt-1 text-text-muted">
+                                        Namespace: <span className="font-medium text-text-secondary">{image.Namespace || 'unknown'}</span>
+                                        {image.Tag ? (
+                                          <>
+                                            {' '}· Tag: <span className="font-medium text-text-secondary">{image.Tag}</span>
+                                          </>
+                                        ) : null}
+                                        {image.Digest ? ` · ${image.Digest}` : ''}
+                                      </div>
+                                    </li>
+                                  ))}
+                                </ul>
+                              ) : (
+                                <p className="px-4 py-3 text-sm text-text-muted">No images reported for this cluster.</p>
+                              )}
+                            </div>
+                          </td>
+                        </tr>
+                      )}
+                    </Fragment>
                   ))}
                 </tbody>
               </table>

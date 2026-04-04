@@ -15,6 +15,12 @@ export default defineConfig([
       reactHooks.configs.flat.recommended,
       reactRefresh.configs.vite,
     ],
+    rules: {
+      'react-refresh/only-export-components': ['error', {
+        allowConstantExport: true,
+        allowExportNames: ['useAuth', 'useToast', 'useImageUsageFilter'],
+      }],
+    },
     languageOptions: {
       ecmaVersion: 2020,
       globals: globals.browser,

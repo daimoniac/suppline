@@ -73,11 +73,14 @@ The agent loads configuration from a `.env` file (if present) before checking en
 | `logLevel` | `"info"` | Container log level |
 | `image.repository` | `ghcr.io/daimoniac/clusterstate-agent` | Image repository |
 | `image.tag` | `"latest"` | Image tag |
+| `image.pullPolicy` | `Always` | Container image pull policy |
 | `rbac.create` | `true` | Create ClusterRole + ClusterRoleBinding |
 | `serviceAccount.create` | `true` | Create ServiceAccount |
 | `failedJobsHistoryLimit` | `3` | Failed job history to retain |
 | `successfulJobsHistoryLimit` | `1` | Successful job history to retain |
 | `resources` | see values.yaml | CPU/memory requests and limits |
+
+In watch mode, the Deployment pod template includes the Helm release revision as an annotation, so each `helm upgrade` triggers a rolling restart of the clusterstate-agent pod.
 
 ## RBAC
 
@@ -118,6 +121,35 @@ In watch mode, the chart deploys a `Deployment` (not a CronJob), and the agent s
 
 ```bash
 docker build -t clusterstate-agent:dev .
+```
+
+From repo root, you can use Docker Compose release/deploy helpers:
+
+```bash
+# Build + push image
+CLUSTERSTATE_AGENT_IMAGE=daimoniac/suppline-clusterstate-agent:latest \
+  docker compose --profile release build --push clusterstate-agent-image
+
+# Helm upgrade/install using the compose deploy helper
+# (values can come from repo-root .env)
+docker compose --profile deploy run --rm clusterstate-agent-helm
+```
+
+The compose deploy service executes `scripts/deploy-clusterstate-agent.sh` inside the Helm container.
+
+If `CLUSTER_NAME` is unset, the deploy helper derives it from the active kube context:
+
+```bash
+kubectl config view --minify -o jsonpath='{.clusters[0].name}'
+```
+
+Example `.env` entries for deploy helper:
+
+```dotenv
+CLUSTER_NAME=prod-eu-1
+SUPPLINE_URL=http://suppline.suppline.svc.cluster.local:8080
+SUPPLINE_API_KEY=<key>
+CLUSTERSTATE_AGENT_IMAGE_TAG=latest
 ```
 
 No CGO. The binary is statically linked and runs in a minimal `alpine:3.21` image.

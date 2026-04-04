@@ -24,6 +24,7 @@ type mockClusterInventoryStore struct {
 	images        []statestore.ClusterImageEntry
 	reportedAt    time.Time
 	summaries     []statestore.ClusterSummary
+	clusterImages []statestore.ClusterImageSummary
 	deleteCalled  bool
 	deleteCluster string
 }
@@ -38,6 +39,11 @@ func (m *mockClusterInventoryStore) RecordClusterInventory(ctx context.Context, 
 
 func (m *mockClusterInventoryStore) ListClusterSummaries(ctx context.Context) ([]statestore.ClusterSummary, error) {
 	return m.summaries, m.err
+}
+
+func (m *mockClusterInventoryStore) ListClusterImages(ctx context.Context, clusterName string) ([]statestore.ClusterImageSummary, error) {
+	m.cluster = clusterName
+	return m.clusterImages, m.err
 }
 
 func (m *mockClusterInventoryStore) DeleteClusterInventory(ctx context.Context, clusterName string) error {
@@ -208,5 +214,38 @@ func TestHandleDeleteKubernetesCluster_NotConfigured(t *testing.T) {
 	server.router.ServeHTTP(w, req)
 	if w.Code != http.StatusNotImplemented {
 		t.Fatalf("Expected status %d, got %d", http.StatusNotImplemented, w.Code)
+	}
+}
+
+func TestHandleGetKubernetesClusterImages(t *testing.T) {
+	store := &mockClusterInventoryStore{
+		mockStateStore: &mockStateStore{},
+		clusterImages: []statestore.ClusterImageSummary{
+			{Namespace: "default", ImageRef: "nginx:1.25", Tag: "1.25", Digest: "sha256:abc"},
+			{Namespace: "payments", ImageRef: "ghcr.io/org/app:2.0", Tag: "2.0", Digest: "sha256:def"},
+		},
+	}
+	server := webhookTestServer(t, store)
+
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/integration/kubernetes/clusters/prod-a/images", nil)
+	w := httptest.NewRecorder()
+
+	server.router.ServeHTTP(w, req)
+	if w.Code != http.StatusOK {
+		t.Fatalf("Expected status %d, got %d body=%s", http.StatusOK, w.Code, w.Body.String())
+	}
+	if store.cluster != "prod-a" {
+		t.Fatalf("Expected cluster prod-a, got %s", store.cluster)
+	}
+
+	var resp []statestore.ClusterImageSummary
+	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("failed to decode response JSON: %v", err)
+	}
+	if len(resp) != 2 {
+		t.Fatalf("Expected 2 cluster images, got %d", len(resp))
+	}
+	if resp[0].Namespace != "default" || resp[0].ImageRef != "nginx:1.25" {
+		t.Fatalf("Unexpected first cluster image row: %+v", resp[0])
 	}
 }

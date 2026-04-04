@@ -915,12 +915,73 @@ func (s *APIServer) handleListKubernetesClusters(w http.ResponseWriter, r *http.
 
 // handleKubernetesClustersRouter routes Kubernetes integration requests by method and path.
 func (s *APIServer) handleKubernetesClustersRouter(w http.ResponseWriter, r *http.Request) {
+	if r.Method == http.MethodGet {
+		s.handleGetKubernetesClusterImages(w, r)
+		return
+	}
+
 	if r.Method == http.MethodDelete {
+		if s.config.ReadOnly {
+			s.respondError(w, http.StatusForbidden, "API is in read-only mode")
+			return
+		}
 		s.handleDeleteKubernetesCluster(w, r)
 		return
 	}
 
 	s.respondError(w, http.StatusMethodNotAllowed, "Method not allowed")
+}
+
+// handleGetKubernetesClusterImages lists runtime inventory rows for one cluster.
+// @Summary List Kubernetes cluster images
+// @Description List image references currently reported for a specific Kubernetes cluster
+// @Tags Integration
+// @Produce json
+// @Param name path string true "Cluster name"
+// @Success 200 {array} statestore.ClusterImageSummary
+// @Failure 400 {object} map[string]string "Invalid cluster name"
+// @Failure 501 {object} map[string]string "Cluster inventory not configured"
+// @Failure 500 {object} map[string]string "Internal server error"
+// @Security BearerAuth
+// @Router /integration/kubernetes/clusters/{name}/images [get]
+func (s *APIServer) handleGetKubernetesClusterImages(w http.ResponseWriter, r *http.Request) {
+	if s.clusterInventory == nil {
+		s.respondError(w, http.StatusNotImplemented, "cluster inventory storage is not configured")
+		return
+	}
+
+	prefix := "/api/v1/integration/kubernetes/clusters/"
+	if !strings.HasPrefix(r.URL.Path, prefix) || !strings.HasSuffix(r.URL.Path, "/images") {
+		s.respondError(w, http.StatusBadRequest, "Invalid path")
+		return
+	}
+
+	encodedName := strings.TrimSuffix(strings.TrimPrefix(r.URL.Path, prefix), "/images")
+	encodedName = strings.TrimSuffix(encodedName, "/")
+	if encodedName == "" {
+		s.respondError(w, http.StatusBadRequest, "Cluster name is required")
+		return
+	}
+
+	name, err := url.PathUnescape(encodedName)
+	if err != nil {
+		s.respondError(w, http.StatusBadRequest, "Invalid cluster name")
+		return
+	}
+
+	name = strings.TrimSpace(name)
+	if name == "" {
+		s.respondError(w, http.StatusBadRequest, "Cluster name is required")
+		return
+	}
+
+	images, err := s.clusterInventory.ListClusterImages(r.Context(), name)
+	if err != nil {
+		s.respondError(w, http.StatusInternalServerError, fmt.Sprintf("Failed to list cluster images: %v", err))
+		return
+	}
+
+	s.respondJSON(w, http.StatusOK, images)
 }
 
 // handleDeleteKubernetesCluster removes a Kubernetes cluster integration entry.

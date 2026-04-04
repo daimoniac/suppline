@@ -36,7 +36,7 @@ logLevel: "info"
 image:
   repository: ghcr.io/daimoniac/clusterstate-agent
   tag: "latest"
-  pullPolicy: IfNotPresent
+  pullPolicy: Always
 
 imagePullSecrets: []
 nameOverride: ""

@@ -152,6 +152,9 @@ export class APIClient {
   async getKubernetesClusters() {
     return this.request<KubernetesClusterSummary[]>('/api/v1/integration/kubernetes/clusters');
   }
+  async getKubernetesClusterImages(name: string) {
+    return this.request<KubernetesClusterImageSummary[]>(`/api/v1/integration/kubernetes/clusters/${encodeURIComponent(name)}/images`);
+  }
   async deleteKubernetesCluster(name: string) {
     return this.request<void>(`/api/v1/integration/kubernetes/clusters/${encodeURIComponent(name)}`, { method: 'DELETE' });
   }
@@ -297,4 +300,11 @@ export interface KubernetesClusterSummary {
   Name: string;
   LastReported?: number;
   ImageCount: number;
+}
+
+export interface KubernetesClusterImageSummary {
+  Namespace: string;
+  ImageRef: string;
+  Tag: string;
+  Digest: string;
 }
