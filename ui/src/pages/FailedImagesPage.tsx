@@ -2,9 +2,9 @@ import { useEffect, useState, useCallback } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { useAuth } from '../lib/auth';
 import { useToast } from '../lib/toast';
-import { formatRelativeTime, formatDate, truncateDigest, copyToClipboard } from '../lib/utils';
+import { formatRelativeTime, formatDate, truncateDigest, copyToClipboard, daysUntilReleaseAge, formatRemainingDays } from '../lib/utils';
 import { useImageUsageFilter } from '../lib/imageUsageFilter';
-import { LoadingState, ErrorState, PageHeader, VulnCounts, SortHeader, Pagination } from '../components/ui';
+import { LoadingState, ErrorState, PageHeader, StatusBadge, VulnCounts, SortHeader, Pagination } from '../components/ui';
 import type { Scan } from '../lib/api';
 import { AlertTriangle, Copy } from 'lucide-react';
 
@@ -68,17 +68,22 @@ export default function FailedImagesPage() {
   if (loading && scans.length === 0) return <LoadingState />;
   if (error) return <ErrorState message={error} onRetry={load} />;
 
+  const pendingCount = scans.filter(s => s.PolicyStatus === 'pending').length;
+  const failedCount = scans.length - pendingCount;
+
   return (
     <div>
-      <PageHeader title="Failed Images" subtitle="Images that failed security policy evaluation" />
+      <PageHeader title="Policy Exceptions" subtitle="Images that are policy-failed or pending release maturity" />
 
       {totalScans > 0 && (
-        <div className="flex items-center gap-3 p-4 mb-4 rounded-xl border border-danger/30 bg-danger-bg">
+        <div className="flex items-center gap-3 p-4 mb-4 rounded-xl border border-warning/30 bg-warning-bg/20">
           <AlertTriangle className="w-5 h-5 text-danger flex-shrink-0" />
           <div>
-            <div className="text-sm font-medium text-danger">Policy Failures Detected</div>
-            <div className="text-xs text-text-secondary">
-              {totalScans} image{totalScans !== 1 ? 's' : ''} failed policy checks.
+            <div className="text-sm font-medium text-text-primary">Policy Exceptions Detected</div>
+            <div className="text-xs text-text-secondary flex items-center gap-3 flex-wrap">
+              <span>{totalScans} image{totalScans !== 1 ? 's' : ''} require attention.</span>
+              <span className="px-1.5 py-0.5 rounded text-[10px] font-semibold bg-danger-bg text-danger">{failedCount} Failed</span>
+              <span className="px-1.5 py-0.5 rounded text-[10px] font-semibold bg-warning-bg text-warning">{pendingCount} Pending Maturity</span>
             </div>
           </div>
         </div>
@@ -95,8 +100,8 @@ export default function FailedImagesPage() {
         {scans.length === 0 ? (
           <div className="p-12 text-center">
             <div className="text-3xl mb-2">✅</div>
-            <h3 className="font-semibold text-accent">No Failed Images</h3>
-            <p className="text-sm text-text-secondary">All images pass security policy</p>
+            <h3 className="font-semibold text-accent">No Policy Exceptions</h3>
+            <p className="text-sm text-text-secondary">All images are policy compliant</p>
           </div>
         ) : (
           <div className="overflow-x-auto"><table className="w-full"><thead><tr className="border-b border-border">
@@ -123,15 +128,23 @@ export default function FailedImagesPage() {
                 </td>
                 <td className="px-4 py-3 text-sm text-text-secondary" title={formatDate(s.ScannedAt ?? s.CreatedAt)}>{formatRelativeTime(s.ScannedAt ?? s.CreatedAt)}</td>
                 <td className="px-4 py-3">
-                  {s.RuntimeUsed && (
-                    <span className="px-1.5 py-0.5 rounded text-[10px] font-semibold bg-success-bg text-success" title={s.RuntimeClusters && s.RuntimeClusters.length > 0 ? `Running on: ${s.RuntimeClusters.join(', ')}` : 'In use'}>
-                      In use
-                    </span>
-                  )}
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <StatusBadge passed={s.PolicyPassed} status={s.PolicyStatus} label={s.PolicyStatus === 'pending' ? 'Pending Maturity' : undefined} />
+                    {s.RuntimeUsed && (
+                      <span className="px-1.5 py-0.5 rounded text-[10px] font-semibold bg-success-bg text-success" title={s.RuntimeClusters && s.RuntimeClusters.length > 0 ? `Running on: ${s.RuntimeClusters.join(', ')}` : 'In use'}>
+                        In use
+                      </span>
+                    )}
+                  </div>
                 </td>
                 <td className="px-4 py-3"><VulnCounts critical={s.CriticalVulnCount} high={s.HighVulnCount} medium={s.MediumVulnCount} low={s.LowVulnCount} /></td>
                 <td className="px-4 py-3">
                   <div className="flex flex-wrap gap-1">
+                    {s.PolicyStatus === 'pending' && (
+                      <span className="px-1.5 py-0.5 rounded text-[10px] font-semibold bg-warning-bg text-warning">
+                        {formatRemainingDays(daysUntilReleaseAge(s.ReleaseAgeSeconds, s.MinimumReleaseAgeSeconds))}
+                      </span>
+                    )}
                     {s.CriticalVulnCount > 0 && <span className="px-1.5 py-0.5 rounded text-[10px] font-semibold bg-severity-critical/20 text-severity-critical">{s.CriticalVulnCount} Critical</span>}
                     {s.HighVulnCount > 0 && <span className="px-1.5 py-0.5 rounded text-[10px] font-semibold bg-severity-high/20 text-severity-high">{s.HighVulnCount} High</span>}
                     {!s.VulnAttested && <span className="px-1.5 py-0.5 rounded text-[10px] font-semibold bg-warning-bg text-warning">No Attestation</span>}

@@ -150,20 +150,20 @@ type RepositoryDetail struct {
 
 // TagInfo represents a tag within a repository
 type TagInfo struct {
-	Name               string
-	Digest             string
-	LastScanTime       *int64 // Unix timestamp in seconds
-	NextScanTime       *int64 // Unix timestamp in seconds
-	VulnerabilityCount VulnerabilityCountSummary
-	PolicyPassed       bool
-	PolicyStatus       string
-	PolicyReason       string
-	ReleaseAgeSeconds  int64
+	Name                     string
+	Digest                   string
+	LastScanTime             *int64 // Unix timestamp in seconds
+	NextScanTime             *int64 // Unix timestamp in seconds
+	VulnerabilityCount       VulnerabilityCountSummary
+	PolicyPassed             bool
+	PolicyStatus             string
+	PolicyReason             string
+	ReleaseAgeSeconds        int64
 	MinimumReleaseAgeSeconds int64
-	ReleaseAgeSource   string
-	ScanError          string // Non-empty when the last scan failed with an error
-	RuntimeUsed        bool
-	RuntimeClusters    []string
+	ReleaseAgeSource         string
+	ScanError                string // Non-empty when the last scan failed with an error
+	RuntimeUsed              bool
+	RuntimeClusters          []string
 }
 
 // TagRef represents a repository+tag combination pointing to a digest
