@@ -1,21 +1,19 @@
 # clusterstate-agent
 
-Kubernetes CronJob that reports the running container image inventory of a cluster to the [suppline](https://github.com/daimoniac/suppline) supply-chain security gateway via its cluster-inventory webhook.
+Kubernetes Deployment that continuously reports container image inventory observations from a cluster to the [suppline](https://github.com/daimoniac/suppline) supply-chain security gateway via its cluster-inventory webhook.
 
 ## What it does
 
-On each run the agent:
+While running, the agent:
 
 1. Lists all pods across all namespaces using in-cluster RBAC (read-only `pods` permission).
 2. Collects image references from Deployments, StatefulSets, DaemonSets, Jobs, and CronJobs.
 3. Skips pods and workloads in excluded namespaces (configurable, defaults to `kube-system`, `kube-public`, `kube-node-lease`).
 4. Extracts image reference, tag, and runtime digest from pod status for regular, init, and ephemeral containers (digests only available for running pods).
 5. Deduplicates entries by `(namespace, image_ref, digest)`.
-6. POSTs the snapshot to `POST /api/v1/webhook/cluster-inventory` on the suppline API.
+6. POSTs periodic snapshots to `POST /api/v1/webhook/cluster-inventory` on the suppline API.
 
-This ensures suppline discovers images from scheduled jobs, pending deployments, and other workload definitions—even if no pods are currently running from those resources.
-
-For short-lived runtime workloads (for example CI-triggered jobs), the agent also supports a long-running informer mode that watches pod add/update objects plus pod lifecycle Events and periodically sends observed images.
+This ensures suppline discovers images from scheduled jobs, pending deployments, and other workload definitions—even if no pods are currently running from those resources—while also capturing short-lived runtime workloads via pod and Event informers.
 
 ## Prerequisites
 
@@ -51,8 +49,9 @@ The agent loads configuration from a `.env` file (if present) before checking en
 | `SUPPLINE_URL` | **yes** | — | Base URL of the suppline API, e.g. `http://suppline:8080` |
 | `CLUSTER_NAME` | **yes** | — | Cluster identifier reported in the inventory payload |
 | `SUPPLINE_API_KEY` | no | — | If set, sent as `Authorization: Bearer <key>` |
-| `AGENT_MODE` | no | `snapshot` | `snapshot` (one-shot inventory) or `watch` (informer-based continuous observation) |
-| `WATCH_FLUSH_INTERVAL` | no | `30s` | In `watch` mode, interval for batching and POSTing observed images |
+| `WATCH_FLUSH_INTERVAL` | no | `30s` | Interval for retrying failed inventory uploads (legacy name; maps to retry interval) |
+| `WATCH_RETRY_INTERVAL` | no | `30s` | Interval for retrying failed inventory uploads |
+| `WATCH_REFRESH_INTERVAL` | no | `24h` | Interval for full inventory refresh from pods/workloads |
 | `EXCLUDED_NAMESPACES` | no | `kube-system,kube-public,kube-node-lease` | Comma-separated namespaces to skip |
 | `LOG_LEVEL` | no | `info` | `debug` / `info` / `warn` / `error` |
 | `DEBUG_DUMP_PAYLOAD` | no | `false` | If true, logs the full JSON payload before POST |
@@ -62,10 +61,8 @@ The agent loads configuration from a `.env` file (if present) before checking en
 
 | Key | Default | Description |
 |---|---|---|
-| `mode` | `"snapshot"` | `snapshot` renders a CronJob; `watch` renders a Deployment with pod informer |
-| `schedule` | `"0 * * * *"` | CronJob schedule (hourly) |
-| `watchFlushInterval` | `"30s"` | In watch mode, how often buffered observations are uploaded |
-| `replicaCount` | `1` | In watch mode, Deployment replica count |
+| `watchFlushInterval` | `"30s"` | Interval for retrying failed inventory uploads (maps to `WATCH_FLUSH_INTERVAL`) |
+| `replicaCount` | `1` | Deployment replica count |
 | `clusterName` | `""` | **Required** |
 | `suppline.url` | `""` | **Required** |
 | `suppline.apiKey` | `""` | Optional API key; creates a Secret when set |
@@ -76,11 +73,9 @@ The agent loads configuration from a `.env` file (if present) before checking en
 | `image.pullPolicy` | `Always` | Container image pull policy |
 | `rbac.create` | `true` | Create ClusterRole + ClusterRoleBinding |
 | `serviceAccount.create` | `true` | Create ServiceAccount |
-| `failedJobsHistoryLimit` | `3` | Failed job history to retain |
-| `successfulJobsHistoryLimit` | `1` | Successful job history to retain |
 | `resources` | see values.yaml | CPU/memory requests and limits |
 
-In watch mode, the Deployment pod template includes the Helm release revision as an annotation, so each `helm upgrade` triggers a rolling restart of the clusterstate-agent pod.
+The Deployment pod template includes the Helm release revision as an annotation, so each `helm upgrade` triggers a rolling restart of the clusterstate-agent pod.
 
 ## RBAC
 
@@ -102,20 +97,17 @@ rules:
   verbs: ["list"]
 ```
 
-## Watch mode (observed runtime reality)
+## Runtime observation
 
-Use watch mode when you need to capture short-lived, ad-hoc workloads:
+The chart deploys a `Deployment`, and the agent streams pod and Event observations into periodic batched webhook uploads.
 
 ```bash
 helm upgrade --install clusterstate-agent ./chart \
   --namespace suppline \
-  --set mode=watch \
   --set clusterName=prod-eu-1 \
   --set suppline.url=http://suppline.suppline.svc.cluster.local:8080 \
   --set watchFlushInterval=15s
 ```
-
-In watch mode, the chart deploys a `Deployment` (not a CronJob), and the agent streams pod and Event observations into periodic batched webhook uploads.
 
 ## Building the image
 
@@ -170,27 +162,12 @@ run the agent:
 CLUSTER_NAME=$(kubectl config view --minify -o jsonpath='{.clusters[0].name}') go run .
 ```
 
-## Run one-off in-cluster (without waiting for schedule)
+## Restart in-cluster
 
-1. Install the chart (or ensure the CronJob exists):
-
-```bash
-helm install clusterstate-agent ./chart \
-  --namespace suppline \
-  --set clusterName=prod-eu-1 \
-  --set suppline.url=http://suppline.suppline.svc.cluster.local:8080
-```
-
-2. Start an immediate Job from the CronJob template:
+If you need an immediate full resync cycle, restart the Deployment:
 
 ```bash
-kubectl -n suppline create job \
-  --from=cronjob/clusterstate-agent-clusterstate-agent \
-  csa-debug-now
-```
-
-3. Watch logs:
-
-```bash
-kubectl -n suppline logs -f job/csa-debug-now
+kubectl -n suppline rollout restart deployment/clusterstate-agent-clusterstate-agent
+kubectl -n suppline rollout status deployment/clusterstate-agent-clusterstate-agent
+kubectl -n suppline logs -f deployment/clusterstate-agent-clusterstate-agent
 ```

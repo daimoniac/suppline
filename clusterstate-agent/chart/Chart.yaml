@@ -1,7 +1,7 @@
 apiVersion: v2
 name: clusterstate-agent
 description: >
-  Kubernetes CronJob that reports running container images to the suppline
+  Kubernetes Deployment that continuously reports observed container images to the suppline
   cluster-inventory webhook for supply-chain security tracking.
 type: application
 version: 0.1.0

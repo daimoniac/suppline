@@ -125,15 +125,10 @@ func main() {
 	apiKey := os.Getenv("SUPPLINE_API_KEY")
 	debugDumpPayload := isTrueEnv("DEBUG_DUMP_PAYLOAD")
 	excludedNS := parseExcludedNamespaces()
-	mode := strings.ToLower(strings.TrimSpace(os.Getenv("AGENT_MODE")))
-	if mode == "" {
-		mode = "snapshot"
-	}
 
 	logger.Info("starting cluster inventory collection",
 		"cluster", clusterName,
 		"suppline_url", supplineURL,
-		"mode", mode,
 		"excluded_namespaces", os.Getenv("EXCLUDED_NAMESPACES"),
 		"debug_dump_payload", debugDumpPayload,
 	)
@@ -148,42 +143,10 @@ func main() {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 
-	switch mode {
-	case "snapshot":
-		if err := runSnapshot(ctx, kubeClient, supplineURL, clusterName, apiKey, debugDumpPayload, excludedNS, logger); err != nil {
-			logger.Error("snapshot mode failed", "error", err)
-			os.Exit(1)
-		}
-	case "watch":
-		if err := runWatch(ctx, kubeClient, supplineURL, clusterName, apiKey, debugDumpPayload, excludedNS, logger); err != nil {
-			logger.Error("watch mode failed", "error", err)
-			os.Exit(1)
-		}
-	default:
-		logger.Error("invalid AGENT_MODE; expected snapshot or watch", "mode", mode)
+	if err := runWatch(ctx, kubeClient, supplineURL, clusterName, apiKey, debugDumpPayload, excludedNS, logger); err != nil {
+		logger.Error("watcher mode failed", "error", err)
 		os.Exit(1)
 	}
-}
-
-func runSnapshot(
-	ctx context.Context,
-	kubeClient *kubernetes.Clientset,
-	supplineURL, clusterName, apiKey string,
-	debugDumpPayload bool,
-	excludedNS map[string]bool,
-	logger *slog.Logger,
-) error {
-	images, err := collectClusterInventory(ctx, kubeClient, excludedNS, logger)
-	if err != nil {
-		return fmt.Errorf("collect inventory: %w", err)
-	}
-
-	if err := sendInventory(ctx, supplineURL, clusterName, apiKey, debugDumpPayload, images, logger); err != nil {
-		return fmt.Errorf("send inventory: %w", err)
-	}
-
-	logger.Info("inventory sent successfully", "cluster", clusterName, "images", len(images))
-	return nil
 }
 
 func runWatch(

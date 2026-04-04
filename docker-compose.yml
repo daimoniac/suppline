@@ -133,7 +133,6 @@ services:
     environment:
       - HELM_RELEASE_NAME=${HELM_RELEASE_NAME:-clusterstate-agent}
       - HELM_NAMESPACE=${HELM_NAMESPACE:-suppline}
-      - AGENT_MODE=${AGENT_MODE:-watch}
       - WATCH_FLUSH_INTERVAL=${WATCH_FLUSH_INTERVAL:-15s}
       - CLUSTERSTATE_AGENT_IMAGE_REPOSITORY=${CLUSTERSTATE_AGENT_IMAGE_REPOSITORY:-daimoniac/suppline-clusterstate-agent}
       - CLUSTERSTATE_AGENT_IMAGE_TAG=${CLUSTERSTATE_AGENT_IMAGE_TAG:-latest}

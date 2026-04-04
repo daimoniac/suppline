@@ -1,16 +1,7 @@
-# CronJob schedule (standard cron expression).
-# Default: every hour at minute 0.
-schedule: "0 * * * *"
-
-# Runtime mode:
-# - snapshot: one-shot collection (CronJob)
-# - watch: informer-based continuous collection (Deployment)
-mode: "snapshot"
-
-# Used in watch mode; how often buffered observations are POSTed.
+# How often buffered observations are POSTed.
 watchFlushInterval: "30s"
 
-# Used in watch mode Deployment.
+# Deployment replica count.
 replicaCount: 1
 
 # Name of this cluster — sent as the "cluster" field in the inventory payload.
@@ -50,10 +41,6 @@ serviceAccount:
 rbac:
   # Create ClusterRole + ClusterRoleBinding.
   create: true
-
-# CronJob history retention
-failedJobsHistoryLimit: 3
-successfulJobsHistoryLimit: 1
 
 resources:
   requests:

@@ -1,4 +1,3 @@
-{{- if eq .Values.mode "watch" -}}
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -47,8 +46,6 @@ spec:
           value: {{ .Values.excludedNamespaces | quote }}
         - name: LOG_LEVEL
           value: {{ .Values.logLevel | quote }}
-        - name: AGENT_MODE
-          value: "watch"
         - name: WATCH_FLUSH_INTERVAL
           value: {{ .Values.watchFlushInterval | quote }}
         {{- if .Values.suppline.apiKey }}
@@ -60,4 +57,3 @@ spec:
         {{- end }}
         resources:
           {{- toYaml .Values.resources | nindent 10 }}
-{{- end }}
