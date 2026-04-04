@@ -278,6 +278,101 @@ func TestGetRuntimeUsageForScan_NoMatch(t *testing.T) {
 	}
 }
 
+func TestListRepositories_RuntimeUsageFallbackRepositoryTag(t *testing.T) {
+	dbPath := "test_cluster_runtime_repo_list_fallback_" + t.Name() + ".db"
+	_ = os.Remove(dbPath)
+	defer os.Remove(dbPath)
+
+	store, err := NewSQLiteStore(dbPath)
+	if err != nil {
+		t.Fatalf("Failed to create SQLite store: %v", err)
+	}
+	defer store.Close()
+
+	ctx := context.Background()
+	record := &ScanRecord{
+		Repository:      "docker.io/library/nginx",
+		Tag:             "1.27",
+		Digest:          "sha256:repo-list-fallback-digest",
+		PolicyPassed:    true,
+		SBOMAttested:    true,
+		VulnAttested:    true,
+		SCAIAttested:    true,
+		Vulnerabilities: []types.VulnerabilityRecord{},
+		ToleratedCVEs:   []types.ToleratedCVE{},
+	}
+	if err := store.RecordScan(ctx, record); err != nil {
+		t.Fatalf("RecordScan failed: %v", err)
+	}
+
+	other := &ScanRecord{
+		Repository:      "docker.io/library/busybox",
+		Tag:             "latest",
+		Digest:          "sha256:repo-list-not-in-use",
+		PolicyPassed:    true,
+		SBOMAttested:    true,
+		VulnAttested:    true,
+		SCAIAttested:    true,
+		Vulnerabilities: []types.VulnerabilityRecord{},
+		ToleratedCVEs:   []types.ToleratedCVE{},
+	}
+	if err := store.RecordScan(ctx, other); err != nil {
+		t.Fatalf("RecordScan(other) failed: %v", err)
+	}
+
+	// Digest intentionally omitted to force repository+tag fallback matching.
+	if err := store.RecordClusterInventory(ctx, "cluster-d", []ClusterImageEntry{
+		{Namespace: "default", ImageRef: "nginx", Tag: "1.27", Digest: ""},
+	}, time.Now().UTC()); err != nil {
+		t.Fatalf("RecordClusterInventory failed: %v", err)
+	}
+
+	resp, err := store.ListRepositories(ctx, RepositoryFilter{Limit: 100, Offset: 0})
+	if err != nil {
+		t.Fatalf("ListRepositories failed: %v", err)
+	}
+
+	if len(resp.Repositories) != 2 {
+		t.Fatalf("Expected 2 repositories, got %d", len(resp.Repositories))
+	}
+
+	repoRuntime := map[string]bool{}
+	for _, repo := range resp.Repositories {
+		repoRuntime[repo.Name] = repo.RuntimeUsed
+	}
+
+	if !repoRuntime["docker.io/library/nginx"] {
+		t.Fatalf("Expected nginx RuntimeUsed=true via repository+tag fallback")
+	}
+	if repoRuntime["docker.io/library/busybox"] {
+		t.Fatalf("Expected busybox RuntimeUsed=false")
+	}
+
+	inUseOnly := true
+	inUseResp, err := store.ListRepositories(ctx, RepositoryFilter{InUse: &inUseOnly, Limit: 100, Offset: 0})
+	if err != nil {
+		t.Fatalf("ListRepositories(in_use=true) failed: %v", err)
+	}
+	if inUseResp.Total != 1 {
+		t.Fatalf("Expected total=1 for in_use=true, got %d", inUseResp.Total)
+	}
+	if len(inUseResp.Repositories) != 1 || inUseResp.Repositories[0].Name != "docker.io/library/nginx" {
+		t.Fatalf("Expected only nginx repository for in_use=true, got %+v", inUseResp.Repositories)
+	}
+
+	notInUseOnly := false
+	notInUseResp, err := store.ListRepositories(ctx, RepositoryFilter{InUse: &notInUseOnly, Limit: 100, Offset: 0})
+	if err != nil {
+		t.Fatalf("ListRepositories(in_use=false) failed: %v", err)
+	}
+	if notInUseResp.Total != 1 {
+		t.Fatalf("Expected total=1 for in_use=false, got %d", notInUseResp.Total)
+	}
+	if len(notInUseResp.Repositories) != 1 || notInUseResp.Repositories[0].Name != "docker.io/library/busybox" {
+		t.Fatalf("Expected only busybox repository for in_use=false, got %+v", notInUseResp.Repositories)
+	}
+}
+
 type clusterImageRow struct {
 	namespace string
 	imageRef  string

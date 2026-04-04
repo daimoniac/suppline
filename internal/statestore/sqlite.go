@@ -1920,14 +1920,6 @@ func (s *SQLiteStore) ListRepositories(ctx context.Context, filter RepositoryFil
 		countArgs = append(countArgs, time.Now().Unix()-int64(filter.MaxAge))
 	}
 
-	if filter.InUse != nil {
-		if *filter.InUse {
-			countQuery += " AND EXISTS (SELECT 1 FROM artifacts ai JOIN cluster_images ci ON ci.digest = ai.digest WHERE ai.repository_id = r.id)"
-		} else {
-			countQuery += " AND NOT EXISTS (SELECT 1 FROM artifacts ai JOIN cluster_images ci ON ci.digest = ai.digest WHERE ai.repository_id = r.id)"
-		}
-	}
-
 	var total int
 	err := s.db.QueryRowContext(ctx, countQuery, countArgs...).Scan(&total)
 	if err != nil {
@@ -1972,14 +1964,6 @@ func (s *SQLiteStore) ListRepositories(ctx context.Context, filter RepositoryFil
 		args = append(args, time.Now().Unix()-int64(filter.MaxAge))
 	}
 
-	if filter.InUse != nil {
-		if *filter.InUse {
-			query += " AND EXISTS (SELECT 1 FROM artifacts ai JOIN cluster_images ci ON ci.digest = ai.digest WHERE ai.repository_id = r.id)"
-		} else {
-			query += " AND NOT EXISTS (SELECT 1 FROM artifacts ai JOIN cluster_images ci ON ci.digest = ai.digest WHERE ai.repository_id = r.id)"
-		}
-	}
-
 	query += " GROUP BY r.id, r.name"
 
 	// Add sorting
@@ -2008,12 +1992,12 @@ func (s *SQLiteStore) ListRepositories(ctx context.Context, filter RepositoryFil
 		query += " ORDER BY r.name ASC"
 	}
 
-	if filter.Limit > 0 {
+	if filter.InUse == nil && filter.Limit > 0 {
 		query += " LIMIT ?"
 		args = append(args, filter.Limit)
 	}
 
-	if filter.Offset > 0 {
+	if filter.InUse == nil && filter.Offset > 0 {
 		query += " OFFSET ?"
 		args = append(args, filter.Offset)
 	}
@@ -2025,6 +2009,8 @@ func (s *SQLiteStore) ListRepositories(ctx context.Context, filter RepositoryFil
 	defer rows.Close()
 
 	var repositories []RepositoryInfo
+	repoNamesByID := make(map[int64]string)
+	repoIDs := make([]int64, 0)
 	for rows.Next() {
 		var repo RepositoryInfo
 		var repoID int64 // repository id (not needed in response, but must scan into something)
@@ -2078,16 +2064,131 @@ func (s *SQLiteStore) ListRepositories(ctx context.Context, filter RepositoryFil
 		repo.RuntimeUsed = runtimeUsed == 1
 
 		repositories = append(repositories, repo)
+		repoNamesByID[repoID] = repo.Name
+		repoIDs = append(repoIDs, repoID)
 	}
 
 	if err := rows.Err(); err != nil {
 		return nil, errors.NewTransientf("error iterating repository rows: %w", err)
 	}
 
+	runtimeUsedByRepoID, err := s.repositoryRuntimeUsageByID(ctx, repoNamesByID)
+	if err != nil {
+		return nil, err
+	}
+
+	for i, repoID := range repoIDs {
+		repositories[i].RuntimeUsed = runtimeUsedByRepoID[repoID]
+	}
+
+	if filter.InUse != nil {
+		filtered := make([]RepositoryInfo, 0, len(repositories))
+		for _, repo := range repositories {
+			if repo.RuntimeUsed == *filter.InUse {
+				filtered = append(filtered, repo)
+			}
+		}
+
+		total = len(filtered)
+
+		start := filter.Offset
+		if start < 0 {
+			start = 0
+		}
+		if start > len(filtered) {
+			start = len(filtered)
+		}
+
+		end := len(filtered)
+		if filter.Limit > 0 {
+			candidateEnd := start + filter.Limit
+			if candidateEnd < end {
+				end = candidateEnd
+			}
+		}
+
+		repositories = filtered[start:end]
+	}
+
 	return &RepositoriesListResponse{
 		Repositories: repositories,
 		Total:        total,
 	}, nil
+}
+
+func (s *SQLiteStore) repositoryRuntimeUsageByID(ctx context.Context, repoNamesByID map[int64]string) (map[int64]bool, error) {
+	runtimeUsedByRepoID := make(map[int64]bool, len(repoNamesByID))
+	if len(repoNamesByID) == 0 {
+		return runtimeUsedByRepoID, nil
+	}
+
+	repoIDs := make([]int64, 0, len(repoNamesByID))
+	for repoID := range repoNamesByID {
+		repoIDs = append(repoIDs, repoID)
+	}
+
+	placeholders := strings.TrimSuffix(strings.Repeat("?,", len(repoIDs)), ",")
+	query := `
+		SELECT a.repository_id, COALESCE(a.digest, ''), COALESCE(a.tag, '')
+		FROM artifacts a
+		WHERE a.repository_id IN (` + placeholders + `)
+	`
+
+	args := make([]interface{}, 0, len(repoIDs))
+	for _, repoID := range repoIDs {
+		args = append(args, repoID)
+	}
+
+	rows, err := s.db.QueryContext(ctx, query, args...)
+	if err != nil {
+		return nil, errors.NewTransientf("failed to query repository artifacts for runtime usage: %w", err)
+	}
+	defer rows.Close()
+
+	type repoArtifact struct {
+		repositoryID int64
+		digest       string
+	}
+
+	lookups := make([]RuntimeLookupInput, 0)
+	repoArtifacts := make([]repoArtifact, 0)
+	for rows.Next() {
+		var repositoryID int64
+		var digest, tag string
+		if err := rows.Scan(&repositoryID, &digest, &tag); err != nil {
+			return nil, errors.NewTransientf("failed to scan repository artifact runtime lookup: %w", err)
+		}
+
+		repositoryName, ok := repoNamesByID[repositoryID]
+		if !ok {
+			continue
+		}
+
+		lookups = append(lookups, RuntimeLookupInput{
+			Digest:     digest,
+			Repository: repositoryName,
+			Tag:        tag,
+		})
+		repoArtifacts = append(repoArtifacts, repoArtifact{repositoryID: repositoryID, digest: digest})
+	}
+
+	if err := rows.Err(); err != nil {
+		return nil, errors.NewTransientf("error iterating repository artifacts for runtime usage: %w", err)
+	}
+
+	usageByDigest, err := s.GetRuntimeUsageForScans(ctx, lookups)
+	if err != nil {
+		return nil, err
+	}
+
+	for _, artifact := range repoArtifacts {
+		usage, ok := usageByDigest[artifact.digest]
+		if ok && usage.RuntimeUsed {
+			runtimeUsedByRepoID[artifact.repositoryID] = true
+		}
+	}
+
+	return runtimeUsedByRepoID, nil
 }
 
 // GetRepository returns a repository with all its tags
