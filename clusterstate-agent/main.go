@@ -11,6 +11,8 @@ import (
 	"strings"
 	"time"
 
+	"github.com/joho/godotenv"
+
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/kubernetes"
@@ -32,6 +34,8 @@ type clusterInventoryRequest struct {
 }
 
 func main() {
+	_ = godotenv.Load()
+
 	logger := buildLogger()
 
 	// --- Required configuration ---

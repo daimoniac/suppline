@@ -39,6 +39,8 @@ helm install clusterstate-agent ./chart \
 
 ## Environment variables
 
+The agent loads configuration from a `.env` file (if present) before checking environment variables. This allows easy local development without exporting shell variables.
+
 | Variable | Required | Default | Description |
 |---|---|---|---|
 | `SUPPLINE_URL` | **yes** | — | Base URL of the suppline API, e.g. `http://suppline:8080` |
@@ -86,47 +88,20 @@ docker build -t clusterstate-agent:dev .
 
 No CGO. The binary is statically linked and runs in a minimal `alpine:3.21` image.
 
-## Local development
-
-```bash
-export SUPPLINE_URL=http://localhost:8080
-export CLUSTER_NAME=local-dev
-export KUBECONFIG=~/.kube/config   # uses your local kubeconfig
-export DEBUG_DUMP_PAYLOAD=true
-
-cd clusterstate-agent
-go run .
-```
-
-## Debug: local run against a real cluster API
+## Local development against a real cluster API
 
 Use this when you want real pod inventory data from an existing cluster, but run the agent binary locally.
 
-1. Select your kubeconfig context:
+Create a `.env` file in the `clusterstate-agent` directory:
 
 ```bash
-export KUBECONFIG=$HOME/.kube/config
-kubectl config use-context <your-context>
+cp env.example .env
 ```
 
-2. Make suppline reachable from your machine (example via port-forward):
+run the agent:
 
 ```bash
-kubectl -n suppline port-forward svc/suppline 8080:8080
-```
-
-3. Run the agent locally:
-
-```bash
-cd clusterstate-agent
-export SUPPLINE_URL=http://127.0.0.1:8080
-export CLUSTER_NAME=prod-eu-1
-export EXCLUDED_NAMESPACES=kube-system,kube-public,kube-node-lease
-export LOG_LEVEL=debug
-export DEBUG_DUMP_PAYLOAD=true
-# Optional if your webhook is protected:
-export SUPPLINE_API_KEY=<api-key>
-go run .
+CLUSTER_NAME=$(kubectl config view --minify -o jsonpath='{.clusters[0].name}') go run .
 ```
 
 ## Run one-off in-cluster (without waiting for schedule)
