@@ -142,7 +142,7 @@ func TestCollectEventObservationPullingImage(t *testing.T) {
 		Message: "Pulling image \"ghcr.io/example/runner:1.2.3\"",
 	}
 
-	if changed := collectEventObservation(event, excluded, buffer); !changed {
+	if changed := collectEventObservation(event, excluded, buffer, time.Time{}, testLogger()); !changed {
 		t.Fatalf("expected event observation to report change")
 	}
 
@@ -167,7 +167,7 @@ func TestCollectEventObservationIgnoresNonPodAndUnknownReason(t *testing.T) {
 		Reason:  "Pulling",
 		Message: "Pulling image \"alpine:3.20\"",
 	}
-	if changed := collectEventObservation(nonPod, excluded, buffer); changed {
+	if changed := collectEventObservation(nonPod, excluded, buffer, time.Time{}, testLogger()); changed {
 		t.Fatalf("expected non-pod event to not change buffer")
 	}
 
@@ -179,11 +179,49 @@ func TestCollectEventObservationIgnoresNonPodAndUnknownReason(t *testing.T) {
 		Reason:  "Scheduled",
 		Message: "Pulling image \"alpine:3.20\"",
 	}
-	if changed := collectEventObservation(unknownReason, excluded, buffer); changed {
+	if changed := collectEventObservation(unknownReason, excluded, buffer, time.Time{}, testLogger()); changed {
 		t.Fatalf("expected unknown reason event to not change buffer")
 	}
 
 	if got := buffer.Snapshot(); len(got) != 0 {
 		t.Fatalf("expected no observations, got %d", len(got))
+	}
+}
+
+func TestCollectEventObservationIgnoresStaleEvents(t *testing.T) {
+	buffer := newInventoryBuffer()
+	excluded := map[string]bool{}
+	startedAt := time.Date(2026, time.January, 2, 15, 0, 0, 0, time.UTC)
+
+	stale := &corev1.Event{
+		ObjectMeta: metav1.ObjectMeta{Namespace: "ci"},
+		InvolvedObject: corev1.ObjectReference{
+			Kind: "Pod",
+		},
+		Reason:        "Pulling",
+		Message:       "Pulling image \"alpine:3.20\"",
+		LastTimestamp: metav1.NewTime(startedAt.Add(-1 * time.Minute)),
+	}
+
+	if changed := collectEventObservation(stale, excluded, buffer, startedAt, testLogger()); changed {
+		t.Fatalf("expected stale event to not change buffer")
+	}
+
+	fresh := &corev1.Event{
+		ObjectMeta: metav1.ObjectMeta{Namespace: "ci"},
+		InvolvedObject: corev1.ObjectReference{
+			Kind: "Pod",
+		},
+		Reason:        "Pulling",
+		Message:       "Pulling image \"alpine:3.20\"",
+		LastTimestamp: metav1.NewTime(startedAt.Add(1 * time.Minute)),
+	}
+
+	if changed := collectEventObservation(fresh, excluded, buffer, startedAt, testLogger()); !changed {
+		t.Fatalf("expected fresh event to change buffer")
+	}
+
+	if got := buffer.Snapshot(); len(got) != 1 {
+		t.Fatalf("expected one observed image from fresh event, got %d", len(got))
 	}
 }

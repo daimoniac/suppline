@@ -208,6 +208,7 @@ func runWatch(
 	if _, err := refreshInventoryBuffer(ctx, kubeClient, excludedNS, buffer, logger); err != nil {
 		return fmt.Errorf("initial inventory refresh: %w", err)
 	}
+	watchStartedAt := time.Now().UTC()
 
 	factory := informers.NewSharedInformerFactory(kubeClient, 0)
 	podInformer := factory.Core().V1().Pods().Informer()
@@ -248,7 +249,7 @@ func runWatch(
 			if !ok {
 				return
 			}
-			if collectEventObservation(event, excludedNS, buffer) {
+			if collectEventObservation(event, excludedNS, buffer, watchStartedAt, logger) {
 				signalSend()
 			}
 		},
@@ -257,7 +258,7 @@ func runWatch(
 			if !ok {
 				return
 			}
-			if collectEventObservation(event, excludedNS, buffer) {
+			if collectEventObservation(event, excludedNS, buffer, watchStartedAt, logger) {
 				signalSend()
 			}
 		},
@@ -374,8 +375,21 @@ func collectPodObservation(pod *corev1.Pod, excludedNS map[string]bool, buffer *
 	return changed
 }
 
-func collectEventObservation(event *corev1.Event, excludedNS map[string]bool, buffer *inventoryBuffer) bool {
+func collectEventObservation(event *corev1.Event, excludedNS map[string]bool, buffer *inventoryBuffer, minObservedAt time.Time, logger *slog.Logger) bool {
 	if event == nil || excludedNS[event.Namespace] {
+		return false
+	}
+	if !eventObservedAtOrAfter(event, minObservedAt) {
+		if logger != nil {
+			observedAt := eventObservationTime(event)
+			logger.Debug("ignoring stale event observation",
+				"namespace", event.Namespace,
+				"name", event.Name,
+				"reason", event.Reason,
+				"observed_at", observedAt,
+				"watch_started_at", minObservedAt,
+			)
+		}
 		return false
 	}
 	if !shouldObserveEvent(event) {
@@ -389,6 +403,43 @@ func collectEventObservation(event *corev1.Event, excludedNS map[string]bool, bu
 
 	imageRef, tag, digest := parseImageRef(image, "")
 	return buffer.Add(clusterImageInput{Namespace: event.Namespace, ImageRef: imageRef, Tag: tag, Digest: digest})
+}
+
+func eventObservedAtOrAfter(event *corev1.Event, minObservedAt time.Time) bool {
+	if event == nil || minObservedAt.IsZero() {
+		return true
+	}
+
+	observedAt := eventObservationTime(event)
+	if observedAt.IsZero() {
+		return false
+	}
+
+	return !observedAt.Before(minObservedAt)
+}
+
+func eventObservationTime(event *corev1.Event) time.Time {
+	if event == nil {
+		return time.Time{}
+	}
+
+	if !event.EventTime.IsZero() {
+		return event.EventTime.Time.UTC()
+	}
+	if event.Series != nil && !event.Series.LastObservedTime.IsZero() {
+		return event.Series.LastObservedTime.Time.UTC()
+	}
+	if !event.LastTimestamp.IsZero() {
+		return event.LastTimestamp.Time.UTC()
+	}
+	if !event.FirstTimestamp.IsZero() {
+		return event.FirstTimestamp.Time.UTC()
+	}
+	if !event.CreationTimestamp.IsZero() {
+		return event.CreationTimestamp.Time.UTC()
+	}
+
+	return time.Time{}
 }
 
 func shouldObserveEvent(event *corev1.Event) bool {
