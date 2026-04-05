@@ -2,9 +2,8 @@ import { useEffect, useState, useCallback } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
 import { useAuth } from '../lib/auth';
 import { formatDate, isPast, isWithinDays, daysUntil } from '../lib/utils';
-import { LoadingState, ErrorState, PageHeader, SortHeader, Pagination } from '../components/ui';
+import { LoadingState, ErrorState, PageHeader, SortHeader, Pagination, PageFiltersBar, FilterActionButton } from '../components/ui';
 import type { Toleration } from '../lib/api';
-import { PageFiltersBar, FilterActionButton } from '../components/PageFiltersBar';
 
 export default function TolerationsPage() {
   const { apiClient } = useAuth();

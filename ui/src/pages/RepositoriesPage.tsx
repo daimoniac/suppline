@@ -4,12 +4,10 @@ import { useAuth } from '../lib/auth';
 import { useToast } from '../lib/toast';
 import { formatRelativeTime } from '../lib/utils';
 import { useImageUsageFilter } from '../lib/imageUsageFilter';
-import { LoadingState, ErrorState, PageHeader, StatusBadge, VulnCounts, SortHeader, Pagination, ConfirmModal } from '../components/ui';
+import { LoadingState, ErrorState, PageHeader, StatusBadge, VulnCounts, SortHeader, Pagination, ConfirmModal, RuntimeUsageBadge, PageFiltersBar, FilterActionButton } from '../components/ui';
 import type { Repository } from '../lib/api';
 import { RefreshCw } from 'lucide-react';
 import { useSortablePaginationState } from '../lib/useSortablePaginationState';
-import { RuntimeUsageBadge } from '../components/RuntimeUsageBadge';
-import { PageFiltersBar, FilterActionButton } from '../components/PageFiltersBar';
 
 export default function RepositoriesPage() {
   const { apiClient } = useAuth();

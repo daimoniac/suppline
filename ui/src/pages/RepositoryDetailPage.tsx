@@ -4,12 +4,10 @@ import { useAuth } from '../lib/auth';
 import { useToast } from '../lib/toast';
 import { formatRelativeTime, daysUntilReleaseAge, formatRemainingDays } from '../lib/utils';
 import { useImageUsageFilter } from '../lib/imageUsageFilter';
-import { LoadingState, ErrorState, StatusBadge, VulnCounts, SortHeader, Pagination, ConfirmModal } from '../components/ui';
+import { LoadingState, ErrorState, StatusBadge, VulnCounts, SortHeader, Pagination, ConfirmModal, RuntimeUsageBadge, PageFiltersBar, FilterActionButton } from '../components/ui';
 import type { RepositoryTag } from '../lib/api';
 import { ArrowLeft, RefreshCw } from 'lucide-react';
 import { useSortablePaginationState } from '../lib/useSortablePaginationState';
-import { RuntimeUsageBadge } from '../components/RuntimeUsageBadge';
-import { PageFiltersBar, FilterActionButton } from '../components/PageFiltersBar';
 
 export default function RepositoryDetailPage() {
   const { name } = useParams<{ name: string }>();

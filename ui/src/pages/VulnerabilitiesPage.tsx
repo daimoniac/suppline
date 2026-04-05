@@ -2,11 +2,10 @@ import { useEffect, useState, useCallback } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
 import { useAuth } from '../lib/auth';
 import { formatRelativeTime, truncateDigest } from '../lib/utils';
-import { LoadingState, ErrorState, PageHeader, SeverityBadge, Pagination } from '../components/ui';
+import { LoadingState, ErrorState, PageHeader, SeverityBadge, Pagination, PageFiltersBar, FilterActionButton } from '../components/ui';
 import type { VulnerabilityGroup } from '../lib/api';
 import { ChevronDown, ChevronRight, ExternalLink, ArrowUpDown, ArrowUp, ArrowDown } from 'lucide-react';
 import { useSortablePaginationState } from '../lib/useSortablePaginationState';
-import { PageFiltersBar, FilterActionButton } from '../components/PageFiltersBar';
 
 export default function VulnerabilitiesPage() {
   const { apiClient } = useAuth();

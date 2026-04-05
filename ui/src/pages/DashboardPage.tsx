@@ -3,13 +3,9 @@ import { Link } from 'react-router-dom';
 import { useAuth } from '../lib/auth';
 import { formatRelativeTime } from '../lib/utils';
 import { useImageUsageFilter } from '../lib/imageUsageFilter';
-import { LoadingState, ErrorState, StatusBadge, SeverityBadge, VulnCounts } from '../components/ui';
-import { DigestLinkWithCopy } from '../components/DigestLinkWithCopy';
+import { LoadingState, ErrorState, StatusBadge, SeverityBadge, VulnCounts, DigestLinkWithCopy } from '../components/ui';
 import type { Scan, Toleration } from '../lib/api';
-import {
-  ShieldAlert, FileWarning, Clock, CheckSquare,
-  ExternalLink,
-} from 'lucide-react';
+import { ShieldAlert, FileWarning, Clock, CheckSquare, ExternalLink } from 'lucide-react';
 
 interface DashboardData {
   recentScans: Scan[];
@@ -54,19 +50,13 @@ export default function DashboardPage() {
 
       const failedScans = nonPassedScans.filter(s => s.PolicyStatus !== 'pending');
       const pendingScans = nonPassedScans.filter(s => s.PolicyStatus === 'pending');
-      const policyByRepo: Record<string, { failed: number; pending: number }> = {};
-
-      nonPassedScans.forEach((scan) => {
+      const policyByRepo = nonPassedScans.reduce<Record<string, { failed: number; pending: number }>>((acc, scan) => {
         const repo = scan.Repository || 'unknown';
-        if (!policyByRepo[repo]) {
-          policyByRepo[repo] = { failed: 0, pending: 0 };
-        }
-        if (scan.PolicyStatus === 'pending') {
-          policyByRepo[repo].pending += 1;
-        } else {
-          policyByRepo[repo].failed += 1;
-        }
-      });
+        acc[repo] ||= { failed: 0, pending: 0 };
+        if (scan.PolicyStatus === 'pending') acc[repo].pending += 1;
+        else acc[repo].failed += 1;
+        return acc;
+      }, {});
 
       setData({
         recentScans,
@@ -100,16 +90,17 @@ export default function DashboardPage() {
 
   const totalVulns = data.vulnBreakdown.critical + data.vulnBreakdown.high + data.vulnBreakdown.medium + data.vulnBreakdown.low;
   const attentionCount = data.expiredTolerations.length + data.expiringTolerations.length + data.inactiveTolerations.length;
+  const topPolicyRepos = Object.entries(data.policyByRepo)
+    .sort((a, b) => (b[1].failed + b[1].pending) - (a[1].failed + a[1].pending))
+    .slice(0, 5);
 
   return (
     <div className="space-y-6">
-      {/* Header */}
       <div>
         <h1 className="text-2xl font-bold">Security Dashboard</h1>
         <p className="text-sm text-text-secondary mt-1">Container image security overview</p>
       </div>
 
-      {/* Summary Cards */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
         <SummaryCard
           icon={<ShieldAlert className="w-5 h-5" />}
@@ -124,7 +115,6 @@ export default function DashboardPage() {
         <SummaryCard icon={<CheckSquare className="w-5 h-5" />} value={data.inactiveTolerations.length} label="Inactive Tolerations" variant="muted" />
       </div>
 
-      {/* Tolerations Attention */}
       {attentionCount > 0 && (
         <div className="bg-bg-primary border border-border rounded-xl p-5">
           <h2 className="text-sm font-semibold mb-3">Tolerations Requiring Attention</h2>
@@ -147,7 +137,6 @@ export default function DashboardPage() {
         </div>
       )}
 
-      {/* Vulnerability Breakdown */}
       {totalVulns > 0 && (
         <div className="bg-bg-primary border border-border rounded-xl p-5">
           <h2 className="text-sm font-semibold mb-4">Vulnerability Breakdown</h2>
@@ -169,7 +158,6 @@ export default function DashboardPage() {
         </div>
       )}
 
-      {/* Failed/Pending by Repository */}
       <div className="bg-bg-primary border border-border rounded-xl p-5">
         <h2 className="text-sm font-semibold mb-4">Policy Compliance Status</h2>
         {Object.keys(data.policyByRepo).length === 0 ? (
@@ -180,10 +168,7 @@ export default function DashboardPage() {
           </div>
         ) : (
           <div className="space-y-2">
-            {Object.entries(data.policyByRepo)
-              .sort((a, b) => (b[1].failed + b[1].pending) - (a[1].failed + a[1].pending))
-              .slice(0, 5)
-              .map(([repo, counts]) => {
+            {topPolicyRepos.map(([repo, counts]) => {
               const max = Math.max(...Object.values(data.policyByRepo).map(v => v.failed + v.pending));
               const total = counts.failed + counts.pending;
               const failedWidth = total > 0 ? (counts.failed / total) * 100 : 0;
@@ -207,7 +192,6 @@ export default function DashboardPage() {
         )}
       </div>
 
-      {/* Recent Scans */}
       <div className="bg-bg-primary border border-border rounded-xl overflow-hidden">
         <div className="px-5 py-4 border-b border-border">
           <h2 className="text-sm font-semibold">Recent Scans</h2>
@@ -261,28 +245,11 @@ function SummaryCard({ icon, value, label, detail, variant, to }: {
   variant: 'danger' | 'warning' | 'info' | 'muted';
   to?: string;
 }) {
-  const colors = {
-    danger: 'border-danger/20 hover:border-danger/40',
-    warning: 'border-warning/20 hover:border-warning/40',
-    info: 'border-info/20 hover:border-info/40',
-    muted: 'border-border hover:border-border-hover',
-  };
+  const colors = { danger: 'border-danger/20 hover:border-danger/40', warning: 'border-warning/20 hover:border-warning/40', info: 'border-info/20 hover:border-info/40', muted: 'border-border hover:border-border-hover' };
   const iconColors = { danger: 'text-danger', warning: 'text-warning', info: 'text-info', muted: 'text-text-secondary' };
   const className = `bg-bg-primary border ${colors[variant]} rounded-xl p-4 transition-colors ${to ? 'cursor-pointer' : ''}`;
-  const content = (
-    <>
-      <div className={`${iconColors[variant]} mb-3`}>{icon}</div>
-      <div className="text-2xl font-bold">{value.toLocaleString()}</div>
-      <div className="text-xs text-text-secondary mt-0.5">{label}</div>
-      {detail && <div className="text-xs text-text-muted mt-1">{detail}</div>}
-    </>
-  );
-
-  if (to) {
-    return <Link to={to} className={className}>{content}</Link>;
-  }
-
-  return <div className={className}>{content}</div>;
+  const content = <><div className={`${iconColors[variant]} mb-3`}>{icon}</div><div className="text-2xl font-bold">{value.toLocaleString()}</div><div className="text-xs text-text-secondary mt-0.5">{label}</div>{detail && <div className="text-xs text-text-muted mt-1">{detail}</div>}</>;
+  return to ? <Link to={to} className={className}>{content}</Link> : <div className={className}>{content}</div>;
 }
 
 function TolerationAttentionItem({ toleration, status, to }: {
@@ -290,11 +257,7 @@ function TolerationAttentionItem({ toleration, status, to }: {
 }) {
   const repos = toleration.Repositories || [];
   const repoDisplay = repos.length === 0 ? 'No repositories' : repos.length <= 3 ? repos.map(r => r.Repository).join(', ') : 'multiple repos';
-  const statusConfig = {
-    expired: { badge: 'bg-danger-bg text-danger', label: '⚠️ EXPIRED' },
-    expiring: { badge: 'bg-warning-bg text-warning', label: '⏰ Expiring' },
-    inactive: { badge: 'bg-bg-tertiary text-text-secondary', label: '📋 Inactive' },
-  };
+  const statusConfig = { expired: { badge: 'bg-danger-bg text-danger', label: '⚠️ EXPIRED' }, expiring: { badge: 'bg-warning-bg text-warning', label: '⏰ Expiring' }, inactive: { badge: 'bg-bg-tertiary text-text-secondary', label: '📋 Inactive' } };
 
   return (
     <Link to={to} className="flex items-start gap-3 p-3 rounded-lg bg-bg-secondary hover:bg-bg-tertiary transition-colors">

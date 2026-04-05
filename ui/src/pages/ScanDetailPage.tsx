@@ -3,11 +3,9 @@ import { Link, useParams } from 'react-router-dom';
 import { useAuth } from '../lib/auth';
 import { useToast } from '../lib/toast';
 import { formatRelativeTime, formatDate, daysUntilReleaseAge, formatRemainingDays } from '../lib/utils';
-import { LoadingState, ErrorState, StatusBadge, SeverityBadge } from '../components/ui';
+import { LoadingState, ErrorState, StatusBadge, SeverityBadge, DigestLinkWithCopy, RuntimeUsageBadge } from '../components/ui';
 import type { ScanDetail, Vulnerability } from '../lib/api';
 import { ArrowLeft, RefreshCw, CheckCircle, XCircle, ChevronDown, ChevronRight, ExternalLink } from 'lucide-react';
-import { DigestLinkWithCopy } from '../components/DigestLinkWithCopy';
-import { RuntimeUsageBadge } from '../components/RuntimeUsageBadge';
 
 export default function ScanDetailPage() {
   const { digest, name } = useParams<{ digest: string; name?: string }>();

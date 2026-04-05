@@ -3,13 +3,10 @@ import { Link, useSearchParams } from 'react-router-dom';
 import { useAuth } from '../lib/auth';
 import { formatRelativeTime, formatDate, daysUntilReleaseAge, formatRemainingDays } from '../lib/utils';
 import { useImageUsageFilter } from '../lib/imageUsageFilter';
-import { LoadingState, ErrorState, PageHeader, StatusBadge, VulnCounts, SortHeader, Pagination } from '../components/ui';
+import { LoadingState, ErrorState, PageHeader, StatusBadge, VulnCounts, SortHeader, Pagination, DigestLinkWithCopy, RuntimeUsageBadge, PageFiltersBar, FilterActionButton } from '../components/ui';
 import type { Scan } from '../lib/api';
 import { AlertTriangle } from 'lucide-react';
 import { useSortablePaginationState } from '../lib/useSortablePaginationState';
-import { DigestLinkWithCopy } from '../components/DigestLinkWithCopy';
-import { RuntimeUsageBadge } from '../components/RuntimeUsageBadge';
-import { PageFiltersBar, FilterActionButton } from '../components/PageFiltersBar';
 
 export default function FailedImagesPage() {
   const { apiClient } = useAuth();
