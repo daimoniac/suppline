@@ -7,6 +7,9 @@ import { useImageUsageFilter } from '../lib/imageUsageFilter';
 import { LoadingState, ErrorState, PageHeader, StatusBadge, VulnCounts, SortHeader, Pagination, ConfirmModal } from '../components/ui';
 import type { Repository } from '../lib/api';
 import { RefreshCw } from 'lucide-react';
+import { useSortablePaginationState } from '../lib/useSortablePaginationState';
+import { RuntimeUsageBadge } from '../components/RuntimeUsageBadge';
+import { PageFiltersBar, FilterActionButton } from '../components/PageFiltersBar';
 
 export default function RepositoriesPage() {
   const { apiClient } = useAuth();
@@ -19,11 +22,28 @@ export default function RepositoriesPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [search, setSearch] = useState(searchParams.get('search') || '');
-  const [sortCol, setSortCol] = useState(searchParams.get('sort') || 'lastScanTime');
-  const [sortDir, setSortDir] = useState<'asc' | 'desc'>((searchParams.get('order') as 'asc' | 'desc') || 'desc');
-  const [page, setPage] = useState(Number(searchParams.get('page')) || 1);
   const pageSize = 10;
   const [confirmRescan, setConfirmRescan] = useState('');
+
+  const initialSortDir = (searchParams.get('order') as 'asc' | 'desc') || 'desc';
+  const initialPage = Number(searchParams.get('page')) || 1;
+
+  const updateURL = (s: string, d: string, q: string, p: number) => {
+    const params: Record<string, string> = {};
+    if (q) params.search = q;
+    if (p > 1) params.page = String(p);
+    if (s !== 'lastScanTime' || d !== 'desc') { params.sort = s; params.order = d; }
+    setSearchParams(params, { replace: true });
+  };
+
+  const { sortColumn: sortCol, sortDirection: sortDir, toggleSort, page, setPage, totalPages } = useSortablePaginationState({
+    initialSortColumn: searchParams.get('sort') || 'lastScanTime',
+    initialSortDirection: initialSortDir,
+    resolveNewColumnDirection: () => 'asc',
+    initialPage,
+    pageSize,
+    totalItems: total,
+  });
 
   const sortMap: Record<string, string> = {
     name: sortDir === 'asc' ? 'name_asc' : 'name_desc',
@@ -62,17 +82,8 @@ export default function RepositoriesPage() {
 
   const handleSort = (col: string) => {
     const nextDir = col === sortCol ? (sortDir === 'asc' ? 'desc' : 'asc') : 'asc';
-    if (col === sortCol) setSortDir(d => d === 'asc' ? 'desc' : 'asc');
-    else { setSortCol(col); setSortDir('asc'); }
+    toggleSort(col);
     updateURL(col, nextDir, search, page);
-  };
-
-  const updateURL = (s: string, d: string, q: string, p: number) => {
-    const params: Record<string, string> = {};
-    if (q) params.search = q;
-    if (p > 1) params.page = String(p);
-    if (s !== 'lastScanTime' || d !== 'desc') { params.sort = s; params.order = d; }
-    setSearchParams(params, { replace: true });
   };
 
   const handleRescan = async (name: string) => {
@@ -85,8 +96,6 @@ export default function RepositoriesPage() {
       toast(e instanceof Error ? e.message : 'Failed', 'error');
     }
   };
-
-  const totalPages = Math.ceil(total / pageSize);
 
   const applySearch = (nextSearch: string) => {
     setPage(1);
@@ -109,12 +118,12 @@ export default function RepositoriesPage() {
     <div>
       <PageHeader title="Repositories" subtitle="View all repositories and their scanning status" />
       {/* Filters */}
-      <div className="flex gap-3 mb-4">
+      <PageFiltersBar>
         <input value={search} onChange={e => handleSearchInputChange(e.target.value)} onKeyDown={e => e.key === 'Enter' && applySearch(search)}
           placeholder="Filter by name…" className="flex-1 max-w-xs px-3 py-2 bg-bg-secondary border border-border rounded-lg text-sm text-text-primary placeholder:text-text-muted focus:outline-none focus:border-accent/50 transition-colors" />
-        <button onClick={() => applySearch(search)} className="px-4 py-2 bg-accent text-bg-primary rounded-lg text-sm font-medium hover:bg-accent-hover transition-colors">Filter</button>
-        <button onClick={() => { setSearch(''); applySearch(''); }} className="px-4 py-2 border border-border rounded-lg text-sm text-text-secondary hover:bg-bg-tertiary transition-colors">Clear</button>
-      </div>
+        <FilterActionButton onClick={() => applySearch(search)}>Filter</FilterActionButton>
+        <FilterActionButton variant="secondary" onClick={() => { setSearch(''); applySearch(''); }}>Clear</FilterActionButton>
+      </PageFiltersBar>
       {/* Table */}
       <div className="bg-bg-primary border border-border rounded-xl overflow-hidden">
         {repos.length === 0 ? (
@@ -140,7 +149,7 @@ export default function RepositoriesPage() {
                     <td className="px-4 py-3">
                       <div className="flex items-center gap-2 flex-wrap">
                         <StatusBadge passed={r.PolicyPassed} status={r.PolicyStatus} />
-                        {r.RuntimeUsed && <span className="px-1.5 py-0.5 rounded text-[10px] font-semibold bg-success-bg text-success">In use</span>}
+                        <RuntimeUsageBadge inUse={!!r.RuntimeUsed} />
                       </div>
                     </td>
                     <td className="px-4 py-3">

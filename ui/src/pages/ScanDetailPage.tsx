@@ -2,10 +2,12 @@ import { useEffect, useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
 import { useAuth } from '../lib/auth';
 import { useToast } from '../lib/toast';
-import { formatRelativeTime, formatDate, truncateDigest, copyToClipboard, daysUntilReleaseAge, formatRemainingDays } from '../lib/utils';
+import { formatRelativeTime, formatDate, daysUntilReleaseAge, formatRemainingDays } from '../lib/utils';
 import { LoadingState, ErrorState, StatusBadge, SeverityBadge } from '../components/ui';
 import type { ScanDetail, Vulnerability } from '../lib/api';
-import { ArrowLeft, RefreshCw, Copy, CheckCircle, XCircle, ChevronDown, ChevronRight, ExternalLink } from 'lucide-react';
+import { ArrowLeft, RefreshCw, CheckCircle, XCircle, ChevronDown, ChevronRight, ExternalLink } from 'lucide-react';
+import { DigestLinkWithCopy } from '../components/DigestLinkWithCopy';
+import { RuntimeUsageBadge } from '../components/RuntimeUsageBadge';
 
 export default function ScanDetailPage() {
   const { digest, name } = useParams<{ digest: string; name?: string }>();
@@ -104,18 +106,11 @@ export default function ScanDetailPage() {
               : <span>{scan.Tag || 'N/A'}</span>
           } />
           <InfoItem label="Digest" value={
-            <div className="flex items-center gap-1">
-              <code className="text-xs text-text-muted font-mono">{truncateDigest(scan.Digest)}</code>
-              <button className="text-text-muted hover:text-text-primary" onClick={() => copyToClipboard(scan.Digest).then(ok => toast(ok ? 'Copied!' : 'Failed', ok ? 'success' : 'error'))}>
-                <Copy className="w-3 h-3" />
-              </button>
-            </div>
+            <DigestLinkWithCopy digest={scan.Digest} showAsCode />
           } />
           <InfoItem label="Runtime" value={
             <div className="space-y-1">
-              <span className={`inline-flex px-1.5 py-0.5 rounded text-[10px] font-semibold ${scan.RuntimeUsed ? 'bg-success-bg text-success' : 'bg-bg-tertiary text-text-muted'}`}>
-                {scan.RuntimeUsed ? `In use on ${scan.RuntimeClusters?.length || 0} cluster(s)` : 'Not in use'}
-              </span>
+              <RuntimeUsageBadge inUse={!!scan.RuntimeUsed} clusters={scan.RuntimeClusters} showWhenNotInUse showClusterCount />
               {scan.RuntimeUsed && scan.RuntimeNamespaces && scan.RuntimeNamespaces.length > 0 && (
                 <div className="text-xs text-text-secondary">
                   {scan.RuntimeNamespaces.map((entry, idx) => (

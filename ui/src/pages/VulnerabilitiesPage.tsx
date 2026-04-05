@@ -5,6 +5,8 @@ import { formatRelativeTime, truncateDigest } from '../lib/utils';
 import { LoadingState, ErrorState, PageHeader, SeverityBadge, Pagination } from '../components/ui';
 import type { VulnerabilityGroup } from '../lib/api';
 import { ChevronDown, ChevronRight, ExternalLink, ArrowUpDown, ArrowUp, ArrowDown } from 'lucide-react';
+import { useSortablePaginationState } from '../lib/useSortablePaginationState';
+import { PageFiltersBar, FilterActionButton } from '../components/PageFiltersBar';
 
 export default function VulnerabilitiesPage() {
   const { apiClient } = useAuth();
@@ -15,22 +17,22 @@ export default function VulnerabilitiesPage() {
   const [error, setError] = useState('');
   const [cveId, setCveId] = useState(searchParams.get('cve_id') || '');
   const [severity, setSeverity] = useState(searchParams.get('severity') || 'all');
-  const [sortBy, setSortBy] = useState('images');
-  const [sortDir, setSortDir] = useState<'asc' | 'desc'>('desc');
-  const [page, setPage] = useState(1);
   const pageSize = 20;
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
   const [detailsByCVE, setDetailsByCVE] = useState<Record<string, VulnerabilityGroup>>({});
   const [loadingDetails, setLoadingDetails] = useState<Set<string>>(new Set());
 
+  const { sortColumn: sortBy, sortDirection: sortDir, toggleSort, page, setPage, totalPages, offset } = useSortablePaginationState({
+    initialSortColumn: 'images',
+    initialSortDirection: 'desc',
+    resolveNewColumnDirection: (column) => (column === 'images' ? 'desc' : 'asc'),
+    pageSize,
+    totalItems: total,
+  });
+
   const handleSort = (col: string) => {
-    if (col === sortBy) {
-      setSortDir(d => d === 'asc' ? 'desc' : 'asc');
-    } else {
-      setSortBy(col);
-      setSortDir(col === 'images' ? 'desc' : 'asc');
-    }
     setPage(1);
+    toggleSort(col);
   };
 
   const load = useCallback(async () => {
@@ -39,7 +41,7 @@ export default function VulnerabilitiesPage() {
     try {
       const filters: Record<string, unknown> = {
         limit: pageSize,
-        offset: (page - 1) * pageSize,
+        offset,
         sort_by: sortBy,
         sort_dir: sortDir,
         include_digests: false,
@@ -56,7 +58,7 @@ export default function VulnerabilitiesPage() {
     } finally {
       setLoading(false);
     }
-  }, [apiClient, cveId, severity, sortBy, sortDir, page]);
+  }, [apiClient, cveId, offset, severity, sortBy, sortDir, pageSize]);
 
   useEffect(() => { load(); }, [load]);
 
@@ -94,8 +96,6 @@ export default function VulnerabilitiesPage() {
     }
   };
 
-  const totalPages = Math.ceil(total / pageSize);
-
   if (loading && groups.length === 0) return <LoadingState />;
   if (error) return <ErrorState message={error} onRetry={load} />;
 
@@ -106,7 +106,7 @@ export default function VulnerabilitiesPage() {
         subtitle="Search and browse vulnerabilities across all images"
         showImageUsage={false}
       />
-      <div className="flex gap-3 mb-4 flex-wrap">
+      <PageFiltersBar>
         <input value={cveId} onChange={e => setCveId(e.target.value)} onKeyDown={e => e.key === 'Enter' && (setPage(1), load())}
           placeholder="Search CVE ID…" className="flex-1 max-w-xs px-3 py-2 bg-bg-secondary border border-border rounded-lg text-sm text-text-primary placeholder:text-text-muted focus:outline-none focus:border-accent/50 transition-colors" />
         <select value={severity} onChange={e => { setSeverity(e.target.value); setPage(1); }}
@@ -117,9 +117,9 @@ export default function VulnerabilitiesPage() {
           <option value="medium">Medium</option>
           <option value="low">Low</option>
         </select>
-        <button onClick={() => { setPage(1); load(); }} className="px-4 py-2 bg-accent text-bg-primary rounded-lg text-sm font-medium hover:bg-accent-hover transition-colors">Search</button>
-        <button onClick={() => { setCveId(''); setSeverity('all'); setPage(1); load(); }} className="px-4 py-2 border border-border rounded-lg text-sm text-text-secondary hover:bg-bg-tertiary transition-colors">Clear</button>
-      </div>
+        <FilterActionButton onClick={() => { setPage(1); load(); }}>Search</FilterActionButton>
+        <FilterActionButton variant="secondary" onClick={() => { setCveId(''); setSeverity('all'); setPage(1); load(); }}>Clear</FilterActionButton>
+      </PageFiltersBar>
 
       <div className="bg-bg-primary border border-border rounded-xl overflow-hidden">
         {/* Sort bar */}

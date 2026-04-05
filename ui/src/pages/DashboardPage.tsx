@@ -1,14 +1,14 @@
 import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { useAuth } from '../lib/auth';
-import { useToast } from '../lib/toast';
-import { formatRelativeTime, truncateDigest, copyToClipboard } from '../lib/utils';
+import { formatRelativeTime } from '../lib/utils';
 import { useImageUsageFilter } from '../lib/imageUsageFilter';
 import { LoadingState, ErrorState, StatusBadge, SeverityBadge, VulnCounts } from '../components/ui';
+import { DigestLinkWithCopy } from '../components/DigestLinkWithCopy';
 import type { Scan, Toleration } from '../lib/api';
 import {
   ShieldAlert, FileWarning, Clock, CheckSquare,
-  Copy, ExternalLink,
+  ExternalLink,
 } from 'lucide-react';
 
 interface DashboardData {
@@ -26,7 +26,6 @@ interface DashboardData {
 
 export default function DashboardPage() {
   const { apiClient } = useAuth();
-  const { toast } = useToast();
   const { inUseQuery } = useImageUsageFilter();
   const [data, setData] = useState<DashboardData | null>(null);
   const [loading, setLoading] = useState(true);
@@ -238,12 +237,7 @@ export default function DashboardPage() {
                     </td>
                     <td className="px-4 py-3 text-sm text-text-secondary">{scan.Tag || 'N/A'}</td>
                     <td className="px-4 py-3 text-sm">
-                      <div className="flex items-center gap-1">
-                        <Link to={`/scans/${scan.Digest}`} className="text-xs text-accent font-mono hover:underline">{truncateDigest(scan.Digest)}</Link>
-                        <button className="text-text-muted hover:text-text-primary p-0.5" onClick={() => { copyToClipboard(scan.Digest).then(ok => toast(ok ? 'Copied!' : 'Failed to copy', ok ? 'success' : 'error')); }}>
-                          <Copy className="w-3 h-3" />
-                        </button>
-                      </div>
+                      <DigestLinkWithCopy digest={scan.Digest} to={`/scans/${scan.Digest}`} />
                     </td>
                     <td className="px-4 py-3 text-sm text-text-secondary">{formatRelativeTime(scan.CreatedAt)}</td>
                     <td className="px-4 py-3"><StatusBadge passed={scan.PolicyPassed} status={scan.PolicyStatus} /></td>

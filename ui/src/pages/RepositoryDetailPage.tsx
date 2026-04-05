@@ -7,6 +7,9 @@ import { useImageUsageFilter } from '../lib/imageUsageFilter';
 import { LoadingState, ErrorState, StatusBadge, VulnCounts, SortHeader, Pagination, ConfirmModal } from '../components/ui';
 import type { RepositoryTag } from '../lib/api';
 import { ArrowLeft, RefreshCw } from 'lucide-react';
+import { useSortablePaginationState } from '../lib/useSortablePaginationState';
+import { RuntimeUsageBadge } from '../components/RuntimeUsageBadge';
+import { PageFiltersBar, FilterActionButton } from '../components/PageFiltersBar';
 
 export default function RepositoryDetailPage() {
   const { name } = useParams<{ name: string }>();
@@ -21,11 +24,16 @@ export default function RepositoryDetailPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [search, setSearch] = useState(searchParams.get('search') || '');
-  const [sortCol, setSortCol] = useState('name');
-  const [sortDir, setSortDir] = useState<'asc' | 'desc'>('asc');
-  const [page, setPage] = useState(1);
   const pageSize = 10;
   const [confirmRescan, setConfirmRescan] = useState<{ type: 'repo' | 'tag'; name: string } | null>(null);
+
+  const { sortColumn: sortCol, sortDirection: sortDir, toggleSort, page, setPage, totalPages } = useSortablePaginationState({
+    initialSortColumn: 'name',
+    initialSortDirection: 'asc',
+    resolveNewColumnDirection: () => 'asc',
+    pageSize,
+    totalItems: total,
+  });
 
   const load = useCallback(async () => {
     if (!decodedName) return;
@@ -90,14 +98,8 @@ export default function RepositoryDetailPage() {
 
   useEffect(() => { load(); }, [load]);
 
-  useEffect(() => {
-    const maxPage = Math.max(1, Math.ceil(total / pageSize));
-    if (page > maxPage) setPage(maxPage);
-  }, [page, total]);
-
   const handleSort = (col: string) => {
-    if (col === sortCol) setSortDir(d => d === 'asc' ? 'desc' : 'asc');
-    else { setSortCol(col); setSortDir('asc'); }
+    toggleSort(col);
   };
 
   const handleRescan = async (type: 'repo' | 'tag', n: string) => {
@@ -112,8 +114,6 @@ export default function RepositoryDetailPage() {
       toast(e instanceof Error ? e.message : 'Failed', 'error');
     }
   };
-
-  const totalPages = Math.ceil(total / pageSize);
 
   if (loading && tags.length === 0 && !search) return <LoadingState />;
   // A search-triggered error (e.g. no matches -> 404) should not hijack the whole page.
@@ -134,7 +134,7 @@ export default function RepositoryDetailPage() {
         </button>
       </div>
 
-      <div className="flex gap-3 mb-4">
+      <PageFiltersBar>
         <input
           value={search}
           onChange={e => { setSearch(e.target.value); setError(''); }}
@@ -142,8 +142,8 @@ export default function RepositoryDetailPage() {
           placeholder="Filter tags..."
           className="flex-1 max-w-xs px-3 py-2 bg-bg-secondary border border-border rounded-lg text-sm text-text-primary placeholder:text-text-muted focus:outline-none focus:border-accent/50 transition-colors"
         />
-        <button onClick={() => { setPage(1); load(); }} className="px-4 py-2 bg-accent text-bg-primary rounded-lg text-sm font-medium hover:bg-accent-hover transition-colors">Filter</button>
-      </div>
+        <FilterActionButton onClick={() => { setPage(1); load(); }}>Filter</FilterActionButton>
+      </PageFiltersBar>
 
       <div className="bg-bg-primary border border-border rounded-xl overflow-hidden">
         {tags.length === 0 ? (
@@ -189,11 +189,7 @@ export default function RepositoryDetailPage() {
                           {formatRemainingDays(daysUntilReleaseAge(tag.ReleaseAgeSeconds, tag.MinimumReleaseAgeSeconds))}
                         </span>
                       )}
-                      {tag.RuntimeUsed && (
-                        <span className="px-1.5 py-0.5 rounded text-[10px] font-semibold bg-success-bg text-success" title={tag.RuntimeClusters && tag.RuntimeClusters.length > 0 ? `Running on: ${tag.RuntimeClusters.join(', ')}` : 'In use'}>
-                          In use
-                        </span>
-                      )}
+                      <RuntimeUsageBadge inUse={!!tag.RuntimeUsed} clusters={tag.RuntimeClusters} />
                     </div>
                   </td>
                   <td className="px-4 py-3">

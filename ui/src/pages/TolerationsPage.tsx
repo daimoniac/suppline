@@ -4,6 +4,7 @@ import { useAuth } from '../lib/auth';
 import { formatDate, isPast, isWithinDays, daysUntil } from '../lib/utils';
 import { LoadingState, ErrorState, PageHeader, SortHeader, Pagination } from '../components/ui';
 import type { Toleration } from '../lib/api';
+import { PageFiltersBar, FilterActionButton } from '../components/PageFiltersBar';
 
 export default function TolerationsPage() {
   const { apiClient } = useAuth();
@@ -67,8 +68,9 @@ export default function TolerationsPage() {
     return sortDir === 'asc' ? String(aVal).localeCompare(String(bVal)) : String(bVal).localeCompare(String(aVal));
   });
 
-  const paged = combined.slice((page - 1) * pageSize, page * pageSize);
-  const totalPages = Math.ceil(combined.length / pageSize);
+  const computedTotalPages = Math.max(1, Math.ceil(combined.length / pageSize));
+  const clampedPage = Math.min(page, computedTotalPages);
+  const paged = combined.slice((clampedPage - 1) * pageSize, clampedPage * pageSize);
 
   if (loading) return <LoadingState />;
   if (error) return <ErrorState message={error} onRetry={load} />;
@@ -80,7 +82,7 @@ export default function TolerationsPage() {
         subtitle="Manage and monitor CVE exception policies"
         showImageUsage={false}
       />
-      <div className="flex gap-3 mb-4 flex-wrap">
+      <PageFiltersBar>
         <input value={cveFilter} onChange={e => setCveFilter(e.target.value)} placeholder="CVE ID…"
           className="px-3 py-2 bg-bg-secondary border border-border rounded-lg text-sm text-text-primary placeholder:text-text-muted focus:outline-none focus:border-accent/50 transition-colors w-44" />
         <input value={repoFilter} onChange={e => setRepoFilter(e.target.value)} placeholder="Repository…"
@@ -92,9 +94,9 @@ export default function TolerationsPage() {
           <option value="expiring">Expiring Soon</option>
           <option value="expired">Expired</option>
         </select>
-        <button onClick={() => setPage(1)} className="px-4 py-2 bg-accent text-bg-primary rounded-lg text-sm font-medium hover:bg-accent-hover transition-colors">Filter</button>
-        <button onClick={() => { setCveFilter(''); setRepoFilter(''); setExpirationFilter('all'); setPage(1); }} className="px-4 py-2 border border-border rounded-lg text-sm text-text-secondary hover:bg-bg-tertiary transition-colors">Clear</button>
-      </div>
+        <FilterActionButton onClick={() => setPage(1)}>Filter</FilterActionButton>
+        <FilterActionButton variant="secondary" onClick={() => { setCveFilter(''); setRepoFilter(''); setExpirationFilter('all'); setPage(1); }}>Clear</FilterActionButton>
+      </PageFiltersBar>
 
       <div className="bg-bg-primary border border-border rounded-xl overflow-hidden">
         {paged.length === 0 ? (
@@ -134,7 +136,7 @@ export default function TolerationsPage() {
             })}
           </tbody></table></div>
         )}
-        <Pagination currentPage={page} totalPages={totalPages} total={combined.length} pageSize={pageSize} onPageChange={setPage} itemLabel="tolerations" />
+        <Pagination currentPage={clampedPage} totalPages={computedTotalPages} total={combined.length} pageSize={pageSize} onPageChange={setPage} itemLabel="tolerations" />
       </div>
     </div>
   );

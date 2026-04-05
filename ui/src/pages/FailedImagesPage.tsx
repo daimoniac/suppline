@@ -1,16 +1,18 @@
 import { useEffect, useState, useCallback } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
 import { useAuth } from '../lib/auth';
-import { useToast } from '../lib/toast';
-import { formatRelativeTime, formatDate, truncateDigest, copyToClipboard, daysUntilReleaseAge, formatRemainingDays } from '../lib/utils';
+import { formatRelativeTime, formatDate, daysUntilReleaseAge, formatRemainingDays } from '../lib/utils';
 import { useImageUsageFilter } from '../lib/imageUsageFilter';
 import { LoadingState, ErrorState, PageHeader, StatusBadge, VulnCounts, SortHeader, Pagination } from '../components/ui';
 import type { Scan } from '../lib/api';
-import { AlertTriangle, Copy } from 'lucide-react';
+import { AlertTriangle } from 'lucide-react';
+import { useSortablePaginationState } from '../lib/useSortablePaginationState';
+import { DigestLinkWithCopy } from '../components/DigestLinkWithCopy';
+import { RuntimeUsageBadge } from '../components/RuntimeUsageBadge';
+import { PageFiltersBar, FilterActionButton } from '../components/PageFiltersBar';
 
 export default function FailedImagesPage() {
   const { apiClient } = useAuth();
-  const { toast } = useToast();
   const { inUseQuery } = useImageUsageFilter();
   const [searchParams] = useSearchParams();
 
@@ -20,10 +22,15 @@ export default function FailedImagesPage() {
   const [error, setError] = useState('');
   const [repositoryInput, setRepositoryInput] = useState(searchParams.get('repository') || '');
   const [repository, setRepository] = useState(searchParams.get('repository') || '');
-  const [sortCol, setSortCol] = useState('scanned_at');
-  const [sortDir, setSortDir] = useState<'asc' | 'desc'>('desc');
-  const [page, setPage] = useState(1);
   const pageSize = 25;
+
+  const { sortColumn: sortCol, sortDirection: sortDir, toggleSort, page, setPage, totalPages, offset } = useSortablePaginationState({
+    initialSortColumn: 'scanned_at',
+    initialSortDirection: 'desc',
+    resolveNewColumnDirection: () => 'desc',
+    pageSize,
+    totalItems: totalScans,
+  });
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -34,7 +41,7 @@ export default function FailedImagesPage() {
         policy_passed: false,
         sort_by: sortKey,
         limit: pageSize,
-        offset: (page - 1) * pageSize,
+        offset,
       };
       if (repository) filters.repository = repository;
       if (inUseQuery !== undefined) filters.in_use = inUseQuery;
@@ -47,22 +54,14 @@ export default function FailedImagesPage() {
     } finally {
       setLoading(false);
     }
-  }, [apiClient, inUseQuery, page, pageSize, repository, sortCol, sortDir]);
+  }, [apiClient, inUseQuery, offset, pageSize, repository, sortCol, sortDir]);
 
   useEffect(() => { load(); }, [load]);
 
   const handleSort = (col: string) => {
     setPage(1);
-    if (col === sortCol) setSortDir(d => d === 'asc' ? 'desc' : 'asc');
-    else { setSortCol(col); setSortDir('desc'); }
+    toggleSort(col);
   };
-
-  const totalPages = Math.max(1, Math.ceil(totalScans / pageSize));
-
-  useEffect(() => {
-    const maxPage = Math.max(1, Math.ceil(totalScans / pageSize));
-    if (page > maxPage) setPage(maxPage);
-  }, [page, pageSize, totalScans]);
 
   if (loading && scans.length === 0) return <LoadingState />;
   if (error) return <ErrorState message={error} onRetry={load} />;
@@ -88,12 +87,12 @@ export default function FailedImagesPage() {
         </div>
       )}
 
-      <div className="flex gap-3 mb-4">
+      <PageFiltersBar>
         <input value={repositoryInput} onChange={e => setRepositoryInput(e.target.value)} onKeyDown={e => e.key === 'Enter' && (setRepository(repositoryInput.trim()), setPage(1))}
           placeholder="Filter by repository…" className="flex-1 max-w-xs px-3 py-2 bg-bg-secondary border border-border rounded-lg text-sm text-text-primary placeholder:text-text-muted focus:outline-none focus:border-accent/50 transition-colors" />
-        <button onClick={() => { setRepository(repositoryInput.trim()); setPage(1); }} className="px-4 py-2 bg-accent text-bg-primary rounded-lg text-sm font-medium hover:bg-accent-hover transition-colors">Filter</button>
-        <button onClick={() => { setRepositoryInput(''); setRepository(''); setPage(1); }} className="px-4 py-2 border border-border rounded-lg text-sm text-text-secondary hover:bg-bg-tertiary transition-colors">Clear</button>
-      </div>
+        <FilterActionButton onClick={() => { setRepository(repositoryInput.trim()); setPage(1); }}>Filter</FilterActionButton>
+        <FilterActionButton variant="secondary" onClick={() => { setRepositoryInput(''); setRepository(''); setPage(1); }}>Clear</FilterActionButton>
+      </PageFiltersBar>
 
       <div className="bg-bg-primary border border-border rounded-xl overflow-hidden">
         {scans.length === 0 ? (
@@ -121,19 +120,13 @@ export default function FailedImagesPage() {
                 </td>
                 <td className="px-4 py-3 text-sm text-text-secondary">{s.Tag || 'N/A'}</td>
                 <td className="px-4 py-3 text-sm">
-                  <div className="flex items-center gap-1 flex-wrap"><Link to={`/scans/${s.Digest}`} className="text-xs text-accent font-mono hover:underline">{truncateDigest(s.Digest)}</Link>
-                    <button className="text-text-muted hover:text-text-primary p-0.5" onClick={() => { copyToClipboard(s.Digest).then(ok => toast(ok ? 'Copied!' : 'Fail', ok ? 'success' : 'error')); }}>
-                      <Copy className="w-3 h-3" /></button></div>
+                  <DigestLinkWithCopy digest={s.Digest} to={`/scans/${s.Digest}`} wrap />
                 </td>
                 <td className="px-4 py-3 text-sm text-text-secondary" title={formatDate(s.ScannedAt ?? s.CreatedAt)}>{formatRelativeTime(s.ScannedAt ?? s.CreatedAt)}</td>
                 <td className="px-4 py-3">
                   <div className="flex items-center gap-2 flex-wrap">
                     <StatusBadge passed={s.PolicyPassed} status={s.PolicyStatus} label={s.PolicyStatus === 'pending' ? 'Pending Maturity' : undefined} />
-                    {s.RuntimeUsed && (
-                      <span className="px-1.5 py-0.5 rounded text-[10px] font-semibold bg-success-bg text-success" title={s.RuntimeClusters && s.RuntimeClusters.length > 0 ? `Running on: ${s.RuntimeClusters.join(', ')}` : 'In use'}>
-                        In use
-                      </span>
-                    )}
+                    <RuntimeUsageBadge inUse={!!s.RuntimeUsed} clusters={s.RuntimeClusters} />
                   </div>
                 </td>
                 <td className="px-4 py-3"><VulnCounts critical={s.CriticalVulnCount} high={s.HighVulnCount} medium={s.MediumVulnCount} low={s.LowVulnCount} /></td>
