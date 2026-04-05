@@ -113,3 +113,23 @@ export function PageFiltersBar({ children }: { children: ReactNode }) {
 export function FilterActionButton({ children, onClick, variant = 'primary' }: { children: ReactNode; onClick: () => void; variant?: 'primary' | 'secondary' }) {
   return <button onClick={onClick} className={variant === 'primary' ? 'px-4 py-2 bg-accent text-bg-primary rounded-lg text-sm font-medium hover:bg-accent-hover transition-colors' : 'px-4 py-2 border border-border rounded-lg text-sm text-text-secondary hover:bg-bg-tertiary transition-colors'}>{children}</button>;
 }
+
+export function FilterSelect({ value, onChange, options }: { value: string; onChange: (v: string) => void; options: { value: string; label: string }[] }) {
+  return (
+    <select value={value} onChange={e => onChange(e.target.value)}
+      className="px-3 py-2 bg-bg-secondary border border-border rounded-lg text-sm text-text-primary focus:outline-none focus:border-accent/50 transition-colors">
+      {options.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
+    </select>
+  );
+}
+
+export const POLICY_STATUS_OPTIONS = [
+  { value: 'all', label: 'All Statuses' },
+  { value: 'passed', label: 'Passed' },
+  { value: 'failed', label: 'Failed' },
+  { value: 'pending', label: 'Pending' },
+];
+
+export function PolicyStatusSelect({ value, onChange }: { value: string; onChange: (v: string) => void }) {
+  return <FilterSelect value={value} onChange={onChange} options={POLICY_STATUS_OPTIONS} />;
+}

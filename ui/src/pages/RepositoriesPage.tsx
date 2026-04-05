@@ -4,7 +4,7 @@ import { useAuth } from '../lib/auth';
 import { useToast } from '../lib/toast';
 import { formatRelativeTime } from '../lib/utils';
 import { useImageUsageFilter } from '../lib/imageUsageFilter';
-import { LoadingState, ErrorState, PageHeader, StatusBadge, VulnCounts, SortHeader, Pagination, ConfirmModal, RuntimeUsageBadge, PageFiltersBar, FilterActionButton } from '../components/ui';
+import { LoadingState, ErrorState, PageHeader, StatusBadge, VulnCounts, SortHeader, Pagination, ConfirmModal, RuntimeUsageBadge, PageFiltersBar, FilterActionButton, PolicyStatusSelect } from '../components/ui';
 import type { Repository } from '../lib/api';
 import { RefreshCw } from 'lucide-react';
 import { useSortablePaginationState } from '../lib/useSortablePaginationState';
@@ -20,17 +20,20 @@ export default function RepositoriesPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [search, setSearch] = useState(searchParams.get('search') || '');
+  const [policyFilter, setPolicyFilter] = useState(searchParams.get('policy_status') || 'all');
   const pageSize = 10;
   const [confirmRescan, setConfirmRescan] = useState('');
 
   const initialSortDir = (searchParams.get('order') as 'asc' | 'desc') || 'desc';
   const initialPage = Number(searchParams.get('page')) || 1;
 
-  const updateURL = (s: string, d: string, q: string, p: number) => {
+  const updateURL = (s: string, d: string, q: string, p: number, ps?: string) => {
     const params: Record<string, string> = {};
     if (q) params.search = q;
     if (p > 1) params.page = String(p);
     if (s !== 'lastScanTime' || d !== 'desc') { params.sort = s; params.order = d; }
+    const status = ps !== undefined ? ps : policyFilter;
+    if (status && status !== 'all') params.policy_status = status;
     setSearchParams(params, { replace: true });
   };
 
@@ -50,16 +53,18 @@ export default function RepositoriesPage() {
     status: sortDir === 'asc' ? 'status_asc' : 'status_desc',
   };
 
-  const load = useCallback(async (opts?: { page?: number; search?: string }) => {
+  const load = useCallback(async (opts?: { page?: number; search?: string; policyStatus?: string }) => {
     setLoading(true);
     setError('');
     try {
       const effectivePage = opts?.page ?? page;
       const effectiveSearch = opts?.search ?? search;
+      const effectivePolicyStatus = opts?.policyStatus !== undefined ? opts.policyStatus : policyFilter;
       const resp = await apiClient.getRepositories({
         limit: pageSize, offset: (effectivePage - 1) * pageSize,
         ...(effectiveSearch && { search: effectiveSearch }),
         ...(inUseQuery !== undefined && { in_use: inUseQuery }),
+        ...(effectivePolicyStatus !== 'all' && { policy_status: effectivePolicyStatus }),
         sort_by: sortMap[sortCol] || 'age_desc',
       });
       if (resp && resp.Repositories) {
@@ -74,7 +79,7 @@ export default function RepositoriesPage() {
     } finally {
       setLoading(false);
     }
-  }, [apiClient, inUseQuery, page, search, sortCol, sortDir]); // eslint-disable-line
+  }, [apiClient, inUseQuery, page, policyFilter, search, sortCol, sortDir]); // eslint-disable-line
 
   useEffect(() => { load(); }, [load]);
 
@@ -101,6 +106,13 @@ export default function RepositoriesPage() {
     void load({ page: 1, search: nextSearch });
   };
 
+  const handlePolicyFilterChange = (nextStatus: string) => {
+    setPolicyFilter(nextStatus);
+    setPage(1);
+    updateURL(sortCol, sortDir, search, 1, nextStatus);
+    void load({ page: 1, policyStatus: nextStatus });
+  };
+
   const handleSearchInputChange = (nextSearch: string) => {
     setSearch(nextSearch);
     if (page !== 1) {
@@ -119,8 +131,9 @@ export default function RepositoriesPage() {
       <PageFiltersBar>
         <input value={search} onChange={e => handleSearchInputChange(e.target.value)} onKeyDown={e => e.key === 'Enter' && applySearch(search)}
           placeholder="Filter by name…" className="flex-1 max-w-xs px-3 py-2 bg-bg-secondary border border-border rounded-lg text-sm text-text-primary placeholder:text-text-muted focus:outline-none focus:border-accent/50 transition-colors" />
+        <PolicyStatusSelect value={policyFilter} onChange={handlePolicyFilterChange} />
         <FilterActionButton onClick={() => applySearch(search)}>Filter</FilterActionButton>
-        <FilterActionButton variant="secondary" onClick={() => { setSearch(''); applySearch(''); }}>Clear</FilterActionButton>
+        <FilterActionButton variant="secondary" onClick={() => { setSearch(''); setPolicyFilter('all'); updateURL(sortCol, sortDir, '', 1, 'all'); void load({ page: 1, search: '', policyStatus: 'all' }); }}>Clear</FilterActionButton>
       </PageFiltersBar>
       {/* Table */}
       <div className="bg-bg-primary border border-border rounded-xl overflow-hidden">

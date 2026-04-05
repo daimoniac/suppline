@@ -255,12 +255,13 @@ type StateStoreQuery interface {
 
 // RepositoryFilter defines criteria for listing repositories
 type RepositoryFilter struct {
-	Search string
-	MaxAge int    // Maximum age of last scan in seconds (0 = no limit)
-	InUse  *bool  // nil = all, true = only in use, false = only not in use
-	SortBy string // Sorting option: "age_desc" (default), "name_asc", "name_desc"
-	Limit  int
-	Offset int
+	Search       string
+	PolicyStatus string // "passed", "failed", or "pending"; empty = no filter
+	MaxAge       int    // Maximum age of last scan in seconds (0 = no limit)
+	InUse        *bool  // nil = all, true = only in use, false = only not in use
+	SortBy       string // Sorting option: "age_desc" (default), "name_asc", "name_desc"
+	Limit        int
+	Offset       int
 }
 
 // RepositoriesListResponse represents the response for listing repositories
@@ -323,7 +324,8 @@ type VulnFilter struct {
 // ScanFilter defines criteria for listing scans
 type ScanFilter struct {
 	Repository   string
-	PolicyPassed *bool
+	PolicyPassed *bool  // kept for backward-compat callers; PolicyStatus takes precedence when set
+	PolicyStatus string // "passed", "failed", or "pending"; empty = no filter
 	InUse        *bool  // nil = all, true = only in use, false = only not in use
 	MaxAge       int    // Maximum age of scans in seconds (0 = no limit)
 	SortBy       string // Sorting option: "age_desc" (default)

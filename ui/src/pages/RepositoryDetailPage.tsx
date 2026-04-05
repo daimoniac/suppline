@@ -4,7 +4,7 @@ import { useAuth } from '../lib/auth';
 import { useToast } from '../lib/toast';
 import { formatRelativeTime, daysUntilReleaseAge, formatRemainingDays } from '../lib/utils';
 import { useImageUsageFilter } from '../lib/imageUsageFilter';
-import { LoadingState, ErrorState, StatusBadge, VulnCounts, SortHeader, Pagination, ConfirmModal, RuntimeUsageBadge, PageFiltersBar, FilterActionButton } from '../components/ui';
+import { LoadingState, ErrorState, StatusBadge, VulnCounts, SortHeader, Pagination, ConfirmModal, RuntimeUsageBadge, PageFiltersBar, FilterActionButton, PolicyStatusSelect } from '../components/ui';
 import type { RepositoryTag } from '../lib/api';
 import { ArrowLeft, RefreshCw } from 'lucide-react';
 import { useSortablePaginationState } from '../lib/useSortablePaginationState';
@@ -22,10 +22,11 @@ export default function RepositoryDetailPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [search, setSearch] = useState(searchParams.get('search') || '');
+  const [policyFilter, setPolicyFilter] = useState('all');
   const pageSize = 10;
   const [confirmRescan, setConfirmRescan] = useState<{ type: 'repo' | 'tag'; name: string } | null>(null);
 
-  const { sortColumn: sortCol, sortDirection: sortDir, toggleSort, page, setPage, totalPages } = useSortablePaginationState({
+  const { sortColumn: sortCol, sortDirection: sortDir, toggleSort, page, setPage } = useSortablePaginationState({
     initialSortColumn: 'name',
     initialSortDirection: 'asc',
     resolveNewColumnDirection: () => 'asc',
@@ -67,14 +68,17 @@ export default function RepositoryDetailPage() {
     }
   }, [apiClient, decodedName, inUseQuery, search]);
 
-  const sortedTags = useMemo(() => {
+  const filteredAndSortedTags = useMemo(() => {
     const colMap: Record<string, keyof RepositoryTag> = {
       name: 'Name',
       lastScanTime: 'LastScanTime',
       status: 'PolicyPassed',
     };
     const apiCol = colMap[sortCol] || 'Name';
-    return [...allTags].sort((a, b) => {
+    const source = policyFilter === 'all'
+      ? allTags
+      : allTags.filter(t => (t.PolicyStatus || (t.PolicyPassed ? 'passed' : 'failed')) === policyFilter);
+    return [...source].sort((a, b) => {
       const av = a[apiCol as keyof RepositoryTag] as unknown;
       const bv = b[apiCol as keyof RepositoryTag] as unknown;
       if (typeof av === 'number' && typeof bv === 'number') return sortDir === 'asc' ? av - bv : bv - av;
@@ -87,14 +91,17 @@ export default function RepositoryDetailPage() {
         ? String(av || '').localeCompare(String(bv || ''))
         : String(bv || '').localeCompare(String(av || ''));
     });
-  }, [allTags, sortCol, sortDir]);
+  }, [allTags, sortCol, sortDir, policyFilter]);
 
   const tags = useMemo(() => {
     const start = (page - 1) * pageSize;
-    return sortedTags.slice(start, start + pageSize);
-  }, [sortedTags, page]);
+    return filteredAndSortedTags.slice(start, start + pageSize);
+  }, [filteredAndSortedTags, page]);
 
   useEffect(() => { load(); }, [load]);
+
+  const effectiveTotal = policyFilter !== 'all' ? filteredAndSortedTags.length : total;
+  const effectiveTotalPages = Math.max(1, Math.ceil(effectiveTotal / pageSize));
 
   const handleSort = (col: string) => {
     toggleSort(col);
@@ -125,7 +132,7 @@ export default function RepositoryDetailPage() {
         </Link>
         <div className="flex-1">
           <h1 className="text-2xl font-bold">{decodedName}</h1>
-          <p className="text-sm text-text-secondary">{total} tag{total !== 1 ? 's' : ''}</p>
+          <p className="text-sm text-text-secondary">{effectiveTotal} tag{effectiveTotal !== 1 ? 's' : ''}{policyFilter !== 'all' ? ` (filtered from ${total})` : ''}</p>
         </div>
         <button onClick={() => setConfirmRescan({ type: 'repo', name: decodedName })} className="px-4 py-2 text-sm rounded-lg border border-warning/30 text-warning hover:bg-warning-bg flex items-center gap-2 transition-colors">
           <RefreshCw className="w-4 h-4" /> Rescan All
@@ -140,6 +147,7 @@ export default function RepositoryDetailPage() {
           placeholder="Filter tags..."
           className="flex-1 max-w-xs px-3 py-2 bg-bg-secondary border border-border rounded-lg text-sm text-text-primary placeholder:text-text-muted focus:outline-none focus:border-accent/50 transition-colors"
         />
+        <PolicyStatusSelect value={policyFilter} onChange={v => { setPolicyFilter(v); setPage(1); }} />
         <FilterActionButton onClick={() => { setPage(1); load(); }}>Filter</FilterActionButton>
       </PageFiltersBar>
 
@@ -200,7 +208,7 @@ export default function RepositoryDetailPage() {
             })}
           </tbody></table></div>
         )}
-        <Pagination currentPage={page} totalPages={totalPages} total={total} pageSize={pageSize} onPageChange={setPage} itemLabel="tags" />
+        <Pagination currentPage={page} totalPages={effectiveTotalPages} total={effectiveTotal} pageSize={pageSize} onPageChange={setPage} itemLabel="tags" />
       </div>
 
       <ConfirmModal

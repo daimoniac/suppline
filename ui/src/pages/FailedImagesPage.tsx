@@ -3,7 +3,7 @@ import { Link, useSearchParams } from 'react-router-dom';
 import { useAuth } from '../lib/auth';
 import { formatRelativeTime, formatDate, daysUntilReleaseAge, formatRemainingDays } from '../lib/utils';
 import { useImageUsageFilter } from '../lib/imageUsageFilter';
-import { LoadingState, ErrorState, PageHeader, StatusBadge, VulnCounts, SortHeader, Pagination, DigestLinkWithCopy, RuntimeUsageBadge, PageFiltersBar, FilterActionButton } from '../components/ui';
+import { LoadingState, ErrorState, PageHeader, StatusBadge, VulnCounts, SortHeader, Pagination, DigestLinkWithCopy, RuntimeUsageBadge, PageFiltersBar, FilterActionButton, PolicyStatusSelect } from '../components/ui';
 import type { Scan } from '../lib/api';
 import { AlertTriangle } from 'lucide-react';
 import { useSortablePaginationState } from '../lib/useSortablePaginationState';
@@ -19,6 +19,7 @@ export default function FailedImagesPage() {
   const [error, setError] = useState('');
   const [repositoryInput, setRepositoryInput] = useState(searchParams.get('repository') || '');
   const [repository, setRepository] = useState(searchParams.get('repository') || '');
+  const [policyFilter, setPolicyFilter] = useState(searchParams.get('policy_status') || 'all');
   const pageSize = 25;
 
   const { sortColumn: sortCol, sortDirection: sortDir, toggleSort, page, setPage, totalPages, offset } = useSortablePaginationState({
@@ -35,12 +36,14 @@ export default function FailedImagesPage() {
     try {
       const sortKey = `${sortCol}_${sortDir}`;
       const filters: Record<string, unknown> = {
-        policy_passed: false,
         sort_by: sortKey,
         limit: pageSize,
         offset,
       };
       if (repository) filters.repository = repository;
+      // Keep default behavior as "policy exceptions" (failed + pending).
+      if (policyFilter === 'all') filters.policy_passed = false;
+      else filters.policy_status = policyFilter;
       if (inUseQuery !== undefined) filters.in_use = inUseQuery;
 
       const result = await apiClient.getScansPage(filters);
@@ -51,7 +54,7 @@ export default function FailedImagesPage() {
     } finally {
       setLoading(false);
     }
-  }, [apiClient, inUseQuery, offset, pageSize, repository, sortCol, sortDir]);
+  }, [apiClient, inUseQuery, offset, pageSize, policyFilter, repository, sortCol, sortDir]);
 
   useEffect(() => { load(); }, [load]);
 
@@ -87,8 +90,9 @@ export default function FailedImagesPage() {
       <PageFiltersBar>
         <input value={repositoryInput} onChange={e => setRepositoryInput(e.target.value)} onKeyDown={e => e.key === 'Enter' && (setRepository(repositoryInput.trim()), setPage(1))}
           placeholder="Filter by repository…" className="flex-1 max-w-xs px-3 py-2 bg-bg-secondary border border-border rounded-lg text-sm text-text-primary placeholder:text-text-muted focus:outline-none focus:border-accent/50 transition-colors" />
+        <PolicyStatusSelect value={policyFilter} onChange={v => { setPolicyFilter(v); setPage(1); }} />
         <FilterActionButton onClick={() => { setRepository(repositoryInput.trim()); setPage(1); }}>Filter</FilterActionButton>
-        <FilterActionButton variant="secondary" onClick={() => { setRepositoryInput(''); setRepository(''); setPage(1); }}>Clear</FilterActionButton>
+        <FilterActionButton variant="secondary" onClick={() => { setRepositoryInput(''); setRepository(''); setPolicyFilter('all'); setPage(1); }}>Clear</FilterActionButton>
       </PageFiltersBar>
 
       <div className="bg-bg-primary border border-border rounded-xl overflow-hidden">

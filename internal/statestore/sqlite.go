@@ -1704,9 +1704,18 @@ func (s *SQLiteStore) ListScans(ctx context.Context, filter ScanFilter) ([]*Scan
 		args = append(args, filter.Repository)
 	}
 
-	if filter.PolicyPassed != nil {
-		query += " AND sr.policy_passed = ?"
-		args = append(args, *filter.PolicyPassed)
+	switch filter.PolicyStatus {
+	case "pending":
+		query += " AND sr.policy_status = 'pending'"
+	case "passed":
+		query += " AND sr.policy_passed = 1 AND sr.policy_status != 'pending'"
+	case "failed":
+		query += " AND sr.policy_passed = 0 AND sr.policy_status != 'pending'"
+	default:
+		if filter.PolicyPassed != nil {
+			query += " AND sr.policy_passed = ?"
+			args = append(args, *filter.PolicyPassed)
+		}
 	}
 
 	if filter.InUse != nil {
@@ -1813,9 +1822,18 @@ func (s *SQLiteStore) CountScans(ctx context.Context, filter ScanFilter) (int, e
 		args = append(args, filter.Repository)
 	}
 
-	if filter.PolicyPassed != nil {
-		query += " AND sr.policy_passed = ?"
-		args = append(args, *filter.PolicyPassed)
+	switch filter.PolicyStatus {
+	case "pending":
+		query += " AND sr.policy_status = 'pending'"
+	case "passed":
+		query += " AND sr.policy_passed = 1 AND sr.policy_status != 'pending'"
+	case "failed":
+		query += " AND sr.policy_passed = 0 AND sr.policy_status != 'pending'"
+	default:
+		if filter.PolicyPassed != nil {
+			query += " AND sr.policy_passed = ?"
+			args = append(args, *filter.PolicyPassed)
+		}
 	}
 
 	if filter.InUse != nil {
@@ -2127,12 +2145,14 @@ func (s *SQLiteStore) ListRepositories(ctx context.Context, filter RepositoryFil
 		query += " ORDER BY r.name ASC"
 	}
 
-	if filter.InUse == nil && filter.Limit > 0 {
+	needsPostFilter := filter.InUse != nil || filter.PolicyStatus != ""
+
+	if !needsPostFilter && filter.Limit > 0 {
 		query += " LIMIT ?"
 		args = append(args, filter.Limit)
 	}
 
-	if filter.InUse == nil && filter.Offset > 0 {
+	if !needsPostFilter && filter.Offset > 0 {
 		query += " OFFSET ?"
 		args = append(args, filter.Offset)
 	}
@@ -2216,12 +2236,27 @@ func (s *SQLiteStore) ListRepositories(ctx context.Context, filter RepositoryFil
 		repositories[i].RuntimeUsed = runtimeUsedByRepoID[repoID]
 	}
 
-	if filter.InUse != nil {
-		filtered := make([]RepositoryInfo, 0, len(repositories))
-		for _, repo := range repositories {
-			if repo.RuntimeUsed == *filter.InUse {
-				filtered = append(filtered, repo)
+	if filter.InUse != nil || filter.PolicyStatus != "" {
+		filtered := repositories
+
+		if filter.PolicyStatus != "" {
+			result := make([]RepositoryInfo, 0, len(filtered))
+			for _, repo := range filtered {
+				if repo.PolicyStatus == filter.PolicyStatus {
+					result = append(result, repo)
+				}
 			}
+			filtered = result
+		}
+
+		if filter.InUse != nil {
+			result := make([]RepositoryInfo, 0, len(filtered))
+			for _, repo := range filtered {
+				if repo.RuntimeUsed == *filter.InUse {
+					result = append(result, repo)
+				}
+			}
+			filtered = result
 		}
 
 		total = len(filtered)

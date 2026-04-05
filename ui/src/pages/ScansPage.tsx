@@ -3,7 +3,7 @@ import { Link, useSearchParams } from 'react-router-dom';
 import { useAuth } from '../lib/auth';
 import { formatRelativeTime, formatDate } from '../lib/utils';
 import { useImageUsageFilter } from '../lib/imageUsageFilter';
-import { LoadingState, ErrorState, PageHeader, StatusBadge, VulnCounts, SortHeader, Pagination, DigestLinkWithCopy, RuntimeUsageBadge, PageFiltersBar, FilterActionButton } from '../components/ui';
+import { LoadingState, ErrorState, PageHeader, StatusBadge, VulnCounts, SortHeader, Pagination, DigestLinkWithCopy, RuntimeUsageBadge, PageFiltersBar, FilterActionButton, PolicyStatusSelect } from '../components/ui';
 import type { Scan } from '../lib/api';
 import { useSortablePaginationState } from '../lib/useSortablePaginationState';
 
@@ -40,7 +40,7 @@ export default function ScansPage() {
         sort_by: sortKey,
       };
       if (repository) filters.repository = repository;
-      if (policyFilter !== 'all') filters.policy_passed = policyFilter === 'passed';
+      if (policyFilter !== 'all') filters.policy_status = policyFilter;
       if (inUseQuery !== undefined) filters.in_use = inUseQuery;
 
       const result = await apiClient.getScansPage(filters);
@@ -69,15 +69,9 @@ export default function ScansPage() {
       <PageFiltersBar>
         <input value={repositoryInput} onChange={e => setRepositoryInput(e.target.value)} onKeyDown={e => e.key === 'Enter' && (setRepository(repositoryInput.trim()), setPage(1))}
           placeholder="Filter by repository…" className="flex-1 max-w-xs px-3 py-2 bg-bg-secondary border border-border rounded-lg text-sm text-text-primary placeholder:text-text-muted focus:outline-none focus:border-accent/50 transition-colors" />
-        <select value={policyFilter} onChange={e => { setPolicyFilter(e.target.value); setPage(1); }}
-          className="px-3 py-2 bg-bg-secondary border border-border rounded-lg text-sm text-text-primary focus:outline-none focus:border-accent/50 transition-colors">
-          <option value="all">All Statuses</option>
-          <option value="passed">Passed</option>
-          <option value="failed">Failed</option>
-        </select>
+        <PolicyStatusSelect value={policyFilter} onChange={v => { setPolicyFilter(v); setPage(1); }} />
         <FilterActionButton onClick={() => { setRepository(repositoryInput.trim()); setPage(1); }}>Filter</FilterActionButton>
-        <FilterActionButton variant="secondary" onClick={() => { setRepositoryInput(''); setRepository(''); setPolicyFilter('all'); setPage(1); }}>Clear</FilterActionButton>
-      </PageFiltersBar>
+        <FilterActionButton variant="secondary" onClick={() => { setRepositoryInput(''); setRepository(''); setPolicyFilter('all'); setPage(1); }}>Clear</FilterActionButton>      </PageFiltersBar>
       <div className="bg-bg-primary border border-border rounded-xl overflow-hidden">
         {scans.length === 0 ? (
           <div className="p-12 text-center text-text-secondary text-sm">No scans found</div>

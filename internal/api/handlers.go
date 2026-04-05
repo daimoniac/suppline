@@ -113,14 +113,19 @@ func (s *APIServer) handleListScans(w http.ResponseWriter, r *http.Request) {
 	// Parse query parameters
 	inUse := parseQueryParamBool(r, "in_use")
 
+	// policy_status ("passed","failed","pending") takes precedence over legacy policy_passed boolean
+	policyStatus := parseQueryParam(r, "policy_status")
 	filter := statestore.ScanFilter{
 		Repository:   parseQueryParam(r, "repository"),
-		PolicyPassed: parseQueryParamBool(r, "policy_passed"),
+		PolicyStatus: policyStatus,
 		InUse:        inUse,
 		MaxAge:       parseQueryParamInt(r, "max_age", 0),
 		SortBy:       parseQueryParam(r, "sort_by"),
 		Limit:        parseQueryParamInt(r, "limit", 100),
 		Offset:       parseQueryParamInt(r, "offset", 0),
+	}
+	if policyStatus == "" {
+		filter.PolicyPassed = parseQueryParamBool(r, "policy_passed")
 	}
 
 	// Get scans from state store
@@ -1122,12 +1127,13 @@ func (s *APIServer) handleListRepositories(w http.ResponseWriter, r *http.Reques
 	// Parse query parameters
 	inUse := parseQueryParamBool(r, "in_use")
 	filter := statestore.RepositoryFilter{
-		Search: parseQueryParam(r, "search"),
-		MaxAge: parseQueryParamInt(r, "max_age", 0),
-		InUse:  inUse,
-		SortBy: parseQueryParam(r, "sort_by"),
-		Limit:  parseQueryParamInt(r, "limit", 100),
-		Offset: parseQueryParamInt(r, "offset", 0),
+		Search:       parseQueryParam(r, "search"),
+		PolicyStatus: parseQueryParam(r, "policy_status"),
+		MaxAge:       parseQueryParamInt(r, "max_age", 0),
+		InUse:        inUse,
+		SortBy:       parseQueryParam(r, "sort_by"),
+		Limit:        parseQueryParamInt(r, "limit", 100),
+		Offset:       parseQueryParamInt(r, "offset", 0),
 	}
 
 	// Get repositories from state store
