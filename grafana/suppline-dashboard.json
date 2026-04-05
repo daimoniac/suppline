@@ -17,7 +17,7 @@
   "editable": true,
   "fiscalYearStartMonth": 0,
   "graphTooltip": 0,
-  "id": 0,
+  "id": 3785,
   "links": [],
   "panels": [
     {
@@ -71,7 +71,7 @@
         "showThresholdMarkers": true,
         "sizing": "auto"
       },
-      "pluginVersion": "12.3.1",
+      "pluginVersion": "12.3.5",
       "targets": [
         {
           "datasource": {
@@ -138,7 +138,7 @@
         "showThresholdMarkers": true,
         "sizing": "auto"
       },
-      "pluginVersion": "12.3.1",
+      "pluginVersion": "12.3.5",
       "targets": [
         {
           "datasource": {
@@ -212,7 +212,7 @@
       },
       "gridPos": {
         "h": 8,
-        "w": 12,
+        "w": 6,
         "x": 12,
         "y": 0
       },
@@ -230,7 +230,7 @@
           "sort": "none"
         }
       },
-      "pluginVersion": "12.3.1",
+      "pluginVersion": "12.3.5",
       "targets": [
         {
           "datasource": {
@@ -244,99 +244,6 @@
         }
       ],
       "title": "Vulnerabilities by Severity",
-      "type": "timeseries"
-    },
-    {
-      "datasource": {
-        "type": "prometheus",
-        "uid": "cortex"
-      },
-      "fieldConfig": {
-        "defaults": {
-          "color": {
-            "mode": "palette-classic"
-          },
-          "custom": {
-            "axisBorderShow": false,
-            "axisCenteredZero": false,
-            "axisColorMode": "text",
-            "axisLabel": "Count",
-            "axisPlacement": "auto",
-            "barAlignment": 0,
-            "barWidthFactor": 0.6,
-            "drawStyle": "line",
-            "fillOpacity": 10,
-            "gradientMode": "none",
-            "hideFrom": {
-              "legend": false,
-              "tooltip": false,
-              "viz": false
-            },
-            "insertNulls": false,
-            "lineInterpolation": "linear",
-            "lineWidth": 1,
-            "pointSize": 5,
-            "scaleDistribution": {
-              "type": "linear"
-            },
-            "showPoints": "auto",
-            "showValues": false,
-            "spanNulls": true,
-            "stacking": {
-              "group": "A",
-              "mode": "none"
-            },
-            "thresholdsStyle": {
-              "mode": "off"
-            }
-          },
-          "mappings": [],
-          "thresholds": {
-            "mode": "absolute",
-            "steps": [
-              {
-                "color": "green",
-                "value": 0
-              }
-            ]
-          }
-        },
-        "overrides": []
-      },
-      "gridPos": {
-        "h": 8,
-        "w": 12,
-        "x": 0,
-        "y": 8
-      },
-      "id": 11,
-      "options": {
-        "legend": {
-          "calcs": [],
-          "displayMode": "list",
-          "placement": "bottom",
-          "showLegend": true
-        },
-        "tooltip": {
-          "hideZeros": false,
-          "mode": "single",
-          "sort": "none"
-        }
-      },
-      "pluginVersion": "12.3.1",
-      "targets": [
-        {
-          "datasource": {
-            "uid": "Prometheus"
-          },
-          "editorMode": "code",
-          "expr": "sum(suppline_tolerated_cves)",
-          "legendFormat": "Tolerated CVEs",
-          "range": true,
-          "refId": "A"
-        }
-      ],
-      "title": "Tolerated CVEs",
       "type": "timeseries"
     },
     {
@@ -398,9 +305,9 @@
       },
       "gridPos": {
         "h": 8,
-        "w": 12,
-        "x": 12,
-        "y": 8
+        "w": 6,
+        "x": 18,
+        "y": 0
       },
       "id": 9,
       "options": {
@@ -416,7 +323,7 @@
           "sort": "none"
         }
       },
-      "pluginVersion": "12.3.1",
+      "pluginVersion": "12.3.5",
       "targets": [
         {
           "datasource": {
@@ -493,7 +400,100 @@
         "h": 8,
         "w": 6,
         "x": 0,
-        "y": 16
+        "y": 8
+      },
+      "id": 11,
+      "options": {
+        "legend": {
+          "calcs": [],
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "hideZeros": false,
+          "mode": "single",
+          "sort": "none"
+        }
+      },
+      "pluginVersion": "12.3.5",
+      "targets": [
+        {
+          "datasource": {
+            "uid": "Prometheus"
+          },
+          "editorMode": "code",
+          "expr": "sum(suppline_tolerated_cves)",
+          "legendFormat": "Tolerated CVEs",
+          "range": true,
+          "refId": "A"
+        }
+      ],
+      "title": "Tolerated CVEs",
+      "type": "timeseries"
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "cortex"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "axisBorderShow": false,
+            "axisCenteredZero": false,
+            "axisColorMode": "text",
+            "axisLabel": "Count",
+            "axisPlacement": "auto",
+            "barAlignment": 0,
+            "barWidthFactor": 0.6,
+            "drawStyle": "line",
+            "fillOpacity": 10,
+            "gradientMode": "none",
+            "hideFrom": {
+              "legend": false,
+              "tooltip": false,
+              "viz": false
+            },
+            "insertNulls": false,
+            "lineInterpolation": "linear",
+            "lineWidth": 1,
+            "pointSize": 5,
+            "scaleDistribution": {
+              "type": "linear"
+            },
+            "showPoints": "auto",
+            "showValues": false,
+            "spanNulls": true,
+            "stacking": {
+              "group": "A",
+              "mode": "none"
+            },
+            "thresholdsStyle": {
+              "mode": "off"
+            }
+          },
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": 0
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 4,
+        "x": 6,
+        "y": 8
       },
       "id": 12,
       "options": {
@@ -509,7 +509,7 @@
           "sort": "none"
         }
       },
-      "pluginVersion": "12.3.1",
+      "pluginVersion": "12.3.5",
       "targets": [
         {
           "datasource": {
@@ -584,9 +584,9 @@
       },
       "gridPos": {
         "h": 8,
-        "w": 6,
-        "x": 6,
-        "y": 16
+        "w": 4,
+        "x": 10,
+        "y": 8
       },
       "id": 13,
       "options": {
@@ -602,7 +602,7 @@
           "sort": "none"
         }
       },
-      "pluginVersion": "12.3.1",
+      "pluginVersion": "12.3.5",
       "targets": [
         {
           "datasource": {
@@ -677,9 +677,9 @@
       },
       "gridPos": {
         "h": 8,
-        "w": 6,
-        "x": 12,
-        "y": 16
+        "w": 5,
+        "x": 14,
+        "y": 8
       },
       "id": 19,
       "options": {
@@ -695,20 +695,20 @@
           "sort": "none"
         }
       },
-      "pluginVersion": "12.3.1",
+      "pluginVersion": "12.3.5",
       "targets": [
         {
           "datasource": {
             "uid": "Prometheus"
           },
           "editorMode": "code",
-          "expr": "sum(suppline_inactive_tolerations)",
+          "expr": "sum(suppline_unapplied_tolerations)",
           "legendFormat": "{{repository}}",
           "range": true,
           "refId": "A"
         }
       ],
-      "title": "inactive tolerations",
+      "title": "unapplied tolerations",
       "type": "timeseries"
     },
     {
@@ -770,9 +770,9 @@
       },
       "gridPos": {
         "h": 8,
-        "w": 6,
-        "x": 18,
-        "y": 16
+        "w": 5,
+        "x": 19,
+        "y": 8
       },
       "id": 18,
       "options": {
@@ -788,7 +788,7 @@
           "sort": "none"
         }
       },
-      "pluginVersion": "12.3.1",
+      "pluginVersion": "12.3.5",
       "targets": [
         {
           "datasource": {
@@ -865,7 +865,7 @@
         "h": 8,
         "w": 12,
         "x": 0,
-        "y": 24
+        "y": 16
       },
       "id": 3,
       "options": {
@@ -881,7 +881,7 @@
           "sort": "none"
         }
       },
-      "pluginVersion": "12.3.1",
+      "pluginVersion": "12.3.5",
       "targets": [
         {
           "datasource": {
@@ -968,7 +968,7 @@
         "h": 8,
         "w": 12,
         "x": 12,
-        "y": 24
+        "y": 16
       },
       "id": 4,
       "options": {
@@ -984,7 +984,7 @@
           "sort": "none"
         }
       },
-      "pluginVersion": "12.3.1",
+      "pluginVersion": "12.3.5",
       "targets": [
         {
           "datasource": {
@@ -1071,7 +1071,7 @@
         "h": 8,
         "w": 12,
         "x": 0,
-        "y": 32
+        "y": 24
       },
       "id": 8,
       "options": {
@@ -1087,7 +1087,7 @@
           "sort": "none"
         }
       },
-      "pluginVersion": "12.3.1",
+      "pluginVersion": "12.3.5",
       "targets": [
         {
           "datasource": {
@@ -1194,7 +1194,7 @@
         "h": 8,
         "w": 12,
         "x": 12,
-        "y": 32
+        "y": 24
       },
       "id": 6,
       "options": {
@@ -1210,7 +1210,7 @@
           "sort": "none"
         }
       },
-      "pluginVersion": "12.3.1",
+      "pluginVersion": "12.3.5",
       "targets": [
         {
           "datasource": {
@@ -1227,8 +1227,8 @@
             "uid": "Prometheus"
           },
           "editorMode": "code",
-          "expr": "sum(suppline_policy_failed_current{source=\"registry\"})",
-          "legendFormat": "Failed (current, registry)",
+          "expr": "sum ( rate(suppline_policy_failed_total[5m])) ",
+          "legendFormat": "Failed (rate)",
           "range": true,
           "refId": "B"
         }
@@ -1297,7 +1297,7 @@
         "h": 8,
         "w": 12,
         "x": 0,
-        "y": 40
+        "y": 32
       },
       "id": 10,
       "options": {
@@ -1313,7 +1313,7 @@
           "sort": "none"
         }
       },
-      "pluginVersion": "12.3.1",
+      "pluginVersion": "12.3.5",
       "targets": [
         {
           "datasource": {
@@ -1401,7 +1401,7 @@
         "h": 8,
         "w": 12,
         "x": 12,
-        "y": 40
+        "y": 32
       },
       "id": 15,
       "options": {
@@ -1417,7 +1417,7 @@
           "sort": "none"
         }
       },
-      "pluginVersion": "12.3.1",
+      "pluginVersion": "12.3.5",
       "targets": [
         {
           "datasource": {
@@ -1456,7 +1456,7 @@
         "h": 12,
         "w": 24,
         "x": 0,
-        "y": 48
+        "y": 40
       },
       "id": 17,
       "options": {
@@ -1474,7 +1474,7 @@
         "timestampResolution": "ms",
         "wrapLogMessage": false
       },
-      "pluginVersion": "12.3.1",
+      "pluginVersion": "12.3.5",
       "targets": [
         {
           "datasource": {
@@ -1504,7 +1504,7 @@
         "h": 12,
         "w": 24,
         "x": 0,
-        "y": 60
+        "y": 52
       },
       "id": 16,
       "options": {
@@ -1522,7 +1522,7 @@
         "timestampResolution": "ms",
         "wrapLogMessage": false
       },
-      "pluginVersion": "12.3.1",
+      "pluginVersion": "12.3.5",
       "targets": [
         {
           "datasource": {
@@ -1552,12 +1552,12 @@
     "list": []
   },
   "time": {
-    "from": "now-15m",
+    "from": "now-6h",
     "to": "now"
   },
   "timepicker": {},
   "timezone": "",
   "title": "Suppline Metrics Dashboard",
   "uid": "suppline-dashboard",
-  "version": 9
+  "version": 10
 }
