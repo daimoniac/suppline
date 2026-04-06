@@ -5,28 +5,52 @@ import { formatRelativeTime, formatDate } from '../lib/utils';
 import { useImageUsageFilter } from '../lib/imageUsageFilter';
 import { LoadingState, ErrorState, PageHeader, StatusBadge, VulnCounts, SortHeader, Pagination, DigestLinkWithCopy, RuntimeUsageBadge, PageFiltersBar, FilterActionButton, PolicyStatusSelect } from '../components/ui';
 import type { Scan } from '../lib/api';
-import { useSortablePaginationState } from '../lib/useSortablePaginationState';
+import { useSortablePaginationState, type SortDirection } from '../lib/useSortablePaginationState';
+import { useScanPageFilters } from '../lib/useScanPageFilters';
 
 export default function ScansPage() {
   const { apiClient } = useAuth();
   const { inUseQuery } = useImageUsageFilter();
-  const [searchParams] = useSearchParams();
+  const [searchParams, setSearchParams] = useSearchParams();
 
   const [scans, setScans] = useState<Scan[]>([]);
   const [totalScans, setTotalScans] = useState(0);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
-  const [repositoryInput, setRepositoryInput] = useState(searchParams.get('repository') || '');
-  const [repository, setRepository] = useState(searchParams.get('repository') || '');
-  const [policyFilter, setPolicyFilter] = useState(searchParams.get('policy_passed') || 'all');
   const pageSize = 50;
+  const defaultSortColumn = 'scanned_at';
+  const defaultSortDirection: SortDirection = 'desc';
+  const initialSortDirection = (searchParams.get('order') as SortDirection) || defaultSortDirection;
+  const initialPage = Number(searchParams.get('page')) || 1;
 
   const { sortColumn: sortCol, sortDirection: sortDir, toggleSort, page, setPage, totalPages, offset } = useSortablePaginationState({
-    initialSortColumn: 'scanned_at',
-    initialSortDirection: 'desc',
+    initialSortColumn: searchParams.get('sort') || defaultSortColumn,
+    initialSortDirection,
     resolveNewColumnDirection: () => 'desc',
+    initialPage,
     pageSize,
     totalItems: totalScans,
+  });
+
+  const {
+    repository,
+    policyFilter,
+    handleRepositoryInputChange,
+    applyRepositoryFilter,
+    handlePolicyFilterChange,
+    clearFilters,
+    handlePageChange,
+    handleSortChange,
+  } = useScanPageFilters({
+    initialRepository: searchParams.get('repository') || '',
+    initialPolicyFilter: searchParams.get('policy_status') || 'all',
+    page,
+    sortColumn: sortCol,
+    sortDirection: sortDir,
+    defaultSortColumn,
+    defaultSortDirection,
+    setPage,
+    setSearchParams,
   });
 
   const load = useCallback(async () => {
@@ -56,8 +80,9 @@ export default function ScansPage() {
   useEffect(() => { load(); }, [load]);
 
   const handleSort = (col: string) => {
-    setPage(1);
+    const nextDir = col === sortCol ? (sortDir === 'asc' ? 'desc' : 'asc') : 'desc';
     toggleSort(col);
+    handleSortChange(col, nextDir);
   };
 
   if (loading && scans.length === 0) return <LoadingState />;
@@ -67,11 +92,11 @@ export default function ScansPage() {
     <div>
       <PageHeader title="Image Scans" subtitle="View and manage container image security scans" />
       <PageFiltersBar>
-        <input value={repositoryInput} onChange={e => setRepositoryInput(e.target.value)} onKeyDown={e => e.key === 'Enter' && (setRepository(repositoryInput.trim()), setPage(1))}
+        <input value={repository} onChange={e => handleRepositoryInputChange(e.target.value)} onKeyDown={e => e.key === 'Enter' && applyRepositoryFilter()}
           placeholder="Filter by repository…" className="flex-1 max-w-xs px-3 py-2 bg-bg-secondary border border-border rounded-lg text-sm text-text-primary placeholder:text-text-muted focus:outline-none focus:border-accent/50 transition-colors" />
-        <PolicyStatusSelect value={policyFilter} onChange={v => { setPolicyFilter(v); setPage(1); }} />
-        <FilterActionButton onClick={() => { setRepository(repositoryInput.trim()); setPage(1); }}>Filter</FilterActionButton>
-        <FilterActionButton variant="secondary" onClick={() => { setRepositoryInput(''); setRepository(''); setPolicyFilter('all'); setPage(1); }}>Clear</FilterActionButton>      </PageFiltersBar>
+        <PolicyStatusSelect value={policyFilter} onChange={handlePolicyFilterChange} />
+        <FilterActionButton onClick={applyRepositoryFilter}>Filter</FilterActionButton>
+        <FilterActionButton variant="secondary" onClick={clearFilters}>Clear</FilterActionButton>      </PageFiltersBar>
       <div className="bg-bg-primary border border-border rounded-xl overflow-hidden">
         {scans.length === 0 ? (
           <div className="p-12 text-center text-text-secondary text-sm">No scans found</div>
@@ -105,7 +130,7 @@ export default function ScansPage() {
             ))}
           </tbody></table></div>
         )}
-        <Pagination currentPage={page} totalPages={totalPages} total={totalScans} pageSize={pageSize} onPageChange={setPage} itemLabel="scans" />
+        <Pagination currentPage={page} totalPages={totalPages} total={totalScans} pageSize={pageSize} onPageChange={handlePageChange} itemLabel="scans" />
       </div>
     </div>
   );

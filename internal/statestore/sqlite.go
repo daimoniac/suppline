@@ -1700,8 +1700,8 @@ func (s *SQLiteStore) ListScans(ctx context.Context, filter ScanFilter) ([]*Scan
 	args := []interface{}{}
 
 	if filter.Repository != "" {
-		query += " AND r.name = ?"
-		args = append(args, filter.Repository)
+		query += " AND r.name LIKE ?"
+		args = append(args, "%"+filter.Repository+"%")
 	}
 
 	switch filter.PolicyStatus {
@@ -1818,8 +1818,8 @@ func (s *SQLiteStore) CountScans(ctx context.Context, filter ScanFilter) (int, e
 	args := []interface{}{}
 
 	if filter.Repository != "" {
-		query += " AND r.name = ?"
-		args = append(args, filter.Repository)
+		query += " AND r.name LIKE ?"
+		args = append(args, "%"+filter.Repository+"%")
 	}
 
 	switch filter.PolicyStatus {

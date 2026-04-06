@@ -299,6 +299,26 @@ func TestSQLiteStore(t *testing.T) {
 		}
 	})
 
+	// Test ListScans with partial repository filter
+	t.Run("ListScans with partial repository filter", func(t *testing.T) {
+		filter := ScanFilter{
+			Repository: "myorg",
+			Limit:      10,
+		}
+		scans, err := store.ListScans(ctx, filter)
+		if err != nil {
+			t.Fatalf("Failed to list scans: %v", err)
+		}
+		if len(scans) != 3 {
+			t.Errorf("Expected 3 scans for partial repository filter 'myorg', got %d", len(scans))
+		}
+		for _, scan := range scans {
+			if scan.Repository != "myorg/myapp" && scan.Repository != "myorg/oldapp" {
+				t.Errorf("Expected repository matching prefix myorg/, got %s", scan.Repository)
+			}
+		}
+	})
+
 	// Test ListScans with policy_passed filter
 	t.Run("ListScans with policy_passed filter", func(t *testing.T) {
 		passed := true
