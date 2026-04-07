@@ -6,6 +6,7 @@ import (
 	"regexp"
 	"sort"
 	"strings"
+	"time"
 
 	semver "github.com/Masterminds/semver/v3"
 )
@@ -43,6 +44,24 @@ type RuntimeUnusedRepoTasksResponse struct {
 	Entries       []RuntimeUnusedRepoEntry `json:"entries"`
 	AIAgentPrompt string                   `json:"ai_agent_prompt"`
 	NoRuntimeData bool                     `json:"no_runtime_data"`
+}
+
+// VEXExpiryTaskEntry describes VEX statements that are expired or near expiry.
+type VEXExpiryTaskEntry struct {
+	CVEID         string   `json:"cve_id"`
+	Repositories  []string `json:"repositories"`
+	ExpiresAt     int64    `json:"expires_at"`
+	State         string   `json:"state"`
+	Justification string   `json:"justification,omitempty"`
+	Detail        string   `json:"detail,omitempty"`
+	// Status is one of "expired" or "expiring_soon".
+	Status string `json:"status"`
+}
+
+// VEXExpiryTasksResponse is returned by GET /api/v1/tasks/vex-expiry.
+type VEXExpiryTasksResponse struct {
+	Entries       []VEXExpiryTaskEntry `json:"entries"`
+	AIAgentPrompt string               `json:"ai_agent_prompt"`
 }
 
 // internalSemverEntry carries both the public data and the original sync index
@@ -329,6 +348,73 @@ func (s *APIServer) handleGetRuntimeUnusedRepositoryTasks(w http.ResponseWriter,
 	})
 }
 
+// handleGetVEXExpiryTasks returns VEX statements that are expired or expiring soon.
+//
+// @Summary     Get VEX expiry tasks
+// @Description Lists configured VEX statements that are already expired or will
+// @Description expire within the next 7 days.
+// @Tags        Tasks
+// @Produce     json
+// @Success     200  {object}  VEXExpiryTasksResponse
+// @Failure     401  {object}  map[string]string  "Unauthorized"
+// @Security    BearerAuth
+// @Router      /tasks/vex-expiry [get]
+func (s *APIServer) handleGetVEXExpiryTasks(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		s.respondError(w, http.StatusMethodNotAllowed, "Method not allowed")
+		return
+	}
+
+	expiringSoon := true
+	expired := true
+	vexInfos := s.getConfiguredVEXStatements("", "", &expiringSoon, &expired)
+	grouped := s.groupVEXByCVE(vexInfos)
+
+	now := time.Now().Unix()
+	entries := make([]VEXExpiryTaskEntry, 0, len(grouped))
+	for _, summary := range grouped {
+		if summary.ExpiresAt == nil || *summary.ExpiresAt == 0 {
+			continue
+		}
+
+		status := "expiring_soon"
+		if *summary.ExpiresAt <= now {
+			status = "expired"
+		}
+
+		repos := make([]string, 0, len(summary.Repositories))
+		for _, repo := range summary.Repositories {
+			repos = append(repos, repo.Repository)
+		}
+		sort.Strings(repos)
+
+		entries = append(entries, VEXExpiryTaskEntry{
+			CVEID:         summary.CVEID,
+			Repositories:  repos,
+			ExpiresAt:     *summary.ExpiresAt,
+			State:         string(summary.State),
+			Justification: string(summary.Justification),
+			Detail:        summary.Detail,
+			Status:        status,
+		})
+	}
+
+	sort.Slice(entries, func(i, j int) bool {
+		if entries[i].Status != entries[j].Status {
+			return entries[i].Status == "expired"
+		}
+		if entries[i].ExpiresAt != entries[j].ExpiresAt {
+			return entries[i].ExpiresAt < entries[j].ExpiresAt
+		}
+		return entries[i].CVEID < entries[j].CVEID
+	})
+
+	s.respondJSON(w, http.StatusOK, VEXExpiryTasksResponse{
+		Entries:       entries,
+		AIAgentPrompt: buildVEXExpiryPrompt(entries),
+	})
+}
+
 var lowerOnlyRangeRe = regexp.MustCompile(`^>=\s*(\S+)\s*$`)
 var exactVersionRangeRe = regexp.MustCompile(`^\s*v?\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?(?:\+[0-9A-Za-z.-]+)?\s*$`)
 var vPrefixRangeRe = regexp.MustCompile(`^(>=|<=|>|<|=|~|\^)?\s*v\d`)
@@ -594,6 +680,30 @@ func buildRuntimeUnusedRepositoriesPrompt(entries []RuntimeUnusedRepoEntry) stri
 		b.WriteString("\n  target: ")
 		b.WriteString(entry.Target)
 		b.WriteString("\n")
+	}
+
+	return b.String()
+}
+
+func buildVEXExpiryPrompt(entries []VEXExpiryTaskEntry) string {
+	if len(entries) == 0 {
+		return ""
+	}
+
+	var b strings.Builder
+	b.WriteString("Update suppline.yml VEX statements that are expired or expiring soon.\n")
+	b.WriteString("For each entry, either extend expires_at with a justified new date or remove the x-vex statement if no longer needed.\n")
+
+	for _, entry := range entries {
+		b.WriteString("- cve_id: ")
+		b.WriteString(entry.CVEID)
+		b.WriteString("\n  status: ")
+		b.WriteString(entry.Status)
+		b.WriteString("\n  expires_at: ")
+		b.WriteString(time.Unix(entry.ExpiresAt, 0).UTC().Format(time.RFC3339))
+		b.WriteString("\n  repositories: [")
+		b.WriteString(strings.Join(entry.Repositories, ", "))
+		b.WriteString("]\n")
 	}
 
 	return b.String()

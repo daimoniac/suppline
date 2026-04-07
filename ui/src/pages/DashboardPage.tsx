@@ -4,8 +4,8 @@ import { useAuth } from '../lib/auth';
 import { formatRelativeTime } from '../lib/utils';
 import { useImageUsageFilter } from '../lib/imageUsageFilter';
 import { LoadingState, ErrorState, StatusBadge, SeverityBadge, VulnCounts, DigestLinkWithCopy } from '../components/ui';
-import type { RuntimeUnusedRepoTasksResponse, Scan, SemverUpdateTasksResponse, VEXSummary } from '../lib/api';
-import { ShieldAlert, ShieldCheck, Clock, CheckSquare, ExternalLink, ArrowRight, ClipboardList, Sparkles, Trash2 } from 'lucide-react';
+import type { RuntimeUnusedRepoTasksResponse, Scan, SemverUpdateTasksResponse, VEXExpiryTasksResponse } from '../lib/api';
+import { ShieldAlert, ShieldCheck, Clock, Clock3, CheckSquare, ArrowRight, ClipboardList, Sparkles, Trash2, TriangleAlert } from 'lucide-react';
 
 interface DashboardData {
   recentScans: Scan[];
@@ -13,14 +13,14 @@ interface DashboardData {
   failedInUseCount: number;
   pendingCount: number;
   activeVEXStatements: number;
-  expiringVEXStatements: VEXSummary[];
-  expiredVEXStatements: VEXSummary[];
-  inactiveVEXStatements: VEXSummary[];
+  inactiveVEXStatements: number;
   vulnBreakdown: { critical: number; high: number; medium: number; low: number };
   policyByRepo: Record<string, { failed: number; pending: number }>;
   outOfBoundsTaskCount: number;
   tightenTaskCount: number;
   runtimeUnusedTaskCount: number;
+  vexExpiredTaskCount: number;
+  vexExpiringSoonTaskCount: number;
 }
 
 export default function DashboardPage() {
@@ -34,7 +34,7 @@ export default function DashboardPage() {
     setLoading(true);
     setError('');
     try {
-      const [recentScans, nonPassedScans, allVEXStatements, inactiveVEXStatements, vulnStats, semverTasksResult, runtimeUnusedTasksResult] = await Promise.all([
+      const [recentScans, nonPassedScans, allVEXStatements, inactiveVEXStatements, vulnStats, semverTasksResult, runtimeUnusedTasksResult, vexExpiryTasksResult] = await Promise.all([
         apiClient.getScans({ limit: 20, ...(inUseQuery !== undefined && { in_use: inUseQuery }) }),
         apiClient.getScans({ policy_passed: false, ...(inUseQuery !== undefined && { in_use: inUseQuery }) }),
         apiClient.getVEXStatements({}),
@@ -42,16 +42,8 @@ export default function DashboardPage() {
         apiClient.getVulnerabilityStats(),
         apiClient.getSemverUpdateTasks().catch(() => null as SemverUpdateTasksResponse | null),
         apiClient.getRuntimeUnusedRepositoryTasks().catch(() => null as RuntimeUnusedRepoTasksResponse | null),
+        apiClient.getVEXExpiryTasks().catch(() => null as VEXExpiryTasksResponse | null),
       ]);
-
-      const now = Date.now();
-      const sevenDays = 7 * 24 * 60 * 60 * 1000;
-      const expired = allVEXStatements.filter(t => t.ExpiresAt && t.ExpiresAt * 1000 <= now);
-      const expiring = allVEXStatements.filter(t => {
-        if (!t.ExpiresAt) return false;
-        const ms = t.ExpiresAt * 1000;
-        return ms > now && ms <= now + sevenDays;
-      });
 
       const failedScans = nonPassedScans.filter(s => s.PolicyStatus !== 'pending');
       const pendingScans = nonPassedScans.filter(s => s.PolicyStatus === 'pending');
@@ -65,6 +57,8 @@ export default function DashboardPage() {
       const outOfBoundsTaskCount = semverTasksResult?.entries?.filter(entry => entry.status === 'out_of_bounds').length ?? 0;
       const tightenTaskCount = semverTasksResult?.entries?.filter(entry => entry.status === 'tighten').length ?? 0;
       const runtimeUnusedTaskCount = runtimeUnusedTasksResult?.entries?.filter(entry => entry.status === 'unused').length ?? 0;
+      const vexExpiredTaskCount = vexExpiryTasksResult?.entries?.filter(entry => entry.status === 'expired').length ?? 0;
+      const vexExpiringSoonTaskCount = vexExpiryTasksResult?.entries?.filter(entry => entry.status === 'expiring_soon').length ?? 0;
 
       setData({
         recentScans,
@@ -72,9 +66,7 @@ export default function DashboardPage() {
         failedInUseCount: failedScans.filter(s => !!s.RuntimeUsed).length,
         pendingCount: pendingScans.length,
         activeVEXStatements: allVEXStatements.length,
-        expiringVEXStatements: expiring,
-        expiredVEXStatements: expired,
-        inactiveVEXStatements: inactiveVEXStatements,
+        inactiveVEXStatements: inactiveVEXStatements.length,
         vulnBreakdown: {
           critical: vulnStats?.CRITICAL || 0,
           high: vulnStats?.HIGH || 0,
@@ -85,6 +77,8 @@ export default function DashboardPage() {
         outOfBoundsTaskCount,
         tightenTaskCount,
         runtimeUnusedTaskCount,
+        vexExpiredTaskCount,
+        vexExpiringSoonTaskCount,
       });
     } catch (e: unknown) {
       setError(e instanceof Error ? e.message : 'Failed to load dashboard');
@@ -100,7 +94,6 @@ export default function DashboardPage() {
   if (!data) return null;
 
   const totalVulns = data.vulnBreakdown.critical + data.vulnBreakdown.high + data.vulnBreakdown.medium + data.vulnBreakdown.low;
-  const attentionCount = data.expiredVEXStatements.length + data.expiringVEXStatements.length + data.inactiveVEXStatements.length;
   const topPolicyRepos = Object.entries(data.policyByRepo)
     .sort((a, b) => (b[1].failed + b[1].pending) - (a[1].failed + a[1].pending))
     .slice(0, 5);
@@ -123,16 +116,38 @@ export default function DashboardPage() {
         />
         <SummaryCard icon={<Clock className="w-5 h-5" />} value={data.pendingCount} label="Pending Release" variant="warning" detail="Waiting to mature" />
         <SummaryCard icon={<ShieldCheck className="w-5 h-5" />} value={data.activeVEXStatements} label="Active VEX Statements" variant="info" to="/vex" />
-        <SummaryCard icon={<CheckSquare className="w-5 h-5" />} value={data.inactiveVEXStatements.length} label="Inactive VEX Statements" variant="muted" />
+        <SummaryCard icon={<CheckSquare className="w-5 h-5" />} value={data.inactiveVEXStatements} label="Inactive VEX Statements" variant="muted" />
       </div>
 
-      {(data.outOfBoundsTaskCount > 0 || data.tightenTaskCount > 0 || data.runtimeUnusedTaskCount > 0) && (
+      {(data.outOfBoundsTaskCount > 0 || data.tightenTaskCount > 0 || data.runtimeUnusedTaskCount > 0 || data.vexExpiredTaskCount > 0 || data.vexExpiringSoonTaskCount > 0) && (
         <div className="bg-bg-primary border border-border rounded-xl p-4 space-y-3">
           <div className="flex items-center gap-2">
             <ClipboardList className="w-4 h-4 text-accent" />
             <h2 className="text-sm font-semibold">Task Notifications</h2>
           </div>
           <div className="space-y-2">
+            {data.vexExpiredTaskCount > 0 && (
+              <Link
+                to="/tasks"
+                className="flex items-center justify-between gap-3 rounded-lg border border-danger/30 bg-danger-bg px-3 py-2 text-sm text-danger hover:brightness-95 transition"
+              >
+                <span>
+                  {data.vexExpiredTaskCount} VEX {data.vexExpiredTaskCount === 1 ? 'statement is' : 'statements are'} expired and needs review.
+                </span>
+                <TriangleAlert className="w-4 h-4 flex-shrink-0" />
+              </Link>
+            )}
+            {data.vexExpiringSoonTaskCount > 0 && (
+              <Link
+                to="/tasks"
+                className="flex items-center justify-between gap-3 rounded-lg border border-warning/30 bg-warning-bg px-3 py-2 text-sm text-warning hover:brightness-95 transition"
+              >
+                <span>
+                  {data.vexExpiringSoonTaskCount} VEX {data.vexExpiringSoonTaskCount === 1 ? 'statement is' : 'statements are'} expiring within 7 days.
+                </span>
+                <Clock3 className="w-4 h-4 flex-shrink-0" />
+              </Link>
+            )}
             {data.runtimeUnusedTaskCount > 0 && (
               <Link
                 to="/tasks"
@@ -152,7 +167,7 @@ export default function DashboardPage() {
                 <span>
                   {data.outOfBoundsTaskCount} sync {data.outOfBoundsTaskCount === 1 ? 'entry has' : 'entries have'} runtime versions outside the configured range.
                 </span>
-                <ArrowRight className="w-4 h-4 flex-shrink-0" />
+                <TriangleAlert className="w-4 h-4 flex-shrink-0" />
               </Link>
             )}
             {data.tightenTaskCount > 0 && (
@@ -268,27 +283,6 @@ export default function DashboardPage() {
         )}
       </div>
 
-      {attentionCount > 0 && (
-        <div className="bg-bg-primary border border-border rounded-xl p-5">
-          <h2 className="text-sm font-semibold mb-3">VEX Statements Requiring Attention</h2>
-          <div className="flex gap-2 mb-4 flex-wrap">
-            {data.expiredVEXStatements.length > 0 && <span className="px-2 py-1 rounded text-xs font-medium bg-danger-bg text-danger">{data.expiredVEXStatements.length} Expired</span>}
-            {data.expiringVEXStatements.length > 0 && <span className="px-2 py-1 rounded text-xs font-medium bg-warning-bg text-warning">{data.expiringVEXStatements.length} Expiring Soon</span>}
-            {data.inactiveVEXStatements.length > 0 && <span className="px-2 py-1 rounded text-xs font-medium bg-bg-tertiary text-text-secondary">{data.inactiveVEXStatements.length} Inactive</span>}
-          </div>
-          <div className="space-y-2 max-h-64 overflow-y-auto">
-            {data.expiredVEXStatements.slice(0, 5).map(t => (
-              <VEXAttentionItem key={`exp-${t.CVEID}`} statement={t} status="expired" to={`/vulnerabilities?cve_id=${encodeURIComponent(t.CVEID)}`} />
-            ))}
-            {data.expiringVEXStatements.slice(0, 5).map(t => (
-              <VEXAttentionItem key={`expiring-${t.CVEID}`} statement={t} status="expiring" to={`/vulnerabilities?cve_id=${encodeURIComponent(t.CVEID)}`} />
-            ))}
-            {data.inactiveVEXStatements.slice(0, 3).map(t => (
-              <VEXAttentionItem key={`inactive-${t.CVEID}`} statement={t} status="inactive" to={`/vulnerabilities?cve_id=${encodeURIComponent(t.CVEID)}`} />
-            ))}
-          </div>
-        </div>
-      )}
     </div>
   );
 }
@@ -306,24 +300,3 @@ function SummaryCard({ icon, value, label, detail, variant, to }: {
   return to ? <Link to={to} className={className}>{content}</Link> : <div className={className}>{content}</div>;
 }
 
-function VEXAttentionItem({ statement, status, to }: {
-  statement: VEXSummary; status: 'expired' | 'expiring' | 'inactive'; to: string;
-}) {
-  const repos = statement.Repositories || [];
-  const repoDisplay = repos.length === 0 ? 'No repositories' : repos.length <= 3 ? repos.map(r => r.Repository).join(', ') : 'multiple repos';
-  const statusConfig = { expired: { badge: 'bg-danger-bg text-danger', label: '⚠️ EXPIRED' }, expiring: { badge: 'bg-warning-bg text-warning', label: '⏰ Expiring' }, inactive: { badge: 'bg-bg-tertiary text-text-secondary', label: '📋 Inactive' } };
-
-  return (
-    <Link to={to} className="flex items-start gap-3 p-3 rounded-lg bg-bg-secondary hover:bg-bg-tertiary transition-colors">
-      <div className="flex-1 min-w-0">
-        <div className="flex items-center gap-2 mb-1">
-          <span className="text-sm font-mono font-medium">{statement.CVEID}</span>
-          <span className={`px-1.5 py-0.5 rounded text-[10px] font-semibold ${statusConfig[status].badge}`}>{statusConfig[status].label}</span>
-        </div>
-        <div className="text-xs text-text-muted truncate">{repoDisplay}</div>
-        {statement.Detail && <div className="text-xs text-text-secondary mt-1 truncate">{statement.Detail}</div>}
-      </div>
-      <ExternalLink className="w-3.5 h-3.5 text-text-muted flex-shrink-0 mt-1" />
-    </Link>
-  );
-}

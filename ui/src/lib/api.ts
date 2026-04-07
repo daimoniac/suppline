@@ -168,6 +168,9 @@ export class APIClient {
   async getRuntimeUnusedRepositoryTasks(): Promise<RuntimeUnusedRepoTasksResponse> {
     return this.request<RuntimeUnusedRepoTasksResponse>('/api/v1/tasks/runtime-unused-repositories');
   }
+  async getVEXExpiryTasks(): Promise<VEXExpiryTasksResponse> {
+    return this.request<VEXExpiryTasksResponse>('/api/v1/tasks/vex-expiry');
+  }
 
   // Health
   async getHealth() { return this.request<Record<string, unknown>>('/health'); }
@@ -353,4 +356,20 @@ export interface RuntimeUnusedRepoTasksResponse {
   entries: RuntimeUnusedRepoTaskEntry[];
   ai_agent_prompt: string;
   no_runtime_data: boolean;
+}
+
+export interface VEXExpiryTaskEntry {
+  cve_id: string;
+  repositories: string[];
+  expires_at: number;
+  state: string;
+  justification: string;
+  detail: string;
+  /** "expired" | "expiring_soon" */
+  status: string;
+}
+
+export interface VEXExpiryTasksResponse {
+  entries: VEXExpiryTaskEntry[];
+  ai_agent_prompt: string;
 }

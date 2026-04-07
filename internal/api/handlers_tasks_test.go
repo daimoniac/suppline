@@ -6,11 +6,13 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/daimoniac/suppline/internal/config"
 	"github.com/daimoniac/suppline/internal/observability"
 	"github.com/daimoniac/suppline/internal/queue"
 	"github.com/daimoniac/suppline/internal/statestore"
+	"github.com/daimoniac/suppline/internal/types"
 )
 
 // tasksTestServer creates a server with the given inventory store and regsync config.
@@ -30,6 +32,20 @@ func regsyncWithSemver(source, target string, ranges []string) *config.RegsyncCo
 				Target: target,
 				Type:   "repository",
 				Tags:   &config.TagFilter{SemverRange: ranges},
+			},
+		},
+	}
+}
+
+func regsyncWithVEX(target string, statements []types.VEXStatement) *config.RegsyncConfig {
+	return &config.RegsyncConfig{
+		Version: 1,
+		Sync: []config.SyncEntry{
+			{
+				Source: "docker.io/test",
+				Target: target,
+				Type:   "repository",
+				VEX:    statements,
 			},
 		},
 	}
@@ -872,5 +888,108 @@ func TestHandleGetSemverUpdateTasks_RequiresAuth(t *testing.T) {
 
 	if w.Code != http.StatusUnauthorized {
 		t.Fatalf("expected 401 without auth, got %d", w.Code)
+	}
+}
+
+func TestHandleGetVEXExpiryTasks_MethodNotAllowed(t *testing.T) {
+	server := tasksTestServer(t, &mockStateStore{}, mockRegsyncConfig())
+
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/tasks/vex-expiry", nil)
+	w := httptest.NewRecorder()
+	server.router.ServeHTTP(w, req)
+
+	if w.Code != http.StatusMethodNotAllowed {
+		t.Fatalf("expected 405, got %d", w.Code)
+	}
+}
+
+func TestHandleGetVEXExpiryTasks_ReturnsExpiredAndExpiringSoon(t *testing.T) {
+	now := time.Now().UTC()
+	expiredAt := now.Add(-2 * time.Hour).Unix()
+	expiringSoonAt := now.Add(48 * time.Hour).Unix()
+	futureAt := now.Add(20 * 24 * time.Hour).Unix()
+
+	regsync := &config.RegsyncConfig{
+		Version: 1,
+		Sync: []config.SyncEntry{
+			{
+				Source: "docker.io/nginx",
+				Target: "registry.example.com/nginx",
+				Type:   "repository",
+				VEX: []types.VEXStatement{
+					{ID: "CVE-2026-0001", State: types.VEXStateNotAffected, ExpiresAt: &expiredAt},
+					{ID: "CVE-2026-0002", State: types.VEXStateNotAffected, ExpiresAt: &expiringSoonAt},
+					{ID: "CVE-2026-0003", State: types.VEXStateNotAffected, ExpiresAt: &futureAt},
+				},
+			},
+		},
+	}
+	server := tasksTestServer(t, &mockStateStore{}, regsync)
+
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/tasks/vex-expiry", nil)
+	w := httptest.NewRecorder()
+	server.router.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", w.Code, w.Body.String())
+	}
+
+	var resp VEXExpiryTasksResponse
+	if err := json.NewDecoder(w.Body).Decode(&resp); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+
+	if len(resp.Entries) != 2 {
+		t.Fatalf("expected 2 task entries, got %d", len(resp.Entries))
+	}
+
+	byCVE := map[string]VEXExpiryTaskEntry{}
+	for _, entry := range resp.Entries {
+		byCVE[entry.CVEID] = entry
+	}
+
+	if byCVE["CVE-2026-0001"].Status != "expired" {
+		t.Fatalf("expected expired status, got %q", byCVE["CVE-2026-0001"].Status)
+	}
+	if byCVE["CVE-2026-0002"].Status != "expiring_soon" {
+		t.Fatalf("expected expiring_soon status, got %q", byCVE["CVE-2026-0002"].Status)
+	}
+	if _, exists := byCVE["CVE-2026-0003"]; exists {
+		t.Fatal("did not expect far-future VEX entry in task list")
+	}
+
+	if resp.AIAgentPrompt == "" {
+		t.Fatal("expected non-empty ai_agent_prompt")
+	}
+	if !strings.Contains(resp.AIAgentPrompt, "CVE-2026-0001") || !strings.Contains(resp.AIAgentPrompt, "CVE-2026-0002") {
+		t.Fatalf("prompt missing expected CVEs: %s", resp.AIAgentPrompt)
+	}
+}
+
+func TestHandleGetVEXExpiryTasks_EmptyWhenNoExpiringEntries(t *testing.T) {
+	futureAt := time.Now().UTC().Add(30 * 24 * time.Hour).Unix()
+	regsync := regsyncWithVEX("registry.example.com/nginx", []types.VEXStatement{
+		{ID: "CVE-2026-0100", State: types.VEXStateNotAffected, ExpiresAt: &futureAt},
+	})
+	server := tasksTestServer(t, &mockStateStore{}, regsync)
+
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/tasks/vex-expiry", nil)
+	w := httptest.NewRecorder()
+	server.router.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", w.Code, w.Body.String())
+	}
+
+	var resp VEXExpiryTasksResponse
+	if err := json.NewDecoder(w.Body).Decode(&resp); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+
+	if len(resp.Entries) != 0 {
+		t.Fatalf("expected 0 entries, got %d", len(resp.Entries))
+	}
+	if resp.AIAgentPrompt != "" {
+		t.Fatalf("expected empty ai_agent_prompt, got %q", resp.AIAgentPrompt)
 	}
 }

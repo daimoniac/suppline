@@ -131,6 +131,7 @@ func (s *APIServer) setupRoutes() {
 	// Task endpoints
 	s.router.HandleFunc("/api/v1/tasks/semver-updates", s.corsMiddleware(s.authMiddleware(s.handleGetSemverUpdateTasks, true)))
 	s.router.HandleFunc("/api/v1/tasks/runtime-unused-repositories", s.corsMiddleware(s.authMiddleware(s.handleGetRuntimeUnusedRepositoryTasks, true)))
+	s.router.HandleFunc("/api/v1/tasks/vex-expiry", s.corsMiddleware(s.authMiddleware(s.handleGetVEXExpiryTasks, true)))
 
 	// Integration endpoints
 	s.router.HandleFunc("/api/v1/integration/kubernetes/clusters", s.corsMiddleware(s.handleListKubernetesClusters))

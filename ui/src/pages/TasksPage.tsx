@@ -8,8 +8,10 @@ import type {
   RuntimeUnusedRepoTasksResponse,
   SemverUpdateEntry,
   SemverUpdateTasksResponse,
+  VEXExpiryTaskEntry,
+  VEXExpiryTasksResponse,
 } from '../lib/api';
-import { CheckCircle2, Copy, RefreshCw, Server, Sparkles, Tag, TriangleAlert, Trash2 } from 'lucide-react';
+import { CheckCircle2, Clock3, Copy, RefreshCw, Server, Sparkles, Tag, TriangleAlert, Trash2 } from 'lucide-react';
 
 // ─── status badge ─────────────────────────────────────────────────────────────
 
@@ -376,12 +378,140 @@ function RuntimeUnusedRepositoryTask({ data }: { data: RuntimeUnusedRepoTasksRes
   );
 }
 
+function VEXExpiryStatusBadge({ status }: { status: string }) {
+  if (status === 'expired') {
+    return (
+      <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-xs font-medium bg-danger-bg text-danger">
+        <TriangleAlert className="w-3 h-3" />
+        Expired
+      </span>
+    );
+  }
+  return (
+    <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-xs font-medium bg-warning-bg text-warning">
+      <Clock3 className="w-3 h-3" />
+      Expiring soon
+    </span>
+  );
+}
+
+function VEXExpiryTask({ data }: { data: VEXExpiryTasksResponse }) {
+  const { toast } = useToast();
+  const [showAll, setShowAll] = useState(false);
+
+  if (data.entries.length === 0) {
+    return (
+      <EmptyState
+        icon={<CheckCircle2 className="w-12 h-12 mb-4 opacity-30" />}
+        title="No VEX expiry issues"
+        message="No VEX statements are currently expired or expiring in the next 7 days."
+      />
+    );
+  }
+
+  const expiredCount = data.entries.filter(e => e.status === 'expired').length;
+  const expiringSoonCount = data.entries.filter(e => e.status === 'expiring_soon').length;
+  const displayedEntries = showAll ? data.entries : data.entries.slice(0, 12);
+  const hasUpdates = data.ai_agent_prompt.trim().length > 0;
+
+  return (
+    <div className="space-y-4">
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-3 items-start">
+        <div className="lg:col-span-2 space-y-2">
+          {expiredCount > 0 && (
+            <div className="flex items-center gap-2 px-4 py-3 rounded-lg bg-danger-bg border border-danger/20 text-sm text-danger">
+              <TriangleAlert className="w-4 h-4 flex-shrink-0" />
+              <span>
+                {expiredCount} VEX {expiredCount === 1 ? 'statement is' : 'statements are'} expired and should be updated or removed.
+              </span>
+            </div>
+          )}
+          {expiringSoonCount > 0 && (
+            <div className="flex items-center gap-2 px-4 py-3 rounded-lg bg-warning-bg border border-warning/20 text-sm text-warning">
+              <Clock3 className="w-4 h-4 flex-shrink-0" />
+              <span>
+                {expiringSoonCount} VEX {expiringSoonCount === 1 ? 'statement is' : 'statements are'} expiring within 7 days.
+              </span>
+            </div>
+          )}
+        </div>
+
+        {hasUpdates && (
+          <div className="relative overflow-hidden rounded-xl border border-accent/35 bg-gradient-to-r from-accent/15 via-bg-secondary to-warning/10 p-4">
+            <div className="absolute -top-10 -right-10 w-24 h-24 rounded-full bg-accent/20 blur-2xl pointer-events-none" />
+            <div className="relative flex flex-col gap-3">
+              <div className="flex items-center gap-2">
+                <span className="inline-flex items-center justify-center w-7 h-7 rounded-lg bg-accent/20 text-accent">
+                  <Sparkles className="w-4 h-4" />
+                </span>
+                <div>
+                  <h3 className="text-sm font-semibold text-text-primary">AI Agent Prompt</h3>
+                  <p className="text-xs text-text-secondary">Ready to review and fix expiring VEX statements.</p>
+                </div>
+              </div>
+              <button
+                onClick={() => {
+                  copyToClipboard(data.ai_agent_prompt).then(ok =>
+                    toast(ok ? 'Prompt copied to clipboard!' : 'Failed to copy', ok ? 'success' : 'error')
+                  );
+                }}
+                className="inline-flex items-center justify-center gap-1.5 px-3 py-2 text-xs rounded-lg border border-accent/30 text-text-primary bg-bg-primary/70 hover:bg-bg-primary transition-colors"
+              >
+                <Copy className="w-3 h-3" />
+                Copy prompt to clipboard
+              </button>
+            </div>
+          </div>
+        )}
+      </div>
+
+      <div className="flex items-center justify-between gap-3">
+        <p className="text-xs text-text-muted">Showing {displayedEntries.length} of {data.entries.length} entries</p>
+        <button
+          onClick={() => setShowAll(v => !v)}
+          className="px-3 py-1.5 text-xs rounded-lg border border-border text-text-secondary hover:bg-bg-tertiary flex items-center gap-1.5 transition-colors"
+        >
+          {showAll ? 'Show less' : 'Show more'}
+        </button>
+      </div>
+
+      <div className="overflow-x-auto">
+        <table className="min-w-full text-sm">
+          <thead>
+            <tr className="border-b border-border">
+              <th className="px-3 py-2 text-left text-xs font-semibold text-text-muted uppercase tracking-wide">CVE</th>
+              <th className="px-3 py-2 text-left text-xs font-semibold text-text-muted uppercase tracking-wide">Repositories</th>
+              <th className="px-3 py-2 text-left text-xs font-semibold text-text-muted uppercase tracking-wide">Expires</th>
+              <th className="px-3 py-2 text-left text-xs font-semibold text-text-muted uppercase tracking-wide">Status</th>
+            </tr>
+          </thead>
+          <tbody>
+            {displayedEntries.map((entry: VEXExpiryTaskEntry) => (
+              <tr key={entry.cve_id} className="border-b border-border/50 last:border-0">
+                <td className="px-3 py-3 text-xs font-mono text-text-primary">{entry.cve_id}</td>
+                <td className="px-3 py-3 text-xs text-text-secondary">
+                  <span className="max-w-[28rem] inline-block truncate" title={entry.repositories.join(', ')}>{entry.repositories.join(', ')}</span>
+                </td>
+                <td className="px-3 py-3 text-xs text-text-secondary">{new Date(entry.expires_at * 1000).toISOString().slice(0, 10)}</td>
+                <td className="px-3 py-3">
+                  <VEXExpiryStatusBadge status={entry.status} />
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
+}
+
 // ─── page ─────────────────────────────────────────────────────────────────────
 
 export default function TasksPage() {
   const { apiClient } = useAuth();
   const [semverData, setSemverData] = useState<SemverUpdateTasksResponse | null>(null);
   const [runtimeUnusedData, setRuntimeUnusedData] = useState<RuntimeUnusedRepoTasksResponse | null>(null);
+  const [vexExpiryData, setVexExpiryData] = useState<VEXExpiryTasksResponse | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
 
@@ -389,12 +519,14 @@ export default function TasksPage() {
     setLoading(true);
     setError('');
     try {
-      const [semverResult, runtimeUnusedResult] = await Promise.all([
+      const [semverResult, runtimeUnusedResult, vexExpiryResult] = await Promise.all([
         apiClient.getSemverUpdateTasks(),
         apiClient.getRuntimeUnusedRepositoryTasks(),
+        apiClient.getVEXExpiryTasks(),
       ]);
       setSemverData(semverResult);
       setRuntimeUnusedData(runtimeUnusedResult);
+      setVexExpiryData(vexExpiryResult);
     } catch (e: unknown) {
       setError(e instanceof Error ? e.message : 'Failed to load tasks');
     } finally {
@@ -462,6 +594,28 @@ export default function TasksPage() {
             <ErrorState message={error} onRetry={load} />
           ) : runtimeUnusedData ? (
             <RuntimeUnusedRepositoryTask data={runtimeUnusedData} />
+          ) : null}
+        </div>
+      </div>
+
+      {/* VEX Expiry Tasks */}
+      <div className="bg-bg-primary border border-border rounded-xl overflow-hidden">
+        <div className="flex items-center justify-between px-5 py-4 border-b border-border">
+          <div className="flex items-center gap-2">
+            <Clock3 className="w-4 h-4 text-danger" />
+            <h2 className="text-sm font-semibold">VEX Expiry Review</h2>
+          </div>
+          <p className="text-xs text-text-muted">
+            VEX statements from <code className="bg-bg-tertiary px-1 rounded">x-vex</code> that are expired or expiring in 7 days
+          </p>
+        </div>
+        <div className="p-4">
+          {loading ? (
+            <LoadingState message="Checking VEX statement expiry..." />
+          ) : error ? (
+            <ErrorState message={error} onRetry={load} />
+          ) : vexExpiryData ? (
+            <VEXExpiryTask data={vexExpiryData} />
           ) : null}
         </div>
       </div>
