@@ -5,7 +5,6 @@ interface UseScanPageFiltersOptions {
   initialRepository: string;
   initialPolicyFilter: string;
   policyParamName?: string;
-  page: number;
   sortColumn: string;
   sortDirection: 'asc' | 'desc';
   defaultSortColumn: string;
@@ -18,7 +17,6 @@ export function useScanPageFilters({
   initialRepository,
   initialPolicyFilter,
   policyParamName = 'policy_status',
-  page,
   sortColumn,
   sortDirection,
   defaultSortColumn,
@@ -26,6 +24,7 @@ export function useScanPageFilters({
   setPage,
   setSearchParams,
 }: UseScanPageFiltersOptions) {
+  const [repositoryInput, setRepositoryInput] = useState(initialRepository);
   const [repository, setRepository] = useState(initialRepository);
   const [policyFilter, setPolicyFilter] = useState(initialPolicyFilter || 'all');
 
@@ -48,17 +47,19 @@ export function useScanPageFilters({
   }, [defaultSortColumn, defaultSortDirection, policyParamName, setSearchParams]);
 
   const handleRepositoryInputChange = useCallback((nextRepository: string) => {
+    setRepositoryInput(nextRepository);
     setRepository(nextRepository);
-    if (page !== 1) {
-      setPage(1);
-      updateURL(nextRepository, 1, policyFilter, sortColumn, sortDirection);
-    }
-  }, [page, policyFilter, setPage, sortColumn, sortDirection, updateURL]);
+    setPage(1);
+    updateURL(nextRepository, 1, policyFilter, sortColumn, sortDirection);
+  }, [policyFilter, setPage, sortColumn, sortDirection, updateURL]);
 
   const applyRepositoryFilter = useCallback(() => {
+    const trimmed = repositoryInput.trim();
+    setRepository(trimmed);
+    setRepositoryInput(trimmed);
     setPage(1);
-    updateURL(repository, 1, policyFilter, sortColumn, sortDirection);
-  }, [policyFilter, repository, setPage, sortColumn, sortDirection, updateURL]);
+    updateURL(trimmed, 1, policyFilter, sortColumn, sortDirection);
+  }, [policyFilter, repositoryInput, setPage, sortColumn, sortDirection, updateURL]);
 
   const handlePolicyFilterChange = useCallback((nextPolicyFilter: string) => {
     setPolicyFilter(nextPolicyFilter);
@@ -67,6 +68,7 @@ export function useScanPageFilters({
   }, [repository, setPage, sortColumn, sortDirection, updateURL]);
 
   const clearFilters = useCallback(() => {
+    setRepositoryInput('');
     setRepository('');
     setPolicyFilter('all');
     setPage(1);
@@ -84,6 +86,7 @@ export function useScanPageFilters({
   }, [policyFilter, repository, setPage, updateURL]);
 
   return {
+    repositoryInput,
     repository,
     policyFilter,
     handleRepositoryInputChange,

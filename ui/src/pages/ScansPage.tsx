@@ -33,6 +33,7 @@ export default function ScansPage() {
   });
 
   const {
+    repositoryInput,
     repository,
     policyFilter,
     handleRepositoryInputChange,
@@ -44,7 +45,6 @@ export default function ScansPage() {
   } = useScanPageFilters({
     initialRepository: searchParams.get('repository') || '',
     initialPolicyFilter: searchParams.get('policy_status') || 'all',
-    page,
     sortColumn: sortCol,
     sortDirection: sortDir,
     defaultSortColumn,
@@ -85,19 +85,18 @@ export default function ScansPage() {
     handleSortChange(col, nextDir);
   };
 
-  if (loading && scans.length === 0) return <LoadingState />;
   if (error) return <ErrorState message={error} onRetry={load} />;
 
   return (
     <div>
       <PageHeader title="Image Scans" subtitle="View and manage container image security scans" />
       <PageFiltersBar>
-        <input value={repository} onChange={e => handleRepositoryInputChange(e.target.value)} onKeyDown={e => e.key === 'Enter' && applyRepositoryFilter()}
+        <input value={repositoryInput} onChange={e => handleRepositoryInputChange(e.target.value)} onKeyDown={e => e.key === 'Enter' && applyRepositoryFilter()}
           placeholder="Filter by repository…" className="flex-1 max-w-xs px-3 py-2 bg-bg-secondary border border-border rounded-lg text-sm text-text-primary placeholder:text-text-muted focus:outline-none focus:border-accent/50 transition-colors" />
         <PolicyStatusSelect value={policyFilter} onChange={handlePolicyFilterChange} />
         <FilterActionButton onClick={applyRepositoryFilter}>Filter</FilterActionButton>
         <FilterActionButton variant="secondary" onClick={clearFilters}>Clear</FilterActionButton>      </PageFiltersBar>
-      <div className="bg-bg-primary border border-border rounded-xl overflow-hidden">
+      {loading && scans.length === 0 ? <LoadingState /> : <div className="bg-bg-primary border border-border rounded-xl overflow-hidden">
         {scans.length === 0 ? (
           <div className="p-12 text-center text-text-secondary text-sm">No scans found</div>
         ) : (
@@ -131,7 +130,7 @@ export default function ScansPage() {
           </tbody></table></div>
         )}
         <Pagination currentPage={page} totalPages={totalPages} total={totalScans} pageSize={pageSize} onPageChange={handlePageChange} itemLabel="scans" />
-      </div>
+      </div>}
     </div>
   );
 }
