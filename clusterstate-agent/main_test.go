@@ -213,13 +213,6 @@ func TestCollectPodObservationIncludesAllContainerKinds(t *testing.T) {
 				{EphemeralContainerCommon: corev1.EphemeralContainerCommon{Name: "debug", Image: "alpine:3.20"}},
 			},
 		},
-		Status: corev1.PodStatus{
-			InitContainerStatuses: []corev1.ContainerStatus{{Name: "init", ImageID: "containerd://sha256:initdigest"}},
-			ContainerStatuses:     []corev1.ContainerStatus{{Name: "app", ImageID: "docker-pullable://ghcr.io/acme/app@sha256:appdigest"}},
-			EphemeralContainerStatuses: []corev1.ContainerStatus{{
-				Name: "debug", ImageID: "cri-o://sha256:debugdigest",
-			}},
-		},
 	}
 
 	changed := collectPodObservation(pod, excluded, buffer)
@@ -234,17 +227,24 @@ func TestCollectPodObservationIncludesAllContainerKinds(t *testing.T) {
 
 	seen := make(map[string]bool)
 	for _, img := range got {
-		seen[img.Namespace+"|"+img.ImageRef+"|"+img.Digest] = true
+		seen[img.Namespace+"|"+img.ImageRef+"|"+img.Tag] = true
 	}
 
-	if !seen["ci|busybox|sha256:initdigest"] {
+	if !seen["ci|busybox|1.36"] {
 		t.Fatalf("missing init container observation")
 	}
-	if !seen["ci|ghcr.io/acme/app|sha256:appdigest"] {
+	if !seen["ci|ghcr.io/acme/app|2.0"] {
 		t.Fatalf("missing app container observation")
 	}
-	if !seen["ci|alpine|sha256:debugdigest"] {
+	if !seen["ci|alpine|3.20"] {
 		t.Fatalf("missing ephemeral container observation")
+	}
+
+	// Verify that no digests were extracted from status entries.
+	for _, img := range got {
+		if img.Digest != "" {
+			t.Fatalf("expected no digest from status, got %q for %s", img.Digest, img.ImageRef)
+		}
 	}
 }
 

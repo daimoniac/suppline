@@ -403,16 +403,15 @@ func collectPodObservation(pod *corev1.Pod, excludedNS map[string]bool, buffer *
 
 	changed := false
 
-	imageIDByContainer := buildImageIDLookup(*pod)
-	if addObservedContainers(buffer, pod.Namespace, pod.Spec.InitContainers, imageIDByContainer) {
+	if addObservedContainers(buffer, pod.Namespace, pod.Spec.InitContainers, nil) {
 		changed = true
 	}
-	if addObservedContainers(buffer, pod.Namespace, pod.Spec.Containers, imageIDByContainer) {
+	if addObservedContainers(buffer, pod.Namespace, pod.Spec.Containers, nil) {
 		changed = true
 	}
 
 	for _, c := range pod.Spec.EphemeralContainers {
-		imageRef, tag, digest := parseImageRef(c.Image, imageIDByContainer[c.Name])
+		imageRef, tag, digest := parseImageRef(c.Image, "")
 		if buffer.Add(clusterImageInput{Namespace: pod.Namespace, ImageRef: imageRef, Tag: tag, Digest: digest}) {
 			changed = true
 		}
@@ -697,11 +696,9 @@ func collectImages(pods []corev1.Pod, excludedNS map[string]bool, logger *slog.L
 			continue
 		}
 
-		imageIDByContainer := buildImageIDLookup(pod)
-
-		images = appendUniquePodContainerImages(images, seen, pod.Namespace, pod.Spec.InitContainers, imageIDByContainer)
-		images = appendUniquePodContainerImages(images, seen, pod.Namespace, pod.Spec.Containers, imageIDByContainer)
-		images = appendUniquePodEphemeralContainerImages(images, seen, pod.Namespace, pod.Spec.EphemeralContainers, imageIDByContainer)
+		images = appendUniquePodContainerImages(images, seen, pod.Namespace, pod.Spec.InitContainers, nil)
+		images = appendUniquePodContainerImages(images, seen, pod.Namespace, pod.Spec.Containers, nil)
+		images = appendUniquePodEphemeralContainerImages(images, seen, pod.Namespace, pod.Spec.EphemeralContainers, nil)
 	}
 
 	return images
@@ -745,22 +742,6 @@ func appendUniquePodEphemeralContainerImages(
 		images = append(images, img)
 	}
 	return images
-}
-
-// buildImageIDLookup maps container name → imageID from pod status.
-func buildImageIDLookup(pod corev1.Pod) map[string]string {
-	total := len(pod.Status.InitContainerStatuses) + len(pod.Status.ContainerStatuses) + len(pod.Status.EphemeralContainerStatuses)
-	m := make(map[string]string, total)
-	addContainerStatuses(m, pod.Status.InitContainerStatuses)
-	addContainerStatuses(m, pod.Status.ContainerStatuses)
-	addContainerStatuses(m, pod.Status.EphemeralContainerStatuses)
-	return m
-}
-
-func addContainerStatuses(lookup map[string]string, statuses []corev1.ContainerStatus) {
-	for _, s := range statuses {
-		lookup[s.Name] = s.ImageID
-	}
 }
 
 // parseImageRef extracts the normalised imageRef, tag, and digest.
