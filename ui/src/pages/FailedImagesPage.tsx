@@ -164,7 +164,6 @@ export default function FailedImagesPage() {
                     )}
                     {s.CriticalVulnCount > 0 && <span className="px-1.5 py-0.5 rounded text-[10px] font-semibold bg-severity-critical/20 text-severity-critical">{s.CriticalVulnCount} Critical</span>}
                     {s.HighVulnCount > 0 && <span className="px-1.5 py-0.5 rounded text-[10px] font-semibold bg-severity-high/20 text-severity-high">{s.HighVulnCount} High</span>}
-                    {!s.VulnAttested && <span className="px-1.5 py-0.5 rounded text-[10px] font-semibold bg-warning-bg text-warning">No Attestation</span>}
                   </div>
                 </td>
               </tr>
