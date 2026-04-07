@@ -1954,6 +1954,52 @@ func (s *SQLiteStore) ListTolerations(ctx context.Context, filter TolerationFilt
 	return tolerations, nil
 }
 
+// GetToleratedCVEImageCounts returns a map of CVE ID → count of distinct digests
+// that have this CVE tolerated in the latest scan for each artifact.
+func (s *SQLiteStore) GetToleratedCVEImageCounts(ctx context.Context) (map[string]int, error) {
+	query := `
+		SELECT a.digest, sr.tolerated_cves_json
+		FROM artifacts a
+		JOIN scan_records sr ON a.last_scan_id = sr.id
+		WHERE sr.tolerated_cves_json IS NOT NULL
+			AND sr.tolerated_cves_json != '[]'
+			AND sr.tolerated_cves_json != ''
+	`
+
+	rows, err := s.db.QueryContext(ctx, query)
+	if err != nil {
+		return nil, errors.NewTransientf("failed to query tolerated CVE image counts: %w", err)
+	}
+	defer rows.Close()
+
+	counts := make(map[string]int)
+	for rows.Next() {
+		var digest string
+		var toleratedJSON sql.NullString
+		if err := rows.Scan(&digest, &toleratedJSON); err != nil {
+			return nil, errors.NewTransientf("failed to scan row: %w", err)
+		}
+		if !toleratedJSON.Valid || toleratedJSON.String == "" {
+			continue
+		}
+		var tolerated []types.ToleratedCVE
+		if err := json.Unmarshal([]byte(toleratedJSON.String), &tolerated); err != nil {
+			continue
+		}
+		seen := make(map[string]bool)
+		for _, tc := range tolerated {
+			if !seen[tc.CVEID] {
+				seen[tc.CVEID] = true
+				counts[tc.CVEID]++
+			}
+		}
+	}
+	if err := rows.Err(); err != nil {
+		return nil, errors.NewTransientf("error iterating rows: %w", err)
+	}
+	return counts, nil
+}
+
 // getAppliedCVESet returns a set of all CVE IDs that have been applied (tolerated)
 // in at least one scan record. This is a helper method for inactive tolerations queries.
 func (s *SQLiteStore) getAppliedCVESet(ctx context.Context) (map[string]bool, error) {

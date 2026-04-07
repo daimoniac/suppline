@@ -112,6 +112,10 @@ func (m *mockStateStore) ListTolerations(ctx context.Context, filter statestore.
 	return nil, nil
 }
 
+func (m *mockStateStore) GetToleratedCVEImageCounts(ctx context.Context) (map[string]int, error) {
+	return map[string]int{}, nil
+}
+
 func (m *mockStateStore) GetInactiveTolerationsCount(ctx context.Context, definedCVEIDs []string) (int, error) {
 	return 0, nil
 }

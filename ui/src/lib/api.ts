@@ -294,6 +294,7 @@ export interface Toleration {
   Statement: string;
   ExpiresAt: number;
   Repositories: TolerationRepository[];
+  AffectedImageCount: number;
 }
 
 export interface KubernetesClusterSummary {

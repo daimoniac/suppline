@@ -224,6 +224,10 @@ type StateStoreQuery interface {
 	// ListTolerations returns tolerated CVEs with optional filters
 	ListTolerations(ctx context.Context, filter TolerationFilter) ([]*types.TolerationInfo, error)
 
+	// GetToleratedCVEImageCounts returns a map of CVE ID → count of distinct digests
+	// that have this CVE tolerated in their latest scan.
+	GetToleratedCVEImageCounts(ctx context.Context) (map[string]int, error)
+
 	// GetInactiveTolerationsCount returns the count of CVE IDs that are defined in a set
 	// but have never been tolerated in any scan record. This helps identify tolerations
 	// that are no longer being used and can be cleaned up from configuration.

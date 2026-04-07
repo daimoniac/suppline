@@ -502,6 +502,9 @@ func (s *APIServer) handleListTolerations(w http.ResponseWriter, r *http.Request
 	// Group tolerations by CVE ID
 	grouped := s.groupTolerationsByCVE(tolerations)
 
+	// Enrich with affected image counts
+	s.enrichTolerationsWithImageCounts(r.Context(), grouped)
+
 	// Stream JSON response to avoid buffering large payloads
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
@@ -1627,6 +1630,25 @@ func (s *APIServer) enrichWithHistoricalTimestamps(ctx context.Context, tolerati
 		key := tol.Repository + ":" + tol.CVEID
 		if toleratedAt, found := historicalMap[key]; found {
 			tol.ToleratedAt = toleratedAt
+		}
+	}
+}
+
+// enrichTolerationsWithImageCounts populates AffectedImageCount on each TolerationSummary
+func (s *APIServer) enrichTolerationsWithImageCounts(ctx context.Context, summaries []*types.TolerationSummary) {
+	if s.stateStore == nil || len(summaries) == 0 {
+		return
+	}
+
+	counts, err := s.stateStore.GetToleratedCVEImageCounts(ctx)
+	if err != nil {
+		s.logger.Error("failed to get tolerated CVE image counts", "error", err.Error())
+		return
+	}
+
+	for _, summary := range summaries {
+		if count, found := counts[summary.CVEID]; found {
+			summary.AffectedImageCount = count
 		}
 	}
 }

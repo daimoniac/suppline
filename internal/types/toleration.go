@@ -79,10 +79,11 @@ type TolerationInfo struct {
 // TolerationSummary groups toleration info by CVE ID with list of affected repositories
 // Used by API to provide a consolidated view of tolerations across repositories
 type TolerationSummary struct {
-	CVEID        string              `json:"CVEID"`
-	Statement    string              `json:"Statement"`
-	ExpiresAt    *int64              `json:"ExpiresAt"`    // Unix timestamp in seconds
-	Repositories []RepositoryTolInfo `json:"Repositories"` // List of repositories with this toleration
+	CVEID              string              `json:"CVEID"`
+	Statement          string              `json:"Statement"`
+	ExpiresAt          *int64              `json:"ExpiresAt"`          // Unix timestamp in seconds
+	Repositories       []RepositoryTolInfo `json:"Repositories"`       // List of repositories with this toleration
+	AffectedImageCount int                 `json:"AffectedImageCount"` // Number of distinct digests with this CVE tolerated
 }
 
 // RepositoryTolInfo contains repository-specific toleration metadata

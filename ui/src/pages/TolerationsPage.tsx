@@ -15,8 +15,8 @@ export default function TolerationsPage() {
   const [cveFilter, setCveFilter] = useState(searchParams.get('cve_id') || '');
   const [repoFilter, setRepoFilter] = useState(searchParams.get('repository') || '');
   const [expirationFilter, setExpirationFilter] = useState(searchParams.get('expiration_status') || 'all');
-  const [sortCol, setSortCol] = useState('cveId');
-  const [sortDir, setSortDir] = useState<'asc' | 'desc'>('asc');
+  const [sortCol, setSortCol] = useState('affectedImages');
+  const [sortDir, setSortDir] = useState<'asc' | 'desc'>('desc');
   const [page, setPage] = useState(1);
   const pageSize = 20;
 
@@ -61,8 +61,13 @@ export default function TolerationsPage() {
 
   // Sort
   combined.sort((a, b) => {
-    const aVal = sortCol === 'cveId' ? a.CVEID : sortCol === 'expiresAt' ? (a.ExpiresAt || 0) : a.CVEID;
-    const bVal = sortCol === 'cveId' ? b.CVEID : sortCol === 'expiresAt' ? (b.ExpiresAt || 0) : b.CVEID;
+    let aVal: string | number;
+    let bVal: string | number;
+    switch (sortCol) {
+      case 'affectedImages': aVal = a.AffectedImageCount || 0; bVal = b.AffectedImageCount || 0; break;
+      case 'expiresAt': aVal = a.ExpiresAt || 0; bVal = b.ExpiresAt || 0; break;
+      default: aVal = a.CVEID; bVal = b.CVEID;
+    }
     if (typeof aVal === 'number' && typeof bVal === 'number') return sortDir === 'asc' ? aVal - bVal : bVal - aVal;
     return sortDir === 'asc' ? String(aVal).localeCompare(String(bVal)) : String(bVal).localeCompare(String(aVal));
   });
@@ -105,6 +110,7 @@ export default function TolerationsPage() {
             <SortHeader column="cveId" label="CVE ID" sortColumn={sortCol} sortDirection={sortDir} onSort={handleSort} />
             <th className="px-4 py-3 text-left text-xs font-medium text-text-secondary uppercase">Statement</th>
             <th className="px-4 py-3 text-left text-xs font-medium text-text-secondary uppercase">Repositories</th>
+            <SortHeader column="affectedImages" label="Affected Images" sortColumn={sortCol} sortDirection={sortDir} onSort={handleSort} />
             <SortHeader column="expiresAt" label="Expires" sortColumn={sortCol} sortDirection={sortDir} onSort={handleSort} />
             <th className="px-4 py-3 text-left text-xs font-medium text-text-secondary uppercase">Status</th>
           </tr></thead><tbody>
@@ -121,6 +127,7 @@ export default function TolerationsPage() {
                       ? (t.Repositories || []).slice(0, 2).map(r => r.Repository).join(', ') + ((t.Repositories || []).length > 2 ? ` +${(t.Repositories || []).length - 2}` : '')
                       : '—'}
                   </td>
+                  <td className="px-4 py-3 text-sm text-text-muted">{t.AffectedImageCount || 0} image{(t.AffectedImageCount || 0) !== 1 ? 's' : ''}</td>
                   <td className="px-4 py-3 text-sm text-text-secondary">{t.ExpiresAt ? formatDate(t.ExpiresAt) : 'Never'}</td>
                   <td className="px-4 py-3">
                     {expired
