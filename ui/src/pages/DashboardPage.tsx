@@ -5,7 +5,7 @@ import { formatRelativeTime } from '../lib/utils';
 import { useImageUsageFilter } from '../lib/imageUsageFilter';
 import { LoadingState, ErrorState, StatusBadge, SeverityBadge, VulnCounts, DigestLinkWithCopy } from '../components/ui';
 import type { Scan, VEXSummary } from '../lib/api';
-import { ShieldAlert, ShieldCheck, Clock, CheckSquare, ExternalLink } from 'lucide-react';
+import { ShieldAlert, ShieldCheck, Clock, CheckSquare, ExternalLink, ArrowRight } from 'lucide-react';
 
 interface DashboardData {
   recentScans: Scan[];
@@ -193,31 +193,40 @@ export default function DashboardPage() {
       </div>
 
       <div className="bg-bg-primary border border-border rounded-xl overflow-hidden">
-        <div className="px-5 py-4 border-b border-border">
-          <h2 className="text-sm font-semibold">Recent Scans</h2>
+        <div className="px-5 py-4 border-b border-border flex items-center justify-between gap-3">
+          <div>
+            <h2 className="text-sm font-semibold">Recent Scans</h2>
+            <p className="text-xs text-text-muted mt-1">Latest image analysis events across repositories</p>
+          </div>
+          <Link to="/scans" className="inline-flex items-center gap-1.5 text-xs font-medium text-accent hover:text-accent-hover transition-colors">
+            View all
+            <ArrowRight className="w-3.5 h-3.5" />
+          </Link>
         </div>
         {data.recentScans.length === 0 ? (
           <div className="p-8 text-center text-text-secondary text-sm">No scans found</div>
         ) : (
           <div className="p-4 space-y-3">
             {data.recentScans.map(scan => (
-              <div key={scan.Digest} className="rounded-lg border border-border bg-bg-secondary/40 hover:bg-bg-secondary transition-colors p-4">
-                <div className="flex flex-wrap items-center gap-2 mb-3">
-                  <Link className="text-sm font-medium text-accent hover:underline" to={`/repositories/${encodeURIComponent(scan.Repository)}`}>
-                    {scan.Repository || 'N/A'}
-                  </Link>
-                  <span className="px-2 py-0.5 rounded text-xs bg-bg-tertiary text-text-secondary">{scan.Tag || 'untagged'}</span>
-                  <span className="text-xs text-text-muted">{formatRelativeTime(scan.CreatedAt)}</span>
-                  <div className="ml-auto">
+              <div key={scan.Digest} className="rounded-lg border border-border bg-bg-secondary/40 hover:bg-bg-secondary hover:border-border-hover transition-colors p-4">
+                <div className="flex flex-col gap-3 lg:flex-row lg:items-center">
+                  <div className="min-w-0 flex-1">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <Link className="text-sm font-semibold text-accent hover:underline" to={`/repositories/${encodeURIComponent(scan.Repository)}`}>
+                        {scan.Repository || 'N/A'}
+                      </Link>
+                      <span className="px-2 py-0.5 rounded text-xs bg-bg-tertiary text-text-secondary">{scan.Tag || 'untagged'}</span>
+                    </div>
+                    <div className="mt-2">
+                      <DigestLinkWithCopy digest={scan.Digest} to={`/scans/${scan.Digest}`} />
+                    </div>
+                  </div>
+                  <div className="flex flex-wrap items-center gap-2 lg:justify-end lg:text-right">
+                    <span className="text-xs text-text-muted">{formatRelativeTime(scan.CreatedAt)}</span>
                     <StatusBadge passed={scan.PolicyPassed} status={scan.PolicyStatus} />
-                  </div>
-                </div>
-                <div className="flex flex-col sm:flex-row sm:items-center gap-3">
-                  <div className="min-w-0">
-                    <DigestLinkWithCopy digest={scan.Digest} to={`/scans/${scan.Digest}`} />
-                  </div>
-                  <div className="sm:ml-auto">
-                    <VulnCounts critical={scan.CriticalVulnCount} high={scan.HighVulnCount} medium={scan.MediumVulnCount} low={scan.LowVulnCount} />
+                    <div className="w-full lg:w-auto lg:pt-0 pt-1">
+                      <VulnCounts critical={scan.CriticalVulnCount} high={scan.HighVulnCount} medium={scan.MediumVulnCount} low={scan.LowVulnCount} />
+                    </div>
                   </div>
                 </div>
               </div>

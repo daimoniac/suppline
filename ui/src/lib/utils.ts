@@ -136,3 +136,66 @@ export function getRuntimeNamespaceEntries(runtime?: RuntimeInventory): Array<{ 
 
   return entries;
 }
+
+type ParsedSemver = {
+  major: number;
+  minor: number;
+  patch: number;
+  preRelease: string[];
+};
+
+function parseSemver(value: string): ParsedSemver | null {
+  const trimmed = value.trim();
+  const match = /^v?(\d+)(?:\.(\d+))?(?:\.(\d+))?(?:-([0-9A-Za-z.-]+))?(?:\+[0-9A-Za-z.-]+)?$/.exec(trimmed);
+  if (!match) return null;
+
+  const major = Number(match[1]);
+  const minor = Number(match[2] ?? 0);
+  const patch = Number(match[3] ?? 0);
+  const preRelease = match[4] ? match[4].split('.') : [];
+
+  return { major, minor, patch, preRelease };
+}
+
+function comparePreRelease(left: string[], right: string[]): number {
+  if (left.length === 0 && right.length === 0) return 0;
+  if (left.length === 0) return 1;
+  if (right.length === 0) return -1;
+
+  const max = Math.max(left.length, right.length);
+  for (let i = 0; i < max; i++) {
+    const l = left[i];
+    const r = right[i];
+    if (l === undefined) return -1;
+    if (r === undefined) return 1;
+
+    const ln = /^\d+$/.test(l);
+    const rn = /^\d+$/.test(r);
+    if (ln && rn) {
+      const diff = Number(l) - Number(r);
+      if (diff !== 0) return diff;
+      continue;
+    }
+    if (ln && !rn) return -1;
+    if (!ln && rn) return 1;
+    const cmp = l.localeCompare(r);
+    if (cmp !== 0) return cmp;
+  }
+
+  return 0;
+}
+
+export function compareTagNames(left: string, right: string): number {
+  const l = parseSemver(left);
+  const r = parseSemver(right);
+
+  if (l && r) {
+    if (l.major !== r.major) return l.major - r.major;
+    if (l.minor !== r.minor) return l.minor - r.minor;
+    if (l.patch !== r.patch) return l.patch - r.patch;
+    const preCmp = comparePreRelease(l.preRelease, r.preRelease);
+    if (preCmp !== 0) return preCmp;
+  }
+
+  return left.localeCompare(right, undefined, { numeric: true, sensitivity: 'base' });
+}

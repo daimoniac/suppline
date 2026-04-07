@@ -2,7 +2,7 @@ import { useEffect, useState, useCallback, useMemo } from 'react';
 import { Link, useParams, useSearchParams } from 'react-router-dom';
 import { useAuth } from '../lib/auth';
 import { useToast } from '../lib/toast';
-import { formatRelativeTime, daysUntilReleaseAge, formatRemainingDays } from '../lib/utils';
+import { formatRelativeTime, daysUntilReleaseAge, formatRemainingDays, compareTagNames } from '../lib/utils';
 import { useImageUsageFilter } from '../lib/imageUsageFilter';
 import { LoadingState, ErrorState, StatusBadge, VulnCounts, SortHeader, Pagination, ConfirmModal, RuntimeUsageBadge, PageFiltersBar, FilterActionButton, PolicyStatusSelect } from '../components/ui';
 import type { RepositoryTag } from '../lib/api';
@@ -81,6 +81,10 @@ export default function RepositoryDetailPage() {
     return [...source].sort((a, b) => {
       const av = a[apiCol as keyof RepositoryTag] as unknown;
       const bv = b[apiCol as keyof RepositoryTag] as unknown;
+      if (sortCol === 'name') {
+        const cmp = compareTagNames(String(av || ''), String(bv || ''));
+        return sortDir === 'asc' ? cmp : -cmp;
+      }
       if (typeof av === 'number' && typeof bv === 'number') return sortDir === 'asc' ? av - bv : bv - av;
       if (typeof av === 'boolean' && typeof bv === 'boolean') {
         const an = av ? 1 : 0;
