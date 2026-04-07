@@ -396,22 +396,51 @@ func runWatch(
 	}
 }
 
+// buildImageIDMap builds a container-name → imageID lookup from pod status.
+func buildImageIDMap(pod *corev1.Pod) map[string]string {
+	if pod == nil {
+		return nil
+	}
+	total := len(pod.Status.ContainerStatuses) + len(pod.Status.InitContainerStatuses) + len(pod.Status.EphemeralContainerStatuses)
+	if total == 0 {
+		return nil
+	}
+	m := make(map[string]string, total)
+	for _, cs := range pod.Status.InitContainerStatuses {
+		if cs.ImageID != "" {
+			m[cs.Name] = cs.ImageID
+		}
+	}
+	for _, cs := range pod.Status.ContainerStatuses {
+		if cs.ImageID != "" {
+			m[cs.Name] = cs.ImageID
+		}
+	}
+	for _, cs := range pod.Status.EphemeralContainerStatuses {
+		if cs.ImageID != "" {
+			m[cs.Name] = cs.ImageID
+		}
+	}
+	return m
+}
+
 func collectPodObservation(pod *corev1.Pod, excludedNS map[string]bool, buffer *inventoryBuffer) bool {
 	if pod == nil || excludedNS[pod.Namespace] {
 		return false
 	}
 
+	imageIDs := buildImageIDMap(pod)
 	changed := false
 
-	if addObservedContainers(buffer, pod.Namespace, pod.Spec.InitContainers, nil) {
+	if addObservedContainers(buffer, pod.Namespace, pod.Spec.InitContainers, imageIDs) {
 		changed = true
 	}
-	if addObservedContainers(buffer, pod.Namespace, pod.Spec.Containers, nil) {
+	if addObservedContainers(buffer, pod.Namespace, pod.Spec.Containers, imageIDs) {
 		changed = true
 	}
 
 	for _, c := range pod.Spec.EphemeralContainers {
-		imageRef, tag, digest := parseImageRef(c.Image, "")
+		imageRef, tag, digest := parseImageRef(c.Image, imageIDs[c.Name])
 		if buffer.Add(clusterImageInput{Namespace: pod.Namespace, ImageRef: imageRef, Tag: tag, Digest: digest}) {
 			changed = true
 		}
@@ -495,9 +524,12 @@ func shouldObserveEvent(event *corev1.Event) bool {
 		return false
 	}
 
-	// Watch common pod lifecycle events that may mention pull/runtime image refs.
+	// Watch common pod lifecycle events that mention image refs.
+	// Only Pulling, Pulled, and Failed events include the image reference
+	// in the message. Created/Started messages contain container names,
+	// not image refs (e.g. "Created container: scan").
 	switch event.Reason {
-	case "Pulling", "Pulled", "Created", "Started", "Failed":
+	case "Pulling", "Pulled", "Failed":
 		return true
 	default:
 		return false
@@ -696,9 +728,10 @@ func collectImages(pods []corev1.Pod, excludedNS map[string]bool, logger *slog.L
 			continue
 		}
 
-		images = appendUniquePodContainerImages(images, seen, pod.Namespace, pod.Spec.InitContainers, nil)
-		images = appendUniquePodContainerImages(images, seen, pod.Namespace, pod.Spec.Containers, nil)
-		images = appendUniquePodEphemeralContainerImages(images, seen, pod.Namespace, pod.Spec.EphemeralContainers, nil)
+		imageIDs := buildImageIDMap(&pod)
+		images = appendUniquePodContainerImages(images, seen, pod.Namespace, pod.Spec.InitContainers, imageIDs)
+		images = appendUniquePodContainerImages(images, seen, pod.Namespace, pod.Spec.Containers, imageIDs)
+		images = appendUniquePodEphemeralContainerImages(images, seen, pod.Namespace, pod.Spec.EphemeralContainers, imageIDs)
 	}
 
 	return images
@@ -754,6 +787,9 @@ func appendUniquePodEphemeralContainerImages(
 //
 // The digest is resolved from the container's runtime imageID (most reliable
 // source), normalizing common runtime prefixes (docker, containerd, cri-o).
+// If the imageID references a different repository than the spec image
+// (e.g. containerd mirror redirect), the digest is discarded because it
+// belongs to the redirected image, not the spec image.
 func parseImageRef(image, imageID string) (imageRef, tag, digest string) {
 	imageRef = image
 
@@ -784,7 +820,33 @@ func parseImageRef(image, imageID string) (imageRef, tag, digest string) {
 		}
 	}
 
+	// If the imageID references a different repository than the spec image,
+	// the digest belongs to a redirected/mirrored image and should not be
+	// associated with the spec imageRef (avoids duplicate entries when
+	// containerd transparently resolves a mirror to the upstream registry).
+	if digest != "" && imageID != "" {
+		if repo := imageIDRepo(imageID); repo != "" && repo != imageRef {
+			digest = ""
+		}
+	}
+
 	return
+}
+
+// imageIDRepo extracts the repository portion from a runtime imageID,
+// stripping runtime prefixes and the @sha256: digest suffix.
+func imageIDRepo(imageID string) string {
+	id := strings.TrimSpace(imageID)
+	if id == "" {
+		return ""
+	}
+	for _, p := range []string{"docker-pullable://", "docker://", "containerd://", "cri-o://"} {
+		id = strings.TrimPrefix(id, p)
+	}
+	if idx := strings.Index(id, "@"); idx != -1 {
+		return id[:idx]
+	}
+	return ""
 }
 
 func extractDigestFromImageID(imageID string) string {

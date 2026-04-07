@@ -240,11 +240,113 @@ func TestCollectPodObservationIncludesAllContainerKinds(t *testing.T) {
 		t.Fatalf("missing ephemeral container observation")
 	}
 
-	// Verify that no digests were extracted from status entries.
+	// No status set → no digests expected.
 	for _, img := range got {
 		if img.Digest != "" {
-			t.Fatalf("expected no digest from status, got %q for %s", img.Digest, img.ImageRef)
+			t.Fatalf("expected no digest without status, got %q for %s", img.Digest, img.ImageRef)
 		}
+	}
+}
+
+func TestCollectPodObservationExtractsRuntimeDigests(t *testing.T) {
+	buffer := newInventoryBuffer()
+	excluded := map[string]bool{}
+
+	pod := &corev1.Pod{
+		ObjectMeta: metav1.ObjectMeta{Namespace: "prod"},
+		Spec: corev1.PodSpec{
+			InitContainers: []corev1.Container{
+				{Name: "init", Image: "docker.io/hostingmaloonde/falcosecurity_falco-driver-loader:0.41.3"},
+			},
+			Containers: []corev1.Container{
+				{Name: "app", Image: "docker.io/hostingmaloonde/falcosecurity_falco:0.41.3"},
+			},
+		},
+		Status: corev1.PodStatus{
+			InitContainerStatuses: []corev1.ContainerStatus{
+				{
+					Name:    "init",
+					Image:   "docker.io/hostingmaloonde/falcosecurity_falco-driver-loader:0.41.3",
+					ImageID: "docker.io/hostingmaloonde/falcosecurity_falco-driver-loader@sha256:b96987181cc42a2b",
+				},
+			},
+			ContainerStatuses: []corev1.ContainerStatus{
+				{
+					Name:    "app",
+					Image:   "docker.io/hostingmaloonde/falcosecurity_falco:0.41.3",
+					ImageID: "docker.io/hostingmaloonde/falcosecurity_falco@sha256:a8aca039f2b19e9c",
+				},
+			},
+		},
+	}
+
+	changed := collectPodObservation(pod, excluded, buffer)
+	if !changed {
+		t.Fatalf("expected pod observation to report change")
+	}
+
+	got := buffer.Snapshot()
+	if len(got) != 2 {
+		t.Fatalf("expected 2 observed images, got %d", len(got))
+	}
+
+	seen := make(map[string]string) // imageRef → digest
+	for _, img := range got {
+		seen[img.ImageRef] = img.Digest
+	}
+
+	if d := seen["docker.io/hostingmaloonde/falcosecurity_falco"]; d != "sha256:a8aca039f2b19e9c" {
+		t.Fatalf("expected runtime digest for app container, got %q", d)
+	}
+	if d := seen["docker.io/hostingmaloonde/falcosecurity_falco-driver-loader"]; d != "sha256:b96987181cc42a2b" {
+		t.Fatalf("expected runtime digest for init container, got %q", d)
+	}
+}
+
+func TestCollectPodObservationDiscardsRedirectedDigests(t *testing.T) {
+	buffer := newInventoryBuffer()
+	excluded := map[string]bool{}
+
+	// Simulate a pod where containerd redirected the mirror to the upstream registry.
+	// The spec says hostingmaloonde/..., but the runtime resolved to falcosecurity/...
+	pod := &corev1.Pod{
+		ObjectMeta: metav1.ObjectMeta{Namespace: "prod"},
+		Spec: corev1.PodSpec{
+			Containers: []corev1.Container{
+				{Name: "app", Image: "docker.io/hostingmaloonde/falcosecurity_falco:0.41.3"},
+			},
+		},
+		Status: corev1.PodStatus{
+			ContainerStatuses: []corev1.ContainerStatus{
+				{
+					Name:    "app",
+					Image:   "docker.io/falcosecurity/falco:0.41.3",
+					ImageID: "docker.io/falcosecurity/falco@sha256:5f6f325327c9704",
+				},
+			},
+		},
+	}
+
+	changed := collectPodObservation(pod, excluded, buffer)
+	if !changed {
+		t.Fatalf("expected pod observation to report change")
+	}
+
+	got := buffer.Snapshot()
+	if len(got) != 1 {
+		t.Fatalf("expected 1 observed image, got %d", len(got))
+	}
+
+	// The digest should be empty because the imageID repo (falcosecurity/falco)
+	// doesn't match the spec imageRef (hostingmaloonde/falcosecurity_falco).
+	if got[0].Digest != "" {
+		t.Fatalf("expected empty digest for redirected imageID, got %q", got[0].Digest)
+	}
+	if got[0].ImageRef != "docker.io/hostingmaloonde/falcosecurity_falco" {
+		t.Fatalf("expected spec imageRef, got %q", got[0].ImageRef)
+	}
+	if got[0].Tag != "0.41.3" {
+		t.Fatalf("expected tag 0.41.3, got %q", got[0].Tag)
 	}
 }
 
@@ -301,6 +403,32 @@ func TestCollectEventObservationIgnoresNonPodAndUnknownReason(t *testing.T) {
 	}
 	if changed := collectEventObservation(unknownReason, excluded, buffer, time.Time{}, testLogger()); changed {
 		t.Fatalf("expected unknown reason event to not change buffer")
+	}
+
+	// Created/Started events contain container names, not image refs.
+	// "Created container: scan" would parse "container:" as an image ref.
+	createdEvent := &corev1.Event{
+		ObjectMeta: metav1.ObjectMeta{Namespace: "ci"},
+		InvolvedObject: corev1.ObjectReference{
+			Kind: "Pod",
+		},
+		Reason:  "Created",
+		Message: "Created container: scan",
+	}
+	if changed := collectEventObservation(createdEvent, excluded, buffer, time.Time{}, testLogger()); changed {
+		t.Fatalf("expected Created event to not change buffer")
+	}
+
+	startedEvent := &corev1.Event{
+		ObjectMeta: metav1.ObjectMeta{Namespace: "ci"},
+		InvolvedObject: corev1.ObjectReference{
+			Kind: "Pod",
+		},
+		Reason:  "Started",
+		Message: "Started container scan",
+	}
+	if changed := collectEventObservation(startedEvent, excluded, buffer, time.Time{}, testLogger()); changed {
+		t.Fatalf("expected Started event to not change buffer")
 	}
 
 	if got := buffer.Snapshot(); len(got) != 0 {
