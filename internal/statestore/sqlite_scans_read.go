@@ -301,6 +301,45 @@ func (s *SQLiteStore) loadVulnerabilitiesByScan(ctx context.Context, scanRecordI
 	return vulnerabilities, nil
 }
 
+func buildScanFilterClause(filter ScanFilter) (string, []interface{}) {
+	clause := ""
+	args := []interface{}{}
+
+	if filter.Repository != "" {
+		clause += " AND r.name LIKE ?"
+		args = append(args, "%"+filter.Repository+"%")
+	}
+
+	switch filter.PolicyStatus {
+	case "pending":
+		clause += " AND sr.policy_status = 'pending'"
+	case "passed":
+		clause += " AND sr.policy_passed = 1 AND sr.policy_status != 'pending'"
+	case "failed":
+		clause += " AND sr.policy_passed = 0 AND sr.policy_status != 'pending'"
+	default:
+		if filter.PolicyPassed != nil {
+			clause += " AND sr.policy_passed = ?"
+			args = append(args, *filter.PolicyPassed)
+		}
+	}
+
+	if filter.InUse != nil {
+		if *filter.InUse {
+			clause += " AND EXISTS (SELECT 1 FROM cluster_images ci WHERE ci.digest = a.digest)"
+		} else {
+			clause += " AND NOT EXISTS (SELECT 1 FROM cluster_images ci WHERE ci.digest = a.digest)"
+		}
+	}
+
+	if filter.MaxAge > 0 {
+		clause += " AND sr.created_at >= strftime('%s', 'now', '-' || ? || ' seconds')"
+		args = append(args, filter.MaxAge)
+	}
+
+	return clause, args
+}
+
 // ListScans returns scan records with optional filters.
 // Only returns the current (latest) scan per artifact, i.e. those referenced by
 // artifacts.last_scan_id. This keeps results consistent with GetRepository which
@@ -319,40 +358,8 @@ func (s *SQLiteStore) ListScans(ctx context.Context, filter ScanFilter) ([]*Scan
 		JOIN scan_records sr ON a.last_scan_id = sr.id
 		WHERE 1=1
 	`
-	args := []interface{}{}
-
-	if filter.Repository != "" {
-		query += " AND r.name LIKE ?"
-		args = append(args, "%"+filter.Repository+"%")
-	}
-
-	switch filter.PolicyStatus {
-	case "pending":
-		query += " AND sr.policy_status = 'pending'"
-	case "passed":
-		query += " AND sr.policy_passed = 1 AND sr.policy_status != 'pending'"
-	case "failed":
-		query += " AND sr.policy_passed = 0 AND sr.policy_status != 'pending'"
-	default:
-		if filter.PolicyPassed != nil {
-			query += " AND sr.policy_passed = ?"
-			args = append(args, *filter.PolicyPassed)
-		}
-	}
-
-	if filter.InUse != nil {
-		if *filter.InUse {
-			query += " AND EXISTS (SELECT 1 FROM cluster_images ci WHERE ci.digest = a.digest)"
-		} else {
-			query += " AND NOT EXISTS (SELECT 1 FROM cluster_images ci WHERE ci.digest = a.digest)"
-		}
-	}
-
-	// Add age filter if specified
-	if filter.MaxAge > 0 {
-		query += " AND sr.created_at >= strftime('%s', 'now', '-' || ? || ' seconds')"
-		args = append(args, filter.MaxAge)
-	}
+	filterClause, args := buildScanFilterClause(filter)
+	query += filterClause
 
 	// Add sorting for scans list views
 	switch filter.SortBy {
@@ -437,39 +444,8 @@ func (s *SQLiteStore) CountScans(ctx context.Context, filter ScanFilter) (int, e
 		JOIN scan_records sr ON a.last_scan_id = sr.id
 		WHERE 1=1
 	`
-	args := []interface{}{}
-
-	if filter.Repository != "" {
-		query += " AND r.name LIKE ?"
-		args = append(args, "%"+filter.Repository+"%")
-	}
-
-	switch filter.PolicyStatus {
-	case "pending":
-		query += " AND sr.policy_status = 'pending'"
-	case "passed":
-		query += " AND sr.policy_passed = 1 AND sr.policy_status != 'pending'"
-	case "failed":
-		query += " AND sr.policy_passed = 0 AND sr.policy_status != 'pending'"
-	default:
-		if filter.PolicyPassed != nil {
-			query += " AND sr.policy_passed = ?"
-			args = append(args, *filter.PolicyPassed)
-		}
-	}
-
-	if filter.InUse != nil {
-		if *filter.InUse {
-			query += " AND EXISTS (SELECT 1 FROM cluster_images ci WHERE ci.digest = a.digest)"
-		} else {
-			query += " AND NOT EXISTS (SELECT 1 FROM cluster_images ci WHERE ci.digest = a.digest)"
-		}
-	}
-
-	if filter.MaxAge > 0 {
-		query += " AND sr.created_at >= strftime('%s', 'now', '-' || ? || ' seconds')"
-		args = append(args, filter.MaxAge)
-	}
+	filterClause, args := buildScanFilterClause(filter)
+	query += filterClause
 
 	var total int
 	err := s.db.QueryRowContext(ctx, query, args...).Scan(&total)
