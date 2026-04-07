@@ -7,7 +7,8 @@ import { useImageUsageFilter } from '../lib/imageUsageFilter';
 import { LoadingState, ErrorState, PageHeader, StatusBadge, VulnCounts, SortHeader, Pagination, ConfirmModal, RuntimeUsageBadge, PageFiltersBar, FilterActionButton, PolicyStatusSelect } from '../components/ui';
 import type { Repository } from '../lib/api';
 import { RefreshCw } from 'lucide-react';
-import { useSortablePaginationState } from '../lib/useSortablePaginationState';
+import { useSortablePaginationState, type SortDirection } from '../lib/useSortablePaginationState';
+import { useScanPageFilters } from '../lib/useScanPageFilters';
 
 export default function RepositoriesPage() {
   const { apiClient } = useAuth();
@@ -19,31 +20,43 @@ export default function RepositoriesPage() {
   const [total, setTotal] = useState(0);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
-  const [search, setSearch] = useState(searchParams.get('search') || '');
-  const [policyFilter, setPolicyFilter] = useState(searchParams.get('policy_status') || 'all');
   const pageSize = 10;
   const [confirmRescan, setConfirmRescan] = useState('');
 
-  const initialSortDir = (searchParams.get('order') as 'asc' | 'desc') || 'desc';
+  const defaultSortColumn = 'lastScanTime';
+  const defaultSortDirection: SortDirection = 'desc';
+  const initialSortDir = (searchParams.get('order') as SortDirection) || defaultSortDirection;
   const initialPage = Number(searchParams.get('page')) || 1;
 
-  const updateURL = (s: string, d: string, q: string, p: number, ps?: string) => {
-    const params: Record<string, string> = {};
-    if (q) params.search = q;
-    if (p > 1) params.page = String(p);
-    if (s !== 'lastScanTime' || d !== 'desc') { params.sort = s; params.order = d; }
-    const status = ps !== undefined ? ps : policyFilter;
-    if (status && status !== 'all') params.policy_status = status;
-    setSearchParams(params, { replace: true });
-  };
-
-  const { sortColumn: sortCol, sortDirection: sortDir, toggleSort, page, setPage, totalPages } = useSortablePaginationState({
-    initialSortColumn: searchParams.get('sort') || 'lastScanTime',
+  const { sortColumn: sortCol, sortDirection: sortDir, toggleSort, page, setPage, totalPages, offset } = useSortablePaginationState({
+    initialSortColumn: searchParams.get('sort') || defaultSortColumn,
     initialSortDirection: initialSortDir,
     resolveNewColumnDirection: () => 'asc',
     initialPage,
     pageSize,
     totalItems: total,
+  });
+
+  const {
+    repositoryInput,
+    repository,
+    policyFilter,
+    handleRepositoryInputChange,
+    applyRepositoryFilter,
+    handlePolicyFilterChange,
+    clearFilters,
+    handlePageChange,
+    handleSortChange,
+  } = useScanPageFilters({
+    initialRepository: searchParams.get('search') || '',
+    initialPolicyFilter: searchParams.get('policy_status') || 'all',
+    searchParamName: 'search',
+    sortColumn: sortCol,
+    sortDirection: sortDir,
+    defaultSortColumn,
+    defaultSortDirection,
+    setPage,
+    setSearchParams,
   });
 
   const sortMap: Record<string, string> = {
@@ -53,18 +66,15 @@ export default function RepositoriesPage() {
     status: sortDir === 'asc' ? 'status_asc' : 'status_desc',
   };
 
-  const load = useCallback(async (opts?: { page?: number; search?: string; policyStatus?: string }) => {
+  const load = useCallback(async () => {
     setLoading(true);
     setError('');
     try {
-      const effectivePage = opts?.page ?? page;
-      const effectiveSearch = opts?.search ?? search;
-      const effectivePolicyStatus = opts?.policyStatus !== undefined ? opts.policyStatus : policyFilter;
       const resp = await apiClient.getRepositories({
-        limit: pageSize, offset: (effectivePage - 1) * pageSize,
-        ...(effectiveSearch && { search: effectiveSearch }),
+        limit: pageSize, offset,
+        ...(repository && { search: repository }),
         ...(inUseQuery !== undefined && { in_use: inUseQuery }),
-        ...(effectivePolicyStatus !== 'all' && { policy_status: effectivePolicyStatus }),
+        ...(policyFilter !== 'all' && { policy_status: policyFilter }),
         sort_by: sortMap[sortCol] || 'age_desc',
       });
       if (resp && resp.Repositories) {
@@ -79,14 +89,14 @@ export default function RepositoriesPage() {
     } finally {
       setLoading(false);
     }
-  }, [apiClient, inUseQuery, page, policyFilter, search, sortCol, sortDir]); // eslint-disable-line
+  }, [apiClient, inUseQuery, offset, pageSize, policyFilter, repository, sortCol, sortDir]);
 
   useEffect(() => { load(); }, [load]);
 
   const handleSort = (col: string) => {
     const nextDir = col === sortCol ? (sortDir === 'asc' ? 'desc' : 'asc') : 'asc';
     toggleSort(col);
-    updateURL(col, nextDir, search, page);
+    handleSortChange(col, nextDir);
   };
 
   const handleRescan = async (name: string) => {
@@ -100,43 +110,19 @@ export default function RepositoriesPage() {
     }
   };
 
-  const applySearch = (nextSearch: string) => {
-    setPage(1);
-    updateURL(sortCol, sortDir, nextSearch, 1);
-    void load({ page: 1, search: nextSearch });
-  };
-
-  const handlePolicyFilterChange = (nextStatus: string) => {
-    setPolicyFilter(nextStatus);
-    setPage(1);
-    updateURL(sortCol, sortDir, search, 1, nextStatus);
-    void load({ page: 1, policyStatus: nextStatus });
-  };
-
-  const handleSearchInputChange = (nextSearch: string) => {
-    setSearch(nextSearch);
-    if (page !== 1) {
-      setPage(1);
-      updateURL(sortCol, sortDir, nextSearch, 1);
-    }
-  };
-
-  if (loading && repos.length === 0) return <LoadingState />;
   if (error) return <ErrorState message={error} onRetry={load} />;
 
   return (
     <div>
       <PageHeader title="Repositories" subtitle="View all repositories and their scanning status" />
-      {/* Filters */}
       <PageFiltersBar>
-        <input value={search} onChange={e => handleSearchInputChange(e.target.value)} onKeyDown={e => e.key === 'Enter' && applySearch(search)}
+        <input value={repositoryInput} onChange={e => handleRepositoryInputChange(e.target.value)} onKeyDown={e => e.key === 'Enter' && applyRepositoryFilter()}
           placeholder="Filter by name…" className="flex-1 max-w-xs px-3 py-2 bg-bg-secondary border border-border rounded-lg text-sm text-text-primary placeholder:text-text-muted focus:outline-none focus:border-accent/50 transition-colors" />
         <PolicyStatusSelect value={policyFilter} onChange={handlePolicyFilterChange} />
-        <FilterActionButton onClick={() => applySearch(search)}>Filter</FilterActionButton>
-        <FilterActionButton variant="secondary" onClick={() => { setSearch(''); setPolicyFilter('all'); updateURL(sortCol, sortDir, '', 1, 'all'); void load({ page: 1, search: '', policyStatus: 'all' }); }}>Clear</FilterActionButton>
+        <FilterActionButton onClick={applyRepositoryFilter}>Filter</FilterActionButton>
+        <FilterActionButton variant="secondary" onClick={clearFilters}>Clear</FilterActionButton>
       </PageFiltersBar>
-      {/* Table */}
-      <div className="bg-bg-primary border border-border rounded-xl overflow-hidden">
+      {loading && repos.length === 0 ? <LoadingState /> : <div className="bg-bg-primary border border-border rounded-xl overflow-hidden">
         {repos.length === 0 ? (
           <div className="p-12 text-center text-text-secondary text-sm">No repositories found</div>
         ) : (
@@ -174,8 +160,8 @@ export default function RepositoriesPage() {
             </table>
           </div>
         )}
-        <Pagination currentPage={page} totalPages={totalPages} total={total} pageSize={pageSize} onPageChange={p => { setPage(p); updateURL(sortCol, sortDir, search, p); }} itemLabel="repos" />
-      </div>
+        <Pagination currentPage={page} totalPages={totalPages} total={total} pageSize={pageSize} onPageChange={handlePageChange} itemLabel="repos" />
+      </div>}
       <ConfirmModal open={!!confirmRescan} title="Rescan Repository" message={`Trigger rescan for all images in "${confirmRescan}"?`} onConfirm={() => handleRescan(confirmRescan)} onCancel={() => setConfirmRescan('')} />
     </div>
   );

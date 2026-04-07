@@ -5,6 +5,7 @@ interface UseScanPageFiltersOptions {
   initialRepository: string;
   initialPolicyFilter: string;
   policyParamName?: string;
+  searchParamName?: string;
   sortColumn: string;
   sortDirection: 'asc' | 'desc';
   defaultSortColumn: string;
@@ -17,6 +18,7 @@ export function useScanPageFilters({
   initialRepository,
   initialPolicyFilter,
   policyParamName = 'policy_status',
+  searchParamName = 'repository',
   sortColumn,
   sortDirection,
   defaultSortColumn,
@@ -36,7 +38,7 @@ export function useScanPageFilters({
     nextSortDirection: 'asc' | 'desc',
   ) => {
     const params: Record<string, string> = {};
-    if (nextRepository) params.repository = nextRepository;
+    if (nextRepository) params[searchParamName] = nextRepository;
     if (nextPage > 1) params.page = String(nextPage);
     if (nextSortColumn !== defaultSortColumn || nextSortDirection !== defaultSortDirection) {
       params.sort = nextSortColumn;
@@ -44,7 +46,7 @@ export function useScanPageFilters({
     }
     if (nextPolicyFilter && nextPolicyFilter !== 'all') params[policyParamName] = nextPolicyFilter;
     setSearchParams(params, { replace: true });
-  }, [defaultSortColumn, defaultSortDirection, policyParamName, setSearchParams]);
+  }, [defaultSortColumn, defaultSortDirection, policyParamName, searchParamName, setSearchParams]);
 
   const handleRepositoryInputChange = useCallback((nextRepository: string) => {
     setRepositoryInput(nextRepository);
