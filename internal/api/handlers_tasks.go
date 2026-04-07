@@ -97,7 +97,7 @@ func (s *APIServer) handleGetSemverUpdateTasks(w http.ResponseWriter, r *http.Re
 		if len(clusters) > 0 {
 			noRuntimeData = false
 
-			// Build: imageRef → deduplicated set of semver tags
+			// Build: imageRef -> deduplicated set of semver tags
 			imageTagMap := make(map[string]map[string]struct{})
 			for _, cluster := range clusters {
 				images, err := s.clusterInventory.ListClusterImages(ctx, cluster.Name)
@@ -180,15 +180,15 @@ func (s *APIServer) handleGetSemverUpdateTasks(w http.ResponseWriter, r *http.Re
 		sort.Slice(allVersions, func(a, b int) bool { return allVersions[a].LessThan(allVersions[b]) })
 		minVer := allVersions[0]
 
-		suggestedLower := minVer.String()
-		suggestedRange := fmt.Sprintf(">=%s", suggestedLower)
-		hasTighteningSuggestion := !sameSemverLowerOnlyRange(c.CurrentRanges, suggestedLower)
+		suggestedLower := suggestedLowerBound(minVer, c.CurrentRanges)
+		suggestedRange := formatSuggestedLowerOnlyRange(suggestedLower, strings.Join(c.CurrentRanges, " "))
+		tightenRanges, hasTighteningSuggestion := suggestedRangesForTighten(c.CurrentRanges, allVersions)
 
 		if len(outOfRange) == 0 {
 			c.Status = "current"
 			if hasTighteningSuggestion {
 				c.Status = "tighten"
-				c.SuggestedRanges = []string{suggestedRange}
+				c.SuggestedRanges = tightenRanges
 			}
 			continue
 		}
@@ -213,6 +213,8 @@ func (s *APIServer) handleGetSemverUpdateTasks(w http.ResponseWriter, r *http.Re
 }
 
 var lowerOnlyRangeRe = regexp.MustCompile(`^>=\s*(\S+)\s*$`)
+var exactVersionRangeRe = regexp.MustCompile(`^\s*v?\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?(?:\+[0-9A-Za-z.-]+)?\s*$`)
+var vPrefixRangeRe = regexp.MustCompile(`^(>=|<=|>|<|=|~|\^)?\s*v\d`)
 
 // sameSemverLowerOnlyRange returns true when current is already a single
 // lower-bound-only range (>=x.y.z) equivalent to proposedLower.
@@ -235,6 +237,204 @@ func sameSemverLowerOnlyRange(current []string, proposedLower string) bool {
 	return currentLower.Equal(proposed)
 }
 
+func suggestedLowerBound(minVer *semver.Version, currentRanges []string) string {
+	if !rangesIncludePrereleaseMarker(currentRanges) {
+		return minVer.String()
+	}
+
+	// Keep prerelease inclusion semantics when existing constraints use -0.
+	return fmt.Sprintf("%d.%d.%d-0", minVer.Major(), minVer.Minor(), minVer.Patch())
+}
+
+func rangesIncludePrereleaseMarker(ranges []string) bool {
+	for _, r := range ranges {
+		if strings.Contains(r, "-0") {
+			return true
+		}
+	}
+	return false
+}
+
+func suggestedRangesForTighten(currentRanges []string, runtimeVersions []*semver.Version) ([]string, bool) {
+	suggested := make([]string, 0, len(currentRanges))
+	changed := false
+	sort.Slice(runtimeVersions, func(i, j int) bool { return runtimeVersions[i].LessThan(runtimeVersions[j]) })
+	runtimeFloor := runtimeVersions[0]
+
+	for _, current := range currentRanges {
+		constraint, err := semver.NewConstraint(current)
+		if err != nil {
+			suggested = append(suggested, current)
+			continue
+		}
+
+		matching := make([]*semver.Version, 0, len(runtimeVersions))
+		for _, v := range runtimeVersions {
+			if constraint.Check(v) {
+				matching = append(matching, v)
+			}
+		}
+
+		if len(matching) == 0 {
+			if rangeStrictlyBelowVersion(current, runtimeFloor) {
+				changed = true
+				continue
+			}
+			suggested = append(suggested, current)
+			continue
+		}
+
+		sort.Slice(matching, func(i, j int) bool { return matching[i].LessThan(matching[j]) })
+		trimmedCurrent := strings.TrimSpace(current)
+		if exactVersionRangeRe.MatchString(trimmedCurrent) {
+			suggested = append(suggested, trimmedCurrent)
+			continue
+		}
+
+		lower := suggestedLowerBound(matching[0], []string{current})
+		next := formatSuggestedLowerOnlyRange(lower, current)
+		upperBounds := extractUpperBounds(current)
+		if len(upperBounds) == 0 && sameSemverLowerOnlyRange([]string{current}, lower) {
+			suggested = append(suggested, trimmedCurrent)
+			continue
+		}
+		if len(upperBounds) > 0 {
+			next = fmt.Sprintf("%s %s", next, strings.Join(upperBounds, " "))
+		}
+		suggested = append(suggested, next)
+
+		if normalizeConstraint(current) != normalizeConstraint(next) {
+			changed = true
+		}
+	}
+
+	return suggested, changed
+}
+
+func formatSuggestedLowerOnlyRange(lower string, currentRange string) string {
+	if rangeUsesVPrefix(currentRange) {
+		return fmt.Sprintf(">=v%s", lower)
+	}
+	return fmt.Sprintf(">=%s", lower)
+}
+
+func rangeUsesVPrefix(r string) bool {
+	return vPrefixRangeRe.MatchString(strings.TrimSpace(r))
+}
+
+func extractUpperBounds(r string) []string {
+	fields := strings.Fields(r)
+	upper := make([]string, 0, len(fields))
+	for _, field := range fields {
+		if strings.HasPrefix(field, "<") {
+			upper = append(upper, field)
+		}
+	}
+	return upper
+}
+
+func normalizeConstraint(r string) string {
+	return strings.Join(strings.Fields(strings.TrimSpace(r)), " ")
+}
+
+func rangeStrictlyBelowVersion(r string, floor *semver.Version) bool {
+	for _, upper := range extractUpperBounds(r) {
+		inclusive := strings.HasPrefix(upper, "<=")
+		verStr := strings.TrimLeft(upper, "<=>")
+		v, err := semver.NewVersion(verStr)
+		if err != nil {
+			continue
+		}
+
+		if inclusive {
+			if v.LessThan(floor) {
+				return true
+			}
+			continue
+		}
+
+		if v.LessThan(floor) || v.Equal(floor) {
+			return true
+		}
+	}
+
+	fields := strings.Fields(strings.TrimSpace(r))
+	for _, field := range fields {
+		token := strings.TrimSpace(field)
+		if token == "" {
+			continue
+		}
+
+		if strings.HasPrefix(token, "~") {
+			if upper, ok := inferredUpperBoundForTilde(strings.TrimPrefix(token, "~")); ok {
+				if upper.LessThan(floor) || upper.Equal(floor) {
+					return true
+				}
+			}
+		}
+
+		if strings.HasPrefix(token, "^") {
+			if upper, ok := inferredUpperBoundForCaret(strings.TrimPrefix(token, "^")); ok {
+				if upper.LessThan(floor) || upper.Equal(floor) {
+					return true
+				}
+			}
+		}
+
+		if exactVersionRangeRe.MatchString(token) {
+			v, err := semver.NewVersion(token)
+			if err == nil && v.LessThan(floor) {
+				return true
+			}
+		}
+	}
+
+	return false
+}
+
+func inferredUpperBoundForTilde(raw string) (*semver.Version, bool) {
+	v, err := semver.NewVersion(raw)
+	if err != nil {
+		return nil, false
+	}
+	upper, err := semver.NewVersion(fmt.Sprintf("%d.%d.0", v.Major(), v.Minor()+1))
+	if err != nil {
+		return nil, false
+	}
+	return upper, true
+}
+
+func inferredUpperBoundForCaret(raw string) (*semver.Version, bool) {
+	v, err := semver.NewVersion(raw)
+	if err != nil {
+		return nil, false
+	}
+
+	major := v.Major()
+	minor := v.Minor()
+	patch := v.Patch()
+
+	if major > 0 {
+		upper, err := semver.NewVersion(fmt.Sprintf("%d.0.0", major+1))
+		if err != nil {
+			return nil, false
+		}
+		return upper, true
+	}
+	if minor > 0 {
+		upper, err := semver.NewVersion(fmt.Sprintf("0.%d.0", minor+1))
+		if err != nil {
+			return nil, false
+		}
+		return upper, true
+	}
+	upper, err := semver.NewVersion(fmt.Sprintf("0.0.%d", patch+1))
+	if err != nil {
+		return nil, false
+	}
+	return upper, true
+}
+
 func buildSemverUpdatePrompt(entries []internalSemverEntry) string {
 	var updates []internalSemverEntry
 	for _, entry := range entries {
@@ -249,23 +449,15 @@ func buildSemverUpdatePrompt(entries []internalSemverEntry) string {
 	}
 
 	var b strings.Builder
-	b.WriteString("Update suppline.yml in this repository using the semver recommendations below.\\n")
-	b.WriteString("Rules:\\n")
-	b.WriteString("1. Edit only sync entries that exactly match target.\\n")
-	b.WriteString("2. For each matched entry, set tags.semverRange to the suggested range list exactly.\\n")
-	b.WriteString("3. Preserve all comments, template expressions, and unrelated config.\\n")
-	b.WriteString("4. Do not change entry ordering.\\n")
-	b.WriteString("\\nSuggested updates:\\n")
+	b.WriteString("Update suppline.yml using the semver recommendations below.\n")
 
 	for _, entry := range updates {
 		b.WriteString("- target: ")
 		b.WriteString(entry.Target)
-		b.WriteString("\\n  semverRange: [")
+		b.WriteString("\n  semverRange: [")
 		b.WriteString(strings.Join(entry.SuggestedRanges, ", "))
-		b.WriteString("]\\n")
+		b.WriteString("]\n")
 	}
-
-	b.WriteString("\\nAfter editing, show a unified diff of suppline.yml only.\\n")
 
 	return b.String()
 }

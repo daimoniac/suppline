@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 
 	"github.com/daimoniac/suppline/internal/config"
@@ -146,8 +147,8 @@ func TestHandleGetSemverUpdateTasks_AllVersionsInRange(t *testing.T) {
 	if len(entry.SuggestedRanges) != 1 {
 		t.Fatalf("expected 1 suggested range, got %v", entry.SuggestedRanges)
 	}
-	if entry.SuggestedRanges[0] != ">=1.24.0" {
-		t.Errorf("expected suggested range >=1.24.0, got %q", entry.SuggestedRanges[0])
+	if entry.SuggestedRanges[0] != ">=1.24.0 <1.26.0" {
+		t.Errorf("expected suggested range >=1.24.0 <1.26.0, got %q", entry.SuggestedRanges[0])
 	}
 	if len(entry.OutOfRangeVersions) != 0 {
 		t.Errorf("expected no out-of-range versions, got %v", entry.OutOfRangeVersions)
@@ -351,6 +352,80 @@ func TestHandleGetSemverUpdateTasks_NoLowerBound(t *testing.T) {
 	}
 }
 
+func TestHandleGetSemverUpdateTasks_PreservesPrereleaseMarkerInTightenSuggestion(t *testing.T) {
+	regsync := regsyncWithSemver("docker.io/prom/memcached-exporter", "hostingmaloonde/prom_memcached_exporter", []string{">=0.15.3-0"})
+	store := &mockClusterInventoryStore{
+		mockStateStore: &mockStateStore{},
+		summaries:      []statestore.ClusterSummary{{Name: "prod"}},
+		clusterImages: []statestore.ClusterImageSummary{
+			{Namespace: "default", ImageRef: "hostingmaloonde/prom_memcached_exporter", Tag: "0.15.5"},
+		},
+	}
+	server := tasksTestServer(t, store, regsync)
+
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/tasks/semver-updates", nil)
+	w := httptest.NewRecorder()
+	server.router.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", w.Code, w.Body.String())
+	}
+
+	var resp SemverUpdateTasksResponse
+	if err := json.NewDecoder(w.Body).Decode(&resp); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+
+	if len(resp.Entries) != 1 {
+		t.Fatalf("expected 1 entry, got %d", len(resp.Entries))
+	}
+
+	entry := resp.Entries[0]
+	if entry.Status != "tighten" {
+		t.Fatalf("expected tighten, got %q", entry.Status)
+	}
+	if len(entry.SuggestedRanges) != 1 || entry.SuggestedRanges[0] != ">=0.15.5-0" {
+		t.Fatalf("expected suggested range >=0.15.5-0, got %v", entry.SuggestedRanges)
+	}
+}
+
+func TestHandleGetSemverUpdateTasks_PreservesPrereleaseMarkerInOutOfBoundsSuggestion(t *testing.T) {
+	regsync := regsyncWithSemver("docker.io/nginx", "registry.example.com/nginx", []string{">=1.20.0-0 <1.26.0"})
+	store := &mockClusterInventoryStore{
+		mockStateStore: &mockStateStore{},
+		summaries:      []statestore.ClusterSummary{{Name: "prod"}},
+		clusterImages: []statestore.ClusterImageSummary{
+			{Namespace: "default", ImageRef: "registry.example.com/nginx", Tag: "1.27.2"},
+		},
+	}
+	server := tasksTestServer(t, store, regsync)
+
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/tasks/semver-updates", nil)
+	w := httptest.NewRecorder()
+	server.router.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", w.Code, w.Body.String())
+	}
+
+	var resp SemverUpdateTasksResponse
+	if err := json.NewDecoder(w.Body).Decode(&resp); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+
+	if len(resp.Entries) != 1 {
+		t.Fatalf("expected 1 entry, got %d", len(resp.Entries))
+	}
+
+	entry := resp.Entries[0]
+	if entry.Status != "out_of_bounds" {
+		t.Fatalf("expected out_of_bounds, got %q", entry.Status)
+	}
+	if len(entry.SuggestedRanges) != 1 || entry.SuggestedRanges[0] != ">=1.27.2-0" {
+		t.Fatalf("expected suggested range >=1.27.2-0, got %v", entry.SuggestedRanges)
+	}
+}
+
 func TestHandleGetSemverUpdateTasks_CurrentRangeAlreadyMatchesSuggested(t *testing.T) {
 	// Current range is semantically equivalent lower-bound-only -> no suggestion emitted.
 	regsync := regsyncWithSemver("docker.io/nginx", "registry.example.com/nginx", []string{">=1.26.13"})
@@ -457,6 +532,187 @@ func TestHandleGetSemverUpdateTasks_MultipleRangesMixedResults(t *testing.T) {
 	}
 }
 
+func TestHandleGetSemverUpdateTasks_MultipleRangesTightenPreservesPinsAndVPrefix(t *testing.T) {
+	regsync := regsyncWithSemver(
+		"darthsim/imgproxy",
+		"hostingmaloonde/darthsim_imgproxy",
+		[]string{">=v3.30.0", "v3.8.0"},
+	)
+	store := &mockClusterInventoryStore{
+		mockStateStore: &mockStateStore{},
+		summaries:      []statestore.ClusterSummary{{Name: "prod"}},
+		clusterImages: []statestore.ClusterImageSummary{
+			{Namespace: "default", ImageRef: "hostingmaloonde/darthsim_imgproxy", Tag: "v3.8.0"},
+			{Namespace: "default", ImageRef: "hostingmaloonde/darthsim_imgproxy", Tag: "v3.30.1"},
+		},
+	}
+	server := tasksTestServer(t, store, regsync)
+
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/tasks/semver-updates", nil)
+	w := httptest.NewRecorder()
+	server.router.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", w.Code, w.Body.String())
+	}
+
+	var resp SemverUpdateTasksResponse
+	if err := json.NewDecoder(w.Body).Decode(&resp); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+
+	if len(resp.Entries) != 1 {
+		t.Fatalf("expected 1 entry, got %d", len(resp.Entries))
+	}
+	entry := resp.Entries[0]
+	if entry.Status != "tighten" {
+		t.Fatalf("expected tighten, got %q", entry.Status)
+	}
+	if len(entry.OutOfRangeVersions) != 0 {
+		t.Fatalf("expected no out-of-range versions, got %v", entry.OutOfRangeVersions)
+	}
+	if len(entry.SuggestedRanges) != 2 {
+		t.Fatalf("expected two suggested ranges, got %v", entry.SuggestedRanges)
+	}
+	if entry.SuggestedRanges[0] != ">=v3.30.1" || entry.SuggestedRanges[1] != "v3.8.0" {
+		t.Fatalf("expected [>=v3.30.1 v3.8.0], got %v", entry.SuggestedRanges)
+	}
+}
+
+func TestHandleGetSemverUpdateTasks_MultipleRangesWithFutureWindowsRemainCurrent(t *testing.T) {
+	regsync := regsyncWithSemver(
+		"node",
+		"hostingmaloonde/node",
+		[]string{">=22.21.1 <23", ">=24.12.0 <25", ">=26.0.0 <27"},
+	)
+	store := &mockClusterInventoryStore{
+		mockStateStore: &mockStateStore{},
+		summaries:      []statestore.ClusterSummary{{Name: "prod"}},
+		clusterImages: []statestore.ClusterImageSummary{
+			{Namespace: "default", ImageRef: "hostingmaloonde/node", Tag: "22.21.1"},
+		},
+	}
+	server := tasksTestServer(t, store, regsync)
+
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/tasks/semver-updates", nil)
+	w := httptest.NewRecorder()
+	server.router.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", w.Code, w.Body.String())
+	}
+
+	var resp SemverUpdateTasksResponse
+	if err := json.NewDecoder(w.Body).Decode(&resp); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+
+	if len(resp.Entries) != 1 {
+		t.Fatalf("expected 1 entry, got %d", len(resp.Entries))
+	}
+	entry := resp.Entries[0]
+	if entry.Status != "current" {
+		t.Fatalf("expected current, got %q", entry.Status)
+	}
+	if len(entry.SuggestedRanges) != 0 {
+		t.Fatalf("expected no suggestion, got %v", entry.SuggestedRanges)
+	}
+}
+
+func TestHandleGetSemverUpdateTasks_MultipleRangesDropsObsoleteHistoricalWindows(t *testing.T) {
+	regsync := regsyncWithSemver(
+		"kiwigrid/k8s-sidecar",
+		"hostingmaloonde/kiwigrid-k8s-sidecar",
+		[]string{">=1.19.5 <1.24.6", ">=1.30.9 <2.0.0", ">=2.1.2"},
+	)
+	store := &mockClusterInventoryStore{
+		mockStateStore: &mockStateStore{},
+		summaries:      []statestore.ClusterSummary{{Name: "prod"}},
+		clusterImages: []statestore.ClusterImageSummary{
+			{Namespace: "default", ImageRef: "hostingmaloonde/kiwigrid-k8s-sidecar", Tag: "2.5.0"},
+		},
+	}
+	server := tasksTestServer(t, store, regsync)
+
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/tasks/semver-updates", nil)
+	w := httptest.NewRecorder()
+	server.router.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", w.Code, w.Body.String())
+	}
+
+	var resp SemverUpdateTasksResponse
+	if err := json.NewDecoder(w.Body).Decode(&resp); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+
+	if len(resp.Entries) != 1 {
+		t.Fatalf("expected 1 entry, got %d", len(resp.Entries))
+	}
+	entry := resp.Entries[0]
+	if entry.Status != "tighten" {
+		t.Fatalf("expected tighten, got %q", entry.Status)
+	}
+	if len(entry.SuggestedRanges) != 1 {
+		t.Fatalf("expected one suggested range, got %v", entry.SuggestedRanges)
+	}
+	if entry.SuggestedRanges[0] != ">=2.5.0" {
+		t.Fatalf("expected [>=2.5.0], got %v", entry.SuggestedRanges)
+	}
+	if len(entry.OutOfRangeVersions) != 0 {
+		t.Fatalf("expected no out-of-range versions, got %v", entry.OutOfRangeVersions)
+	}
+}
+
+func TestHandleGetSemverUpdateTasks_TightenDropsObsoleteTildeAndKeepsEquivalentLowerBoundStyle(t *testing.T) {
+	regsync := regsyncWithSemver(
+		"nginx",
+		"hostingmaloonde/nginx",
+		[]string{">=1.29", "~1.27"},
+	)
+	store := &mockClusterInventoryStore{
+		mockStateStore: &mockStateStore{},
+		summaries:      []statestore.ClusterSummary{{Name: "prod"}},
+		clusterImages: []statestore.ClusterImageSummary{
+			{Namespace: "default", ImageRef: "hostingmaloonde/nginx", Tag: "1.29"},
+			{Namespace: "default", ImageRef: "hostingmaloonde/nginx", Tag: "1.29.3"},
+			{Namespace: "default", ImageRef: "hostingmaloonde/nginx", Tag: "1.29.5"},
+		},
+	}
+	server := tasksTestServer(t, store, regsync)
+
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/tasks/semver-updates", nil)
+	w := httptest.NewRecorder()
+	server.router.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", w.Code, w.Body.String())
+	}
+
+	var resp SemverUpdateTasksResponse
+	if err := json.NewDecoder(w.Body).Decode(&resp); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+
+	if len(resp.Entries) != 1 {
+		t.Fatalf("expected 1 entry, got %d", len(resp.Entries))
+	}
+	entry := resp.Entries[0]
+	if entry.Status != "tighten" {
+		t.Fatalf("expected tighten, got %q", entry.Status)
+	}
+	if len(entry.OutOfRangeVersions) != 0 {
+		t.Fatalf("expected no out-of-range versions, got %v", entry.OutOfRangeVersions)
+	}
+	if len(entry.SuggestedRanges) != 1 {
+		t.Fatalf("expected one suggested range, got %v", entry.SuggestedRanges)
+	}
+	if entry.SuggestedRanges[0] != ">=1.29" {
+		t.Fatalf("expected [>=1.29], got %v", entry.SuggestedRanges)
+	}
+}
+
 func TestHandleGetSemverUpdateTasks_AIAgentPromptReturnedWhenSuggestionsExist(t *testing.T) {
 	regsync := regsyncWithSemver("docker.io/nginx", "registry.example.com/nginx", []string{">=1.20.0 <1.26.0"})
 	store := &mockClusterInventoryStore{
@@ -483,6 +739,12 @@ func TestHandleGetSemverUpdateTasks_AIAgentPromptReturnedWhenSuggestionsExist(t 
 
 	if resp.AIAgentPrompt == "" {
 		t.Fatal("expected non-empty ai_agent_prompt")
+	}
+	if strings.Contains(resp.AIAgentPrompt, "\\n") {
+		t.Fatalf("expected ai_agent_prompt to contain real newlines, got escaped newlines: %q", resp.AIAgentPrompt)
+	}
+	if !strings.Contains(resp.AIAgentPrompt, "\n") {
+		t.Fatalf("expected ai_agent_prompt to contain newline characters, got: %q", resp.AIAgentPrompt)
 	}
 }
 

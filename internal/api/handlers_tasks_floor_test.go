@@ -9,9 +9,9 @@ import (
 	"github.com/daimoniac/suppline/internal/statestore"
 )
 
-func TestHandleGetSemverUpdateTasks_CurrentWithUpperBoundGetsLowerOnlySuggestion(t *testing.T) {
-	// Even when status is current, upper bounds are now considered optional,
-	// so >=1.26.13 <1.30.0 should suggest >=1.26.13.
+func TestHandleGetSemverUpdateTasks_CurrentWithUpperBoundStaysCurrent(t *testing.T) {
+	// If upper bounds are already configured and all runtime versions are in-range,
+	// no tighten suggestion should be emitted.
 	regsync := regsyncWithSemver("docker.io/nginx", "registry.example.com/nginx", []string{">=1.26.13 <1.30.0"})
 	store := &mockClusterInventoryStore{
 		mockStateStore: &mockStateStore{},
@@ -40,10 +40,10 @@ func TestHandleGetSemverUpdateTasks_CurrentWithUpperBoundGetsLowerOnlySuggestion
 		t.Fatalf("expected 1 entry, got %d", len(resp.Entries))
 	}
 	entry := resp.Entries[0]
-	if entry.Status != "tighten" {
-		t.Fatalf("expected tighten, got %q", entry.Status)
+	if entry.Status != "current" {
+		t.Fatalf("expected current, got %q", entry.Status)
 	}
-	if len(entry.SuggestedRanges) != 1 || entry.SuggestedRanges[0] != ">=1.26.13" {
-		t.Fatalf("expected suggested range >=1.26.13, got %v", entry.SuggestedRanges)
+	if len(entry.SuggestedRanges) != 0 {
+		t.Fatalf("expected no suggested ranges, got %v", entry.SuggestedRanges)
 	}
 }
