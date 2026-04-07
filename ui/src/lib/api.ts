@@ -161,6 +161,11 @@ export class APIClient {
   async getPublicKey() { return this.requestText('/api/v1/integration/publickey'); }
   async getKyvernoPolicy() { return this.requestText('/api/v1/integration/kyverno/policy'); }
 
+  // Tasks
+  async getSemverUpdateTasks(): Promise<SemverUpdateTasksResponse> {
+    return this.request<SemverUpdateTasksResponse>('/api/v1/tasks/semver-updates');
+  }
+
   // Health
   async getHealth() { return this.request<Record<string, unknown>>('/health'); }
 }
@@ -315,4 +320,21 @@ export interface KubernetesClusterImageSummary {
   ImageRef: string;
   Tag: string;
   Digest: string;
+}
+
+export interface SemverUpdateEntry {
+  source: string;
+  target: string;
+  current_ranges: string[];
+  runtime_versions: string[];
+  out_of_range_versions: string[];
+  suggested_ranges: string[] | null;
+  /** "current" | "outdated" | "no_runtime_data" */
+  status: string;
+}
+
+export interface SemverUpdateTasksResponse {
+  entries: SemverUpdateEntry[];
+  suggested_config: string;
+  no_runtime_data: boolean;
 }

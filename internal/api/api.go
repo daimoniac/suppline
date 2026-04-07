@@ -128,6 +128,9 @@ func (s *APIServer) setupRoutes() {
 	s.router.HandleFunc("/health", s.corsMiddleware(s.handleHealth))
 	s.router.HandleFunc("/metrics", s.corsMiddleware(s.handleMetrics))
 
+	// Task endpoints
+	s.router.HandleFunc("/api/v1/tasks/semver-updates", s.corsMiddleware(s.authMiddleware(s.handleGetSemverUpdateTasks, true)))
+
 	// Integration endpoints
 	s.router.HandleFunc("/api/v1/integration/kubernetes/clusters", s.corsMiddleware(s.handleListKubernetesClusters))
 	s.router.HandleFunc("/api/v1/integration/kubernetes/clusters/", s.corsMiddleware(s.authMiddleware(s.handleKubernetesClustersRouter, false)))

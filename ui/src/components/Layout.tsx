@@ -2,7 +2,7 @@ import { NavLink, Outlet } from 'react-router-dom';
 import { useAuth } from '../lib/auth';
 import {
   LayoutDashboard, Layers, ScanSearch, ShieldAlert, Bug, ShieldCheck,
-  Plug, LogOut,
+  Plug, LogOut, ClipboardList,
 } from 'lucide-react';
 import { ImageUsageFilterProvider, useImageUsageFilter } from '../lib/imageUsageFilter';
 import supplineIcon from '../assets/suppline-icon.svg';
@@ -15,6 +15,7 @@ const navItems = [
   { to: '/vulnerabilities?severity=critical', icon: Bug, label: 'Vulnerabilities' },
   { to: '/vex', icon: ShieldCheck, label: 'VEX Statements' },
   { to: '/integrations', icon: Plug, label: 'Integrations' },
+  { to: '/tasks', icon: ClipboardList, label: 'Tasks' },
 ];
 
 export default function Layout() {

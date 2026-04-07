@@ -12,6 +12,7 @@ import FailedImagesPage from './pages/FailedImagesPage';
 import VulnerabilitiesPage from './pages/VulnerabilitiesPage';
 import VEXPage from './pages/VEXPage';
 import IntegrationsPage from './pages/IntegrationsPage';
+import TasksPage from './pages/TasksPage';
 
 function AppRoutes() {
   const { isAuthenticated } = useAuth();
@@ -32,6 +33,7 @@ function AppRoutes() {
         <Route path="vex" element={<VEXPage />} />
         <Route path="tolerations" element={<Navigate to="/vex" replace />} />
         <Route path="integrations" element={<IntegrationsPage />} />
+        <Route path="tasks" element={<TasksPage />} />
         <Route path="*" element={<Navigate to="/" replace />} />
       </Route>
     </Routes>
