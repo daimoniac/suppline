@@ -3,7 +3,6 @@ package statestore
 import (
 	"context"
 	"database/sql"
-	"encoding/json"
 	"strings"
 
 	"github.com/daimoniac/suppline/internal/errors"
@@ -470,19 +469,8 @@ func (s *SQLiteStore) GetImagesByCVE(ctx context.Context, cveID string) ([]*Scan
 		}
 		record.Vulnerabilities = vulns
 
-		// Load VEX statements (preferred) or legacy tolerated CVEs
-		if vexJSON.Valid && vexJSON.String != "" && vexJSON.String != "[]" {
-			var vex []types.AppliedVEXStatement
-			if err := json.Unmarshal([]byte(vexJSON.String), &vex); err != nil {
-				return nil, errors.NewTransientf("failed to unmarshal VEX statements: %w", err)
-			}
-			record.AppliedVEXStatements = vex
-		} else if toleratedJSON.Valid && toleratedJSON.String != "" {
-			var tolerated []types.ToleratedCVE
-			if err := json.Unmarshal([]byte(toleratedJSON.String), &tolerated); err != nil {
-				return nil, errors.NewTransientf("failed to unmarshal tolerated CVEs: %w", err)
-			}
-			record.ToleratedCVEs = tolerated
+		if err := applyStoredExemptions(&record, toleratedJSON, vexJSON); err != nil {
+			return nil, err
 		}
 
 		records = append(records, &record)

@@ -3,7 +3,6 @@ package statestore
 import (
 	"context"
 	"database/sql"
-	"encoding/json"
 	"fmt"
 	"time"
 
@@ -53,19 +52,8 @@ func (s *SQLiteStore) GetLastScan(ctx context.Context, digest string) (*ScanReco
 	}
 	record.Vulnerabilities = vulns
 
-	// Load VEX statements from JSON (preferred) or fall back to legacy tolerated CVEs
-	if vexJSON.Valid && vexJSON.String != "" && vexJSON.String != "[]" {
-		var vex []types.AppliedVEXStatement
-		if err := json.Unmarshal([]byte(vexJSON.String), &vex); err != nil {
-			return nil, errors.NewTransientf("failed to unmarshal VEX statements: %w", err)
-		}
-		record.AppliedVEXStatements = vex
-	} else if toleratedJSON.Valid && toleratedJSON.String != "" {
-		var tolerated []types.ToleratedCVE
-		if err := json.Unmarshal([]byte(toleratedJSON.String), &tolerated); err != nil {
-			return nil, errors.NewTransientf("failed to unmarshal tolerated CVEs: %w", err)
-		}
-		record.ToleratedCVEs = tolerated
+	if err := applyStoredExemptions(&record, toleratedJSON, vexJSON); err != nil {
+		return nil, err
 	}
 
 	return &record, nil
@@ -232,19 +220,8 @@ func (s *SQLiteStore) GetScanHistory(ctx context.Context, digest string, limit i
 		}
 		record.Vulnerabilities = vulns
 
-		// Load VEX statements (preferred) or legacy tolerated CVEs
-		if vexJSON.Valid && vexJSON.String != "" && vexJSON.String != "[]" {
-			var vex []types.AppliedVEXStatement
-			if err := json.Unmarshal([]byte(vexJSON.String), &vex); err != nil {
-				return nil, errors.NewTransientf("failed to unmarshal VEX statements: %w", err)
-			}
-			record.AppliedVEXStatements = vex
-		} else if toleratedJSON.Valid && toleratedJSON.String != "" {
-			var tolerated []types.ToleratedCVE
-			if err := json.Unmarshal([]byte(toleratedJSON.String), &tolerated); err != nil {
-				return nil, errors.NewTransientf("failed to unmarshal tolerated CVEs: %w", err)
-			}
-			record.ToleratedCVEs = tolerated
+		if err := applyStoredExemptions(&record, toleratedJSON, vexJSON); err != nil {
+			return nil, err
 		}
 
 		records = append(records, &record)

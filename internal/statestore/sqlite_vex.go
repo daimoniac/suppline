@@ -3,7 +3,6 @@ package statestore
 import (
 	"context"
 	"database/sql"
-	"encoding/json"
 
 	"github.com/daimoniac/suppline/internal/errors"
 	"github.com/daimoniac/suppline/internal/types"
@@ -48,12 +47,9 @@ func (s *SQLiteStore) ListVEXStatements(ctx context.Context, filter TolerationFi
 			return nil, errors.NewTransientf("failed to scan row: %w", err)
 		}
 
-		// Prefer VEX statements over legacy tolerated CVEs
-		if vexJSON.Valid && vexJSON.String != "" && vexJSON.String != "[]" {
-			var vexStmts []types.AppliedVEXStatement
-			if err := json.Unmarshal([]byte(vexJSON.String), &vexStmts); err != nil {
-				continue
-			}
+		vexStmts, tolerated := decodeStoredExemptionsLenient(toleratedJSON, vexJSON)
+
+		if len(vexStmts) > 0 {
 			for _, vs := range vexStmts {
 				if filter.CVEID != "" && vs.CVEID != filter.CVEID {
 					continue
@@ -71,11 +67,7 @@ func (s *SQLiteStore) ListVEXStatements(ctx context.Context, filter TolerationFi
 					}
 				}
 			}
-		} else if toleratedJSON.Valid && toleratedJSON.String != "" {
-			var tolerated []types.ToleratedCVE
-			if err := json.Unmarshal([]byte(toleratedJSON.String), &tolerated); err != nil {
-				continue
-			}
+		} else if len(tolerated) > 0 {
 			for _, tc := range tolerated {
 				if filter.CVEID != "" && tc.CVEID != filter.CVEID {
 					continue
@@ -139,29 +131,8 @@ func (s *SQLiteStore) GetExemptedCVEImageCounts(ctx context.Context) (map[string
 			return nil, errors.NewTransientf("failed to scan row: %w", err)
 		}
 
-		seen := make(map[string]bool)
-
-		// Prefer VEX statements
-		if vexJSON.Valid && vexJSON.String != "" && vexJSON.String != "[]" {
-			var vexStmts []types.AppliedVEXStatement
-			if err := json.Unmarshal([]byte(vexJSON.String), &vexStmts); err == nil {
-				for _, vs := range vexStmts {
-					if !seen[vs.CVEID] {
-						seen[vs.CVEID] = true
-						counts[vs.CVEID]++
-					}
-				}
-			}
-		} else if toleratedJSON.Valid && toleratedJSON.String != "" {
-			var tolerated []types.ToleratedCVE
-			if err := json.Unmarshal([]byte(toleratedJSON.String), &tolerated); err == nil {
-				for _, tc := range tolerated {
-					if !seen[tc.CVEID] {
-						seen[tc.CVEID] = true
-						counts[tc.CVEID]++
-					}
-				}
-			}
+		for _, cveID := range extractAppliedCVEIDs(toleratedJSON, vexJSON) {
+			counts[cveID]++
 		}
 	}
 	if err := rows.Err(); err != nil {
@@ -198,21 +169,8 @@ func (s *SQLiteStore) getAppliedCVESet(ctx context.Context) (map[string]bool, er
 			return nil, errors.NewTransientf("failed to scan row: %w", err)
 		}
 
-		// Prefer VEX statements
-		if vexJSON.Valid && vexJSON.String != "" && vexJSON.String != "[]" {
-			var vexStmts []types.AppliedVEXStatement
-			if err := json.Unmarshal([]byte(vexJSON.String), &vexStmts); err == nil {
-				for _, vs := range vexStmts {
-					appliedCVEs[vs.CVEID] = true
-				}
-			}
-		} else if toleratedJSON.Valid && toleratedJSON.String != "" {
-			var tolerated []types.ToleratedCVE
-			if err := json.Unmarshal([]byte(toleratedJSON.String), &tolerated); err == nil {
-				for _, tc := range tolerated {
-					appliedCVEs[tc.CVEID] = true
-				}
-			}
+		for _, cveID := range extractAppliedCVEIDs(toleratedJSON, vexJSON) {
+			appliedCVEs[cveID] = true
 		}
 	}
 
