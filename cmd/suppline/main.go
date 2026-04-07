@@ -22,7 +22,6 @@ import (
 	"github.com/daimoniac/suppline/internal/registry"
 	"github.com/daimoniac/suppline/internal/scanner"
 	"github.com/daimoniac/suppline/internal/statestore"
-	"github.com/daimoniac/suppline/internal/types"
 	"github.com/daimoniac/suppline/internal/watcher"
 	"github.com/daimoniac/suppline/internal/worker"
 	"github.com/joho/godotenv"
@@ -370,28 +369,20 @@ func enqueueFailedArtifacts(ctx context.Context, store statestore.StateStore, ta
 	// Enqueue each failed artifact with high priority
 	enqueuedCount := 0
 	for _, artifact := range failedArtifacts {
-		// Get tolerations for this repository
-		tolerations := regsyncCfg.GetTolerationsForTarget(artifact.Repository)
-		queueTolerations := make([]types.CVEToleration, len(tolerations))
-		for i, t := range tolerations {
-			queueTolerations[i] = types.CVEToleration{
-				ID:        t.ID,
-				Statement: t.Statement,
-				ExpiresAt: t.ExpiresAt,
-			}
-		}
+		// Get VEX statements for this repository
+		vexStatements := regsyncCfg.GetVEXStatementsForTarget(artifact.Repository)
 
 		task := &queue.ScanTask{
-			ID:          fmt.Sprintf("%s-%d", artifact.Digest, time.Now().Unix()),
-			Repository:  artifact.Repository,
-			Digest:      artifact.Digest,
-			Tag:         artifact.Tag,
-			EnqueuedAt:  time.Now(),
-			IsRescan:    true,
-			IsFirstScan: false,
-			Priority:    queue.PriorityHigh,
-			Tolerations: queueTolerations,
-			UseVEXRepo:  regsyncCfg.GetVEXRepoForTarget(artifact.Repository),
+			ID:            fmt.Sprintf("%s-%d", artifact.Digest, time.Now().Unix()),
+			Repository:    artifact.Repository,
+			Digest:        artifact.Digest,
+			Tag:           artifact.Tag,
+			EnqueuedAt:    time.Now(),
+			IsRescan:      true,
+			IsFirstScan:   false,
+			Priority:      queue.PriorityHigh,
+			VEXStatements: vexStatements,
+			UseVEXRepo:    regsyncCfg.GetVEXRepoForTarget(artifact.Repository),
 		}
 
 		if err := taskQueue.Enqueue(ctx, task); err != nil {

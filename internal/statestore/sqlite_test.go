@@ -546,12 +546,12 @@ func TestSQLiteStore(t *testing.T) {
 		}
 	})
 
-	// Test ListTolerations with no filters
-	t.Run("ListTolerations with no filters", func(t *testing.T) {
+	// Test ListVEXStatements with no filters
+	t.Run("ListVEXStatements with no filters", func(t *testing.T) {
 		filter := TolerationFilter{
 			Limit: 100,
 		}
-		tolerations, err := store.ListTolerations(ctx, filter)
+		tolerations, err := store.ListVEXStatements(ctx, filter)
 		if err != nil {
 			t.Fatalf("Failed to list tolerations: %v", err)
 		}
@@ -566,13 +566,13 @@ func TestSQLiteStore(t *testing.T) {
 		}
 	})
 
-	// Test ListTolerations with repository filter
-	t.Run("ListTolerations with repository filter", func(t *testing.T) {
+	// Test ListVEXStatements with repository filter
+	t.Run("ListVEXStatements with repository filter", func(t *testing.T) {
 		filter := TolerationFilter{
 			Repository: "myorg/myapp",
 			Limit:      100,
 		}
-		tolerations, err := store.ListTolerations(ctx, filter)
+		tolerations, err := store.ListVEXStatements(ctx, filter)
 		if err != nil {
 			t.Fatalf("Failed to list tolerations: %v", err)
 		}
@@ -586,13 +586,13 @@ func TestSQLiteStore(t *testing.T) {
 		}
 	})
 
-	// Test ListTolerations with CVE ID filter
-	t.Run("ListTolerations with CVE ID filter", func(t *testing.T) {
+	// Test ListVEXStatements with CVE ID filter
+	t.Run("ListVEXStatements with CVE ID filter", func(t *testing.T) {
 		filter := TolerationFilter{
 			CVEID: "CVE-2024-1234",
 			Limit: 100,
 		}
-		tolerations, err := store.ListTolerations(ctx, filter)
+		tolerations, err := store.ListVEXStatements(ctx, filter)
 		if err != nil {
 			t.Fatalf("Failed to list tolerations: %v", err)
 		}
@@ -604,14 +604,14 @@ func TestSQLiteStore(t *testing.T) {
 		}
 	})
 
-	// Test ListTolerations with expiring_soon filtere
+	// Test ListVEXStatements with expiring_soon filtere
 
-	// Test ListTolerations with pagination
-	t.Run("ListTolerations with pagination", func(t *testing.T) {
+	// Test ListVEXStatements with pagination
+	t.Run("ListVEXStatements with pagination", func(t *testing.T) {
 		filter := TolerationFilter{
 			Limit: 1,
 		}
-		tolerations, err := store.ListTolerations(ctx, filter)
+		tolerations, err := store.ListVEXStatements(ctx, filter)
 		if err != nil {
 			t.Fatalf("Failed to list tolerations: %v", err)
 		}
@@ -620,13 +620,13 @@ func TestSQLiteStore(t *testing.T) {
 		}
 	})
 
-	// Test ListTolerations returns TolerationInfo with all fields
-	t.Run("ListTolerations returns complete TolerationInfo", func(t *testing.T) {
+	// Test ListVEXStatements returns TolerationInfo with all fields
+	t.Run("ListVEXStatements returns complete TolerationInfo", func(t *testing.T) {
 		filter := TolerationFilter{
 			CVEID: "CVE-2024-1234",
 			Limit: 100,
 		}
-		tolerations, err := store.ListTolerations(ctx, filter)
+		tolerations, err := store.ListVEXStatements(ctx, filter)
 		if err != nil {
 			t.Fatalf("Failed to list tolerations: %v", err)
 		}
@@ -638,23 +638,23 @@ func TestSQLiteStore(t *testing.T) {
 		if tol.CVEID == "" {
 			t.Error("Expected CVEID to be set")
 		}
-		if tol.Statement == "" {
-			t.Error("Expected Statement to be set")
+		if tol.Detail == "" {
+			t.Error("Expected Detail to be set")
 		}
 		if tol.Repository == "" {
 			t.Error("Expected Repository to be set")
 		}
-		if tol.ToleratedAt == 0 {
-			t.Error("Expected ToleratedAt to be set")
+		if tol.AppliedAt == 0 {
+			t.Error("Expected AppliedAt to be set")
 		}
 		if tol.ExpiresAt == nil {
-			t.Error("Expected ExpiresAt to be set for this toleration")
+			t.Error("Expected ExpiresAt to be set for this VEX statement")
 		}
 	})
 }
 
-// TestInactiveTolerationsCount tests the GetInactiveTolerationsCount method
-func TestInactiveTolerationsCount(t *testing.T) {
+// TestInactiveVEXCount tests the GetInactiveVEXCount method
+func TestInactiveVEXCount(t *testing.T) {
 	dbPath := "test_inactive_tolerations_" + t.Name() + ".db"
 	os.Remove(dbPath)
 	defer os.Remove(dbPath)
@@ -696,8 +696,8 @@ func TestInactiveTolerationsCount(t *testing.T) {
 		t.Fatalf("Failed to record scan: %v", err)
 	}
 
-	t.Run("GetInactiveTolerationsCount with empty list returns 0", func(t *testing.T) {
-		count, err := store.GetInactiveTolerationsCount(ctx, []string{})
+	t.Run("GetInactiveVEXCount with empty list returns 0", func(t *testing.T) {
+		count, err := store.GetInactiveVEXCount(ctx, []string{})
 		if err != nil {
 			t.Fatalf("Failed to get inactive tolerations count: %v", err)
 		}
@@ -706,9 +706,9 @@ func TestInactiveTolerationsCount(t *testing.T) {
 		}
 	})
 
-	t.Run("GetInactiveTolerationsCount finds applied tolerations", func(t *testing.T) {
+	t.Run("GetInactiveVEXCount finds applied tolerations", func(t *testing.T) {
 		// These CVEs have been applied
-		count, err := store.GetInactiveTolerationsCount(ctx, []string{"CVE-2024-1234", "CVE-2024-5678"})
+		count, err := store.GetInactiveVEXCount(ctx, []string{"CVE-2024-1234", "CVE-2024-5678"})
 		if err != nil {
 			t.Fatalf("Failed to get inactive tolerations count: %v", err)
 		}
@@ -717,9 +717,9 @@ func TestInactiveTolerationsCount(t *testing.T) {
 		}
 	})
 
-	t.Run("GetInactiveTolerationsCount finds inactive tolerations", func(t *testing.T) {
+	t.Run("GetInactiveVEXCount finds inactive tolerations", func(t *testing.T) {
 		// CVE-2024-9999 has never been tolerated
-		count, err := store.GetInactiveTolerationsCount(ctx, []string{"CVE-2024-9999"})
+		count, err := store.GetInactiveVEXCount(ctx, []string{"CVE-2024-9999"})
 		if err != nil {
 			t.Fatalf("Failed to get inactive tolerations count: %v", err)
 		}
@@ -728,9 +728,9 @@ func TestInactiveTolerationsCount(t *testing.T) {
 		}
 	})
 
-	t.Run("GetInactiveTolerationsCount with mixed applied and inactive", func(t *testing.T) {
+	t.Run("GetInactiveVEXCount with mixed applied and inactive", func(t *testing.T) {
 		// Mix of applied and inactive
-		count, err := store.GetInactiveTolerationsCount(ctx, []string{
+		count, err := store.GetInactiveVEXCount(ctx, []string{
 			"CVE-2024-1234", // applied
 			"CVE-2024-9999", // inactive
 			"CVE-2024-8888", // inactive
@@ -744,8 +744,8 @@ func TestInactiveTolerationsCount(t *testing.T) {
 	})
 }
 
-// TestGetAppliedCVEIDs tests the GetAppliedCVEIDs method
-func TestGetAppliedCVEIDs(t *testing.T) {
+// TestGetAppliedVEXCVEIDs tests the GetAppliedVEXCVEIDs method
+func TestGetAppliedVEXCVEIDs(t *testing.T) {
 	dbPath := "test_applied_cveids_" + t.Name() + ".db"
 	os.Remove(dbPath)
 	defer os.Remove(dbPath)
@@ -787,8 +787,8 @@ func TestGetAppliedCVEIDs(t *testing.T) {
 		t.Fatalf("Failed to record scan: %v", err)
 	}
 
-	t.Run("GetAppliedCVEIDs with empty list returns empty slice", func(t *testing.T) {
-		applied, err := store.GetAppliedCVEIDs(ctx, []string{})
+	t.Run("GetAppliedVEXCVEIDs with empty list returns empty slice", func(t *testing.T) {
+		applied, err := store.GetAppliedVEXCVEIDs(ctx, []string{})
 		if err != nil {
 			t.Fatalf("Failed to get applied CVE IDs: %v", err)
 		}
@@ -797,8 +797,8 @@ func TestGetAppliedCVEIDs(t *testing.T) {
 		}
 	})
 
-	t.Run("GetAppliedCVEIDs finds all applied CVEs", func(t *testing.T) {
-		applied, err := store.GetAppliedCVEIDs(ctx, []string{"CVE-2024-1111", "CVE-2024-2222"})
+	t.Run("GetAppliedVEXCVEIDs finds all applied CVEs", func(t *testing.T) {
+		applied, err := store.GetAppliedVEXCVEIDs(ctx, []string{"CVE-2024-1111", "CVE-2024-2222"})
 		if err != nil {
 			t.Fatalf("Failed to get applied CVE IDs: %v", err)
 		}
@@ -816,8 +816,8 @@ func TestGetAppliedCVEIDs(t *testing.T) {
 		}
 	})
 
-	t.Run("GetAppliedCVEIDs returns empty for inactive CVEs", func(t *testing.T) {
-		applied, err := store.GetAppliedCVEIDs(ctx, []string{"CVE-2024-9999"})
+	t.Run("GetAppliedVEXCVEIDs returns empty for inactive CVEs", func(t *testing.T) {
+		applied, err := store.GetAppliedVEXCVEIDs(ctx, []string{"CVE-2024-9999"})
 		if err != nil {
 			t.Fatalf("Failed to get applied CVE IDs: %v", err)
 		}
@@ -826,8 +826,8 @@ func TestGetAppliedCVEIDs(t *testing.T) {
 		}
 	})
 
-	t.Run("GetAppliedCVEIDs filters mixed applied and inactive", func(t *testing.T) {
-		applied, err := store.GetAppliedCVEIDs(ctx, []string{
+	t.Run("GetAppliedVEXCVEIDs filters mixed applied and inactive", func(t *testing.T) {
+		applied, err := store.GetAppliedVEXCVEIDs(ctx, []string{
 			"CVE-2024-1111", // applied
 			"CVE-2024-9999", // inactive
 			"CVE-2024-2222", // applied

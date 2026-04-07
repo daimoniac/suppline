@@ -4,18 +4,18 @@ import { useAuth } from '../lib/auth';
 import { formatRelativeTime } from '../lib/utils';
 import { useImageUsageFilter } from '../lib/imageUsageFilter';
 import { LoadingState, ErrorState, StatusBadge, SeverityBadge, VulnCounts, DigestLinkWithCopy } from '../components/ui';
-import type { Scan, Toleration } from '../lib/api';
-import { ShieldAlert, FileWarning, Clock, CheckSquare, ExternalLink } from 'lucide-react';
+import type { Scan, VEXSummary } from '../lib/api';
+import { ShieldAlert, ShieldCheck, Clock, CheckSquare, ExternalLink } from 'lucide-react';
 
 interface DashboardData {
   recentScans: Scan[];
   failedCount: number;
   failedInUseCount: number;
   pendingCount: number;
-  activeTolerations: number;
-  expiringTolerations: Toleration[];
-  expiredTolerations: Toleration[];
-  inactiveTolerations: Toleration[];
+  activeVEXStatements: number;
+  expiringVEXStatements: VEXSummary[];
+  expiredVEXStatements: VEXSummary[];
+  inactiveVEXStatements: VEXSummary[];
   vulnBreakdown: { critical: number; high: number; medium: number; low: number };
   policyByRepo: Record<string, { failed: number; pending: number }>;
 }
@@ -31,18 +31,18 @@ export default function DashboardPage() {
     setLoading(true);
     setError('');
     try {
-      const [recentScans, nonPassedScans, allTolerations, inactiveTolerations, vulnStats] = await Promise.all([
+      const [recentScans, nonPassedScans, allVEXStatements, inactiveVEXStatements, vulnStats] = await Promise.all([
         apiClient.getScans({ limit: 20, ...(inUseQuery !== undefined && { in_use: inUseQuery }) }),
         apiClient.getScans({ policy_passed: false, ...(inUseQuery !== undefined && { in_use: inUseQuery }) }),
-        apiClient.getTolerations({}),
-        apiClient.getInactiveTolerations(),
+        apiClient.getVEXStatements({}),
+        apiClient.getInactiveVEXStatements(),
         apiClient.getVulnerabilityStats(),
       ]);
 
       const now = Date.now();
       const sevenDays = 7 * 24 * 60 * 60 * 1000;
-      const expired = allTolerations.filter(t => t.ExpiresAt && t.ExpiresAt * 1000 <= now);
-      const expiring = allTolerations.filter(t => {
+      const expired = allVEXStatements.filter(t => t.ExpiresAt && t.ExpiresAt * 1000 <= now);
+      const expiring = allVEXStatements.filter(t => {
         if (!t.ExpiresAt) return false;
         const ms = t.ExpiresAt * 1000;
         return ms > now && ms <= now + sevenDays;
@@ -63,10 +63,10 @@ export default function DashboardPage() {
         failedCount: failedScans.length,
         failedInUseCount: failedScans.filter(s => !!s.RuntimeUsed).length,
         pendingCount: pendingScans.length,
-        activeTolerations: allTolerations.length,
-        expiringTolerations: expiring,
-        expiredTolerations: expired,
-        inactiveTolerations,
+        activeVEXStatements: allVEXStatements.length,
+        expiringVEXStatements: expiring,
+        expiredVEXStatements: expired,
+        inactiveVEXStatements: inactiveVEXStatements,
         vulnBreakdown: {
           critical: vulnStats?.CRITICAL || 0,
           high: vulnStats?.HIGH || 0,
@@ -89,7 +89,7 @@ export default function DashboardPage() {
   if (!data) return null;
 
   const totalVulns = data.vulnBreakdown.critical + data.vulnBreakdown.high + data.vulnBreakdown.medium + data.vulnBreakdown.low;
-  const attentionCount = data.expiredTolerations.length + data.expiringTolerations.length + data.inactiveTolerations.length;
+  const attentionCount = data.expiredVEXStatements.length + data.expiringVEXStatements.length + data.inactiveVEXStatements.length;
   const topPolicyRepos = Object.entries(data.policyByRepo)
     .sort((a, b) => (b[1].failed + b[1].pending) - (a[1].failed + a[1].pending))
     .slice(0, 5);
@@ -111,27 +111,27 @@ export default function DashboardPage() {
           to="/failed"
         />
         <SummaryCard icon={<Clock className="w-5 h-5" />} value={data.pendingCount} label="Pending Release" variant="warning" detail="Waiting to mature" />
-        <SummaryCard icon={<FileWarning className="w-5 h-5" />} value={data.activeTolerations} label="Active Tolerations" variant="info" to="/tolerations" />
-        <SummaryCard icon={<CheckSquare className="w-5 h-5" />} value={data.inactiveTolerations.length} label="Inactive Tolerations" variant="muted" />
+        <SummaryCard icon={<ShieldCheck className="w-5 h-5" />} value={data.activeVEXStatements} label="Active VEX Statements" variant="info" to="/vex" />
+        <SummaryCard icon={<CheckSquare className="w-5 h-5" />} value={data.inactiveVEXStatements.length} label="Inactive VEX Statements" variant="muted" />
       </div>
 
       {attentionCount > 0 && (
         <div className="bg-bg-primary border border-border rounded-xl p-5">
-          <h2 className="text-sm font-semibold mb-3">Tolerations Requiring Attention</h2>
+          <h2 className="text-sm font-semibold mb-3">VEX Statements Requiring Attention</h2>
           <div className="flex gap-2 mb-4 flex-wrap">
-            {data.expiredTolerations.length > 0 && <span className="px-2 py-1 rounded text-xs font-medium bg-danger-bg text-danger">{data.expiredTolerations.length} Expired</span>}
-            {data.expiringTolerations.length > 0 && <span className="px-2 py-1 rounded text-xs font-medium bg-warning-bg text-warning">{data.expiringTolerations.length} Expiring Soon</span>}
-            {data.inactiveTolerations.length > 0 && <span className="px-2 py-1 rounded text-xs font-medium bg-bg-tertiary text-text-secondary">{data.inactiveTolerations.length} Inactive</span>}
+            {data.expiredVEXStatements.length > 0 && <span className="px-2 py-1 rounded text-xs font-medium bg-danger-bg text-danger">{data.expiredVEXStatements.length} Expired</span>}
+            {data.expiringVEXStatements.length > 0 && <span className="px-2 py-1 rounded text-xs font-medium bg-warning-bg text-warning">{data.expiringVEXStatements.length} Expiring Soon</span>}
+            {data.inactiveVEXStatements.length > 0 && <span className="px-2 py-1 rounded text-xs font-medium bg-bg-tertiary text-text-secondary">{data.inactiveVEXStatements.length} Inactive</span>}
           </div>
           <div className="space-y-2 max-h-64 overflow-y-auto">
-            {data.expiredTolerations.slice(0, 5).map(t => (
-              <TolerationAttentionItem key={`exp-${t.CVEID}`} toleration={t} status="expired" to={`/vulnerabilities?cve_id=${encodeURIComponent(t.CVEID)}`} />
+            {data.expiredVEXStatements.slice(0, 5).map(t => (
+              <VEXAttentionItem key={`exp-${t.CVEID}`} statement={t} status="expired" to={`/vulnerabilities?cve_id=${encodeURIComponent(t.CVEID)}`} />
             ))}
-            {data.expiringTolerations.slice(0, 5).map(t => (
-              <TolerationAttentionItem key={`expiring-${t.CVEID}`} toleration={t} status="expiring" to={`/vulnerabilities?cve_id=${encodeURIComponent(t.CVEID)}`} />
+            {data.expiringVEXStatements.slice(0, 5).map(t => (
+              <VEXAttentionItem key={`expiring-${t.CVEID}`} statement={t} status="expiring" to={`/vulnerabilities?cve_id=${encodeURIComponent(t.CVEID)}`} />
             ))}
-            {data.inactiveTolerations.slice(0, 3).map(t => (
-              <TolerationAttentionItem key={`inactive-${t.CVEID}`} toleration={t} status="inactive" to={`/vulnerabilities?cve_id=${encodeURIComponent(t.CVEID)}`} />
+            {data.inactiveVEXStatements.slice(0, 3).map(t => (
+              <VEXAttentionItem key={`inactive-${t.CVEID}`} statement={t} status="inactive" to={`/vulnerabilities?cve_id=${encodeURIComponent(t.CVEID)}`} />
             ))}
           </div>
         </div>
@@ -252,10 +252,10 @@ function SummaryCard({ icon, value, label, detail, variant, to }: {
   return to ? <Link to={to} className={className}>{content}</Link> : <div className={className}>{content}</div>;
 }
 
-function TolerationAttentionItem({ toleration, status, to }: {
-  toleration: Toleration; status: 'expired' | 'expiring' | 'inactive'; to: string;
+function VEXAttentionItem({ statement, status, to }: {
+  statement: VEXSummary; status: 'expired' | 'expiring' | 'inactive'; to: string;
 }) {
-  const repos = toleration.Repositories || [];
+  const repos = statement.Repositories || [];
   const repoDisplay = repos.length === 0 ? 'No repositories' : repos.length <= 3 ? repos.map(r => r.Repository).join(', ') : 'multiple repos';
   const statusConfig = { expired: { badge: 'bg-danger-bg text-danger', label: '⚠️ EXPIRED' }, expiring: { badge: 'bg-warning-bg text-warning', label: '⏰ Expiring' }, inactive: { badge: 'bg-bg-tertiary text-text-secondary', label: '📋 Inactive' } };
 
@@ -263,11 +263,11 @@ function TolerationAttentionItem({ toleration, status, to }: {
     <Link to={to} className="flex items-start gap-3 p-3 rounded-lg bg-bg-secondary hover:bg-bg-tertiary transition-colors">
       <div className="flex-1 min-w-0">
         <div className="flex items-center gap-2 mb-1">
-          <span className="text-sm font-mono font-medium">{toleration.CVEID}</span>
+          <span className="text-sm font-mono font-medium">{statement.CVEID}</span>
           <span className={`px-1.5 py-0.5 rounded text-[10px] font-semibold ${statusConfig[status].badge}`}>{statusConfig[status].label}</span>
         </div>
         <div className="text-xs text-text-muted truncate">{repoDisplay}</div>
-        {toleration.Statement && <div className="text-xs text-text-secondary mt-1 truncate">{toleration.Statement}</div>}
+        {statement.Detail && <div className="text-xs text-text-secondary mt-1 truncate">{statement.Detail}</div>}
       </div>
       <ExternalLink className="w-3.5 h-3.5 text-text-muted flex-shrink-0 mt-1" />
     </Link>

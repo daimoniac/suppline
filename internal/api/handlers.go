@@ -342,51 +342,53 @@ func (s *APIServer) handleGetVulnerabilityDetails(w http.ResponseWriter, r *http
 	s.respondJSON(w, http.StatusOK, groups[0])
 }
 
-// handleListInactiveTolerations lists tolerations defined in config but not applied to any digests
-// @Summary List inactive tolerations
-// @Description List all CVE tolerations defined in configuration that have never been applied to any digest. Returns CVE IDs grouped by repository.
-// @Tags Tolerations
+// handleListInactiveVEX lists VEX statements defined in config but not applied to any digests
+// @Summary List inactive VEX statements
+// @Description List all VEX statements defined in configuration that have never been applied to any digest. Returns CVE IDs grouped by repository.
+// @Tags VEX
 // @Accept json
 // @Produce json
-// @Success 200 {array} types.TolerationSummary
+// @Success 200 {array} types.VEXSummary
 // @Failure 401 {object} map[string]string "Unauthorized"
 // @Failure 500 {object} map[string]string "Internal server error"
 // @Security BearerAuth
-// @Router /tolerations/inactive [get]
-func (s *APIServer) handleListInactiveTolerations(w http.ResponseWriter, r *http.Request) {
+// @Router /vex/inactive [get]
+func (s *APIServer) handleListInactiveVEX(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {
 		s.respondError(w, http.StatusMethodNotAllowed, "Method not allowed")
 		return
 	}
 
 	if s.regsyncConfig == nil {
-		s.respondJSON(w, http.StatusOK, []types.TolerationSummary{})
+		s.respondJSON(w, http.StatusOK, []types.VEXSummary{})
 		return
 	}
 
 	ctx := r.Context()
 
 	// Collect all defined CVE IDs from configuration per repository
-	repoTolerations := make(map[string]map[string]*types.TolerationSummary)
+	repoVEX := make(map[string]map[string]*types.VEXSummary)
 
 	// Get all target repositories from config
 	repositories := s.regsyncConfig.GetTargetRepositories()
 
 	for _, repo := range repositories {
-		// Get tolerations for this repository
-		configTolerations := s.regsyncConfig.GetTolerationsForTarget(repo)
+		// Get VEX statements for this repository
+		configStatements := s.regsyncConfig.GetVEXStatementsForTarget(repo)
 
-		for _, toleration := range configTolerations {
-			if _, exists := repoTolerations[repo]; !exists {
-				repoTolerations[repo] = make(map[string]*types.TolerationSummary)
+		for _, stmt := range configStatements {
+			if _, exists := repoVEX[repo]; !exists {
+				repoVEX[repo] = make(map[string]*types.VEXSummary)
 			}
-			if _, exists := repoTolerations[repo][toleration.ID]; !exists {
-				repoTolerations[repo][toleration.ID] = &types.TolerationSummary{
-					CVEID:     toleration.ID,
-					Statement: toleration.Statement,
-					ExpiresAt: toleration.ExpiresAt,
-					Repositories: []types.RepositoryTolInfo{
-						{Repository: repo, ToleratedAt: 0},
+			if _, exists := repoVEX[repo][stmt.ID]; !exists {
+				repoVEX[repo][stmt.ID] = &types.VEXSummary{
+					CVEID:         stmt.ID,
+					State:         stmt.State,
+					Justification: stmt.Justification,
+					Detail:        stmt.Detail,
+					ExpiresAt:     stmt.ExpiresAt,
+					Repositories: []types.RepositoryVEXInfo{
+						{Repository: repo, AppliedAt: 0},
 					},
 				}
 			}
@@ -395,7 +397,7 @@ func (s *APIServer) handleListInactiveTolerations(w http.ResponseWriter, r *http
 
 	// Flatten to get all unique CVE IDs
 	definedCVEIDs := make(map[string]bool)
-	for _, cveMap := range repoTolerations {
+	for _, cveMap := range repoVEX {
 		for cveID := range cveMap {
 			definedCVEIDs[cveID] = true
 		}
@@ -408,7 +410,7 @@ func (s *APIServer) handleListInactiveTolerations(w http.ResponseWriter, r *http
 	}
 
 	// Query state store to find which CVE IDs have been applied
-	appliedCVEs, err := s.stateStore.GetAppliedCVEIDs(ctx, cveIDSlice)
+	appliedCVEs, err := s.stateStore.GetAppliedVEXCVEIDs(ctx, cveIDSlice)
 	if err != nil {
 		s.respondError(w, http.StatusInternalServerError, fmt.Sprintf("Failed to get applied CVE IDs: %v", err))
 		return
@@ -420,9 +422,9 @@ func (s *APIServer) handleListInactiveTolerations(w http.ResponseWriter, r *http
 		appliedSet[cveID] = true
 	}
 
-	// Filter to only include inactive tolerations and group by CVE ID
-	grouped := make(map[string]*types.TolerationSummary)
-	for repo, cveMap := range repoTolerations {
+	// Filter to only include inactive VEX statements and group by CVE ID
+	grouped := make(map[string]*types.VEXSummary)
+	for repo, cveMap := range repoVEX {
 		for cveID, summary := range cveMap {
 			// Skip if this CVE has been applied
 			if appliedSet[cveID] {
@@ -432,18 +434,20 @@ func (s *APIServer) handleListInactiveTolerations(w http.ResponseWriter, r *http
 			// Add to grouped result
 			if existing, exists := grouped[cveID]; exists {
 				// Add repository to existing entry
-				existing.Repositories = append(existing.Repositories, types.RepositoryTolInfo{
-					Repository:  repo,
-					ToleratedAt: 0,
+				existing.Repositories = append(existing.Repositories, types.RepositoryVEXInfo{
+					Repository: repo,
+					AppliedAt:  0,
 				})
 			} else {
 				// Create new entry
-				grouped[cveID] = &types.TolerationSummary{
-					CVEID:     summary.CVEID,
-					Statement: summary.Statement,
-					ExpiresAt: summary.ExpiresAt,
-					Repositories: []types.RepositoryTolInfo{
-						{Repository: repo, ToleratedAt: 0},
+				grouped[cveID] = &types.VEXSummary{
+					CVEID:         summary.CVEID,
+					State:         summary.State,
+					Justification: summary.Justification,
+					Detail:        summary.Detail,
+					ExpiresAt:     summary.ExpiresAt,
+					Repositories: []types.RepositoryVEXInfo{
+						{Repository: repo, AppliedAt: 0},
 					},
 				}
 			}
@@ -451,7 +455,7 @@ func (s *APIServer) handleListInactiveTolerations(w http.ResponseWriter, r *http
 	}
 
 	// Convert map to slice
-	result := make([]*types.TolerationSummary, 0, len(grouped))
+	result := make([]*types.VEXSummary, 0, len(grouped))
 	for _, summary := range grouped {
 		result = append(result, summary)
 	}
@@ -466,22 +470,22 @@ func (s *APIServer) handleListInactiveTolerations(w http.ResponseWriter, r *http
 	}
 }
 
-// handleListTolerations lists tolerated CVEs with optional filters
-// @Summary List tolerations
-// @Description List all CVE tolerations as defined in the configuration file. Groups by CVE ID with repositories array.
-// @Tags Tolerations
+// handleListVEX lists VEX statements with optional filters
+// @Summary List VEX statements
+// @Description List all VEX statements as defined in the configuration file. Groups by CVE ID with repositories array.
+// @Tags VEX
 // @Accept json
 // @Produce json
 // @Param cve_id query string false "Filter by CVE ID"
 // @Param repository query string false "Filter by repository name"
 // @Param expiring_soon query boolean false "Filter expiring within 7 days"
 // @Param expired query boolean false "Filter already expired"
-// @Success 200 {array} types.TolerationSummary
+// @Success 200 {array} types.VEXSummary
 // @Failure 401 {object} map[string]string "Unauthorized"
 // @Failure 500 {object} map[string]string "Internal server error"
 // @Security BearerAuth
-// @Router /tolerations [get]
-func (s *APIServer) handleListTolerations(w http.ResponseWriter, r *http.Request) {
+// @Router /vex [get]
+func (s *APIServer) handleListVEX(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {
 		s.respondError(w, http.StatusMethodNotAllowed, "Method not allowed")
 		return
@@ -493,17 +497,17 @@ func (s *APIServer) handleListTolerations(w http.ResponseWriter, r *http.Request
 	expiringSoonFilter := parseQueryParamBool(r, "expiring_soon")
 	expiredFilter := parseQueryParamBool(r, "expired")
 
-	// Get all configured tolerations from config
-	tolerations := s.getConfiguredTolerations(cveIDFilter, repositoryFilter, expiringSoonFilter, expiredFilter)
+	// Get all configured VEX statements from config
+	vexInfos := s.getConfiguredVEXStatements(cveIDFilter, repositoryFilter, expiringSoonFilter, expiredFilter)
 
 	// Get historical application timestamps from state store
-	s.enrichWithHistoricalTimestamps(r.Context(), tolerations)
+	s.enrichWithHistoricalVEXTimestamps(r.Context(), vexInfos)
 
-	// Group tolerations by CVE ID
-	grouped := s.groupTolerationsByCVE(tolerations)
+	// Group VEX statements by CVE ID
+	grouped := s.groupVEXByCVE(vexInfos)
 
 	// Enrich with affected image counts
-	s.enrichTolerationsWithImageCounts(r.Context(), grouped)
+	s.enrichVEXWithImageCounts(r.Context(), grouped)
 
 	// Stream JSON response to avoid buffering large payloads
 	w.Header().Set("Content-Type", "application/json")
@@ -631,29 +635,21 @@ func (s *APIServer) handleTriggerScan(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 
-		// Load regsync config to get tolerations
-		// Get tolerations for this repository from in-memory config
-		tolerations := s.regsyncConfig.GetTolerationsForTarget(lastScan.Repository)
-		queueTolerations := make([]types.CVEToleration, len(tolerations))
-		for i, t := range tolerations {
-			queueTolerations[i] = types.CVEToleration{
-				ID:        t.ID,
-				Statement: t.Statement,
-				ExpiresAt: t.ExpiresAt,
-			}
-		}
+		// Load regsync config to get VEX statements
+		// Get VEX statements for this repository from in-memory config
+		vexStatements := s.regsyncConfig.GetVEXStatementsForTarget(lastScan.Repository)
 
 		// Create and enqueue task
 		task := &queue.ScanTask{
-			ID:          fmt.Sprintf("%s-%d", req.Digest, time.Now().Unix()),
-			Repository:  lastScan.Repository,
-			Digest:      req.Digest,
-			Tag:         lastScan.Tag,
-			EnqueuedAt:  time.Now(),
-			Attempts:    0,
-			IsRescan:    true,
-			Tolerations: queueTolerations,
-			UseVEXRepo:  s.regsyncConfig.GetVEXRepoForTarget(lastScan.Repository),
+			ID:            fmt.Sprintf("%s-%d", req.Digest, time.Now().Unix()),
+			Repository:    lastScan.Repository,
+			Digest:        req.Digest,
+			Tag:           lastScan.Tag,
+			EnqueuedAt:    time.Now(),
+			Attempts:      0,
+			IsRescan:      true,
+			VEXStatements: vexStatements,
+			UseVEXRepo:    s.regsyncConfig.GetVEXRepoForTarget(lastScan.Repository),
 		}
 
 		if err := s.taskQueue.Enqueue(ctx, task); err != nil {
@@ -686,29 +682,21 @@ func (s *APIServer) handleTriggerScan(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 
-		// Get tolerations for this repository from in-memory config
-		tolerations := s.regsyncConfig.GetTolerationsForTarget(req.Repository)
-		queueTolerations := make([]types.CVEToleration, len(tolerations))
-		for i, t := range tolerations {
-			queueTolerations[i] = types.CVEToleration{
-				ID:        t.ID,
-				Statement: t.Statement,
-				ExpiresAt: t.ExpiresAt,
-			}
-		}
+		// Get VEX statements for this repository from in-memory config
+		vexStatements := s.regsyncConfig.GetVEXStatementsForTarget(req.Repository)
 
 		// Enqueue tasks for all scans
 		for _, scan := range scans {
 			task := &queue.ScanTask{
-				ID:          fmt.Sprintf("%s-%d", scan.Digest, time.Now().Unix()),
-				Repository:  scan.Repository,
-				Digest:      scan.Digest,
-				Tag:         scan.Tag,
-				EnqueuedAt:  time.Now(),
-				Attempts:    0,
-				IsRescan:    true,
-				Tolerations: queueTolerations,
-				UseVEXRepo:  s.regsyncConfig.GetVEXRepoForTarget(scan.Repository),
+				ID:            fmt.Sprintf("%s-%d", scan.Digest, time.Now().Unix()),
+				Repository:    scan.Repository,
+				Digest:        scan.Digest,
+				Tag:           scan.Tag,
+				EnqueuedAt:    time.Now(),
+				Attempts:      0,
+				IsRescan:      true,
+				VEXStatements: vexStatements,
+				UseVEXRepo:    s.regsyncConfig.GetVEXRepoForTarget(scan.Repository),
 			}
 
 			if err := s.taskQueue.Enqueue(ctx, task); err != nil {
@@ -803,30 +791,22 @@ func (s *APIServer) handleReevaluatePolicy(w http.ResponseWriter, r *http.Reques
 
 	queuedCount := 0
 
-	// Enqueue rescan tasks for all matching images with updated tolerations
+	// Enqueue rescan tasks for all matching images with updated VEX statements
 	for _, scan := range scans {
-		// Get updated tolerations for this repository from in-memory config
-		tolerations := s.regsyncConfig.GetTolerationsForTarget(scan.Repository)
-		queueTolerations := make([]types.CVEToleration, len(tolerations))
-		for i, t := range tolerations {
-			queueTolerations[i] = types.CVEToleration{
-				ID:        t.ID,
-				Statement: t.Statement,
-				ExpiresAt: t.ExpiresAt,
-			}
-		}
+		// Get updated VEX statements for this repository from in-memory config
+		vexStatements := s.regsyncConfig.GetVEXStatementsForTarget(scan.Repository)
 
-		// Create rescan task with updated tolerations
+		// Create rescan task with updated VEX statements
 		task := &queue.ScanTask{
-			ID:          fmt.Sprintf("%s-%d", scan.Digest, time.Now().Unix()),
-			Repository:  scan.Repository,
-			Digest:      scan.Digest,
-			Tag:         scan.Tag,
-			EnqueuedAt:  time.Now(),
-			Attempts:    0,
-			IsRescan:    true,
-			Tolerations: queueTolerations,
-			UseVEXRepo:  s.regsyncConfig.GetVEXRepoForTarget(scan.Repository),
+			ID:            fmt.Sprintf("%s-%d", scan.Digest, time.Now().Unix()),
+			Repository:    scan.Repository,
+			Digest:        scan.Digest,
+			Tag:           scan.Tag,
+			EnqueuedAt:    time.Now(),
+			Attempts:      0,
+			IsRescan:      true,
+			VEXStatements: vexStatements,
+			UseVEXRepo:    s.regsyncConfig.GetVEXRepoForTarget(scan.Repository),
 		}
 
 		if err := s.taskQueue.Enqueue(ctx, task); err != nil {
@@ -1296,30 +1276,22 @@ func (s *APIServer) handleRescanRepository(w http.ResponseWriter, r *http.Reques
 		return
 	}
 
-	// Get tolerations for this repository from in-memory config
-	tolerations := s.regsyncConfig.GetTolerationsForTarget(name)
-	queueTolerations := make([]types.CVEToleration, len(tolerations))
-	for i, t := range tolerations {
-		queueTolerations[i] = types.CVEToleration{
-			ID:        t.ID,
-			Statement: t.Statement,
-			ExpiresAt: t.ExpiresAt,
-		}
-	}
+	// Get VEX statements for this repository from in-memory config
+	vexStatements := s.regsyncConfig.GetVEXStatementsForTarget(name)
 
 	// Enqueue tasks for all scans
 	queuedCount := 0
 	for _, scan := range scans {
 		task := &queue.ScanTask{
-			ID:          fmt.Sprintf("%s-%d", scan.Digest, time.Now().Unix()),
-			Repository:  scan.Repository,
-			Digest:      scan.Digest,
-			Tag:         scan.Tag,
-			EnqueuedAt:  time.Now(),
-			Attempts:    0,
-			IsRescan:    true,
-			Tolerations: queueTolerations,
-			UseVEXRepo:  s.regsyncConfig.GetVEXRepoForTarget(scan.Repository),
+			ID:            fmt.Sprintf("%s-%d", scan.Digest, time.Now().Unix()),
+			Repository:    scan.Repository,
+			Digest:        scan.Digest,
+			Tag:           scan.Tag,
+			EnqueuedAt:    time.Now(),
+			Attempts:      0,
+			IsRescan:      true,
+			VEXStatements: vexStatements,
+			UseVEXRepo:    s.regsyncConfig.GetVEXRepoForTarget(scan.Repository),
 		}
 
 		if err := s.taskQueue.Enqueue(ctx, task); err != nil {
@@ -1448,28 +1420,20 @@ func (s *APIServer) handleRescanTag(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Get tolerations for this repository from in-memory config
-	tolerations := s.regsyncConfig.GetTolerationsForTarget(lastScan.Repository)
-	queueTolerations := make([]types.CVEToleration, len(tolerations))
-	for i, t := range tolerations {
-		queueTolerations[i] = types.CVEToleration{
-			ID:        t.ID,
-			Statement: t.Statement,
-			ExpiresAt: t.ExpiresAt,
-		}
-	}
+	// Get VEX statements for this repository from in-memory config
+	vexStatements := s.regsyncConfig.GetVEXStatementsForTarget(lastScan.Repository)
 
 	// Create and enqueue task
 	task := &queue.ScanTask{
-		ID:          fmt.Sprintf("%s-%d", digest, time.Now().Unix()),
-		Repository:  lastScan.Repository,
-		Digest:      digest,
-		Tag:         lastScan.Tag,
-		EnqueuedAt:  time.Now(),
-		Attempts:    0,
-		IsRescan:    true,
-		Tolerations: queueTolerations,
-		UseVEXRepo:  s.regsyncConfig.GetVEXRepoForTarget(lastScan.Repository),
+		ID:            fmt.Sprintf("%s-%d", digest, time.Now().Unix()),
+		Repository:    lastScan.Repository,
+		Digest:        digest,
+		Tag:           lastScan.Tag,
+		EnqueuedAt:    time.Now(),
+		Attempts:      0,
+		IsRescan:      true,
+		VEXStatements: vexStatements,
+		UseVEXRepo:    s.regsyncConfig.GetVEXRepoForTarget(lastScan.Repository),
 	}
 
 	if err := s.taskQueue.Enqueue(ctx, task); err != nil {
@@ -1491,13 +1455,20 @@ func (s *APIServer) handleRescanTag(w http.ResponseWriter, r *http.Request) {
 	s.respondJSON(w, http.StatusOK, response)
 }
 
-// enrichScanRecord updates a scan record's tolerated CVEs with current config values
-// Preserves ToleratedAt timestamps while using current Statement and ExpiresAt from config
+// enrichScanRecord updates a scan record with current config values.
+// If AppliedVEXStatements is populated (new data), leave it as is.
+// If only ToleratedCVEs is populated (legacy data), enrich those with current config.
 func (s *APIServer) enrichScanRecord(record *statestore.ScanRecord) {
 	if record == nil || s.regsyncConfig == nil {
 		return
 	}
 
+	// New VEX data takes precedence — if populated, nothing to enrich
+	if len(record.AppliedVEXStatements) > 0 {
+		return
+	}
+
+	// Legacy path: enrich ToleratedCVEs with current config values
 	// Build map of historically tolerated CVEs (cveID -> toleratedAt timestamp)
 	historicalMap := make(map[string]int64)
 	for _, stored := range record.ToleratedCVEs {
@@ -1520,14 +1491,14 @@ func (s *APIServer) enrichScanRecord(record *statestore.ScanRecord) {
 	}
 }
 
-// getConfiguredTolerations returns all tolerations from config file
-// Returns all configured tolerations for each target repository, optionally filtered by CVE ID and/or repository
-func (s *APIServer) getConfiguredTolerations(cveIDFilter, repositoryFilter string, expiringSoon *bool, expired *bool) []*types.TolerationInfo {
+// getConfiguredVEXStatements returns all VEX statements from config file
+// Returns all configured VEX statements for each target repository, optionally filtered by CVE ID and/or repository
+func (s *APIServer) getConfiguredVEXStatements(cveIDFilter, repositoryFilter string, expiringSoon *bool, expired *bool) []*types.VEXInfo {
 	if s.regsyncConfig == nil {
-		return []*types.TolerationInfo{}
+		return []*types.VEXInfo{}
 	}
 
-	tolerationMap := make(map[string]*types.TolerationInfo)
+	vexMap := make(map[string]*types.VEXInfo)
 
 	// Get all target repositories from config
 	repositories := s.regsyncConfig.GetTargetRepositories()
@@ -1541,22 +1512,22 @@ func (s *APIServer) getConfiguredTolerations(cveIDFilter, repositoryFilter strin
 			continue
 		}
 
-		// Get tolerations for this repository
-		configTolerations := s.regsyncConfig.GetTolerationsForTarget(repo)
+		// Get VEX statements for this repository
+		configStatements := s.regsyncConfig.GetVEXStatementsForTarget(repo)
 
-		for i := range configTolerations {
+		for i := range configStatements {
 			// Apply CVE ID filter if specified (partial match)
-			if cveIDFilter != "" && !strings.Contains(strings.ToLower(configTolerations[i].ID), strings.ToLower(cveIDFilter)) {
+			if cveIDFilter != "" && !strings.Contains(strings.ToLower(configStatements[i].ID), strings.ToLower(cveIDFilter)) {
 				continue
 			}
 
 			// Apply expiration filters
 			if (expiringSoon != nil && *expiringSoon) || (expired != nil && *expired) {
-				if configTolerations[i].ExpiresAt == nil || *configTolerations[i].ExpiresAt == 0 {
+				if configStatements[i].ExpiresAt == nil || *configStatements[i].ExpiresAt == 0 {
 					continue
 				}
 
-				expiresTime := time.Unix(*configTolerations[i].ExpiresAt, 0)
+				expiresTime := time.Unix(*configStatements[i].ExpiresAt, 0)
 				isExpired := expiresTime.Before(now)
 				isExpiringSoon := !isExpired && expiresTime.Before(sevenDaysFromNow)
 
@@ -1573,76 +1544,78 @@ func (s *APIServer) getConfiguredTolerations(cveIDFilter, repositoryFilter strin
 				}
 			}
 
-			key := repo + ":" + configTolerations[i].ID
+			key := repo + ":" + configStatements[i].ID
 
 			// Only add if not already present (avoid duplicates from overlapping defaults and sync-specific)
-			if _, exists := tolerationMap[key]; !exists {
-				tolerationMap[key] = &types.TolerationInfo{
-					CVEID:       configTolerations[i].ID,
-					Statement:   configTolerations[i].Statement,
-					ToleratedAt: 0, // Will be enriched with historical data if available
-					ExpiresAt:   configTolerations[i].ExpiresAt,
-					Repository:  repo,
+			if _, exists := vexMap[key]; !exists {
+				vexMap[key] = &types.VEXInfo{
+					CVEID:         configStatements[i].ID,
+					State:         configStatements[i].State,
+					Justification: configStatements[i].Justification,
+					Detail:        configStatements[i].Detail,
+					AppliedAt:     0, // Will be enriched with historical data if available
+					ExpiresAt:     configStatements[i].ExpiresAt,
+					Repository:    repo,
 				}
 			}
 		}
 	}
 
 	// Convert map to slice
-	result := make([]*types.TolerationInfo, 0, len(tolerationMap))
-	for _, info := range tolerationMap {
+	result := make([]*types.VEXInfo, 0, len(vexMap))
+	for _, info := range vexMap {
 		result = append(result, info)
 	}
 
 	return result
 }
 
-// enrichWithHistoricalTimestamps updates tolerations with earliest ToleratedAt timestamps from scan history
-// Only updates ToleratedAt if the toleration was actually applied in a past scan
-func (s *APIServer) enrichWithHistoricalTimestamps(ctx context.Context, tolerations []*types.TolerationInfo) {
-	if s.stateStore == nil || len(tolerations) == 0 {
+// enrichWithHistoricalVEXTimestamps updates VEX infos with earliest AppliedAt timestamps from scan history
+// Only updates AppliedAt if the VEX statement was actually applied in a past scan
+func (s *APIServer) enrichWithHistoricalVEXTimestamps(ctx context.Context, vexInfos []*types.VEXInfo) {
+	if s.stateStore == nil || len(vexInfos) == 0 {
 		return
 	}
 
-	// Query historical tolerations from state store to get ToleratedAt timestamps
+	// Query historical VEX statements from state store to get AppliedAt timestamps
 	filter := statestore.TolerationFilter{
 		Limit: 0, // No limit, get all historical records
 	}
 
-	historicalTolerations, err := s.stateStore.ListTolerations(ctx, filter)
+	historicalVEX, err := s.stateStore.ListVEXStatements(ctx, filter)
 	if err != nil {
-		s.logger.Error("failed to get historical tolerations",
+		s.logger.Error("failed to get historical VEX statements",
 			"error", err.Error())
 		return
 	}
 
-	// Build a map of historical timestamps: "repo:cveid" -> earliest ToleratedAt
+	// Build a map of historical timestamps: "repo:cveid" -> earliest AppliedAt
 	historicalMap := make(map[string]int64)
-	for _, hist := range historicalTolerations {
+	for _, hist := range historicalVEX {
 		key := hist.Repository + ":" + hist.CVEID
-		if existing, found := historicalMap[key]; !found || hist.ToleratedAt < existing {
-			historicalMap[key] = hist.ToleratedAt
+		if existing, found := historicalMap[key]; !found || hist.AppliedAt < existing {
+			historicalMap[key] = hist.AppliedAt
 		}
 	}
 
-	// Update tolerations with historical timestamps
-	for _, tol := range tolerations {
-		key := tol.Repository + ":" + tol.CVEID
-		if toleratedAt, found := historicalMap[key]; found {
-			tol.ToleratedAt = toleratedAt
+	// Update VEX infos with historical timestamps
+	for _, info := range vexInfos {
+		key := info.Repository + ":" + info.CVEID
+		if appliedAt, found := historicalMap[key]; found {
+			info.AppliedAt = appliedAt
 		}
 	}
 }
 
-// enrichTolerationsWithImageCounts populates AffectedImageCount on each TolerationSummary
-func (s *APIServer) enrichTolerationsWithImageCounts(ctx context.Context, summaries []*types.TolerationSummary) {
+// enrichVEXWithImageCounts populates AffectedImageCount on each VEXSummary
+func (s *APIServer) enrichVEXWithImageCounts(ctx context.Context, summaries []*types.VEXSummary) {
 	if s.stateStore == nil || len(summaries) == 0 {
 		return
 	}
 
-	counts, err := s.stateStore.GetToleratedCVEImageCounts(ctx)
+	counts, err := s.stateStore.GetExemptedCVEImageCounts(ctx)
 	if err != nil {
-		s.logger.Error("failed to get tolerated CVE image counts", "error", err.Error())
+		s.logger.Error("failed to get exempted CVE image counts", "error", err.Error())
 		return
 	}
 
@@ -1653,32 +1626,34 @@ func (s *APIServer) enrichTolerationsWithImageCounts(ctx context.Context, summar
 	}
 }
 
-// groupTolerationsByCVE groups tolerations by CVE ID, collecting repositories into an array
-func (s *APIServer) groupTolerationsByCVE(tolerations []*types.TolerationInfo) []*types.TolerationSummary {
+// groupVEXByCVE groups VEX infos by CVE ID, collecting repositories into an array
+func (s *APIServer) groupVEXByCVE(vexInfos []*types.VEXInfo) []*types.VEXSummary {
 	// Group by CVE ID
-	grouped := make(map[string]*types.TolerationSummary)
+	grouped := make(map[string]*types.VEXSummary)
 
-	for _, tol := range tolerations {
-		summary, exists := grouped[tol.CVEID]
+	for _, info := range vexInfos {
+		summary, exists := grouped[info.CVEID]
 		if !exists {
-			summary = &types.TolerationSummary{
-				CVEID:        tol.CVEID,
-				Statement:    tol.Statement,
-				ExpiresAt:    tol.ExpiresAt,
-				Repositories: make([]types.RepositoryTolInfo, 0),
+			summary = &types.VEXSummary{
+				CVEID:         info.CVEID,
+				State:         info.State,
+				Justification: info.Justification,
+				Detail:        info.Detail,
+				ExpiresAt:     info.ExpiresAt,
+				Repositories:  make([]types.RepositoryVEXInfo, 0),
 			}
-			grouped[tol.CVEID] = summary
+			grouped[info.CVEID] = summary
 		}
 
 		// Add repository info
-		summary.Repositories = append(summary.Repositories, types.RepositoryTolInfo{
-			Repository:  tol.Repository,
-			ToleratedAt: tol.ToleratedAt,
+		summary.Repositories = append(summary.Repositories, types.RepositoryVEXInfo{
+			Repository: info.Repository,
+			AppliedAt:  info.AppliedAt,
 		})
 	}
 
 	// Convert map to slice
-	result := make([]*types.TolerationSummary, 0, len(grouped))
+	result := make([]*types.VEXSummary, 0, len(grouped))
 	for _, summary := range grouped {
 		result = append(result, summary)
 	}

@@ -10,7 +10,7 @@ import ScansPage from './pages/ScansPage';
 import ScanDetailPage from './pages/ScanDetailPage';
 import FailedImagesPage from './pages/FailedImagesPage';
 import VulnerabilitiesPage from './pages/VulnerabilitiesPage';
-import TolerationsPage from './pages/TolerationsPage';
+import VEXPage from './pages/VEXPage';
 import IntegrationsPage from './pages/IntegrationsPage';
 
 function AppRoutes() {
@@ -29,7 +29,8 @@ function AppRoutes() {
         <Route path="scans/:digest" element={<ScanDetailPage />} />
         <Route path="failed" element={<FailedImagesPage />} />
         <Route path="vulnerabilities" element={<VulnerabilitiesPage />} />
-        <Route path="tolerations" element={<TolerationsPage />} />
+        <Route path="vex" element={<VEXPage />} />
+        <Route path="tolerations" element={<Navigate to="/vex" replace />} />
         <Route path="integrations" element={<IntegrationsPage />} />
         <Route path="*" element={<Navigate to="/" replace />} />
       </Route>

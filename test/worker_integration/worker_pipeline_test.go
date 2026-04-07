@@ -92,7 +92,7 @@ func (m *mockScanner) HealthCheck(ctx context.Context) error {
 
 type mockPolicyEngine struct{}
 
-func (m *mockPolicyEngine) Evaluate(ctx context.Context, imageRef string, scanResult *scanner.ScanResult, tolerations []types.CVEToleration) (*policy.PolicyDecision, error) {
+func (m *mockPolicyEngine) Evaluate(ctx context.Context, imageRef string, scanResult *scanner.ScanResult, vexStatements []types.VEXStatement) (*policy.PolicyDecision, error) {
 	return &policy.PolicyDecision{
 		Passed: true,
 		Reason: "no vulnerabilities found",
@@ -110,6 +110,10 @@ func (m *mockAttestor) AttestVulnerabilities(ctx context.Context, imageRef strin
 }
 
 func (m *mockAttestor) AttestSCAI(ctx context.Context, imageRef string, scai *attestation.SCAIAttestation) error {
+	return nil
+}
+
+func (m *mockAttestor) AttestVEX(ctx context.Context, imageRef string, vexStatements []types.AppliedVEXStatement) error {
 	return nil
 }
 

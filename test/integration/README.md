@@ -65,7 +65,7 @@ The integration tests cover:
 - Recording scan results with vulnerabilities
 - Retrieving scan history
 - Querying vulnerabilities with filters
-- Managing tolerated CVEs
+- Managing VEX statements
 - Identifying images due for rescanning
 
 ### 3. Task Queue Integration
@@ -77,9 +77,9 @@ The integration tests cover:
 ### 4. Policy Engine Integration
 - Policy evaluation with no vulnerabilities
 - Policy failure with critical vulnerabilities
-- CVE toleration handling
-- Expired toleration detection
-- Expiring toleration warnings
+- VEX exemption handling
+- Expired VEX statement detection
+- Expiring VEX statement warnings
 
 ### 5. End-to-End Workflow
 - Complete scan workflow from queue to storage
@@ -89,7 +89,7 @@ The integration tests cover:
 ### 6. Complete Worker Workflow (Task 8.2)
 - **Clean Image Workflow**: Tests scanning, SBOM generation, policy evaluation, and state recording for images with minimal vulnerabilities
 - **Vulnerable Image Workflow**: Tests handling of images with critical vulnerabilities, ensuring attestations are created
-- **Tolerated CVEs Workflow**: Tests policy evaluation with CVE tolerations, verifying that tolerated critical CVEs allow policy to pass
+- **VEX-Exempted CVEs Workflow**: Tests policy evaluation with VEX statements, verifying that exempted critical CVEs allow policy to pass
 - **Rescan Workflow**: Tests the rescan scenario where a previously passing image now fails policy, including alert detection
 
 ## Test Services

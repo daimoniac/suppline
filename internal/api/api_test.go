@@ -108,19 +108,19 @@ func (m *mockStateStore) CountScans(ctx context.Context, filter statestore.ScanF
 	return 0, nil
 }
 
-func (m *mockStateStore) ListTolerations(ctx context.Context, filter statestore.TolerationFilter) ([]*types.TolerationInfo, error) {
+func (m *mockStateStore) ListVEXStatements(ctx context.Context, filter statestore.TolerationFilter) ([]*types.VEXInfo, error) {
 	return nil, nil
 }
 
-func (m *mockStateStore) GetToleratedCVEImageCounts(ctx context.Context) (map[string]int, error) {
+func (m *mockStateStore) GetExemptedCVEImageCounts(ctx context.Context) (map[string]int, error) {
 	return map[string]int{}, nil
 }
 
-func (m *mockStateStore) GetInactiveTolerationsCount(ctx context.Context, definedCVEIDs []string) (int, error) {
+func (m *mockStateStore) GetInactiveVEXCount(ctx context.Context, definedCVEIDs []string) (int, error) {
 	return 0, nil
 }
 
-func (m *mockStateStore) GetAppliedCVEIDs(ctx context.Context, definedCVEIDs []string) ([]string, error) {
+func (m *mockStateStore) GetAppliedVEXCVEIDs(ctx context.Context, definedCVEIDs []string) ([]string, error) {
 	return []string{}, nil
 }
 
@@ -143,11 +143,11 @@ func (m *mockStateStore) GetRepository(ctx context.Context, name string, filter 
 				LastScanTime: &now,
 				NextScanTime: &now,
 				VulnerabilityCount: statestore.VulnerabilityCountSummary{
-					Critical:  1,
-					High:      2,
-					Medium:    3,
-					Low:       1,
-					Tolerated: 0,
+					Critical: 1,
+					High:     2,
+					Medium:   3,
+					Low:      1,
+					Exempted: 0,
 				},
 				PolicyPassed: true,
 			},

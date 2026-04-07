@@ -72,7 +72,7 @@ export function cn(...classes: (string | false | null | undefined)[]): string {
   return classes.filter(Boolean).join(' ');
 }
 
-export type SeverityLevel = 'critical' | 'high' | 'medium' | 'low' | 'tolerated' | 'unknown';
+export type SeverityLevel = 'critical' | 'high' | 'medium' | 'low' | 'exempted' | 'unknown';
 
 export function severityColor(severity: string): string {
   const s = severity.toLowerCase();
@@ -81,7 +81,7 @@ export function severityColor(severity: string): string {
     case 'high': return 'bg-severity-high';
     case 'medium': return 'bg-severity-medium';
     case 'low': return 'bg-severity-low';
-    case 'tolerated': return 'bg-severity-tolerated';
+    case 'exempted': return 'bg-severity-exempted';
     default: return 'bg-gray-500';
   }
 }
@@ -93,7 +93,7 @@ export function severityTextColor(severity: string): string {
     case 'high': return 'text-severity-high';
     case 'medium': return 'text-severity-medium';
     case 'low': return 'text-severity-low';
-    case 'tolerated': return 'text-severity-tolerated';
+    case 'exempted': return 'text-severity-exempted';
     default: return 'text-gray-400';
   }
 }

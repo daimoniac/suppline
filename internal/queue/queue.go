@@ -44,16 +44,16 @@ const (
 
 // ScanTask represents a container image scanning task
 type ScanTask struct {
-	ID          string
-	Repository  string
-	Digest      string
-	Tag         string
-	EnqueuedAt  time.Time
-	Attempts    int
-	IsRescan    bool
-	IsFirstScan bool // True when image has never been scanned before
-	Priority    TaskPriority
-	Tolerations []types.CVEToleration // Using canonical type from internal/types
+	ID            string
+	Repository    string
+	Digest        string
+	Tag           string
+	EnqueuedAt    time.Time
+	Attempts      int
+	IsRescan      bool
+	IsFirstScan   bool // True when image has never been scanned before
+	Priority      TaskPriority
+	VEXStatements []types.VEXStatement // CycloneDX VEX statements from config
 	// UseVEXRepo, when true, passes --vex repo to Trivy during vulnerability scanning
 	// to apply the Aqua VEX Hub and suppress not_affected CVEs before policy evaluation.
 	UseVEXRepo bool

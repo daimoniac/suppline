@@ -15,8 +15,9 @@ import (
 // PolicyEngine defines the interface for policy evaluation
 type PolicyEngine interface {
 	// Evaluate determines if an image passes security policy
-	// Applies CVE tolerations from regsync config for the target repository
-	Evaluate(ctx context.Context, imageRef string, result *scanner.ScanResult, tolerations []types.CVEToleration) (*PolicyDecision, error)
+	// Applies VEX statements from regsync config for the target repository;
+	// only not_affected (and not expired) statements exempt CVEs from counts.
+	Evaluate(ctx context.Context, imageRef string, result *scanner.ScanResult, vexStatements []types.VEXStatement) (*PolicyDecision, error)
 }
 
 // PolicyConfig defines a CEL-based policy configuration
@@ -24,12 +25,13 @@ type PolicyConfig struct {
 	// Expression is the CEL expression that must evaluate to true for the policy to pass
 	// Available variables:
 	//   - vulnerabilities: list of enriched vulnerabilities with fields:
-	//       id, severity, packageName, version, fixedVersion, description, tolerated, tolerationStatement, tolerationExpiry
+	//       id, severity, packageName, version, fixedVersion, description, exempted, vexState, vexJustification, vexDetail
 	//   - imageRef: string reference to the image
-	//   - criticalCount: number of critical vulnerabilities (not tolerated)
-	//   - highCount: number of high vulnerabilities (not tolerated)
-	//   - mediumCount: number of medium vulnerabilities (not tolerated)
-	//   - toleratedCount: number of tolerated vulnerabilities
+	//   - criticalCount: number of critical vulnerabilities (not exempted)
+	//   - highCount: number of high vulnerabilities (not exempted)
+	//   - mediumCount: number of medium vulnerabilities (not exempted)
+	//   - exemptedCount: number of exempted vulnerabilities
+	//   - toleratedCount: alias for exemptedCount (backward compat)
 	Expression string `yaml:"expression" json:"expression"`
 
 	// FailureMessage is the message to return when the policy fails (optional)
@@ -52,21 +54,23 @@ type PolicyDecision struct {
 	Reason                   string
 	ShouldAttest             bool
 	CriticalVulnCount        int
-	ToleratedVulnCount       int
+	ExemptedVulnCount        int
 	UnfixedVulnCount         int
-	ToleratedCVEs            []string
-	ExpiringTolerations      []ExpiringToleration
+	ExemptedCVEs             []string
+	ExpiringVEXStatements    []ExpiringVEXStatement
 	ReleaseAgeSeconds        int64
 	MinimumReleaseAgeSeconds int64
 	ReleaseAgeSource         string
 }
 
-// ExpiringToleration represents a toleration that is expiring soon
-type ExpiringToleration struct {
-	CVEID     string
-	Statement string
-	ExpiresAt int64 // Unix timestamp in seconds
-	DaysUntil int
+// ExpiringVEXStatement represents a VEX statement that is expiring soon
+type ExpiringVEXStatement struct {
+	CVEID         string
+	State         types.VEXAnalysisState
+	Justification types.VEXJustification
+	Detail        string
+	ExpiresAt     int64 // Unix timestamp in seconds
+	DaysUntil     int
 }
 
 // Engine implements the PolicyEngine interface using CEL expressions
@@ -97,6 +101,7 @@ func NewEngine(logger *slog.Logger, config PolicyConfig) (*Engine, error) {
 		cel.Variable("mediumCount", cel.IntType),
 		cel.Variable("lowCount", cel.IntType),
 		cel.Variable("toleratedCount", cel.IntType),
+		cel.Variable("exemptedCount", cel.IntType),
 	)
 	if err != nil {
 		return nil, errors.NewPermanentf("failed to create CEL environment: %w", err)
@@ -126,16 +131,16 @@ func NewEngine(logger *slog.Logger, config PolicyConfig) (*Engine, error) {
 }
 
 // Evaluate determines if an image passes security policy using CEL expression
-func (e *Engine) Evaluate(ctx context.Context, imageRef string, result *scanner.ScanResult, tolerations []types.CVEToleration) (*PolicyDecision, error) {
+func (e *Engine) Evaluate(ctx context.Context, imageRef string, result *scanner.ScanResult, vexStatements []types.VEXStatement) (*PolicyDecision, error) {
 	if result == nil {
 		return nil, errors.NewPermanentf("scan result is nil")
 	}
 
 	decision := &PolicyDecision{
-		ShouldAttest:        true, // Always create attestations
-		Status:              PolicyStatusPassed,
-		ToleratedCVEs:       make([]string, 0),
-		ExpiringTolerations: make([]ExpiringToleration, 0),
+		ShouldAttest:          true, // Always create attestations
+		Status:                PolicyStatusPassed,
+		ExemptedCVEs:          make([]string, 0),
+		ExpiringVEXStatements: make([]ExpiringVEXStatement, 0),
 	}
 
 	if result.ScannedAt.IsZero() {
@@ -188,34 +193,43 @@ func (e *Engine) Evaluate(ctx context.Context, imageRef string, result *scanner.
 	}
 
 	nowUnix := time.Now().Unix()
-	activeTolerations := make(map[string]types.CVEToleration)
+	activeVEX := make(map[string]types.VEXStatement)
 
-	for _, toleration := range tolerations {
-		if toleration.ExpiresAt != nil && *toleration.ExpiresAt < nowUnix {
-			e.logger.Debug("toleration expired",
-				"cve_id", toleration.ID,
-				"expired_at", *toleration.ExpiresAt,
+	for _, stmt := range vexStatements {
+		// Only not_affected statements can exempt CVEs from severity counts
+		if stmt.State != types.VEXStateNotAffected {
+			continue
+		}
+
+		if stmt.ExpiresAt != nil && *stmt.ExpiresAt < nowUnix {
+			e.logger.Debug("VEX statement expired",
+				"cve_id", stmt.ID,
+				"state", stmt.State,
+				"expired_at", *stmt.ExpiresAt,
 				"image", imageRef)
 			continue
 		}
 
-		activeTolerations[toleration.ID] = toleration
+		activeVEX[stmt.ID] = stmt
 
-		if toleration.ExpiresAt != nil {
-			secondsUntilExpiry := *toleration.ExpiresAt - nowUnix
+		if stmt.ExpiresAt != nil {
+			secondsUntilExpiry := *stmt.ExpiresAt - nowUnix
 			if secondsUntilExpiry > 0 && time.Duration(secondsUntilExpiry)*time.Second <= e.expiryWarningWindow {
 				daysUntil := int(secondsUntilExpiry / (24 * 3600))
-				decision.ExpiringTolerations = append(decision.ExpiringTolerations, ExpiringToleration{
-					CVEID:     toleration.ID,
-					Statement: toleration.Statement,
-					ExpiresAt: *toleration.ExpiresAt,
-					DaysUntil: daysUntil,
+				decision.ExpiringVEXStatements = append(decision.ExpiringVEXStatements, ExpiringVEXStatement{
+					CVEID:         stmt.ID,
+					State:         stmt.State,
+					Justification: stmt.Justification,
+					Detail:        stmt.Detail,
+					ExpiresAt:     *stmt.ExpiresAt,
+					DaysUntil:     daysUntil,
 				})
 
-				e.logger.Warn("toleration expiring soon",
-					"cve_id", toleration.ID,
-					"statement", toleration.Statement,
-					"expires_at", *toleration.ExpiresAt,
+				e.logger.Warn("VEX statement expiring soon",
+					"cve_id", stmt.ID,
+					"state", stmt.State,
+					"detail", stmt.Detail,
+					"expires_at", *stmt.ExpiresAt,
 					"days_until_expiry", daysUntil,
 					"image", imageRef)
 			}
@@ -227,12 +241,12 @@ func (e *Engine) Evaluate(ctx context.Context, imageRef string, result *scanner.
 	highCount := 0
 	mediumCount := 0
 	lowCount := 0
-	toleratedCount := 0
+	exemptedCount := 0
 	unfixedCriticalCount := 0
 	failingVulns := make([]types.Vulnerability, 0)
 
 	for _, vuln := range result.Vulnerabilities {
-		toleration, isTolerated := activeTolerations[vuln.ID]
+		stmt, isExempted := activeVEX[vuln.ID]
 
 		enriched := map[string]interface{}{
 			"id":           vuln.ID,
@@ -241,21 +255,28 @@ func (e *Engine) Evaluate(ctx context.Context, imageRef string, result *scanner.
 			"version":      vuln.Version,
 			"fixedVersion": vuln.FixedVersion,
 			"description":  vuln.Description,
-			"tolerated":    isTolerated,
+			"exempted":     isExempted,
+			"tolerated":    isExempted, // backward compat alias
 		}
 
-		if isTolerated {
-			enriched["tolerationStatement"] = toleration.Statement
-			if toleration.ExpiresAt != nil {
-				enriched["tolerationExpiry"] = time.Unix(*toleration.ExpiresAt, 0).UTC().Format(time.RFC3339)
+		if isExempted {
+			enriched["vexState"] = string(stmt.State)
+			enriched["vexJustification"] = string(stmt.Justification)
+			enriched["vexDetail"] = stmt.Detail
+			// backward compat aliases
+			enriched["tolerationStatement"] = stmt.Detail
+			if stmt.ExpiresAt != nil {
+				enriched["tolerationExpiry"] = time.Unix(*stmt.ExpiresAt, 0).UTC().Format(time.RFC3339)
 			}
-			toleratedCount++
-			decision.ToleratedCVEs = append(decision.ToleratedCVEs, vuln.ID)
+			exemptedCount++
+			decision.ExemptedCVEs = append(decision.ExemptedCVEs, vuln.ID)
 
-			e.logger.Info("vulnerability tolerated",
+			e.logger.Info("vulnerability exempted by VEX",
 				"cve_id", vuln.ID,
 				"severity", vuln.Severity,
-				"statement", toleration.Statement,
+				"vex_state", stmt.State,
+				"vex_justification", stmt.Justification,
+				"detail", stmt.Detail,
 				"package", vuln.PackageName,
 				"image", imageRef)
 		} else {
@@ -279,7 +300,7 @@ func (e *Engine) Evaluate(ctx context.Context, imageRef string, result *scanner.
 	}
 
 	decision.CriticalVulnCount = criticalCount
-	decision.ToleratedVulnCount = toleratedCount
+	decision.ExemptedVulnCount = exemptedCount
 	decision.UnfixedVulnCount = unfixedCriticalCount
 
 	celInput := map[string]interface{}{
@@ -289,7 +310,8 @@ func (e *Engine) Evaluate(ctx context.Context, imageRef string, result *scanner.
 		"highCount":       highCount,
 		"mediumCount":     mediumCount,
 		"lowCount":        lowCount,
-		"toleratedCount":  toleratedCount,
+		"toleratedCount":  exemptedCount, // backward compat
+		"exemptedCount":   exemptedCount,
 	}
 
 	out, _, err := e.celProgram.Eval(celInput)
@@ -311,11 +333,11 @@ func (e *Engine) Evaluate(ctx context.Context, imageRef string, result *scanner.
 
 	if passed {
 		if unfixedCriticalCount > 0 {
-			decision.Reason = fmt.Sprintf("policy passed: critical=%d, high=%d, medium=%d, low=%d (tolerated=%d, unfixed=%d)",
-				criticalCount, highCount, mediumCount, lowCount, toleratedCount, unfixedCriticalCount)
+			decision.Reason = fmt.Sprintf("policy passed: critical=%d, high=%d, medium=%d, low=%d (exempted=%d, unfixed=%d)",
+				criticalCount, highCount, mediumCount, lowCount, exemptedCount, unfixedCriticalCount)
 		} else {
-			decision.Reason = fmt.Sprintf("policy passed: critical=%d, high=%d, medium=%d, low=%d (tolerated=%d)",
-				criticalCount, highCount, mediumCount, lowCount, toleratedCount)
+			decision.Reason = fmt.Sprintf("policy passed: critical=%d, high=%d, medium=%d, low=%d (exempted=%d)",
+				criticalCount, highCount, mediumCount, lowCount, exemptedCount)
 		}
 
 		e.logger.Info("policy evaluation passed",
@@ -324,17 +346,17 @@ func (e *Engine) Evaluate(ctx context.Context, imageRef string, result *scanner.
 			"high", highCount,
 			"medium", mediumCount,
 			"low", lowCount,
-			"tolerated", toleratedCount)
+			"exempted", exemptedCount)
 	} else {
 		if e.config.FailureMessage != "" {
 			decision.Reason = e.config.FailureMessage
 		} else {
 			if unfixedCriticalCount > 0 {
-				decision.Reason = fmt.Sprintf("policy failed: critical=%d, high=%d, medium=%d, low=%d (tolerated=%d, unfixed=%d)",
-					criticalCount, highCount, mediumCount, lowCount, toleratedCount, unfixedCriticalCount)
+				decision.Reason = fmt.Sprintf("policy failed: critical=%d, high=%d, medium=%d, low=%d (exempted=%d, unfixed=%d)",
+					criticalCount, highCount, mediumCount, lowCount, exemptedCount, unfixedCriticalCount)
 			} else {
-				decision.Reason = fmt.Sprintf("policy failed: critical=%d, high=%d, medium=%d, low=%d (tolerated=%d)",
-					criticalCount, highCount, mediumCount, lowCount, toleratedCount)
+				decision.Reason = fmt.Sprintf("policy failed: critical=%d, high=%d, medium=%d, low=%d (exempted=%d)",
+					criticalCount, highCount, mediumCount, lowCount, exemptedCount)
 			}
 		}
 
@@ -344,7 +366,7 @@ func (e *Engine) Evaluate(ctx context.Context, imageRef string, result *scanner.
 			"high", highCount,
 			"medium", mediumCount,
 			"low", lowCount,
-			"tolerated", toleratedCount,
+			"exempted", exemptedCount,
 			"expression", e.config.Expression)
 
 		for _, vuln := range failingVulns {

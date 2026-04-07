@@ -3,8 +3,10 @@ package config
 import (
 	"bytes"
 	"fmt"
+	"log/slog"
 	"os"
 	"strings"
+	sync "sync"
 	"text/template"
 	"time"
 
@@ -12,6 +14,9 @@ import (
 	"github.com/daimoniac/suppline/internal/types"
 	"gopkg.in/yaml.v3"
 )
+
+// tolerateWarned tracks CVE IDs for which the x-tolerate deprecation warning has already been logged.
+var tolerateWarned sync.Map
 
 // ParseRegsync reads and parses a suppline.yml configuration file
 func ParseRegsync(path string) (*RegsyncConfig, error) {
@@ -28,6 +33,11 @@ func ParseRegsync(path string) (*RegsyncConfig, error) {
 	// Expand environment variables throughout the configuration
 	if err := expandConfig(&config); err != nil {
 		return nil, errors.NewPermanentf("failed to expand configuration: %w", err)
+	}
+
+	// Validate VEX statements
+	if err := config.ValidateVEXStatements(); err != nil {
+		return nil, errors.NewPermanentf("invalid VEX configuration: %w", err)
 	}
 
 	return &config, nil
@@ -441,4 +451,159 @@ func (c *RegsyncConfig) IsVEXRepoEnabledAnywhere() bool {
 		}
 	}
 	return false
+}
+
+// GetVEXStatementsForTarget returns VEX statements for a specific target repository.
+// Merges defaults + sync-specific x-vex entries, plus auto-converts any legacy
+// x-tolerate entries with a deprecation warning. New x-vex entries take precedence
+// over converted x-tolerate entries when both have the same CVE ID.
+func (c *RegsyncConfig) GetVEXStatementsForTarget(target string) []types.VEXStatement {
+	seen := make(map[string]bool)
+	result := make([]types.VEXStatement, 0)
+
+	// First pass: collect all x-vex entries (these take precedence)
+	for _, stmt := range c.Defaults.VEX {
+		if !seen[stmt.ID] {
+			seen[stmt.ID] = true
+			result = append(result, stmt)
+		}
+	}
+
+	for _, sync := range c.Sync {
+		syncTarget := sync.Target
+		if sync.Type == "image" {
+			if idx := strings.LastIndex(syncTarget, ":"); idx != -1 {
+				syncTarget = syncTarget[:idx]
+			}
+		}
+		if syncTarget == target {
+			for _, stmt := range sync.VEX {
+				if !seen[stmt.ID] {
+					seen[stmt.ID] = true
+					result = append(result, stmt)
+				}
+			}
+		}
+	}
+
+	// Second pass: convert legacy x-tolerate entries (only if not already covered by x-vex)
+	for _, tol := range c.Defaults.Tolerate {
+		if !seen[tol.ID] {
+			if _, alreadyWarned := tolerateWarned.LoadOrStore(tol.ID, true); !alreadyWarned {
+				slog.Warn("x-tolerate is deprecated, migrate to x-vex",
+					"cve_id", tol.ID,
+					"target", target)
+			}
+			seen[tol.ID] = true
+			result = append(result, types.CVETolerationToVEXStatement(tol))
+		}
+	}
+
+	for _, sync := range c.Sync {
+		syncTarget := sync.Target
+		if sync.Type == "image" {
+			if idx := strings.LastIndex(syncTarget, ":"); idx != -1 {
+				syncTarget = syncTarget[:idx]
+			}
+		}
+		if syncTarget == target {
+			for _, tol := range sync.Tolerate {
+				if !seen[tol.ID] {
+					if _, alreadyWarned := tolerateWarned.LoadOrStore(tol.ID, true); !alreadyWarned {
+						slog.Warn("x-tolerate is deprecated, migrate to x-vex",
+							"cve_id", tol.ID,
+							"target", target)
+					}
+					seen[tol.ID] = true
+					result = append(result, types.CVETolerationToVEXStatement(tol))
+				}
+			}
+		}
+	}
+
+	return result
+}
+
+// IsVEXExempted checks if a CVE is exempted by a not_affected VEX statement for a target.
+// Returns true if the CVE has a not_affected VEX statement that has not expired.
+func (c *RegsyncConfig) IsVEXExempted(target, cveID string) (bool, *types.VEXStatement) {
+	statements := c.GetVEXStatementsForTarget(target)
+	nowUnix := time.Now().Unix()
+
+	for i := range statements {
+		stmt := &statements[i]
+		if stmt.ID == cveID {
+			if stmt.State != types.VEXStateNotAffected {
+				return false, nil
+			}
+			if stmt.ExpiresAt != nil && *stmt.ExpiresAt < nowUnix {
+				return false, nil
+			}
+			return true, stmt
+		}
+	}
+
+	return false, nil
+}
+
+// GetExpiringVEXStatements returns VEX statements that will expire within the specified duration.
+func (c *RegsyncConfig) GetExpiringVEXStatements(within time.Duration) []types.VEXStatement {
+	var expiring []types.VEXStatement
+	nowUnix := time.Now().Unix()
+	thresholdUnix := time.Now().Add(within).Unix()
+
+	// Collect all unique VEX statements (including converted tolerations)
+	seen := make(map[string]bool)
+
+	checkAndAdd := func(stmt types.VEXStatement) {
+		if seen[stmt.ID] {
+			return
+		}
+		seen[stmt.ID] = true
+		if stmt.ExpiresAt != nil {
+			if *stmt.ExpiresAt > nowUnix && *stmt.ExpiresAt < thresholdUnix {
+				expiring = append(expiring, stmt)
+			}
+		}
+	}
+
+	// Check x-vex entries
+	for _, stmt := range c.Defaults.VEX {
+		checkAndAdd(stmt)
+	}
+	for _, sync := range c.Sync {
+		for _, stmt := range sync.VEX {
+			checkAndAdd(stmt)
+		}
+	}
+
+	// Check legacy x-tolerate entries
+	for _, tol := range c.Defaults.Tolerate {
+		checkAndAdd(types.CVETolerationToVEXStatement(tol))
+	}
+	for _, sync := range c.Sync {
+		for _, tol := range sync.Tolerate {
+			checkAndAdd(types.CVETolerationToVEXStatement(tol))
+		}
+	}
+
+	return expiring
+}
+
+// ValidateVEXStatements validates all VEX statements in the config.
+// Returns the first validation error encountered.
+func (c *RegsyncConfig) ValidateVEXStatements() error {
+	for i, stmt := range c.Defaults.VEX {
+		if err := types.ValidateVEXStatement(stmt); err != nil {
+			return fmt.Errorf("defaults.x-vex[%d]: %w", i, err)
+		}
+	}
+	for _, sync := range c.Sync {
+		for i, stmt := range sync.VEX {
+			if err := types.ValidateVEXStatement(stmt); err != nil {
+				return fmt.Errorf("sync[%s].x-vex[%d]: %w", sync.Target, i, err)
+			}
+		}
+	}
+	return nil
 }

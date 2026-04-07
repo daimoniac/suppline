@@ -82,7 +82,7 @@ func TestEngine_Evaluate_CriticalVulnerabilitiesPresent(t *testing.T) {
 	}
 }
 
-func TestEngine_Evaluate_ToleratedCVEs(t *testing.T) {
+func TestEngine_Evaluate_ExemptedCVEs(t *testing.T) {
 	engine, err := NewEngine(slog.Default(), PolicyConfig{
 		Expression: "criticalCount == 0",
 	})
@@ -100,14 +100,16 @@ func TestEngine_Evaluate_ToleratedCVEs(t *testing.T) {
 		},
 	}
 
-	tolerations := []types.CVEToleration{
+	tolerations := []types.VEXStatement{
 		{
-			ID:        "CVE-2024-0001",
-			Statement: "accepted risk, no fix available",
+			ID:     "CVE-2024-0001",
+			State:  types.VEXStateNotAffected,
+			Detail: "accepted risk, no fix available",
 		},
 		{
-			ID:        "CVE-2024-0002",
-			Statement: "temporary toleration",
+			ID:     "CVE-2024-0002",
+			State:  types.VEXStateNotAffected,
+			Detail: "temporary toleration",
 		},
 	}
 
@@ -124,16 +126,16 @@ func TestEngine_Evaluate_ToleratedCVEs(t *testing.T) {
 		t.Errorf("expected 1 critical vulnerability, got %d", decision.CriticalVulnCount)
 	}
 
-	if decision.ToleratedVulnCount != 2 {
-		t.Errorf("expected 2 tolerated vulnerabilities, got %d", decision.ToleratedVulnCount)
+	if decision.ExemptedVulnCount != 2 {
+		t.Errorf("expected 2 exempted vulnerabilities, got %d", decision.ExemptedVulnCount)
 	}
 
-	if len(decision.ToleratedCVEs) != 2 {
-		t.Errorf("expected 2 tolerated CVE IDs, got %d", len(decision.ToleratedCVEs))
+	if len(decision.ExemptedCVEs) != 2 {
+		t.Errorf("expected 2 exempted CVE IDs, got %d", len(decision.ExemptedCVEs))
 	}
 }
 
-func TestEngine_Evaluate_AllCriticalVulnerabilitiesTolerated(t *testing.T) {
+func TestEngine_Evaluate_AllCriticalVulnerabilitiesExempted(t *testing.T) {
 	engine, err := NewEngine(slog.Default(), PolicyConfig{
 		Expression: "criticalCount == 0",
 	})
@@ -150,14 +152,16 @@ func TestEngine_Evaluate_AllCriticalVulnerabilitiesTolerated(t *testing.T) {
 		},
 	}
 
-	tolerations := []types.CVEToleration{
+	tolerations := []types.VEXStatement{
 		{
-			ID:        "CVE-2024-0001",
-			Statement: "accepted risk",
+			ID:     "CVE-2024-0001",
+			State:  types.VEXStateNotAffected,
+			Detail: "accepted risk",
 		},
 		{
-			ID:        "CVE-2024-0002",
-			Statement: "no fix available",
+			ID:     "CVE-2024-0002",
+			State:  types.VEXStateNotAffected,
+			Detail: "no fix available",
 		},
 	}
 
@@ -167,19 +171,19 @@ func TestEngine_Evaluate_AllCriticalVulnerabilitiesTolerated(t *testing.T) {
 	}
 
 	if !decision.Passed {
-		t.Errorf("expected policy to pass (all critical tolerated), got failed")
+		t.Errorf("expected policy to pass (all critical exempted), got failed")
 	}
 
 	if decision.CriticalVulnCount != 0 {
 		t.Errorf("expected 0 critical vulnerabilities, got %d", decision.CriticalVulnCount)
 	}
 
-	if decision.ToleratedVulnCount != 2 {
-		t.Errorf("expected 2 tolerated vulnerabilities, got %d", decision.ToleratedVulnCount)
+	if decision.ExemptedVulnCount != 2 {
+		t.Errorf("expected 2 exempted vulnerabilities, got %d", decision.ExemptedVulnCount)
 	}
 }
 
-func TestEngine_Evaluate_ExpiredToleration(t *testing.T) {
+func TestEngine_Evaluate_ExpiredVEXStatement(t *testing.T) {
 	engine, err := NewEngine(slog.Default(), PolicyConfig{
 		Expression: "criticalCount == 0",
 	})
@@ -196,10 +200,11 @@ func TestEngine_Evaluate_ExpiredToleration(t *testing.T) {
 	}
 
 	expiredTime := time.Now().Add(-24 * time.Hour).Unix()
-	tolerations := []types.CVEToleration{
+	tolerations := []types.VEXStatement{
 		{
 			ID:        "CVE-2024-0001",
-			Statement: "temporary toleration",
+			State:     types.VEXStateNotAffected,
+			Detail:    "temporary toleration",
 			ExpiresAt: &expiredTime,
 		},
 	}
@@ -210,19 +215,19 @@ func TestEngine_Evaluate_ExpiredToleration(t *testing.T) {
 	}
 
 	if decision.Passed {
-		t.Errorf("expected policy to fail (toleration expired), got passed")
+		t.Errorf("expected policy to fail (VEX statement expired), got passed")
 	}
 
 	if decision.CriticalVulnCount != 1 {
 		t.Errorf("expected 1 critical vulnerability, got %d", decision.CriticalVulnCount)
 	}
 
-	if decision.ToleratedVulnCount != 0 {
-		t.Errorf("expected 0 tolerated vulnerabilities (expired), got %d", decision.ToleratedVulnCount)
+	if decision.ExemptedVulnCount != 0 {
+		t.Errorf("expected 0 exempted vulnerabilities (expired), got %d", decision.ExemptedVulnCount)
 	}
 }
 
-func TestEngine_Evaluate_ActiveToleration(t *testing.T) {
+func TestEngine_Evaluate_ActiveVEXStatement(t *testing.T) {
 	engine, err := NewEngine(slog.Default(), PolicyConfig{
 		Expression: "criticalCount == 0",
 	})
@@ -239,10 +244,11 @@ func TestEngine_Evaluate_ActiveToleration(t *testing.T) {
 	}
 
 	futureTime := time.Now().Add(30 * 24 * time.Hour).Unix()
-	tolerations := []types.CVEToleration{
+	tolerations := []types.VEXStatement{
 		{
 			ID:        "CVE-2024-0001",
-			Statement: "temporary toleration",
+			State:     types.VEXStateNotAffected,
+			Detail:    "temporary toleration",
 			ExpiresAt: &futureTime,
 		},
 	}
@@ -253,19 +259,19 @@ func TestEngine_Evaluate_ActiveToleration(t *testing.T) {
 	}
 
 	if !decision.Passed {
-		t.Errorf("expected policy to pass (toleration active), got failed")
+		t.Errorf("expected policy to pass (VEX statement active), got failed")
 	}
 
 	if decision.CriticalVulnCount != 0 {
 		t.Errorf("expected 0 critical vulnerabilities, got %d", decision.CriticalVulnCount)
 	}
 
-	if decision.ToleratedVulnCount != 1 {
-		t.Errorf("expected 1 tolerated vulnerability, got %d", decision.ToleratedVulnCount)
+	if decision.ExemptedVulnCount != 1 {
+		t.Errorf("expected 1 exempted vulnerability, got %d", decision.ExemptedVulnCount)
 	}
 }
 
-func TestEngine_Evaluate_ExpiringTolerationWarning(t *testing.T) {
+func TestEngine_Evaluate_ExpiringVEXStatementWarning(t *testing.T) {
 	engine, err := NewEngine(slog.Default(), PolicyConfig{
 		Expression: "criticalCount == 0",
 	})
@@ -281,12 +287,13 @@ func TestEngine_Evaluate_ExpiringTolerationWarning(t *testing.T) {
 		},
 	}
 
-	// Toleration expires in 3 days (within 7-day warning window)
+	// VEX statement expires in 3 days (within 7-day warning window)
 	expiringTime := time.Now().Add(3 * 24 * time.Hour).Unix()
-	tolerations := []types.CVEToleration{
+	tolerations := []types.VEXStatement{
 		{
 			ID:        "CVE-2024-0001",
-			Statement: "expiring soon",
+			State:     types.VEXStateNotAffected,
+			Detail:    "expiring soon",
 			ExpiresAt: &expiringTime,
 		},
 	}
@@ -297,15 +304,15 @@ func TestEngine_Evaluate_ExpiringTolerationWarning(t *testing.T) {
 	}
 
 	if !decision.Passed {
-		t.Errorf("expected policy to pass (toleration still active), got failed")
+		t.Errorf("expected policy to pass (VEX statement still active), got failed")
 	}
 
-	if len(decision.ExpiringTolerations) != 1 {
-		t.Errorf("expected 1 expiring toleration warning, got %d", len(decision.ExpiringTolerations))
+	if len(decision.ExpiringVEXStatements) != 1 {
+		t.Errorf("expected 1 expiring VEX statement warning, got %d", len(decision.ExpiringVEXStatements))
 	}
 
-	if len(decision.ExpiringTolerations) > 0 {
-		expiring := decision.ExpiringTolerations[0]
+	if len(decision.ExpiringVEXStatements) > 0 {
+		expiring := decision.ExpiringVEXStatements[0]
 		if expiring.CVEID != "CVE-2024-0001" {
 			t.Errorf("expected CVE-2024-0001, got %s", expiring.CVEID)
 		}
@@ -315,7 +322,7 @@ func TestEngine_Evaluate_ExpiringTolerationWarning(t *testing.T) {
 	}
 }
 
-func TestEngine_Evaluate_NoExpiringTolerationWarning(t *testing.T) {
+func TestEngine_Evaluate_NoExpiringVEXStatementWarning(t *testing.T) {
 	engine, err := NewEngine(slog.Default(), PolicyConfig{
 		Expression: "criticalCount == 0",
 	})
@@ -331,12 +338,13 @@ func TestEngine_Evaluate_NoExpiringTolerationWarning(t *testing.T) {
 		},
 	}
 
-	// Toleration expires in 30 days (outside 7-day warning window)
+	// VEX statement expires in 30 days (outside 7-day warning window)
 	futureTime := time.Now().Add(30 * 24 * time.Hour).Unix()
-	tolerations := []types.CVEToleration{
+	tolerations := []types.VEXStatement{
 		{
 			ID:        "CVE-2024-0001",
-			Statement: "not expiring soon",
+			State:     types.VEXStateNotAffected,
+			Detail:    "not expiring soon",
 			ExpiresAt: &futureTime,
 		},
 	}
@@ -346,12 +354,12 @@ func TestEngine_Evaluate_NoExpiringTolerationWarning(t *testing.T) {
 		t.Fatalf("unexpected error: %v", err)
 	}
 
-	if len(decision.ExpiringTolerations) != 0 {
-		t.Errorf("expected 0 expiring toleration warnings, got %d", len(decision.ExpiringTolerations))
+	if len(decision.ExpiringVEXStatements) != 0 {
+		t.Errorf("expected 0 expiring VEX statement warnings, got %d", len(decision.ExpiringVEXStatements))
 	}
 }
 
-func TestEngine_Evaluate_PermanentToleration(t *testing.T) {
+func TestEngine_Evaluate_PermanentVEXStatement(t *testing.T) {
 	engine, err := NewEngine(slog.Default(), PolicyConfig{
 		Expression: "criticalCount == 0",
 	})
@@ -367,11 +375,12 @@ func TestEngine_Evaluate_PermanentToleration(t *testing.T) {
 		},
 	}
 
-	// Toleration with no expiry date (permanent)
-	tolerations := []types.CVEToleration{
+	// VEX statement with no expiry date (permanent)
+	tolerations := []types.VEXStatement{
 		{
 			ID:        "CVE-2024-0001",
-			Statement: "permanent toleration",
+			State:     types.VEXStateNotAffected,
+			Detail:    "permanent toleration",
 			ExpiresAt: nil,
 		},
 	}
@@ -382,11 +391,11 @@ func TestEngine_Evaluate_PermanentToleration(t *testing.T) {
 	}
 
 	if !decision.Passed {
-		t.Errorf("expected policy to pass (permanent toleration), got failed")
+		t.Errorf("expected policy to pass (permanent VEX statement), got failed")
 	}
 
-	if len(decision.ExpiringTolerations) != 0 {
-		t.Errorf("expected 0 expiring toleration warnings for permanent toleration, got %d", len(decision.ExpiringTolerations))
+	if len(decision.ExpiringVEXStatements) != 0 {
+		t.Errorf("expected 0 expiring VEX statement warnings for permanent VEX statement, got %d", len(decision.ExpiringVEXStatements))
 	}
 }
 
@@ -452,12 +461,13 @@ func TestEngine_SetExpiryWarningWindow(t *testing.T) {
 		},
 	}
 
-	// Toleration expires in 10 days (within 14-day window)
+	// VEX statement expires in 10 days (within 14-day window)
 	expiringTime := time.Now().Add(10 * 24 * time.Hour).Unix()
-	tolerations := []types.CVEToleration{
+	tolerations := []types.VEXStatement{
 		{
 			ID:        "CVE-2024-0001",
-			Statement: "expiring within custom window",
+			State:     types.VEXStateNotAffected,
+			Detail:    "expiring within custom window",
 			ExpiresAt: &expiringTime,
 		},
 	}
@@ -467,8 +477,8 @@ func TestEngine_SetExpiryWarningWindow(t *testing.T) {
 		t.Fatalf("unexpected error: %v", err)
 	}
 
-	if len(decision.ExpiringTolerations) != 1 {
-		t.Errorf("expected 1 expiring toleration warning with custom window, got %d", len(decision.ExpiringTolerations))
+	if len(decision.ExpiringVEXStatements) != 1 {
+		t.Errorf("expected 1 expiring VEX statement warning with custom window, got %d", len(decision.ExpiringVEXStatements))
 	}
 }
 
@@ -631,7 +641,7 @@ func TestEngine_CEL_DefaultPolicy(t *testing.T) {
 	}
 }
 
-func TestEngine_Evaluate_MixedExpiredAndActiveTolerations(t *testing.T) {
+func TestEngine_Evaluate_MixedExpiredAndActiveVEXStatements(t *testing.T) {
 	engine, err := NewEngine(slog.Default(), PolicyConfig{
 		Expression: "criticalCount == 0",
 	})
@@ -653,20 +663,23 @@ func TestEngine_Evaluate_MixedExpiredAndActiveTolerations(t *testing.T) {
 	expiredTime := time.Now().Add(-24 * time.Hour).Unix()
 	futureTime := time.Now().Add(30 * 24 * time.Hour).Unix()
 
-	tolerations := []types.CVEToleration{
+	tolerations := []types.VEXStatement{
 		{
 			ID:        "CVE-2024-0001",
-			Statement: "expired toleration",
+			State:     types.VEXStateNotAffected,
+			Detail:    "expired toleration",
 			ExpiresAt: &expiredTime,
 		},
 		{
 			ID:        "CVE-2024-0002",
-			Statement: "active toleration",
+			State:     types.VEXStateNotAffected,
+			Detail:    "active toleration",
 			ExpiresAt: &futureTime,
 		},
 		{
 			ID:        "CVE-2024-0003",
-			Statement: "permanent toleration",
+			State:     types.VEXStateNotAffected,
+			Detail:    "permanent toleration",
 			ExpiresAt: nil,
 		},
 	}
@@ -676,35 +689,35 @@ func TestEngine_Evaluate_MixedExpiredAndActiveTolerations(t *testing.T) {
 		t.Fatalf("unexpected error: %v", err)
 	}
 
-	// Should fail because CVE-2024-0001 toleration is expired (1 critical remains)
+	// Should fail because CVE-2024-0001 VEX statement is expired (1 critical remains)
 	if decision.Passed {
-		t.Errorf("expected policy to fail (1 critical with expired toleration), got passed")
+		t.Errorf("expected policy to fail (1 critical with expired VEX statement), got passed")
 	}
 
-	// Should have 1 critical (CVE-2024-0001 with expired toleration)
+	// Should have 1 critical (CVE-2024-0001 with expired VEX statement)
 	if decision.CriticalVulnCount != 1 {
 		t.Errorf("expected 1 critical vulnerability, got %d", decision.CriticalVulnCount)
 	}
 
-	// Should have 2 tolerated (CVE-2024-0002 and CVE-2024-0003)
-	if decision.ToleratedVulnCount != 2 {
-		t.Errorf("expected 2 tolerated vulnerabilities, got %d", decision.ToleratedVulnCount)
+	// Should have 2 exempted (CVE-2024-0002 and CVE-2024-0003)
+	if decision.ExemptedVulnCount != 2 {
+		t.Errorf("expected 2 exempted vulnerabilities, got %d", decision.ExemptedVulnCount)
 	}
 
-	// Check that only active tolerations are in the list
-	if len(decision.ToleratedCVEs) != 2 {
-		t.Errorf("expected 2 tolerated CVE IDs, got %d", len(decision.ToleratedCVEs))
+	// Check that only active VEX statements are in the list
+	if len(decision.ExemptedCVEs) != 2 {
+		t.Errorf("expected 2 exempted CVE IDs, got %d", len(decision.ExemptedCVEs))
 	}
 
-	// Verify the expired CVE is not in the tolerated list
-	for _, cveID := range decision.ToleratedCVEs {
+	// Verify the expired CVE is not in the exempted list
+	for _, cveID := range decision.ExemptedCVEs {
 		if cveID == "CVE-2024-0001" {
-			t.Errorf("expired CVE-2024-0001 should not be in tolerated list")
+			t.Errorf("expired CVE-2024-0001 should not be in exempted list")
 		}
 	}
 }
 
-func TestEngine_Evaluate_AllTolerationsExpired(t *testing.T) {
+func TestEngine_Evaluate_AllVEXStatementsExpired(t *testing.T) {
 	engine, err := NewEngine(slog.Default(), PolicyConfig{
 		Expression: "criticalCount == 0 && highCount == 0",
 	})
@@ -724,15 +737,17 @@ func TestEngine_Evaluate_AllTolerationsExpired(t *testing.T) {
 	expiredTime1 := time.Now().Add(-48 * time.Hour).Unix()
 	expiredTime2 := time.Now().Add(-1 * time.Hour).Unix()
 
-	tolerations := []types.CVEToleration{
+	tolerations := []types.VEXStatement{
 		{
 			ID:        "CVE-2024-0001",
-			Statement: "expired 2 days ago",
+			State:     types.VEXStateNotAffected,
+			Detail:    "expired 2 days ago",
 			ExpiresAt: &expiredTime1,
 		},
 		{
 			ID:        "CVE-2024-0002",
-			Statement: "expired 1 hour ago",
+			State:     types.VEXStateNotAffected,
+			Detail:    "expired 1 hour ago",
 			ExpiresAt: &expiredTime2,
 		},
 	}
@@ -742,28 +757,28 @@ func TestEngine_Evaluate_AllTolerationsExpired(t *testing.T) {
 		t.Fatalf("unexpected error: %v", err)
 	}
 
-	// Should fail because all tolerations are expired
+	// Should fail because all VEX statements are expired
 	if decision.Passed {
-		t.Errorf("expected policy to fail (all tolerations expired), got passed")
+		t.Errorf("expected policy to fail (all VEX statements expired), got passed")
 	}
 
-	// Should have 1 critical and 1 high (no active tolerations)
+	// Should have 1 critical and 1 high (no active VEX statements)
 	if decision.CriticalVulnCount != 1 {
 		t.Errorf("expected 1 critical vulnerability, got %d", decision.CriticalVulnCount)
 	}
 
-	// Should have 0 tolerated (all expired)
-	if decision.ToleratedVulnCount != 0 {
-		t.Errorf("expected 0 tolerated vulnerabilities, got %d", decision.ToleratedVulnCount)
+	// Should have 0 exempted (all expired)
+	if decision.ExemptedVulnCount != 0 {
+		t.Errorf("expected 0 exempted vulnerabilities, got %d", decision.ExemptedVulnCount)
 	}
 
-	if len(decision.ToleratedCVEs) != 0 {
-		t.Errorf("expected 0 tolerated CVE IDs, got %d", len(decision.ToleratedCVEs))
+	if len(decision.ExemptedCVEs) != 0 {
+		t.Errorf("expected 0 exempted CVE IDs, got %d", len(decision.ExemptedCVEs))
 	}
 }
 
-func TestEngine_Evaluate_ExpiredTolerationWithCELFilter(t *testing.T) {
-	// Test that expired tolerations work correctly with CEL expressions that reference tolerated field
+func TestEngine_Evaluate_ExpiredVEXStatementWithCELFilter(t *testing.T) {
+	// Test that expired VEX statements work correctly with CEL expressions that reference tolerated field
 	engine, err := NewEngine(slog.Default(), PolicyConfig{
 		Expression: `vulnerabilities.filter(v, v.severity == "CRITICAL" && !v.tolerated).size() == 0`,
 	})
@@ -783,15 +798,17 @@ func TestEngine_Evaluate_ExpiredTolerationWithCELFilter(t *testing.T) {
 	expiredTime := time.Now().Add(-24 * time.Hour).Unix()
 	futureTime := time.Now().Add(30 * 24 * time.Hour).Unix()
 
-	tolerations := []types.CVEToleration{
+	tolerations := []types.VEXStatement{
 		{
 			ID:        "CVE-2024-0001",
-			Statement: "expired toleration",
+			State:     types.VEXStateNotAffected,
+			Detail:    "expired toleration",
 			ExpiresAt: &expiredTime,
 		},
 		{
 			ID:        "CVE-2024-0002",
-			Statement: "active toleration",
+			State:     types.VEXStateNotAffected,
+			Detail:    "active toleration",
 			ExpiresAt: &futureTime,
 		},
 	}
@@ -801,14 +818,14 @@ func TestEngine_Evaluate_ExpiredTolerationWithCELFilter(t *testing.T) {
 		t.Fatalf("unexpected error: %v", err)
 	}
 
-	// Should fail because CVE-2024-0001 has expired toleration and is not marked as tolerated
+	// Should fail because CVE-2024-0001 has expired VEX statement and is not marked as exempted
 	if decision.Passed {
-		t.Errorf("expected policy to fail (1 critical not tolerated due to expiry), got passed")
+		t.Errorf("expected policy to fail (1 critical not exempted due to expiry), got passed")
 	}
 
-	// Only CVE-2024-0002 should be tolerated
-	if decision.ToleratedVulnCount != 1 {
-		t.Errorf("expected 1 tolerated vulnerability, got %d", decision.ToleratedVulnCount)
+	// Only CVE-2024-0002 should be exempted
+	if decision.ExemptedVulnCount != 1 {
+		t.Errorf("expected 1 exempted vulnerability, got %d", decision.ExemptedVulnCount)
 	}
 }
 

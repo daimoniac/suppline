@@ -9,8 +9,8 @@ Self-hosted container image intake gateway for Kubernetes: **Mirror → Scan →
 Automates the container supply chain security workflow:
 1. **Mirror** — syncs images from remote registries (Docker Hub, Quay, etc.) to a private registry via `regsync`
 2. **Scan** — runs Trivy in client-server mode; produces CycloneDX SBOMs and CVE reports
-3. **Gate** — evaluates CEL-based policies (default: `criticalCount == 0`) with per-repo CVE toleration support
-4. **Attest** — signs SBOM, vulnerability report, and SCAI attestations with Sigstore/cosign
+3. **Gate** — evaluates CEL-based policies (default: `criticalCount == 0`) with per-repo VEX (Vulnerability Exploitability Exchange) support
+4. **Attest** — signs SBOM, vulnerability report, VEX, and SCAI attestations with Sigstore/cosign
 5. **Serve** — REST API + Prometheus metrics; Kyverno/OPA enforce attestation-verified-only image deployments
 
 Single Go binary. Air-gap compatible. No SaaS dependency.
@@ -57,12 +57,12 @@ internal/
   errors/                   Domain error types: TransientError, PermanentError, ManifestNotFoundError
   integration/              Kyverno ClusterPolicy YAML generation; public key retrieval
   observability/            Prometheus metrics, health check, slog logger, metrics+health server
-  policy/                   CEL policy engine; per-repo toleration filtering; expiry warnings
+  policy/                   CEL policy engine; VEX-based exemption filtering; expiry warnings
   queue/                    In-memory priority queue; digest-based deduplication; two priority channels
   registry/                 go-containerregistry client: lists repos/tags, get digests/manifests
   scanner/                  Trivy CLI wrapper (client-server mode); local fallback; SBOM generation
   statestore/               SQLite persistence (WAL mode); StateStore / StateStoreQuery / StateStoreCleanup interfaces
-  types/                    Domain types: Vulnerability, CVEToleration, VulnerabilityRecord
+  types/                    Domain types: Vulnerability, VEXStatement, VulnerabilityRecord
   watcher/                  Registry poller; enqueues ScanTask to queue on new/updated images
   worker/                   Concurrent processors; Pipeline: Scan → Policy → Attest → Persist
 build/swagger/              Generated Swagger docs (do not edit manually)
@@ -80,8 +80,8 @@ Watcher (polls registry)
         └─► ImageWorker (N goroutines, default 3)
               └─► Pipeline.Execute()
                     1. Scanner   → SBOM + CVE list
-                    2. Policy    → CEL evaluation + toleration filtering
-                    3. Attestor  → cosign sign SBOM / vuln / SCAI
+                    2. Policy    → CEL evaluation + VEX exemption filtering
+                    3. Attestor  → cosign sign SBOM / vuln / VEX / SCAI
                     4. StateStore → write to SQLite
 
 API (port 8080) ──────────────────────────────────► StateStore (read)
@@ -110,9 +110,11 @@ sync:
   - source: nginx
     target: myprivateregistry/nginx
     type: repository
-    x-tolerate:
+    x-vex:
       - id: CVE-2024-56171
-        statement: "accepted risk"
+        state: not_affected
+        justification: vulnerable_code_not_present
+        detail: "accepted risk"
         expires_at: 2025-12-31T23:59:59Z
 ```
 
@@ -189,7 +191,7 @@ WAL mode, foreign keys enabled, 5-connection pool. Schema:
 - `artifacts` — per-digest record with scan schedule
 - `scans` — vuln counts, policy pass/fail, attest flags, duration, error
 - `vulnerabilities` — individual CVEs linked to scans
-- `tolerated_cves` — applied tolerations per scan
+- `tolerated_cves` — applied VEX exemptions per scan (legacy name retained for backward compatibility)
 
 Postgres is planned but not implemented. Do not add a second store backend without discussion.
 

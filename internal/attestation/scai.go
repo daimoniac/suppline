@@ -23,7 +23,7 @@ func NewSCAIGenerator(config *config.RegsyncConfig, logger *slog.Logger) *SCAIGe
 	if logger == nil {
 		logger = slog.Default()
 	}
-	
+
 	return &SCAIGenerator{
 		config: config,
 		logger: logger,
@@ -67,7 +67,7 @@ func (g *SCAIGenerator) calculateValidityWindow(scanTime time.Time, target strin
 	}
 
 	validUntil := scanTime.Add(interval).Add(extension)
-	
+
 	g.logger.Debug("calculated SCAI validity window",
 		"target", target,
 		"rescan_interval", interval,
@@ -77,32 +77,32 @@ func (g *SCAIGenerator) calculateValidityWindow(scanTime time.Time, target strin
 	return validUntil
 }
 
-// matchToleratedVulnerabilities filters scan results against configured tolerations
-// and builds a list of tolerated vulnerabilities with full details including
-// vulnerability description and fixed version information
-func (g *SCAIGenerator) matchToleratedVulnerabilities(scanResult *scanner.ScanResult, target string) []SCAIAttributeItem {
+// matchExemptedVulnerabilities filters scan results against configured VEX statements
+// and builds a list of VEX-exempted vulnerabilities with full details
+func (g *SCAIGenerator) matchExemptedVulnerabilities(scanResult *scanner.ScanResult, target string) []SCAIAttributeItem {
 	var attributes []SCAIAttributeItem
 
 	for _, vuln := range scanResult.Vulnerabilities {
-		tolerated, toleration := g.config.IsToleratedCVE(target, vuln.ID)
-		if tolerated && toleration != nil {
-			evidence := SCAIToleratedVulnEvidence{
-				CVEID:        vuln.ID,
-				Severity:     vuln.Severity,
-				PackageName:  vuln.PackageName,
-				Version:      vuln.Version,
-				FixedVersion: vuln.FixedVersion,
-				Description:  vuln.Description,
-				Statement:    toleration.Statement,
+		exempted, stmt := g.config.IsVEXExempted(target, vuln.ID)
+		if exempted && stmt != nil {
+			evidence := SCAIExemptedVulnEvidence{
+				CVEID:         vuln.ID,
+				Severity:      vuln.Severity,
+				PackageName:   vuln.PackageName,
+				Version:       vuln.Version,
+				FixedVersion:  vuln.FixedVersion,
+				Description:   vuln.Description,
+				State:         string(stmt.State),
+				Justification: string(stmt.Justification),
+				Detail:        stmt.Detail,
 			}
 
-			// Include expiry date if present
-			if toleration.ExpiresAt != nil {
-				evidence.ToleratedUntil = toleration.ExpiresAt
+			if stmt.ExpiresAt != nil {
+				evidence.ExpiresAt = stmt.ExpiresAt
 			}
 
 			attributes = append(attributes, SCAIAttributeItem{
-				Attribute: "tolerated-vulnerability",
+				Attribute: "vex-exempted-vulnerability",
 				Evidence:  evidence,
 			})
 		}
@@ -118,6 +118,7 @@ func (g *SCAIGenerator) matchToleratedVulnerabilities(scanResult *scanner.ScanRe
 //   - scanResult: vulnerability scan results
 //   - target: target repository from regsync config (for toleration lookup)
 //   - policyDecision: policy evaluation result to determine scan status
+//
 // Returns: SCAI attestation structure ready for JSON serialization
 func (g *SCAIGenerator) GenerateSCAI(
 	ctx context.Context,
@@ -139,8 +140,8 @@ func (g *SCAIGenerator) GenerateSCAI(
 	// Calculate validity window
 	validUntil := g.calculateValidityWindow(scanResult.ScannedAt, target)
 
-	// Match tolerated vulnerabilities
-	attributes := g.matchToleratedVulnerabilities(scanResult, target)
+	// Match VEX-exempted vulnerabilities
+	attributes := g.matchExemptedVulnerabilities(scanResult, target)
 
 	// Determine scan status based on policy decision
 	scanStatus := "passed"
@@ -171,7 +172,7 @@ func (g *SCAIGenerator) GenerateSCAI(
 	g.logger.Info("generated SCAI attestation",
 		"image_ref", imageRef,
 		"scan_status", scanStatus,
-		"tolerated_count", len(attributes),
+		"exempted_count", len(attributes),
 		"valid_until", validUntil.Format(time.RFC3339))
 
 	return scai, nil

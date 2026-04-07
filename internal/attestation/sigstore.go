@@ -11,6 +11,7 @@ import (
 
 	"github.com/daimoniac/suppline/internal/errors"
 	"github.com/daimoniac/suppline/internal/scanner"
+	"github.com/daimoniac/suppline/internal/types"
 )
 
 // SigstoreAttestor implements the Attestor interface using cosign CLI
@@ -43,7 +44,7 @@ func NewSigstoreAttestor(config AttestationConfig, logger *slog.Logger) (*Sigsto
 	if err != nil {
 		return nil, errors.NewPermanentf("failed to create temp key file: %w", err)
 	}
-	
+
 	if _, err := tmpFile.Write(keyData); err != nil {
 		tmpFile.Close()
 		os.Remove(tmpFile.Name())
@@ -184,6 +185,93 @@ func (a *SigstoreAttestor) AttestVulnerabilities(ctx context.Context, imageRef s
 
 	a.logger.Debug("vulnerability attestation completed",
 		"image_ref", imageRef,
+		"duration", time.Since(startTime))
+
+	return nil
+}
+
+// AttestVEX creates and pushes VEX attestation using cosign CLI
+func (a *SigstoreAttestor) AttestVEX(ctx context.Context, imageRef string, statements []types.AppliedVEXStatement) error {
+	startTime := time.Now()
+	a.logger.Debug("starting VEX attestation", "image_ref", imageRef, "statement_count", len(statements))
+
+	if len(statements) == 0 {
+		a.logger.Debug("no VEX statements to attest, skipping", "image_ref", imageRef)
+		return nil
+	}
+
+	// Build VEX predicate
+	predicate := VEXPredicate{
+		CreatedAt: time.Now().UTC(),
+	}
+	for _, s := range statements {
+		predicate.Statements = append(predicate.Statements, VEXStatementInfo{
+			CVEID:         s.CVEID,
+			State:         string(s.State),
+			Justification: string(s.Justification),
+			Detail:        s.Detail,
+			ExpiresAt:     s.ExpiresAt,
+		})
+		predicate.Summary.TotalStatements++
+		switch s.State {
+		case types.VEXStateNotAffected:
+			predicate.Summary.NotAffected++
+		case types.VEXStateAffected:
+			predicate.Summary.Affected++
+		case types.VEXStateInTriage:
+			predicate.Summary.InTriage++
+		case types.VEXStateFalsePositive:
+			predicate.Summary.FalsePositive++
+		case types.VEXStateResolved, types.VEXStateResolvedWithPedigree:
+			predicate.Summary.Resolved++
+		}
+	}
+
+	// Serialize predicate to JSON
+	vexJSON, err := json.MarshalIndent(predicate, "", "  ")
+	if err != nil {
+		return errors.NewPermanentf("failed to serialize VEX predicate: %w", err)
+	}
+
+	// Write to temp file
+	tmpFile, err := os.CreateTemp("", "vex-*.json")
+	if err != nil {
+		return errors.NewTransientf("failed to create temp file: %w", err)
+	}
+	defer os.Remove(tmpFile.Name())
+	defer tmpFile.Close()
+
+	if _, err := tmpFile.Write(vexJSON); err != nil {
+		return errors.NewTransientf("failed to write VEX to temp file: %w", err)
+	}
+	tmpFile.Close()
+
+	// Use cosign CLI to attest with CycloneDX VEX type
+	cmd := exec.CommandContext(ctx, "cosign", "attest",
+		"--key", a.keyPath,
+		"--type", "https://cyclonedx.org/vex",
+		"--predicate", tmpFile.Name(),
+		"--replace=true",
+		"--yes",
+		"--tlog-upload=false",
+		imageRef,
+	)
+	cmd.Env = os.Environ()
+	if password := os.Getenv("ATTESTATION_KEY_PASSWORD"); password != "" {
+		cmd.Env = append(cmd.Env, "COSIGN_PASSWORD="+password)
+	}
+
+	output, err := cmd.CombinedOutput()
+	if err != nil {
+		a.logger.Error("cosign VEX attestation failed",
+			"image_ref", imageRef,
+			"error", err)
+		return errors.NewTransientf("failed to attest VEX: %w (output: %s)", err, string(output))
+	}
+
+	a.logger.Info("VEX attestation completed",
+		"image_ref", imageRef,
+		"statement_count", len(statements),
 		"duration", time.Since(startTime))
 
 	return nil

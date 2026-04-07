@@ -12,7 +12,7 @@ suppline uses CEL (Common Expression Language) for flexible, powerful security p
 | Block critical + high | `criticalCount == 0 && highCount == 0` |
 | Block medium+ | `criticalCount == 0 && highCount == 0 && mediumCount == 0` |
 | Allow up to 2 high | `criticalCount == 0 && highCount <= 2` |
-| Block only fixable vulns | `vulnerabilities.filter(v, v.severity == "CRITICAL" && v.fixedVersion != "" && !v.tolerated).size() == 0` |
+| Block only fixable vulns | `vulnerabilities.filter(v, v.severity == "CRITICAL" && v.fixedVersion != "" && !v.exempted).size() == 0` |
 
 ## Configuration
 
@@ -45,11 +45,11 @@ sync:
 
 ### Vulnerability Counts
 
-- `criticalCount` - Number of critical vulnerabilities (excluding tolerated)
-- `highCount` - Number of high vulnerabilities (excluding tolerated)
-- `mediumCount` - Number of medium vulnerabilities (excluding tolerated)
-- `lowCount` - Number of low vulnerabilities (excluding tolerated)
-- `toleratedCount` - Number of tolerated vulnerabilities
+- `criticalCount` - Number of critical vulnerabilities (excluding VEX-exempted)
+- `highCount` - Number of high vulnerabilities (excluding VEX-exempted)
+- `mediumCount` - Number of medium vulnerabilities (excluding VEX-exempted)
+- `lowCount` - Number of low vulnerabilities (excluding VEX-exempted)
+- `exemptedCount` - Number of VEX-exempted vulnerabilities (`toleratedCount` also works for backward compatibility)
 
 ### Other Variables
 
@@ -66,9 +66,9 @@ Each item in the `vulnerabilities` list has:
 - `version` - Installed version (string)
 - `fixedVersion` - Version with fix (string, empty if no fix)
 - `description` - Vulnerability description (string)
-- `tolerated` - Whether this CVE is tolerated (bool)
-- `tolerationStatement` - Reason for toleration (string, if tolerated)
-- `tolerationExpiry` - Expiry timestamp (string, RFC3339, if tolerated)
+- `tolerated` - Whether this CVE is exempted by a VEX statement (bool; alias: `exempted`)
+- `tolerationStatement` - VEX detail/reason (string, if exempted; alias: `vexDetail`)
+- `tolerationExpiry` - Expiry timestamp (string, RFC3339, if exempted; alias: `vexExpiry`)
 
 ## CEL Operators
 
@@ -131,7 +131,7 @@ x-policy:
     vulnerabilities.filter(v,
       v.severity == "CRITICAL" &&
       v.fixedVersion != "" &&
-      !v.tolerated
+      !v.exempted
     ).size() == 0
   failureMessage: "fixable critical vulnerabilities found"
 ```
@@ -168,7 +168,7 @@ x-policy:
 
 ### Allow Specific CVEs
 
-Allow specific CVEs without using tolerations:
+Allow specific CVEs without using VEX statements:
 
 ```yaml
 x-policy:
@@ -183,32 +183,35 @@ x-policy:
 ## Policy Evaluation Flow
 
 1. **Scan completes** - Trivy returns vulnerability list
-2. **Apply tolerations** - Tolerated CVEs are marked and excluded from counts
+2. **Apply VEX statements** - VEX-exempted CVEs are marked and excluded from counts
 3. **Evaluate policy** - CEL expression is evaluated with current data
 4. **Make decision** - If expression returns `true`, policy passes
-5. **Attest results** - All images receive attestations (SBOM, vulnerabilities, SCAI)
+5. **Attest results** - All images receive attestations (SBOM, vulnerabilities, VEX, SCAI)
 
-## Interaction with Tolerations
+## Interaction with VEX Statements
 
-Tolerations are applied **before** policy evaluation:
+VEX statements are applied **before** policy evaluation:
 
 ```yaml
 sync:
   - source: nginx
     target: myregistry/nginx
     type: repository
-    x-tolerate:
+    x-vex:
       - id: CVE-2024-56171
-        statement: "Accepted risk"
+        state: not_affected
+        justification: vulnerable_code_not_present
+        detail: "Accepted risk"
         expires_at: 2025-12-31T23:59:59Z
     x-policy:
       expression: "criticalCount == 0"  # CVE-2024-56171 won't count
 ```
 
 **Behavior:**
-- Tolerated CVEs are excluded from `criticalCount`, `highCount`, etc.
-- Tolerated CVEs have `tolerated: true` in the `vulnerabilities` list
-- Expired tolerations are ignored (CVE counts as normal)
+- VEX-exempted CVEs (state `not_affected` and not expired) are excluded from `criticalCount`, `highCount`, etc.
+- Exempted CVEs have `exempted: true` (and `tolerated: true` for backward compatibility) in the `vulnerabilities` list
+- Expired VEX statements are ignored (CVE counts as normal)
+- Only `not_affected` state exempts CVEs from policy counts; other states (e.g. `in_triage`, `affected`) are informational
 
 ## Testing Policies
 
@@ -238,14 +241,16 @@ To test a policy without affecting production:
 
 ### Start Strict, Relax as Needed
 
-Begin with a strict policy and add tolerations for specific CVEs:
+Begin with a strict policy and add VEX statements for specific CVEs:
 
 ```yaml
 x-policy:
   expression: "criticalCount == 0 && highCount == 0"
-x-tolerate:
+x-vex:
   - id: CVE-2024-12345
-    statement: "No fix available, mitigated by network policy"
+    state: not_affected
+    justification: vulnerable_code_not_in_execute_path
+    detail: "No fix available, mitigated by network policy"
     expires_at: 2025-06-30T23:59:59Z
 ```
 
@@ -256,7 +261,7 @@ Help developers understand why an image failed:
 ```yaml
 x-policy:
   expression: "criticalCount == 0 && highCount <= 3"
-  failureMessage: "Image has critical vulnerabilities or more than 3 high severity issues. Please update base image or add toleration with justification."
+  failureMessage: "Image has critical vulnerabilities or more than 3 high severity issues. Please update base image or add VEX statement with justification."
 ```
 
 ### Document Policy Decisions
@@ -308,7 +313,7 @@ sync:
 ### Policy Always Fails
 
 **Check:**
-1. Are there untolerated critical vulnerabilities?
+1. Are there unexempted critical vulnerabilities?
 2. Is the expression syntax correct?
 3. Are variable names spelled correctly?
 
@@ -324,12 +329,12 @@ docker compose logs suppline | grep "policy evaluation"
 
 **Check:**
 1. Is the expression too lenient?
-2. Are all CVEs being tolerated?
+2. Are all CVEs being exempted by VEX statements?
 3. Is the policy being applied to the correct repository?
 
 ```bash
-# Check toleration status
-curl http://localhost:8080/api/v1/tolerations
+# Check VEX statement status
+curl http://localhost:8080/api/v1/vex
 
 # Verify policy configuration
 cat suppline.yml | grep -A5 x-policy

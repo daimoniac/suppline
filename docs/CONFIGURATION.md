@@ -14,7 +14,7 @@ Complete reference for all configuration options in suppline.
 Configuration is loaded from multiple sources in this priority order:
 
 1. **Default values** - Built-in defaults in the application
-2. **Regsync file** - Registry and toleration configuration from `suppline.yml`
+2. **Regsync file** - Registry and VEX configuration from `suppline.yml`
 3. **Environment variables** - Runtime configuration overrides
 
 ## Environment Variables
@@ -79,7 +79,7 @@ Configuration is loaded from multiple sources in this priority order:
 
 ## Regsync Configuration
 
-The `suppline.yml` file defines registry credentials, sync entries, and CVE tolerations.
+The `suppline.yml` file defines registry credentials, sync entries, and VEX (Vulnerability Exploitability Exchange) statements.
 
 ### File Structure
 
@@ -102,9 +102,11 @@ defaults:
   x-policy:                   # Default policy
     expression: string        # CEL expression
     failureMessage: string    # Custom failure message
-  x-tolerate:                 # Default CVE tolerations (optional)
+  x-vex:                     # Default VEX statements (optional)
     - id: string              # CVE identifier
-      statement: string       # Reason for toleration
+      state: string           # Analysis state (not_affected, affected, in_triage, false_positive, resolved, resolved_with_pedigree)
+      justification: string   # Justification (required when state is not_affected)
+      detail: string          # Explanation / reason
       expires_at: string      # RFC3339 timestamp or date (YYYY-MM-DD) (optional)
 
 # Sync entries
@@ -118,9 +120,11 @@ sync:
     x-policy:                 # Policy override (optional)
       expression: string
       failureMessage: string
-    x-tolerate:               # CVE tolerations (optional)
+    x-vex:                    # VEX statements (optional)
       - id: string            # CVE identifier
-        statement: string     # Reason for toleration
+        state: string         # Analysis state
+        justification: string # Justification (for not_affected state)
+        detail: string        # Explanation / reason
         expires_at: string    # RFC3339 timestamp or date (YYYY-MM-DD) (optional)
 ```
 
@@ -273,11 +277,11 @@ sync:
 Policies use CEL (Common Expression Language) to evaluate security posture.
 
 **Available Variables:**
-- `criticalCount` - Number of critical vulnerabilities (excluding tolerated)
-- `highCount` - Number of high vulnerabilities (excluding tolerated)
-- `mediumCount` - Number of medium vulnerabilities (excluding tolerated)
-- `lowCount` - Number of low vulnerabilities (excluding tolerated)
-- `toleratedCount` - Number of tolerated vulnerabilities
+- `criticalCount` - Number of critical vulnerabilities (excluding VEX-exempted)
+- `highCount` - Number of high vulnerabilities (excluding VEX-exempted)
+- `mediumCount` - Number of medium vulnerabilities (excluding VEX-exempted)
+- `lowCount` - Number of low vulnerabilities (excluding VEX-exempted)
+- `exemptedCount` - Number of VEX-exempted vulnerabilities (`toleratedCount` also works for backward compatibility)
 - `vulnerabilities` - List of all vulnerabilities with details
 - `imageRef` - Image reference being evaluated
 
@@ -307,81 +311,110 @@ sync:
       failureMessage: "too many critical vulnerabilities"
 ```
 
-### CVE Tolerations
+### VEX Statements
 
-CVE tolerations can be defined at two levels:
+VEX (Vulnerability Exploitability Exchange) statements follow the CycloneDX VEX standard and can be defined at two levels:
 
 1. **Default Level** - Applied to all sync targets
 2. **Sync Entry Level** - Applied to specific repositories
 
-Tolerations from both levels are **merged together**, with sync-specific tolerations added to the default ones.
+VEX statements from both levels are **merged together**, with sync-specific statements added to the default ones.
 
-**Default Tolerations Example:**
+**Default VEX Example:**
 
 ```yaml
 defaults:
-  x-tolerate:
-    # These tolerations apply to ALL sync targets
+  x-vex:
+    # These VEX statements apply to ALL sync targets
     - id: CVE-2024-00001
-      statement: "Known false positive across all images"
+      state: false_positive
+      detail: "Known false positive across all images"
       expires_at: 2025-12-31T23:59:59Z
     
     - id: CVE-2024-00002
-      statement: "Accepted risk - no fix available in base images"
+      state: not_affected
+      justification: vulnerable_code_not_present
+      detail: "Accepted risk - no fix available in base images"
 
 sync:
   - source: nginx
     target: myregistry.example.com/nginx
     type: repository
-    # This target gets both default tolerations PLUS the one below
-    x-tolerate:
+    # This target gets both default VEX statements PLUS the one below
+    x-vex:
       - id: CVE-2024-56171
-        statement: "Nginx-specific toleration"
+        state: not_affected
+        justification: vulnerable_code_not_in_execute_path
+        detail: "Nginx-specific exemption"
         expires_at: 2025-12-31T23:59:59Z
   
   - source: alpine
     target: myregistry.example.com/alpine
     type: repository
-    # This target gets only the default tolerations
+    # This target gets only the default VEX statements
 ```
 
-**Sync-Specific Tolerations Example:**
+**Sync-Specific VEX Example:**
 
 ```yaml
 sync:
   - source: nginx
     target: myregistry.example.com/nginx
     type: repository
-    x-tolerate:
-      # Temporary toleration with expiry
+    x-vex:
+      # Temporary exemption with expiry
       - id: CVE-2024-56171
-        statement: "Initial toleration when introducing supplychain"
+        state: not_affected
+        justification: vulnerable_code_not_present
+        detail: "Initial VEX statement when introducing supplychain"
         expires_at: 2025-12-31T23:59:59Z
       
-      # Permanent toleration
+      # Permanent exemption
       - id: CVE-2025-0838
-        statement: "No fix available, accepted risk after security review"
+        state: not_affected
+        justification: vulnerable_code_not_in_execute_path
+        detail: "No fix available, accepted risk after security review"
       
       # False positive
       - id: CVE-2024-12345
-        statement: "False positive, not applicable to our use case"
+        state: false_positive
+        detail: "Not applicable to our use case"
         expires_at: 2025-06-30T23:59:59Z
 ```
 
 **Fields:**
 - `id` (required): CVE identifier (e.g., `CVE-2024-56171`)
-- `statement` (required): Reason for toleration (for audit and compliance)
-- `expires_at` (optional): When toleration expires. Supports:
+- `state` (required): VEX analysis state. One of:
+  - `not_affected` - The vulnerability does not affect this component (exempts from policy counts)
+  - `affected` - The vulnerability affects this component
+  - `in_triage` - Under investigation
+  - `false_positive` - Incorrectly identified as vulnerable
+  - `resolved` - The vulnerability has been remediated
+  - `resolved_with_pedigree` - Resolved and provenance is tracked
+- `justification` (required when state is `not_affected`): One of:
+  - `component_not_present`
+  - `vulnerable_code_not_present`
+  - `vulnerable_code_cannot_be_controlled_by_adversary`
+  - `vulnerable_code_not_in_execute_path`
+  - `inline_mitigations_already_exist`
+  - `protected_by_compiler`
+  - `protected_at_runtime`
+  - `protected_at_perimeter`
+  - `protected_by_mitigating_control`
+- `detail` (optional): Human-readable explanation for audit and compliance
+- `expires_at` (optional): When the statement expires. Supports:
   - RFC3339 timestamp: `2026-02-28T23:59:59Z`
   - Date only (sets to 23:59:59 UTC): `2026-02-28`
   - Date validation ensures valid dates (e.g., Feb 29 only in leap years)
 
 **Behavior:**
-- Tolerated CVEs are excluded from policy evaluation
-- Default tolerations are merged with sync-specific tolerations
-- Expired tolerations are ignored (CVE counts as critical)
-- Warnings logged for tolerations expiring within 7 days
-- Tolerations without `expires_at` never expire
+- Only VEX statements with state `not_affected` and that are not expired exempt CVEs from policy evaluation
+- Default VEX statements are merged with sync-specific statements
+- Expired statements are ignored (CVE counts normally)
+- Warnings logged for statements expiring within 7 days
+- Statements without `expires_at` never expire
+
+> **Migration note:** The legacy `x-tolerate` format is still supported and auto-converts to VEX `not_affected` statements with a deprecation warning. Update to `x-vex` at your earliest convenience.
 
 ## Examples
 

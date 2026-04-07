@@ -705,15 +705,17 @@ func TestPolicyEngine(t *testing.T) {
 	expiresAt := time.Now().Add(30 * 24 * time.Hour).Unix()
 	expiredAt := time.Now().Add(-1 * time.Hour).Unix()
 
-	tolerations := []types.CVEToleration{
+	tolerations := []types.VEXStatement{
 		{
 			ID:        "CVE-2024-TOLERATED",
-			Statement: "Accepted risk for testing",
+			State:     types.VEXStateNotAffected,
+			Detail:    "Accepted risk for testing",
 			ExpiresAt: &expiresAt,
 		},
 		{
 			ID:        "CVE-2024-EXPIRED",
-			Statement: "This toleration has expired",
+			State:     types.VEXStateNotAffected,
+			Detail:    "This toleration has expired",
 			ExpiresAt: &expiredAt,
 		},
 	}
@@ -795,12 +797,12 @@ func TestPolicyEngine(t *testing.T) {
 			t.Error("Expected policy to pass with tolerated CVE")
 		}
 
-		if len(decision.ToleratedCVEs) != 1 {
-			t.Errorf("Expected 1 tolerated CVE, got %d", len(decision.ToleratedCVEs))
+		if len(decision.ExemptedCVEs) != 1 {
+			t.Errorf("Expected 1 tolerated CVE, got %d", len(decision.ExemptedCVEs))
 		}
 
-		if decision.ToleratedCVEs[0] != "CVE-2024-TOLERATED" {
-			t.Errorf("Expected CVE-2024-TOLERATED, got %s", decision.ToleratedCVEs[0])
+		if decision.ExemptedCVEs[0] != "CVE-2024-TOLERATED" {
+			t.Errorf("Expected CVE-2024-TOLERATED, got %s", decision.ExemptedCVEs[0])
 		}
 	})
 
@@ -831,10 +833,11 @@ func TestPolicyEngine(t *testing.T) {
 
 	t.Run("ExpiringTolerationsWarning", func(t *testing.T) {
 		expiringSoon := time.Now().Add(5 * 24 * time.Hour).Unix()
-		expiringTolerations := []types.CVEToleration{
+		expiringTolerations := []types.VEXStatement{
 			{
 				ID:        "CVE-2024-EXPIRING",
-				Statement: "Expiring soon",
+				State:     types.VEXStateNotAffected,
+				Detail:    "Expiring soon",
 				ExpiresAt: &expiringSoon,
 			},
 		}
@@ -858,8 +861,8 @@ func TestPolicyEngine(t *testing.T) {
 			t.Error("Expected policy to pass with expiring toleration")
 		}
 
-		if len(decision.ExpiringTolerations) != 1 {
-			t.Errorf("Expected 1 expiring toleration, got %d", len(decision.ExpiringTolerations))
+		if len(decision.ExpiringVEXStatements) != 1 {
+			t.Errorf("Expected 1 expiring toleration, got %d", len(decision.ExpiringVEXStatements))
 		}
 	})
 }
@@ -1058,10 +1061,11 @@ func TestAttestation(t *testing.T) {
 func TestPolicyAndAttestationWorkflow(t *testing.T) {
 	// Setup policy engine
 	expiresAt := time.Now().Add(30 * 24 * time.Hour).Unix()
-	tolerations := []types.CVEToleration{
+	tolerations := []types.VEXStatement{
 		{
 			ID:        "CVE-2024-TOLERATED",
-			Statement: "Accepted risk",
+			State:     types.VEXStateNotAffected,
+			Detail:    "Accepted risk",
 			ExpiresAt: &expiresAt,
 		},
 	}
@@ -1107,7 +1111,7 @@ func TestPolicyAndAttestationWorkflow(t *testing.T) {
 
 		t.Logf("Policy passed: %v", decision.Passed)
 		t.Logf("Critical count: %d", decision.CriticalVulnCount)
-		t.Logf("Tolerated CVEs: %v", decision.ToleratedCVEs)
+		t.Logf("Tolerated CVEs: %v", decision.ExemptedCVEs)
 		t.Log("Would attest SBOM, vulnerabilities, and SCAI")
 	})
 
@@ -1509,7 +1513,7 @@ func TestCompleteWorkerWorkflow(t *testing.T) {
 
 		// Step 3: Evaluate policy (no tolerations)
 		t.Log("Step 3: Evaluating policy...")
-		decision, err := policyEngine.Evaluate(ctx, imageRef, scanResult, []types.CVEToleration{})
+		decision, err := policyEngine.Evaluate(ctx, imageRef, scanResult, []types.VEXStatement{})
 		if err != nil {
 			t.Fatalf("Failed to evaluate policy: %v", err)
 		}
@@ -1617,7 +1621,7 @@ func TestCompleteWorkerWorkflow(t *testing.T) {
 
 		// Step 3: Evaluate policy (no tolerations - should fail if critical vulns exist)
 		t.Log("Step 3: Evaluating policy...")
-		decision, err := policyEngine.Evaluate(ctx, imageRef, scanResult, []types.CVEToleration{})
+		decision, err := policyEngine.Evaluate(ctx, imageRef, scanResult, []types.VEXStatement{})
 		if err != nil {
 			t.Fatalf("Failed to evaluate policy: %v", err)
 		}
@@ -1739,10 +1743,11 @@ func TestCompleteWorkerWorkflow(t *testing.T) {
 		// Step 3: Evaluate policy WITH toleration
 		t.Log("Step 3: Evaluating policy with toleration...")
 		expiresAt := time.Now().Add(30 * 24 * time.Hour).Unix()
-		tolerations := []types.CVEToleration{
+		tolerations := []types.VEXStatement{
 			{
 				ID:        criticalCVE,
-				Statement: "Accepted risk for integration testing",
+				State:     types.VEXStateNotAffected,
+				Detail:    "Accepted risk for integration testing",
 				ExpiresAt: &expiresAt,
 			},
 		}
@@ -1753,15 +1758,15 @@ func TestCompleteWorkerWorkflow(t *testing.T) {
 		}
 
 		t.Logf("Policy decision: passed=%v, critical=%d, tolerated=%d",
-			decision.Passed, decision.CriticalVulnCount, decision.ToleratedVulnCount)
+			decision.Passed, decision.CriticalVulnCount, decision.ExemptedVulnCount)
 
 		// Verify the CVE was tolerated
-		if len(decision.ToleratedCVEs) == 0 {
+		if len(decision.ExemptedCVEs) == 0 {
 			t.Error("Expected at least one tolerated CVE")
 		}
 
 		found := false
-		for _, toleratedID := range decision.ToleratedCVEs {
+		for _, toleratedID := range decision.ExemptedCVEs {
 			if toleratedID == criticalCVE {
 				found = true
 				break
@@ -1883,10 +1888,11 @@ func TestCompleteWorkerWorkflow(t *testing.T) {
 		}
 
 		expiresAt := time.Now().Add(30 * 24 * time.Hour).Unix()
-		tolerations := []types.CVEToleration{
+		tolerations := []types.VEXStatement{
 			{
 				ID:        criticalCVE,
-				Statement: "Temporary acceptance",
+				State:     types.VEXStateNotAffected,
+				Detail:    "Temporary acceptance",
 				ExpiresAt: &expiresAt,
 			},
 		}
@@ -1915,7 +1921,7 @@ func TestCompleteWorkerWorkflow(t *testing.T) {
 
 		// Second scan: without toleration (should fail)
 		t.Log("Second scan: without toleration (rescan)...")
-		decision2, err := policyEngine.Evaluate(ctx, imageRef, scanResult, []types.CVEToleration{})
+		decision2, err := policyEngine.Evaluate(ctx, imageRef, scanResult, []types.VEXStatement{})
 		if err != nil {
 			t.Fatalf("Failed to evaluate policy on rescan: %v", err)
 		}
@@ -2013,7 +2019,7 @@ func (m *mockWorkerScanner) HealthCheck(ctx context.Context) error {
 
 type mockWorkerPolicyEngine struct{}
 
-func (m *mockWorkerPolicyEngine) Evaluate(ctx context.Context, imageRef string, scanResult *scanner.ScanResult, tolerations []types.CVEToleration) (*policy.PolicyDecision, error) {
+func (m *mockWorkerPolicyEngine) Evaluate(ctx context.Context, imageRef string, scanResult *scanner.ScanResult, vexStatements []types.VEXStatement) (*policy.PolicyDecision, error) {
 	return &policy.PolicyDecision{
 		Passed: true,
 		Reason: "no vulnerabilities found",

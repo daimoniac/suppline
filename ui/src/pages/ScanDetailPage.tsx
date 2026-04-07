@@ -15,7 +15,7 @@ export default function ScanDetailPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [expandedSeverities, setExpandedSeverities] = useState<Set<string>>(new Set());
-  const [expandedTolerations, setExpandedTolerations] = useState<Set<number>>(new Set());
+  const [expandedVEXStatements, setExpandedVEXStatements] = useState<Set<number>>(new Set());
   const [rescanning, setRescanning] = useState(false);
 
   const isArtifactView = !!name;
@@ -57,8 +57,8 @@ export default function ScanDetailPage() {
     });
   };
 
-  const toggleToleration = (idx: number) => {
-    setExpandedTolerations(prev => {
+  const toggleVEXStatement = (idx: number) => {
+    setExpandedVEXStatements(prev => {
       const n = new Set(prev);
       if (n.has(idx)) n.delete(idx);
       else n.add(idx);
@@ -70,10 +70,10 @@ export default function ScanDetailPage() {
   if (error) return <ErrorState message={error} onRetry={load} />;
   if (!scan) return null;
 
-  const toleratedIds = new Set((scan.ToleratedCVEs || []).map(t => t.CVEID));
-  const activeVulns = (scan.Vulnerabilities || []).filter(v => !toleratedIds.has(v.CVEID));
+  const vexStatements = scan.AppliedVEXStatements || scan.ToleratedCVEs || [];
+  const exemptedIds = new Set(vexStatements.map(t => t.CVEID));
+  const activeVulns = (scan.Vulnerabilities || []).filter(v => !exemptedIds.has(v.CVEID));
   const grouped = groupBySeverity(activeVulns);
-  const tolerations = scan.ToleratedCVEs || [];
 
   return (
     <div className="space-y-6">
@@ -194,38 +194,41 @@ export default function ScanDetailPage() {
         </div>
       )}
 
-      {/* Tolerations */}
+      {/* VEX Statements */}
       <div className="bg-bg-primary border border-border rounded-xl p-5">
-        <h2 className="text-sm font-semibold mb-4">Applied Tolerations ({tolerations.length})</h2>
-        {tolerations.length === 0 ? (
-          <p className="text-sm text-text-secondary">No tolerations applied</p>
+        <h2 className="text-sm font-semibold mb-4">Applied VEX Statements ({vexStatements.length})</h2>
+        {vexStatements.length === 0 ? (
+          <p className="text-sm text-text-secondary">No VEX statements applied</p>
         ) : (
           <div className="space-y-2">
-            {tolerations.map((tol, idx) => {
-              const mitigated = (scan.Vulnerabilities || []).filter(v => v.CVEID === tol.CVEID);
-              const isExpired = tol.ExpiresAt && (tol.ExpiresAt < 1e12 ? tol.ExpiresAt * 1000 : tol.ExpiresAt) <= Date.now();
+            {vexStatements.map((stmt, idx) => {
+              const mitigated = (scan.Vulnerabilities || []).filter(v => v.CVEID === stmt.CVEID);
+              const isExpired = stmt.ExpiresAt && (stmt.ExpiresAt < 1e12 ? stmt.ExpiresAt * 1000 : stmt.ExpiresAt) <= Date.now();
               return (
                 <div key={idx} className="border border-border rounded-lg overflow-hidden">
-                  <button onClick={() => toggleToleration(idx)} className="w-full flex items-center justify-between px-4 py-3 hover:bg-bg-secondary transition-colors">
+                  <button onClick={() => toggleVEXStatement(idx)} className="w-full flex items-center justify-between px-4 py-3 hover:bg-bg-secondary transition-colors">
                     <div className="flex items-center gap-3 min-w-0">
-                      {expandedTolerations.has(idx) ? <ChevronDown className="w-4 h-4 flex-shrink-0" /> : <ChevronRight className="w-4 h-4 flex-shrink-0" />}
-                      <span className="text-sm font-mono font-medium">{tol.CVEID}</span>
+                      {expandedVEXStatements.has(idx) ? <ChevronDown className="w-4 h-4 flex-shrink-0" /> : <ChevronRight className="w-4 h-4 flex-shrink-0" />}
+                      <span className="text-sm font-mono font-medium">{stmt.CVEID}</span>
                       <span className={`px-1.5 py-0.5 rounded text-[10px] font-semibold ${isExpired ? 'bg-danger-bg text-danger' : 'bg-success-bg text-success'}`}>
                         {isExpired ? 'EXPIRED' : 'ACTIVE'}
                       </span>
+                      {stmt.State && <span className="px-1.5 py-0.5 rounded text-[10px] font-medium bg-info-bg text-info">{stmt.State}</span>}
                     </div>
-                    <span className="text-xs text-text-muted truncate max-w-sm">{tol.Statement}</span>
+                    <span className="text-xs text-text-muted truncate max-w-sm">{stmt.Detail}</span>
                   </button>
-                  {expandedTolerations.has(idx) && (
+                  {expandedVEXStatements.has(idx) && (
                     <div className="border-t border-border p-4 bg-bg-secondary">
                       <div className="text-xs text-text-secondary space-y-1 mb-3">
-                        <div><span className="text-text-muted">Statement:</span> {tol.Statement}</div>
-                        <div><span className="text-text-muted">Tolerated:</span> {formatDate(tol.ToleratedAt)}</div>
-                        <div><span className="text-text-muted">Expires:</span> {tol.ExpiresAt ? formatDate(tol.ExpiresAt) : 'Never'}</div>
+                        {stmt.State && <div><span className="text-text-muted">State:</span> {stmt.State}</div>}
+                        {stmt.Justification && <div><span className="text-text-muted">Justification:</span> {stmt.Justification}</div>}
+                        {stmt.Detail && <div><span className="text-text-muted">Detail:</span> {stmt.Detail}</div>}
+                        <div><span className="text-text-muted">Applied:</span> {formatDate(stmt.AppliedAt)}</div>
+                        <div><span className="text-text-muted">Expires:</span> {stmt.ExpiresAt ? formatDate(stmt.ExpiresAt) : 'Never'}</div>
                       </div>
                       {mitigated.length > 0 && (
                         <div>
-                          <div className="text-xs font-medium text-text-secondary mb-2">Mitigated Vulnerabilities ({mitigated.length})</div>
+                          <div className="text-xs font-medium text-text-secondary mb-2">Exempted Vulnerabilities ({mitigated.length})</div>
                           <div className="space-y-1">{mitigated.map((v, vi) => <VulnItem key={vi} vuln={v} compact />)}</div>
                         </div>
                       )}

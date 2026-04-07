@@ -135,12 +135,12 @@ export class APIClient {
     return this.request<Record<string, number>>('/api/v1/vulnerabilities/stats');
   }
 
-  // Tolerations
-  async getTolerations(filters: Record<string, unknown> = {}) {
-    return this.request<Toleration[]>(`/api/v1/tolerations${this.qs(filters)}`);
+  // VEX Statements
+  async getVEXStatements(filters: Record<string, unknown> = {}) {
+    return this.request<VEXSummary[]>(`/api/v1/vex${this.qs(filters)}`);
   }
-  async getInactiveTolerations() {
-    return this.request<Toleration[]>('/api/v1/tolerations/inactive');
+  async getInactiveVEXStatements() {
+    return this.request<VEXSummary[]>('/api/v1/vex/inactive');
   }
 
   // Policy
@@ -205,16 +205,19 @@ export interface Vulnerability {
   PrimaryURL: string;
 }
 
-export interface ToleratedCVE {
+export interface AppliedVEXStatement {
   CVEID: string;
-  Statement: string;
-  ToleratedAt: number;
+  State: string;
+  Justification: string;
+  Detail: string;
+  AppliedAt: number;
   ExpiresAt: number;
 }
 
 export interface ScanDetail extends Scan {
   Vulnerabilities: Vulnerability[];
-  ToleratedCVEs: ToleratedCVE[];
+  ToleratedCVEs: AppliedVEXStatement[]; // legacy field name kept for API compat
+  AppliedVEXStatements: AppliedVEXStatement[];
   Tags: { Repository: string; Tag: string }[];
 }
 
@@ -244,7 +247,7 @@ export interface VulnCount {
   High: number;
   Medium: number;
   Low: number;
-  Tolerated: number;
+  Exempted: number;
 }
 
 export interface Repository {
@@ -284,16 +287,18 @@ export interface RepositoryDetailResponse {
   Total: number;
 }
 
-export interface TolerationRepository {
+export interface RepositoryVEXInfo {
   Repository: string;
-  ToleratedAt: number;
+  AppliedAt: number;
 }
 
-export interface Toleration {
+export interface VEXSummary {
   CVEID: string;
-  Statement: string;
+  State: string;
+  Justification: string;
+  Detail: string;
   ExpiresAt: number;
-  Repositories: TolerationRepository[];
+  Repositories: RepositoryVEXInfo[];
   AffectedImageCount: number;
 }
 

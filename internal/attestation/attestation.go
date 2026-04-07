@@ -5,6 +5,7 @@ import (
 	"time"
 
 	"github.com/daimoniac/suppline/internal/scanner"
+	"github.com/daimoniac/suppline/internal/types"
 )
 
 // Attestor defines the interface for creating attestations and signing images
@@ -14,6 +15,9 @@ type Attestor interface {
 
 	// AttestVulnerabilities creates and pushes vulnerability attestation using sigstore-go
 	AttestVulnerabilities(ctx context.Context, imageRef string, result *scanner.ScanResult) error
+
+	// AttestVEX creates and pushes VEX attestation using sigstore-go
+	AttestVEX(ctx context.Context, imageRef string, statements []types.AppliedVEXStatement) error
 
 	// AttestSCAI creates and pushes SCAI attestation using sigstore-go
 	AttestSCAI(ctx context.Context, imageRef string, scai *SCAIAttestation) error
@@ -31,34 +35,34 @@ type AttestationResult struct {
 
 // SBOMAttestation represents SBOM attestation data
 type SBOMAttestation struct {
-	ImageRef    string
-	SBOM        *scanner.SBOM
-	Timestamp   time.Time
-	Predicate   SBOMPredicate
+	ImageRef  string
+	SBOM      *scanner.SBOM
+	Timestamp time.Time
+	Predicate SBOMPredicate
 }
 
 // SBOMPredicate contains the SBOM attestation predicate
 type SBOMPredicate struct {
-	Format      string    `json:"format"`      // "cyclonedx"
-	Version     string    `json:"version"`     // CycloneDX version
-	Content     []byte    `json:"content"`     // SBOM data
+	Format      string    `json:"format"`  // "cyclonedx"
+	Version     string    `json:"version"` // CycloneDX version
+	Content     []byte    `json:"content"` // SBOM data
 	GeneratedAt time.Time `json:"generatedAt"`
 }
 
 // VulnerabilityAttestation represents vulnerability scan attestation data
 type VulnerabilityAttestation struct {
-	ImageRef    string
-	ScanResult  *scanner.ScanResult
-	Timestamp   time.Time
-	Predicate   VulnerabilityPredicate
+	ImageRef   string
+	ScanResult *scanner.ScanResult
+	Timestamp  time.Time
+	Predicate  VulnerabilityPredicate
 }
 
 // VulnerabilityPredicate contains the vulnerability attestation predicate
 type VulnerabilityPredicate struct {
-	Scanner         ScannerInfo        `json:"scanner"`
-	Vulnerabilities []VulnerabilityInfo `json:"vulnerabilities"`
+	Scanner         ScannerInfo          `json:"scanner"`
+	Vulnerabilities []VulnerabilityInfo  `json:"vulnerabilities"`
 	Summary         VulnerabilitySummary `json:"summary"`
-	ScannedAt       time.Time          `json:"scannedAt"`
+	ScannedAt       time.Time            `json:"scannedAt"`
 }
 
 // ScannerInfo contains information about the scanner used
@@ -69,8 +73,8 @@ type ScannerInfo struct {
 
 // VulnerabilityInfo represents a vulnerability in the attestation
 type VulnerabilityInfo struct {
-	ID           string `json:"id"`           // CVE ID
-	Severity     string `json:"severity"`     // CRITICAL, HIGH, MEDIUM, LOW
+	ID           string `json:"id"`       // CVE ID
+	Severity     string `json:"severity"` // CRITICAL, HIGH, MEDIUM, LOW
 	PackageName  string `json:"packageName"`
 	Version      string `json:"version"`      // Installed version
 	FixedVersion string `json:"fixedVersion"` // Version with fix
@@ -129,20 +133,48 @@ type SCAIEvidence struct {
 	ScanStatus  string    `json:"scanStatus"`  // "passed-with-exceptions" or "passed"
 }
 
-// SCAIAttributeItem represents a single tolerated vulnerability
+// SCAIAttributeItem represents a single exempted vulnerability (via VEX statement)
 type SCAIAttributeItem struct {
-	Attribute string                    `json:"attribute"` // "tolerated-vulnerability"
-	Evidence  SCAIToleratedVulnEvidence `json:"evidence"`
+	Attribute string                   `json:"attribute"` // "vex-exempted-vulnerability"
+	Evidence  SCAIExemptedVulnEvidence `json:"evidence"`
 }
 
-// SCAIToleratedVulnEvidence contains details about a tolerated vulnerability
-type SCAIToleratedVulnEvidence struct {
-	CVEID          string `json:"cveId"`
-	Severity       string `json:"severity"`
-	PackageName    string `json:"packageName"`
-	Version        string `json:"version"`
-	FixedVersion   string `json:"fixedVersion,omitempty"`   // Version with fix (empty if no fix available)
-	Description    string `json:"description,omitempty"`    // Short description of the vulnerability
-	Statement      string `json:"statement"`
-	ToleratedUntil *int64 `json:"toleratedUntil,omitempty"` // Unix timestamp in seconds, nil if no expiry
+// SCAIExemptedVulnEvidence contains details about a VEX-exempted vulnerability
+type SCAIExemptedVulnEvidence struct {
+	CVEID         string `json:"cveId"`
+	Severity      string `json:"severity"`
+	PackageName   string `json:"packageName"`
+	Version       string `json:"version"`
+	FixedVersion  string `json:"fixedVersion,omitempty"`
+	Description   string `json:"description,omitempty"`
+	State         string `json:"state"`                   // VEX analysis state
+	Justification string `json:"justification,omitempty"` // VEX justification
+	Detail        string `json:"detail,omitempty"`
+	ExpiresAt     *int64 `json:"expiresAt,omitempty"` // Unix timestamp in seconds
+}
+
+// VEXPredicate contains the VEX attestation predicate
+type VEXPredicate struct {
+	Statements []VEXStatementInfo  `json:"statements"`
+	Summary    VEXPredicateSummary `json:"summary"`
+	CreatedAt  time.Time           `json:"createdAt"`
+}
+
+// VEXStatementInfo represents a VEX statement in the attestation
+type VEXStatementInfo struct {
+	CVEID         string `json:"cveId"`
+	State         string `json:"state"`
+	Justification string `json:"justification,omitempty"`
+	Detail        string `json:"detail,omitempty"`
+	ExpiresAt     *int64 `json:"expiresAt,omitempty"`
+}
+
+// VEXPredicateSummary summarizes VEX statements by state
+type VEXPredicateSummary struct {
+	TotalStatements int `json:"totalStatements"`
+	NotAffected     int `json:"notAffected"`
+	Affected        int `json:"affected"`
+	InTriage        int `json:"inTriage"`
+	FalsePositive   int `json:"falsePositive"`
+	Resolved        int `json:"resolved"`
 }

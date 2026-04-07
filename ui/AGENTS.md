@@ -61,7 +61,7 @@ ui/
         ├── ScanDetailPage.tsx
         ├── FailedImagesPage.tsx
         ├── VulnerabilitiesPage.tsx
-        ├── TolerationsPage.tsx
+        ├── VEXPage.tsx
         └── IntegrationsPage.tsx
 ```
 
@@ -78,7 +78,8 @@ All routes live in `src/App.tsx`. The app renders `<LoginPage />` full-screen wh
 /scans/:digest                 → ScanDetailPage     (scan-centric)
 /failed                        → FailedImagesPage
 /vulnerabilities               → VulnerabilitiesPage
-/tolerations                   → TolerationsPage
+/vex                           → VEXPage
+/tolerations                   → redirect to /vex
 /integrations                  → IntegrationsPage
 *                              → redirect to /
 ```
@@ -99,7 +100,7 @@ All routes live in `src/App.tsx`. The app renders `<LoginPage />` full-screen wh
 - **`qs(filters)`**: private helper to build `URLSearchParams`. Pass filter/sort/page objects through it.
 
 **All TypeScript domain types live in `api.ts`** — no separate `types/` directory:  
-`Scan`, `ScanDetail`, `Vulnerability`, `ToleratedCVE`, `VulnerabilityGroup`, `VulnCount`, `Repository`, `RepositoriesResponse`, `RepositoryTag`, `RepositoryDetailResponse`, `TolerationRepository`, `Toleration`
+`Scan`, `ScanDetail`, `Vulnerability`, `AppliedVEXStatement`, `VulnerabilityGroup`, `VulnCount`, `Repository`, `RepositoriesResponse`, `RepositoryTag`, `RepositoryDetailResponse`, `RepositoryVEXInfo`, `VEXSummary`
 
 Backend JSON field names are **PascalCase** (`Digest`, `PolicyPassed`, `CriticalVulnCount`, etc.) — direct JSON deserialisation of Go struct tags. Match them exactly.
 
@@ -201,7 +202,7 @@ bg-severity-critical           #ef4444
 bg-severity-high               #f97316
 bg-severity-medium             #eab308
 bg-severity-low                #6b7280
-bg-severity-tolerated          #8b5cf6
+bg-severity-exempted           #8b5cf6
 ```
 
 This is a **dark-only UI** — no light mode. Do not add light-mode variants.

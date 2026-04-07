@@ -46,10 +46,10 @@ func buildScanRecord(
 		))
 	}
 
-	// Build tolerated set from policy decision
-	toleratedSet := make(map[string]bool)
-	for _, toleratedID := range policyDecision.ToleratedCVEs {
-		toleratedSet[toleratedID] = true
+	// Build exempted set from policy decision
+	exemptedSet := make(map[string]bool)
+	for _, exemptedID := range policyDecision.ExemptedCVEs {
+		exemptedSet[exemptedID] = true
 	}
 
 	imageCreatedAt := int64(0)
@@ -57,10 +57,10 @@ func buildScanRecord(
 		imageCreatedAt = scanResult.ImageCreatedAt.Unix()
 	}
 
-	// Filter and convert tolerations
-	toleratedCVEs := types.FilterToleratedCVEs(
-		task.Tolerations,
-		toleratedSet,
+	// Filter and convert VEX statements
+	appliedVEX := types.FilterAppliedVEXStatements(
+		task.VEXStatements,
+		exemptedSet,
 		scannedAtUnix,
 	)
 
@@ -85,7 +85,7 @@ func buildScanRecord(
 		VulnAttested:             policyDecision.ShouldAttest,
 		SCAIAttested:             false, // Will be set by pipeline if SCAI attestation succeeds
 		Vulnerabilities:          vulnerabilityRecords,
-		ToleratedCVEs:            toleratedCVEs,
+		AppliedVEXStatements:     appliedVEX,
 		ErrorMessage:             "",
 	}
 }

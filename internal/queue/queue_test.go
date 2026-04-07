@@ -371,7 +371,7 @@ func TestEnqueueEmptyDigest(t *testing.T) {
 	}
 }
 
-func TestCVETolerations(t *testing.T) {
+func TestVEXStatements(t *testing.T) {
 	q := NewInMemoryQueue(10)
 	defer q.Close()
 
@@ -384,23 +384,24 @@ func TestCVETolerations(t *testing.T) {
 		Digest:     "sha256:test",
 		Tag:        "v1.0.0",
 		EnqueuedAt: time.Now(),
-		Tolerations: []types.CVEToleration{
+		VEXStatements: []types.VEXStatement{
 			{
 				ID:        "CVE-2024-12345",
-				Statement: "Accepted risk",
+				State:     types.VEXStateNotAffected,
+				Detail:    "Accepted risk",
 				ExpiresAt: &expiresAt,
 			},
 			{
-				ID:        "CVE-2024-67890",
-				Statement: "No fix available",
-				ExpiresAt: nil,
+				ID:     "CVE-2024-67890",
+				State:  types.VEXStateNotAffected,
+				Detail: "No fix available",
 			},
 		},
 	}
 
 	err := q.Enqueue(ctx, task)
 	if err != nil {
-		t.Fatalf("failed to enqueue task with tolerations: %v", err)
+		t.Fatalf("failed to enqueue task with VEX statements: %v", err)
 	}
 
 	dequeued, err := q.Dequeue(ctx)
@@ -408,16 +409,16 @@ func TestCVETolerations(t *testing.T) {
 		t.Fatalf("failed to dequeue task: %v", err)
 	}
 
-	if len(dequeued.Tolerations) != 2 {
-		t.Errorf("expected 2 tolerations, got %d", len(dequeued.Tolerations))
+	if len(dequeued.VEXStatements) != 2 {
+		t.Errorf("expected 2 VEX statements, got %d", len(dequeued.VEXStatements))
 	}
 
-	if dequeued.Tolerations[0].ID != "CVE-2024-12345" {
-		t.Errorf("expected CVE-2024-12345, got %s", dequeued.Tolerations[0].ID)
+	if dequeued.VEXStatements[0].ID != "CVE-2024-12345" {
+		t.Errorf("expected CVE-2024-12345, got %s", dequeued.VEXStatements[0].ID)
 	}
 
-	if dequeued.Tolerations[1].ExpiresAt != nil {
-		t.Error("expected nil expiry for second toleration")
+	if dequeued.VEXStatements[1].ExpiresAt != nil {
+		t.Error("expected nil expiry for second VEX statement")
 	}
 }
 

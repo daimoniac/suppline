@@ -109,7 +109,8 @@ type Defaults struct {
 	SCAIValidityExtension string                `yaml:"x-scaiValidityExtension,omitempty"`
 	Policy                *PolicyConfig         `yaml:"x-policy,omitempty"`
 	VEXRepo               *bool                 `yaml:"x-vex-repo,omitempty"`
-	Tolerate              []types.CVEToleration `yaml:"x-tolerate,omitempty"` // Default tolerations merged with sync-specific ones
+	Tolerate              []types.CVEToleration `yaml:"x-tolerate,omitempty"` // Deprecated: use VEX instead
+	VEX                   []types.VEXStatement  `yaml:"x-vex,omitempty"`      // CycloneDX VEX statements merged with sync-specific ones
 }
 
 // SyncEntry represents a single sync configuration
@@ -120,7 +121,8 @@ type SyncEntry struct {
 	Schedule              string                `yaml:"schedule,omitempty"`
 	Platform              string                `yaml:"platform,omitempty"`
 	Tags                  *TagFilter            `yaml:"tags,omitempty"`
-	Tolerate              []types.CVEToleration `yaml:"x-tolerate,omitempty"` // Using canonical type
+	Tolerate              []types.CVEToleration `yaml:"x-tolerate,omitempty"` // Deprecated: use VEX instead
+	VEX                   []types.VEXStatement  `yaml:"x-vex,omitempty"`      // CycloneDX VEX statements
 	RescanInterval        string                `yaml:"x-rescanInterval,omitempty"`
 	SCAIValidityExtension string                `yaml:"x-scaiValidityExtension,omitempty"`
 	Policy                *PolicyConfig         `yaml:"x-policy,omitempty"`

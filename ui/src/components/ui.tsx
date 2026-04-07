@@ -14,8 +14,8 @@ export function SeverityBadge({ severity, count }: { severity: string; count?: n
   return <span className={cn('inline-flex items-center gap-1 px-2 py-0.5 rounded text-xs font-semibold text-white', severityColor(severity))}>{count !== undefined ? count : severity.toUpperCase()}</span>;
 }
 
-export function VulnCounts({ critical, high, medium, low, tolerated }: { critical?: number; high?: number; medium?: number; low?: number; tolerated?: number }) {
-  const items = [{ severity: 'critical', count: critical }, { severity: 'high', count: high }, { severity: 'medium', count: medium }, { severity: 'low', count: low }, { severity: 'tolerated', count: tolerated }].filter(i => i.count !== undefined);
+export function VulnCounts({ critical, high, medium, low, exempted }: { critical?: number; high?: number; medium?: number; low?: number; exempted?: number }) {
+  const items = [{ severity: 'critical', count: critical }, { severity: 'high', count: high }, { severity: 'medium', count: medium }, { severity: 'low', count: low }, { severity: 'exempted', count: exempted }].filter(i => i.count !== undefined);
   return <div className="flex items-center gap-1 flex-wrap">{items.map(i => <SeverityBadge key={i.severity} severity={i.severity} count={i.count} />)}</div>;
 }
 

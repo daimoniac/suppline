@@ -118,21 +118,11 @@ func (w *watcherImpl) Discover(ctx context.Context) error {
 
 // processRepository discovers and enqueues images from a single repository
 func (w *watcherImpl) processRepository(ctx context.Context, repo string) error {
-	// Get CVE tolerations for this target repository
-	tolerations := w.regsyncConfig.GetTolerationsForTarget(repo)
+	// Get VEX statements for this target repository
+	vexStatements := w.regsyncConfig.GetVEXStatementsForTarget(repo)
 
-	// Convert regsync tolerations to queue tolerations
-	queueTolerations := make([]types.CVEToleration, len(tolerations))
-	for i, t := range tolerations {
-		queueTolerations[i] = types.CVEToleration{
-			ID:        t.ID,
-			Statement: t.Statement,
-			ExpiresAt: t.ExpiresAt,
-		}
-	}
-
-	// Check for expiring tolerations and log warnings
-	w.checkExpiringTolerations(repo, tolerations)
+	// Check for expiring VEX statements and log warnings
+	w.checkExpiringVEXStatements(repo, vexStatements)
 
 	// Resolve VEX repo flag once per repository (not per tag)
 	useVEXRepo := w.regsyncConfig.GetVEXRepoForTarget(repo)
@@ -164,7 +154,7 @@ func (w *watcherImpl) processRepository(ctx context.Context, repo string) error 
 
 	// Process each tag
 	for _, tag := range tags {
-		if err := w.processTag(ctx, repo, tag, queueTolerations, useVEXRepo); err != nil {
+		if err := w.processTag(ctx, repo, tag, vexStatements, useVEXRepo); err != nil {
 			w.logger.Error("failed to process tag",
 				"repo", repo,
 				"tag", tag,
@@ -223,7 +213,7 @@ func (w *watcherImpl) shouldScanImage(
 }
 
 // processTag processes a single image tag
-func (w *watcherImpl) processTag(ctx context.Context, repo, tag string, tolerations []types.CVEToleration, useVEXRepo bool) error {
+func (w *watcherImpl) processTag(ctx context.Context, repo, tag string, vexStatements []types.VEXStatement, useVEXRepo bool) error {
 	// Get current digest from registry
 	currentDigest, err := w.registryClient.GetDigest(ctx, repo, tag)
 	if err != nil {
@@ -311,16 +301,16 @@ func (w *watcherImpl) processTag(ctx context.Context, repo, tag string, tolerati
 
 	// Enqueue task
 	task := &queue.ScanTask{
-		ID:          fmt.Sprintf("%s-%d", currentDigest, time.Now().Unix()),
-		Repository:  repo,
-		Digest:      currentDigest,
-		Tag:         tag,
-		EnqueuedAt:  time.Now(),
-		Attempts:    0,
-		IsRescan:    isRescan,
-		IsFirstScan: !isRescan && reason == "never scanned before",
-		Tolerations: tolerations,
-		UseVEXRepo:  useVEXRepo,
+		ID:            fmt.Sprintf("%s-%d", currentDigest, time.Now().Unix()),
+		Repository:    repo,
+		Digest:        currentDigest,
+		Tag:           tag,
+		EnqueuedAt:    time.Now(),
+		Attempts:      0,
+		IsRescan:      isRescan,
+		IsFirstScan:   !isRescan && reason == "never scanned before",
+		VEXStatements: vexStatements,
+		UseVEXRepo:    useVEXRepo,
 	}
 
 	if err := w.taskQueue.Enqueue(ctx, task); err != nil {
@@ -331,24 +321,25 @@ func (w *watcherImpl) processTag(ctx context.Context, repo, tag string, tolerati
 	return nil
 }
 
-// checkExpiringTolerations logs warnings for tolerations expiring soon
-func (w *watcherImpl) checkExpiringTolerations(repo string, tolerations []types.CVEToleration) {
+// checkExpiringVEXStatements logs warnings for VEX statements expiring soon
+func (w *watcherImpl) checkExpiringVEXStatements(repo string, statements []types.VEXStatement) {
 	nowUnix := time.Now().Unix()
 	warningThreshold := int64(7 * 24 * 3600) // 7 days in seconds
 
-	for _, toleration := range tolerations {
-		if toleration.ExpiresAt == nil {
+	for _, stmt := range statements {
+		if stmt.ExpiresAt == nil {
 			continue // No expiry, skip
 		}
 
-		secondsUntilExpiry := *toleration.ExpiresAt - nowUnix
+		secondsUntilExpiry := *stmt.ExpiresAt - nowUnix
 		timeUntilExpiry := time.Duration(secondsUntilExpiry) * time.Second
 		if secondsUntilExpiry > 0 && secondsUntilExpiry <= warningThreshold {
-			w.logger.Warn("CVE toleration expiring soon",
+			w.logger.Warn("VEX statement expiring soon",
 				"repo", repo,
-				"cve_id", toleration.ID,
+				"cve_id", stmt.ID,
+				"state", string(stmt.State),
 				"time_until_expiry", timeUntilExpiry.String(),
-				"statement", toleration.Statement)
+				"detail", stmt.Detail)
 		}
 	}
 }

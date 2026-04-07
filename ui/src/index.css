@@ -24,7 +24,7 @@
   --color-severity-high: #f97316;
   --color-severity-medium: #eab308;
   --color-severity-low: #6b7280;
-  --color-severity-tolerated: #8b5cf6;
+  --color-severity-exempted: #8b5cf6;
   --font-sans: 'Inter', ui-sans-serif, system-ui, sans-serif;
 }
 

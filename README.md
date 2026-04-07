@@ -19,8 +19,8 @@ suppline automates the complete container supply chain workflow for third party 
 
 1. **Mirror** - Continuously syncs images from remote registries to your local registry using regsync
 2. **Scan** - Runs Trivy to identify vulnerabilities and generate SBOMs
-3. **Evaluate** - Applies CEL-based policies with CVE toleration support per repository
-4. **Attest** - Creates signed attestations (SBOM, vulnerabilities, SCAI) via Sigstore
+3. **Evaluate** - Applies CEL-based policies with VEX (Vulnerability Exploitability Exchange) support per repository
+4. **Attest** - Creates signed attestations (SBOM, vulnerabilities, VEX, SCAI) via Sigstore
 
 Runs as a single Go binary with built-in state persistence, REST API, and observability. Clusters pull only from your local mirror — no external registry dependencies. Integrates with Kyverno/OPA policies to enforce only scanned, compliant images in your cluster.
 
@@ -30,9 +30,9 @@ Runs as a single Go binary with built-in state persistence, REST API, and observ
 - **Bring Your Own Registry** - Mirror to any private registry or use built-in local storage
 - **Registry Monitoring** - Watches for new/updated images in your local mirror
 - **Smart Rescanning** - Conditional logic based on digest changes and time intervals
-- **CVE Tolerations** - Accept specific vulnerabilities with expiry dates and audit trails
+- **VEX Statements** - Industry-standard CycloneDX VEX (Vulnerability Exploitability Exchange) to exempt specific CVEs with analysis state, justification, and expiry dates
 - **Policy Engine** - CEL-based policies with per-repository overrides
-- **Sigstore Attestations** - SBOM, vulnerability, and SCAI attestations with cosign
+- **Sigstore Attestations** - SBOM, vulnerability, VEX, and SCAI attestations with cosign
 - **State Persistence** - SQLite-based scan history and vulnerability tracking
 - **REST API** - Query results, trigger rescans, manage policies
 - **Observability** - Prometheus metrics, structured JSON logs, health checks
@@ -104,9 +104,11 @@ sync:
   - source: nginx
     target: myregistry.com/nginx
     type: repository
-    x-tolerate:
+    x-vex:
       - id: CVE-2024-56171
-        statement: "Accepted risk"
+        state: not_affected
+        justification: vulnerable_code_not_present
+        detail: "Accepted risk"
         expires_at: 2025-12-31T23:59:59Z
   - source: kubernetes/pause
     target: myregistry.com/kubernetes/pause
@@ -177,9 +179,10 @@ defaults:
   x-policy:
     expression: "criticalCount == 0"
     failureMessage: "critical vulnerabilities found"
-  x-tolerate:                         # Default tolerations for all targets
+  x-vex:                              # Default VEX statements for all targets
     - id: CVE-2024-00001
-      statement: "Known false positive"
+      state: false_positive
+      detail: "Known false positive"
       expires_at: 2025-12-31T23:59:59Z
 
 sync:
@@ -189,9 +192,11 @@ sync:
     x-rescanInterval: 3d              # Override default
     x-policy:                         # Override default
       expression: "criticalCount == 0 && highCount <= 5"
-    x-tolerate:                       # Merged with default tolerations
+    x-vex:                            # Merged with default VEX statements
       - id: CVE-2024-56171
-        statement: "Accepted risk"
+        state: not_affected
+        justification: vulnerable_code_not_present
+        detail: "Accepted risk"
         expires_at: 2025-12-31T23:59:59Z
 ```
 
@@ -201,7 +206,7 @@ sync:
 - `type` - `repository` (all tags) or `image` (specific tag)
 - `x-rescanInterval` - How often to rescan unchanged images (default: 24h)
 - `x-policy` - CEL-based security policy for this mirror
-- `x-tolerate` - CVE tolerations with expiry dates (merged with defaults)
+- `x-vex` - VEX statements with analysis state, justification, and expiry (merged with defaults)
 
 Images are continuously mirrored from source to target, then scanned and evaluated against policies. Kubernetes clusters pull only from the target registry.
 
@@ -209,8 +214,8 @@ Images are continuously mirrored from source to target, then scanned and evaluat
 
 Policies use CEL (Common Expression Language). Available variables:
 
-- `criticalCount`, `highCount`, `mediumCount`, `lowCount` - Vulnerability counts (excluding tolerated)
-- `toleratedCount` - Number of tolerated CVEs
+- `criticalCount`, `highCount`, `mediumCount`, `lowCount` - Vulnerability counts (excluding VEX-exempted)
+- `exemptedCount` - Number of VEX-exempted CVEs (`toleratedCount` also works for backward compatibility)
 - `vulnerabilities` - Full vulnerability list with details
 - `imageRef` - Image reference
 
@@ -231,7 +236,7 @@ expression: |
   vulnerabilities.filter(v,
     v.severity == "CRITICAL" &&
     v.fixedVersion != "" &&
-    !v.tolerated
+    !v.exempted
   ).size() == 0
 ```
 
@@ -253,8 +258,11 @@ GET /api/v1/scans?repository=nginx&limit=10
 # Search vulnerabilities
 GET /api/v1/vulnerabilities?cve_id=CVE-2024-56171&severity=CRITICAL
 
-# List tolerations
-GET /api/v1/tolerations
+# List VEX statements
+GET /api/v1/vex
+
+# List inactive/expired VEX statements
+GET /api/v1/vex/inactive
 
 # List failed images
 GET /api/v1/images/failed
@@ -373,7 +381,7 @@ Prometheus metrics on `:9090/metrics`:
 
 ### Logging
 
-JSON-formatted structured logs with fields: `time`, `level`, `msg`, `digest`, `repository`, `critical`, `high`, `tolerated`, etc.
+JSON-formatted structured logs with fields: `time`, `level`, `msg`, `digest`, `repository`, `critical`, `high`, `exempted`, etc.
 
 ### Health
 
@@ -421,21 +429,23 @@ The following checks were performed on each of these signatures:
     "attribute": "container-security-assessment",
     "attributes": [
       {
-        "attribute": "tolerated-vulnerability",
+        "attribute": "vex-exempted-vulnerability",
         "evidence": {
           "cveId": "CVE-2021-43527",
           "description": "NSS (Network Security Services) versions prior to 3.73 or 3.68.1 ESR are vulnerable to a heap overflow when handling DER-encoded DSA or RSA-PSS signatures. Applications using NSS for handling signatures encoded within CMS, S/MIME, PKCS \\#7, or PKCS \\#12 are likely to be impacted. Applications using NSS for certificate validation or other TLS, X.509, OCSP or CRL functionality may be impacted, depending on how they configure NSS. *Note: This vulnerability does NOT impact Mozilla Firefox.* However, email clients and PDF viewers that use NSS for signature verification, such as Thunderbird, LibreOffice, Evolution and Evince are believed to be impacted. This vulnerability affects NSS < 3.73 and NSS < 3.68.1.",
           "fixedVersion": "3.67.0-4.el7_9",
           "packageName": "nss",
           "severity": "CRITICAL",
-          "statement": "DSA/RSA not used",
+          "state": "not_affected",
+          "justification": "vulnerable_code_not_in_execute_path",
+          "detail": "DSA/RSA not used",
           "version": "3.53.1-7.el7_9"
         }
       }
     ],
     "evidence": {
       "lastScanned": "2025-11-22T14:49:02.617663494Z",
-      "scanStatus": "passed-with-exceptions",
+      "scanStatus": "passed-with-vex-exemptions",
       "validUntil": "2025-11-30T14:49:02.617663494Z"
     },
     "target": {

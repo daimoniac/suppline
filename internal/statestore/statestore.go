@@ -148,11 +148,11 @@ type RepositoryInfo struct {
 
 // VulnerabilityCountSummary represents aggregated vulnerability counts
 type VulnerabilityCountSummary struct {
-	Critical  int
-	High      int
-	Medium    int
-	Low       int
-	Tolerated int
+	Critical int
+	High     int
+	Medium   int
+	Low      int
+	Exempted int
 }
 
 // RepositoryDetail represents a repository with its tags
@@ -221,22 +221,20 @@ type StateStoreQuery interface {
 	// Limit/Offset in ScanFilter are ignored for counting.
 	CountScans(ctx context.Context, filter ScanFilter) (int, error)
 
-	// ListTolerations returns tolerated CVEs with optional filters
-	ListTolerations(ctx context.Context, filter TolerationFilter) ([]*types.TolerationInfo, error)
+	// ListVEXStatements returns applied VEX statements with optional filters
+	ListVEXStatements(ctx context.Context, filter TolerationFilter) ([]*types.VEXInfo, error)
 
-	// GetToleratedCVEImageCounts returns a map of CVE ID → count of distinct digests
-	// that have this CVE tolerated in their latest scan.
-	GetToleratedCVEImageCounts(ctx context.Context) (map[string]int, error)
+	// GetExemptedCVEImageCounts returns a map of CVE ID → count of distinct digests
+	// that have this CVE exempted (via VEX) in their latest scan.
+	GetExemptedCVEImageCounts(ctx context.Context) (map[string]int, error)
 
-	// GetInactiveTolerationsCount returns the count of CVE IDs that are defined in a set
-	// but have never been tolerated in any scan record. This helps identify tolerations
-	// that are no longer being used and can be cleaned up from configuration.
-	GetInactiveTolerationsCount(ctx context.Context, definedCVEIDs []string) (int, error)
+	// GetInactiveVEXCount returns the count of CVE IDs that are defined in a set
+	// but have never been applied via VEX in any scan record.
+	GetInactiveVEXCount(ctx context.Context, definedCVEIDs []string) (int, error)
 
-	// GetAppliedCVEIDs returns the subset of provided CVE IDs that have been applied
-	// (tolerated) in at least one scan record. This is used to identify which tolerations
-	// are actively being used.
-	GetAppliedCVEIDs(ctx context.Context, definedCVEIDs []string) ([]string, error)
+	// GetAppliedVEXCVEIDs returns the subset of provided CVE IDs that have been applied
+	// via VEX in at least one scan record.
+	GetAppliedVEXCVEIDs(ctx context.Context, definedCVEIDs []string) ([]string, error)
 
 	// ListRepositories returns all repositories with aggregated metadata
 	ListRepositories(ctx context.Context, filter RepositoryFilter) (*RepositoriesListResponse, error)
@@ -305,15 +303,17 @@ type ScanRecord struct {
 	MinimumReleaseAgeSeconds int64
 	ReleaseAgeSource         string
 	// Denormalized for convenience (loaded via joins)
-	Digest            string
-	Repository        string
-	Tag               string                      // Primary tag from the artifact that was scanned
-	Tags              []TagRef                    // All tags pointing to this digest (loaded separately)
-	Vulnerabilities   []types.VulnerabilityRecord // Using canonical type
-	ToleratedCVEs     []types.ToleratedCVE        // Using canonical type
-	RuntimeUsed       bool
-	RuntimeClusters   []string
-	RuntimeNamespaces []RuntimeLocation
+	Digest               string
+	Repository           string
+	Tag                  string                      // Primary tag from the artifact that was scanned
+	Tags                 []TagRef                    // All tags pointing to this digest (loaded separately)
+	Vulnerabilities      []types.VulnerabilityRecord // Using canonical type
+	ToleratedCVEs        []types.ToleratedCVE        // Deprecated: kept for reading legacy data
+	AppliedVEXStatements []types.AppliedVEXStatement // VEX statements applied during this scan
+	VEXAttested          bool
+	RuntimeUsed          bool
+	RuntimeClusters      []string
+	RuntimeNamespaces    []RuntimeLocation
 }
 
 // VulnFilter defines criteria for querying vulnerabilities

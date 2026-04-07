@@ -204,6 +204,8 @@ func (s *SQLiteStore) ensureSchemaColumns() error {
 		{table: "scan_records", column: "release_age_seconds", definition: "INTEGER NOT NULL DEFAULT 0"},
 		{table: "scan_records", column: "minimum_release_age_seconds", definition: "INTEGER NOT NULL DEFAULT 0"},
 		{table: "scan_records", column: "release_age_source", definition: "TEXT NOT NULL DEFAULT ''"},
+		{table: "scan_records", column: "vex_statements_json", definition: "TEXT"},
+		{table: "scan_records", column: "vex_attested", definition: "BOOLEAN NOT NULL DEFAULT 0"},
 	}
 
 	for _, col := range columns {
@@ -550,7 +552,7 @@ func (s *SQLiteStore) RecordScan(ctx context.Context, record *ScanRecord) error 
 		}
 	}
 
-	// Insert scan record with tolerated CVEs as JSON
+	// Insert scan record with VEX statements as JSON (and legacy tolerated CVEs for backward compat)
 	toleratedJSON := "[]"
 	if len(record.ToleratedCVEs) > 0 {
 		jsonBytes, err := json.Marshal(record.ToleratedCVEs)
@@ -560,20 +562,29 @@ func (s *SQLiteStore) RecordScan(ctx context.Context, record *ScanRecord) error 
 		toleratedJSON = string(jsonBytes)
 	}
 
+	vexJSON := "[]"
+	if len(record.AppliedVEXStatements) > 0 {
+		jsonBytes, err := json.Marshal(record.AppliedVEXStatements)
+		if err != nil {
+			return errors.NewTransientf("failed to marshal VEX statements: %w", err)
+		}
+		vexJSON = string(jsonBytes)
+	}
+
 	result, err := tx.ExecContext(ctx, `
 		INSERT INTO scan_records (
 			artifact_id, scan_duration_ms,
 			critical_vuln_count, high_vuln_count, medium_vuln_count, low_vuln_count,
 			policy_passed, policy_status, policy_reason, release_age_seconds, minimum_release_age_seconds, release_age_source,
-			sbom_attested, vuln_attested, scai_attested, error_message,
-			tolerated_cves_json
-		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+			sbom_attested, vuln_attested, scai_attested, vex_attested, error_message,
+			tolerated_cves_json, vex_statements_json
+		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 	`,
 		artifactID, record.ScanDurationMs,
 		record.CriticalVulnCount, record.HighVulnCount, record.MediumVulnCount, record.LowVulnCount,
 		record.PolicyPassed, record.PolicyStatus, record.PolicyReason, record.ReleaseAgeSeconds, record.MinimumReleaseAgeSeconds, record.ReleaseAgeSource,
-		record.SBOMAttested, record.VulnAttested, record.SCAIAttested, record.ErrorMessage,
-		toleratedJSON,
+		record.SBOMAttested, record.VulnAttested, record.SCAIAttested, record.VEXAttested, record.ErrorMessage,
+		toleratedJSON, vexJSON,
 	)
 	if err != nil {
 		return errors.NewTransientf("failed to insert scan record: %w", err)
@@ -634,15 +645,16 @@ func (s *SQLiteStore) RecordScan(ctx context.Context, record *ScanRecord) error 
 func (s *SQLiteStore) GetLastScan(ctx context.Context, digest string) (*ScanRecord, error) {
 	var record ScanRecord
 	var toleratedJSON sql.NullString
+	var vexJSON sql.NullString
 
 	err := s.db.QueryRowContext(ctx, `
 		SELECT sr.id, sr.artifact_id, sr.scan_duration_ms,
 			sr.critical_vuln_count, sr.high_vuln_count, sr.medium_vuln_count, sr.low_vuln_count,
 			sr.policy_passed, sr.policy_status, sr.policy_reason, sr.release_age_seconds, sr.minimum_release_age_seconds, sr.release_age_source,
-			sr.sbom_attested, sr.vuln_attested, sr.scai_attested, sr.error_message, sr.created_at,
+			sr.sbom_attested, sr.vuln_attested, sr.scai_attested, COALESCE(sr.vex_attested, 0), sr.error_message, sr.created_at,
 			COALESCE(a.image_created_at, 0) as image_created_at,
 			a.digest, a.tag, r.name,
-			sr.tolerated_cves_json
+			sr.tolerated_cves_json, sr.vex_statements_json
 		FROM scan_records sr
 		JOIN artifacts a ON sr.artifact_id = a.id
 		JOIN repositories r ON a.repository_id = r.id
@@ -653,10 +665,10 @@ func (s *SQLiteStore) GetLastScan(ctx context.Context, digest string) (*ScanReco
 		&record.ID, &record.ArtifactID, &record.ScanDurationMs,
 		&record.CriticalVulnCount, &record.HighVulnCount, &record.MediumVulnCount, &record.LowVulnCount,
 		&record.PolicyPassed, &record.PolicyStatus, &record.PolicyReason, &record.ReleaseAgeSeconds, &record.MinimumReleaseAgeSeconds, &record.ReleaseAgeSource,
-		&record.SBOMAttested, &record.VulnAttested, &record.SCAIAttested, &record.ErrorMessage, &record.CreatedAt,
+		&record.SBOMAttested, &record.VulnAttested, &record.SCAIAttested, &record.VEXAttested, &record.ErrorMessage, &record.CreatedAt,
 		&record.ImageCreatedAt,
 		&record.Digest, &record.Tag, &record.Repository,
-		&toleratedJSON,
+		&toleratedJSON, &vexJSON,
 	)
 	if err == sql.ErrNoRows {
 		return nil, ErrScanNotFound
@@ -672,8 +684,14 @@ func (s *SQLiteStore) GetLastScan(ctx context.Context, digest string) (*ScanReco
 	}
 	record.Vulnerabilities = vulns
 
-	// Load tolerated CVEs from JSON
-	if toleratedJSON.Valid && toleratedJSON.String != "" {
+	// Load VEX statements from JSON (preferred) or fall back to legacy tolerated CVEs
+	if vexJSON.Valid && vexJSON.String != "" && vexJSON.String != "[]" {
+		var vex []types.AppliedVEXStatement
+		if err := json.Unmarshal([]byte(vexJSON.String), &vex); err != nil {
+			return nil, errors.NewTransientf("failed to unmarshal VEX statements: %w", err)
+		}
+		record.AppliedVEXStatements = vex
+	} else if toleratedJSON.Valid && toleratedJSON.String != "" {
 		var tolerated []types.ToleratedCVE
 		if err := json.Unmarshal([]byte(toleratedJSON.String), &tolerated); err != nil {
 			return nil, errors.NewTransientf("failed to unmarshal tolerated CVEs: %w", err)
@@ -799,10 +817,10 @@ func (s *SQLiteStore) GetScanHistory(ctx context.Context, digest string, limit i
 		SELECT sr.id, sr.artifact_id, sr.scan_duration_ms,
 			sr.critical_vuln_count, sr.high_vuln_count, sr.medium_vuln_count, sr.low_vuln_count,
 			sr.policy_passed, sr.policy_status, sr.policy_reason, sr.release_age_seconds, sr.minimum_release_age_seconds, sr.release_age_source,
-			sr.sbom_attested, sr.vuln_attested, sr.scai_attested, sr.error_message, sr.created_at,
+			sr.sbom_attested, sr.vuln_attested, sr.scai_attested, COALESCE(sr.vex_attested, 0), sr.error_message, sr.created_at,
 			COALESCE(a.image_created_at, 0) as image_created_at,
 			a.digest, a.tag, r.name,
-			sr.tolerated_cves_json
+			sr.tolerated_cves_json, sr.vex_statements_json
 		FROM scan_records sr
 		JOIN artifacts a ON sr.artifact_id = a.id
 		JOIN repositories r ON a.repository_id = r.id
@@ -823,15 +841,16 @@ func (s *SQLiteStore) GetScanHistory(ctx context.Context, digest string, limit i
 	for rows.Next() {
 		var record ScanRecord
 		var toleratedJSON sql.NullString
+		var vexJSON sql.NullString
 
 		err := rows.Scan(
 			&record.ID, &record.ArtifactID, &record.ScanDurationMs,
 			&record.CriticalVulnCount, &record.HighVulnCount, &record.MediumVulnCount, &record.LowVulnCount,
 			&record.PolicyPassed, &record.PolicyStatus, &record.PolicyReason, &record.ReleaseAgeSeconds, &record.MinimumReleaseAgeSeconds, &record.ReleaseAgeSource,
-			&record.SBOMAttested, &record.VulnAttested, &record.SCAIAttested, &record.ErrorMessage, &record.CreatedAt,
+			&record.SBOMAttested, &record.VulnAttested, &record.SCAIAttested, &record.VEXAttested, &record.ErrorMessage, &record.CreatedAt,
 			&record.ImageCreatedAt,
 			&record.Digest, &record.Tag, &record.Repository,
-			&toleratedJSON,
+			&toleratedJSON, &vexJSON,
 		)
 		if err != nil {
 			return nil, errors.NewTransientf("failed to scan row: %w", err)
@@ -844,8 +863,14 @@ func (s *SQLiteStore) GetScanHistory(ctx context.Context, digest string, limit i
 		}
 		record.Vulnerabilities = vulns
 
-		// Load tolerated CVEs from JSON
-		if toleratedJSON.Valid && toleratedJSON.String != "" {
+		// Load VEX statements (preferred) or legacy tolerated CVEs
+		if vexJSON.Valid && vexJSON.String != "" && vexJSON.String != "[]" {
+			var vex []types.AppliedVEXStatement
+			if err := json.Unmarshal([]byte(vexJSON.String), &vex); err != nil {
+				return nil, errors.NewTransientf("failed to unmarshal VEX statements: %w", err)
+			}
+			record.AppliedVEXStatements = vex
+		} else if toleratedJSON.Valid && toleratedJSON.String != "" {
 			var tolerated []types.ToleratedCVE
 			if err := json.Unmarshal([]byte(toleratedJSON.String), &tolerated); err != nil {
 				return nil, errors.NewTransientf("failed to unmarshal tolerated CVEs: %w", err)
@@ -1583,10 +1608,10 @@ func (s *SQLiteStore) GetImagesByCVE(ctx context.Context, cveID string) ([]*Scan
 		SELECT DISTINCT sr.id, sr.artifact_id, sr.scan_duration_ms,
 			sr.critical_vuln_count, sr.high_vuln_count, sr.medium_vuln_count, sr.low_vuln_count,
 			sr.policy_passed, sr.policy_status, sr.policy_reason, sr.release_age_seconds, sr.minimum_release_age_seconds, sr.release_age_source,
-			sr.sbom_attested, sr.vuln_attested, sr.scai_attested, sr.error_message, sr.created_at,
+			sr.sbom_attested, sr.vuln_attested, sr.scai_attested, COALESCE(sr.vex_attested, 0), sr.error_message, sr.created_at,
 			COALESCE(a.image_created_at, 0) as image_created_at,
 			a.digest, a.tag, r.name,
-			sr.tolerated_cves_json
+			sr.tolerated_cves_json, sr.vex_statements_json
 		FROM scan_records sr
 		JOIN artifacts a ON sr.artifact_id = a.id
 		JOIN repositories r ON a.repository_id = r.id
@@ -1605,15 +1630,16 @@ func (s *SQLiteStore) GetImagesByCVE(ctx context.Context, cveID string) ([]*Scan
 	for rows.Next() {
 		var record ScanRecord
 		var toleratedJSON sql.NullString
+		var vexJSON sql.NullString
 
 		err := rows.Scan(
 			&record.ID, &record.ArtifactID, &record.ScanDurationMs,
 			&record.CriticalVulnCount, &record.HighVulnCount, &record.MediumVulnCount, &record.LowVulnCount,
 			&record.PolicyPassed, &record.PolicyStatus, &record.PolicyReason, &record.ReleaseAgeSeconds, &record.MinimumReleaseAgeSeconds, &record.ReleaseAgeSource,
-			&record.SBOMAttested, &record.VulnAttested, &record.SCAIAttested, &record.ErrorMessage, &record.CreatedAt,
+			&record.SBOMAttested, &record.VulnAttested, &record.SCAIAttested, &record.VEXAttested, &record.ErrorMessage, &record.CreatedAt,
 			&record.ImageCreatedAt,
 			&record.Digest, &record.Tag, &record.Repository,
-			&toleratedJSON,
+			&toleratedJSON, &vexJSON,
 		)
 		if err != nil {
 			return nil, errors.NewTransientf("failed to scan row: %w", err)
@@ -1626,8 +1652,14 @@ func (s *SQLiteStore) GetImagesByCVE(ctx context.Context, cveID string) ([]*Scan
 		}
 		record.Vulnerabilities = vulns
 
-		// Load tolerated CVEs from JSON
-		if toleratedJSON.Valid && toleratedJSON.String != "" {
+		// Load VEX statements (preferred) or legacy tolerated CVEs
+		if vexJSON.Valid && vexJSON.String != "" && vexJSON.String != "[]" {
+			var vex []types.AppliedVEXStatement
+			if err := json.Unmarshal([]byte(vexJSON.String), &vex); err != nil {
+				return nil, errors.NewTransientf("failed to unmarshal VEX statements: %w", err)
+			}
+			record.AppliedVEXStatements = vex
+		} else if toleratedJSON.Valid && toleratedJSON.String != "" {
 			var tolerated []types.ToleratedCVE
 			if err := json.Unmarshal([]byte(toleratedJSON.String), &tolerated); err != nil {
 				return nil, errors.NewTransientf("failed to unmarshal tolerated CVEs: %w", err)
@@ -1858,21 +1890,20 @@ func (s *SQLiteStore) CountScans(ctx context.Context, filter ScanFilter) (int, e
 	return total, nil
 }
 
-// ListTolerations returns unique tolerated CVEs from scan history
-// Returns one entry per unique repository + CVE ID combination with the earliest ToleratedAt timestamp
-// Note: Statement and ExpiresAt reflect historical values from scan records
-func (s *SQLiteStore) ListTolerations(ctx context.Context, filter TolerationFilter) ([]*types.TolerationInfo, error) {
-	// Query all scan records that have tolerated CVEs
+// ListVEXStatements returns unique VEX-exempted CVEs from scan history.
+// Reads from vex_statements_json (preferred) with fallback to tolerated_cves_json for legacy data.
+// Returns one entry per unique repository + CVE ID combination with the earliest applied timestamp.
+func (s *SQLiteStore) ListVEXStatements(ctx context.Context, filter TolerationFilter) ([]*types.VEXInfo, error) {
 	query := `
 		SELECT 
 			r.name as repository,
-			sr.tolerated_cves_json
+			sr.tolerated_cves_json,
+			sr.vex_statements_json
 		FROM scan_records sr
 		JOIN artifacts a ON sr.artifact_id = a.id
 		JOIN repositories r ON a.repository_id = r.id
-		WHERE sr.tolerated_cves_json IS NOT NULL 
-			AND sr.tolerated_cves_json != '[]'
-			AND sr.tolerated_cves_json != ''
+		WHERE (sr.vex_statements_json IS NOT NULL AND sr.vex_statements_json != '[]' AND sr.vex_statements_json != '')
+			OR (sr.tolerated_cves_json IS NOT NULL AND sr.tolerated_cves_json != '[]' AND sr.tolerated_cves_json != '')
 	`
 	args := []interface{}{}
 
@@ -1885,48 +1916,64 @@ func (s *SQLiteStore) ListTolerations(ctx context.Context, filter TolerationFilt
 
 	rows, err := s.db.QueryContext(ctx, query, args...)
 	if err != nil {
-		return nil, errors.NewTransientf("failed to query tolerations: %w", err)
+		return nil, errors.NewTransientf("failed to query VEX statements: %w", err)
 	}
 	defer rows.Close()
 
 	// Build a map of unique repository+CVE combinations
-	// Key: "repo:cve", Value: TolerationInfo with earliest tolerated_at
-	tolerationMap := make(map[string]*types.TolerationInfo)
+	vexMap := make(map[string]*types.VEXInfo)
 
 	for rows.Next() {
 		var repository string
 		var toleratedJSON sql.NullString
+		var vexJSON sql.NullString
 
-		if err := rows.Scan(&repository, &toleratedJSON); err != nil {
+		if err := rows.Scan(&repository, &toleratedJSON, &vexJSON); err != nil {
 			return nil, errors.NewTransientf("failed to scan row: %w", err)
 		}
 
-		if !toleratedJSON.Valid || toleratedJSON.String == "" {
-			continue
-		}
-
-		var tolerated []types.ToleratedCVE
-		if err := json.Unmarshal([]byte(toleratedJSON.String), &tolerated); err != nil {
-			// Skip invalid JSON
-			continue
-		}
-
-		for _, tc := range tolerated {
-			// Apply CVE ID filter if specified
-			if filter.CVEID != "" && tc.CVEID != filter.CVEID {
+		// Prefer VEX statements over legacy tolerated CVEs
+		if vexJSON.Valid && vexJSON.String != "" && vexJSON.String != "[]" {
+			var vexStmts []types.AppliedVEXStatement
+			if err := json.Unmarshal([]byte(vexJSON.String), &vexStmts); err != nil {
 				continue
 			}
-
-			key := repository + ":" + tc.CVEID
-			existing, found := tolerationMap[key]
-			if !found || tc.ToleratedAt < existing.ToleratedAt {
-				// Keep the earliest tolerated_at timestamp
-				tolerationMap[key] = &types.TolerationInfo{
-					CVEID:       tc.CVEID,
-					Statement:   tc.Statement,
-					ToleratedAt: tc.ToleratedAt,
-					ExpiresAt:   tc.ExpiresAt,
-					Repository:  repository,
+			for _, vs := range vexStmts {
+				if filter.CVEID != "" && vs.CVEID != filter.CVEID {
+					continue
+				}
+				key := repository + ":" + vs.CVEID
+				if _, found := vexMap[key]; !found {
+					vexMap[key] = &types.VEXInfo{
+						CVEID:         vs.CVEID,
+						State:         vs.State,
+						Justification: vs.Justification,
+						Detail:        vs.Detail,
+						AppliedAt:     vs.AppliedAt,
+						ExpiresAt:     vs.ExpiresAt,
+						Repository:    repository,
+					}
+				}
+			}
+		} else if toleratedJSON.Valid && toleratedJSON.String != "" {
+			var tolerated []types.ToleratedCVE
+			if err := json.Unmarshal([]byte(toleratedJSON.String), &tolerated); err != nil {
+				continue
+			}
+			for _, tc := range tolerated {
+				if filter.CVEID != "" && tc.CVEID != filter.CVEID {
+					continue
+				}
+				key := repository + ":" + tc.CVEID
+				if _, found := vexMap[key]; !found {
+					vexMap[key] = &types.VEXInfo{
+						CVEID:      tc.CVEID,
+						State:      types.VEXStateNotAffected,
+						Detail:     tc.Statement,
+						AppliedAt:  tc.ToleratedAt,
+						ExpiresAt:  tc.ExpiresAt,
+						Repository: repository,
+					}
 				}
 			}
 		}
@@ -1937,38 +1984,33 @@ func (s *SQLiteStore) ListTolerations(ctx context.Context, filter TolerationFilt
 	}
 
 	// Convert map to slice
-	tolerations := make([]*types.TolerationInfo, 0, len(tolerationMap))
-	for _, info := range tolerationMap {
-		tolerations = append(tolerations, info)
+	results := make([]*types.VEXInfo, 0, len(vexMap))
+	for _, info := range vexMap {
+		results = append(results, info)
 	}
-
-	// Sort by expires_at, cve_id, repository
-	// (Simple sort by CVEID for now since we lost the SQL ORDER BY)
-	// TODO: Implement proper sorting if needed
 
 	// Apply limit
-	if filter.Limit > 0 && len(tolerations) > filter.Limit {
-		tolerations = tolerations[:filter.Limit]
+	if filter.Limit > 0 && len(results) > filter.Limit {
+		results = results[:filter.Limit]
 	}
 
-	return tolerations, nil
+	return results, nil
 }
 
-// GetToleratedCVEImageCounts returns a map of CVE ID → count of distinct digests
-// that have this CVE tolerated in the latest scan for each artifact.
-func (s *SQLiteStore) GetToleratedCVEImageCounts(ctx context.Context) (map[string]int, error) {
+// GetExemptedCVEImageCounts returns a map of CVE ID → count of distinct digests
+// that have this CVE exempted (via VEX or legacy toleration) in the latest scan for each artifact.
+func (s *SQLiteStore) GetExemptedCVEImageCounts(ctx context.Context) (map[string]int, error) {
 	query := `
-		SELECT a.digest, sr.tolerated_cves_json
+		SELECT a.digest, sr.tolerated_cves_json, sr.vex_statements_json
 		FROM artifacts a
 		JOIN scan_records sr ON a.last_scan_id = sr.id
-		WHERE sr.tolerated_cves_json IS NOT NULL
-			AND sr.tolerated_cves_json != '[]'
-			AND sr.tolerated_cves_json != ''
+		WHERE (sr.vex_statements_json IS NOT NULL AND sr.vex_statements_json != '[]' AND sr.vex_statements_json != '')
+			OR (sr.tolerated_cves_json IS NOT NULL AND sr.tolerated_cves_json != '[]' AND sr.tolerated_cves_json != '')
 	`
 
 	rows, err := s.db.QueryContext(ctx, query)
 	if err != nil {
-		return nil, errors.NewTransientf("failed to query tolerated CVE image counts: %w", err)
+		return nil, errors.NewTransientf("failed to query exempted CVE image counts: %w", err)
 	}
 	defer rows.Close()
 
@@ -1976,21 +2018,33 @@ func (s *SQLiteStore) GetToleratedCVEImageCounts(ctx context.Context) (map[strin
 	for rows.Next() {
 		var digest string
 		var toleratedJSON sql.NullString
-		if err := rows.Scan(&digest, &toleratedJSON); err != nil {
+		var vexJSON sql.NullString
+		if err := rows.Scan(&digest, &toleratedJSON, &vexJSON); err != nil {
 			return nil, errors.NewTransientf("failed to scan row: %w", err)
 		}
-		if !toleratedJSON.Valid || toleratedJSON.String == "" {
-			continue
-		}
-		var tolerated []types.ToleratedCVE
-		if err := json.Unmarshal([]byte(toleratedJSON.String), &tolerated); err != nil {
-			continue
-		}
+
 		seen := make(map[string]bool)
-		for _, tc := range tolerated {
-			if !seen[tc.CVEID] {
-				seen[tc.CVEID] = true
-				counts[tc.CVEID]++
+
+		// Prefer VEX statements
+		if vexJSON.Valid && vexJSON.String != "" && vexJSON.String != "[]" {
+			var vexStmts []types.AppliedVEXStatement
+			if err := json.Unmarshal([]byte(vexJSON.String), &vexStmts); err == nil {
+				for _, vs := range vexStmts {
+					if !seen[vs.CVEID] {
+						seen[vs.CVEID] = true
+						counts[vs.CVEID]++
+					}
+				}
+			}
+		} else if toleratedJSON.Valid && toleratedJSON.String != "" {
+			var tolerated []types.ToleratedCVE
+			if err := json.Unmarshal([]byte(toleratedJSON.String), &tolerated); err == nil {
+				for _, tc := range tolerated {
+					if !seen[tc.CVEID] {
+						seen[tc.CVEID] = true
+						counts[tc.CVEID]++
+					}
+				}
 			}
 		}
 	}
@@ -2000,46 +2054,49 @@ func (s *SQLiteStore) GetToleratedCVEImageCounts(ctx context.Context) (map[strin
 	return counts, nil
 }
 
-// getAppliedCVESet returns a set of all CVE IDs that have been applied (tolerated)
-// in at least one scan record. This is a helper method for inactive tolerations queries.
+// getAppliedCVESet returns a set of all CVE IDs that have been applied (exempted via VEX or tolerated)
+// in at least one scan record. This is a helper method for inactive VEX queries.
 func (s *SQLiteStore) getAppliedCVESet(ctx context.Context) (map[string]bool, error) {
 	query := `
 		SELECT 
-			sr.tolerated_cves_json
+			sr.tolerated_cves_json,
+			sr.vex_statements_json
 		FROM scan_records sr
-		WHERE sr.tolerated_cves_json IS NOT NULL 
-			AND sr.tolerated_cves_json != '[]'
-			AND sr.tolerated_cves_json != ''
+		WHERE (sr.vex_statements_json IS NOT NULL AND sr.vex_statements_json != '[]' AND sr.vex_statements_json != '')
+			OR (sr.tolerated_cves_json IS NOT NULL AND sr.tolerated_cves_json != '[]' AND sr.tolerated_cves_json != '')
 	`
 
 	rows, err := s.db.QueryContext(ctx, query)
 	if err != nil {
-		return nil, errors.NewTransientf("failed to query tolerated CVEs: %w", err)
+		return nil, errors.NewTransientf("failed to query applied CVEs: %w", err)
 	}
 	defer rows.Close()
 
-	// Build a set of CVE IDs that have been tolerated at least once
 	appliedCVEs := make(map[string]bool)
 
 	for rows.Next() {
 		var toleratedJSON sql.NullString
+		var vexJSON sql.NullString
 
-		if err := rows.Scan(&toleratedJSON); err != nil {
+		if err := rows.Scan(&toleratedJSON, &vexJSON); err != nil {
 			return nil, errors.NewTransientf("failed to scan row: %w", err)
 		}
 
-		if !toleratedJSON.Valid || toleratedJSON.String == "" {
-			continue
-		}
-
-		var tolerated []types.ToleratedCVE
-		if err := json.Unmarshal([]byte(toleratedJSON.String), &tolerated); err != nil {
-			// Skip invalid JSON
-			continue
-		}
-
-		for _, tc := range tolerated {
-			appliedCVEs[tc.CVEID] = true
+		// Prefer VEX statements
+		if vexJSON.Valid && vexJSON.String != "" && vexJSON.String != "[]" {
+			var vexStmts []types.AppliedVEXStatement
+			if err := json.Unmarshal([]byte(vexJSON.String), &vexStmts); err == nil {
+				for _, vs := range vexStmts {
+					appliedCVEs[vs.CVEID] = true
+				}
+			}
+		} else if toleratedJSON.Valid && toleratedJSON.String != "" {
+			var tolerated []types.ToleratedCVE
+			if err := json.Unmarshal([]byte(toleratedJSON.String), &tolerated); err == nil {
+				for _, tc := range tolerated {
+					appliedCVEs[tc.CVEID] = true
+				}
+			}
 		}
 	}
 
@@ -2050,10 +2107,10 @@ func (s *SQLiteStore) getAppliedCVESet(ctx context.Context) (map[string]bool, er
 	return appliedCVEs, nil
 }
 
-// GetInactiveTolerationsCount returns the count of CVE IDs from the provided list
-// that have never been tolerated in any scan record.
-// This helps identify tolerations defined in configuration that are no longer being used.
-func (s *SQLiteStore) GetInactiveTolerationsCount(ctx context.Context, definedCVEIDs []string) (int, error) {
+// GetInactiveVEXCount returns the count of CVE IDs from the provided list
+// that have never been applied via VEX in any scan record.
+// This helps identify VEX statements defined in configuration that are no longer being used.
+func (s *SQLiteStore) GetInactiveVEXCount(ctx context.Context, definedCVEIDs []string) (int, error) {
 	if len(definedCVEIDs) == 0 {
 		return 0, nil
 	}
@@ -2074,9 +2131,9 @@ func (s *SQLiteStore) GetInactiveTolerationsCount(ctx context.Context, definedCV
 	return inactiveCount, nil
 }
 
-// GetAppliedCVEIDs returns the subset of provided CVE IDs that have been applied
-// (tolerated) in at least one scan record.
-func (s *SQLiteStore) GetAppliedCVEIDs(ctx context.Context, definedCVEIDs []string) ([]string, error) {
+// GetAppliedVEXCVEIDs returns the subset of provided CVE IDs that have been applied
+// via VEX in at least one scan record.
+func (s *SQLiteStore) GetAppliedVEXCVEIDs(ctx context.Context, definedCVEIDs []string) ([]string, error) {
 	if len(definedCVEIDs) == 0 {
 		return []string{}, nil
 	}

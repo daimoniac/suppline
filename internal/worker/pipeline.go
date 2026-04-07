@@ -13,6 +13,7 @@ import (
 	"github.com/daimoniac/suppline/internal/registry"
 	"github.com/daimoniac/suppline/internal/scanner"
 	"github.com/daimoniac/suppline/internal/statestore"
+	"github.com/daimoniac/suppline/internal/types"
 )
 
 // Pipeline orchestrates the complete scan workflow
@@ -78,8 +79,8 @@ func (p *Pipeline) Execute(ctx context.Context, task *queue.ScanTask) error {
 		return err
 	}
 
-	// Phase 3: Attestations (SBOM, Vulnerabilities, SCAI)
-	attestDurations, scaiAttested, err := p.attestationPhase(ctx, task, imageRef, sbom, scanResult, policyDecision)
+	// Phase 3: Attestations (SBOM, Vulnerabilities, VEX, SCAI)
+	attestDurations, attestResult, err := p.attestationPhase(ctx, task, imageRef, sbom, scanResult, policyDecision)
 	if err != nil {
 		return err
 	}
@@ -97,7 +98,7 @@ func (p *Pipeline) Execute(ctx context.Context, task *queue.ScanTask) error {
 
 	// Log completion
 	totalDuration := time.Since(startTime)
-	p.logCompletion(task, imageRef, startTime, scanDurations, attestDurations, scaiAttested, policyDecision, totalDuration)
+	p.logCompletion(task, imageRef, startTime, scanDurations, attestDurations, attestResult, policyDecision, totalDuration)
 
 	return nil
 }
@@ -187,7 +188,7 @@ func (p *Pipeline) scanPhase(ctx context.Context, task *queue.ScanTask, imageRef
 	return sbom, scanResult, durations, nil
 }
 
-// policyPhase evaluates policy with CVE tolerations
+// policyPhase evaluates policy with VEX statements
 func (p *Pipeline) policyPhase(ctx context.Context, task *queue.ScanTask, imageRef string, scanResult *scanner.ScanResult) (*policy.PolicyDecision, error) {
 	// Get policy engine for this repository
 	policyEngine, err := p.getPolicyEngineForRepository(task.Repository)
@@ -196,8 +197,8 @@ func (p *Pipeline) policyPhase(ctx context.Context, task *queue.ScanTask, imageR
 	}
 
 	// Evaluate policy
-	p.logger.Debug("evaluating policy", "image_ref", imageRef, "tolerations", len(task.Tolerations))
-	policyDecision, err := policyEngine.Evaluate(ctx, imageRef, scanResult, task.Tolerations)
+	p.logger.Debug("evaluating policy", "image_ref", imageRef, "vex_statements", len(task.VEXStatements))
+	policyDecision, err := policyEngine.Evaluate(ctx, imageRef, scanResult, task.VEXStatements)
 	if err != nil {
 		return nil, errors.NewPermanentf("failed to evaluate policy: %w", err)
 	}
@@ -213,11 +214,12 @@ func (p *Pipeline) policyPhase(ctx context.Context, task *queue.ScanTask, imageR
 		metrics.PolicyPassed.Inc()
 	}
 
-	// Log expiring tolerations
-	for _, expiring := range policyDecision.ExpiringTolerations {
-		p.logger.Warn("toleration expiring soon",
+	// Log expiring VEX statements
+	for _, expiring := range policyDecision.ExpiringVEXStatements {
+		p.logger.Warn("VEX statement expiring soon",
 			"cve_id", expiring.CVEID,
-			"statement", expiring.Statement,
+			"state", expiring.State,
+			"detail", expiring.Detail,
 			"expires_at", expiring.ExpiresAt,
 			"days_until_expiry", expiring.DaysUntil,
 			"image_ref", imageRef)
@@ -226,26 +228,32 @@ func (p *Pipeline) policyPhase(ctx context.Context, task *queue.ScanTask, imageR
 	return policyDecision, nil
 }
 
-// attestationPhase creates all attestations (SBOM, vulnerabilities, SCAI)
-func (p *Pipeline) attestationPhase(ctx context.Context, task *queue.ScanTask, imageRef string, sbom *scanner.SBOM, scanResult *scanner.ScanResult, policyDecision *policy.PolicyDecision) (map[string]time.Duration, bool, error) {
+// attestationResult holds the results of attestation phase
+type attestationResult struct {
+	SCAIAttested bool
+	VEXAttested  bool
+}
+
+// attestationPhase creates all attestations (SBOM, vulnerabilities, VEX, SCAI)
+func (p *Pipeline) attestationPhase(ctx context.Context, task *queue.ScanTask, imageRef string, sbom *scanner.SBOM, scanResult *scanner.ScanResult, policyDecision *policy.PolicyDecision) (map[string]time.Duration, *attestationResult, error) {
 	durations := make(map[string]time.Duration)
 	metrics := observability.GetMetrics()
+	result := &attestationResult{}
 
 	if policyDecision != nil && !policyDecision.ShouldAttest {
 		p.logger.Info("skipping attestations due to policy decision",
 			"image_ref", imageRef,
 			"policy_status", policyDecision.Status,
 			"reason", policyDecision.Reason)
-		return durations, false, nil
+		return durations, result, nil
 	}
 
 	// SBOM attestation
 	sbomStart := time.Now()
 	p.logger.Debug("creating SBOM attestation", "image_ref", imageRef)
 	if err := p.worker.attestor.AttestSBOM(ctx, imageRef, sbom); err != nil {
-		// Error already classified in attestation package
 		metrics.AttestationsFailed.WithLabelValues("sbom").Inc()
-		return nil, false, fmt.Errorf("failed to create SBOM attestation: %w", err)
+		return nil, nil, fmt.Errorf("failed to create SBOM attestation: %w", err)
 	}
 	durations["sbom_attest"] = time.Since(sbomStart)
 	metrics.AttestationsCreated.WithLabelValues("sbom").Inc()
@@ -255,16 +263,48 @@ func (p *Pipeline) attestationPhase(ctx context.Context, task *queue.ScanTask, i
 	vulnStart := time.Now()
 	p.logger.Debug("creating vulnerability attestation", "image_ref", imageRef)
 	if err := p.worker.attestor.AttestVulnerabilities(ctx, imageRef, scanResult); err != nil {
-		// Error already classified in attestation package
 		metrics.AttestationsFailed.WithLabelValues("vulnerability").Inc()
-		return nil, false, fmt.Errorf("failed to create vulnerability attestation: %w", err)
+		return nil, nil, fmt.Errorf("failed to create vulnerability attestation: %w", err)
 	}
 	durations["vuln_attest"] = time.Since(vulnStart)
 	metrics.AttestationsCreated.WithLabelValues("vulnerability").Inc()
 	p.logger.Info("vulnerability attestation created", "image_ref", imageRef, "duration", durations["vuln_attest"])
 
+	// VEX attestation (if there are applied VEX statements)
+	if policyDecision != nil && len(policyDecision.ExemptedCVEs) > 0 {
+		vexStart := time.Now()
+		p.logger.Debug("creating VEX attestation", "image_ref", imageRef, "exempted_cves", len(policyDecision.ExemptedCVEs))
+
+		// Build applied VEX statements for attestation
+		var appliedStatements []types.AppliedVEXStatement
+		for _, cve := range policyDecision.ExemptedCVEs {
+			for _, stmt := range task.VEXStatements {
+				if stmt.ID == cve {
+					appliedStatements = append(appliedStatements, types.AppliedVEXStatement{
+						CVEID:         cve,
+						State:         stmt.State,
+						Justification: stmt.Justification,
+						Detail:        stmt.Detail,
+						ExpiresAt:     stmt.ExpiresAt,
+						AppliedAt:     time.Now().Unix(),
+					})
+					break
+				}
+			}
+		}
+
+		if err := p.worker.attestor.AttestVEX(ctx, imageRef, appliedStatements); err != nil {
+			p.logger.Error("failed to create VEX attestation", "image_ref", imageRef, "error", err)
+			metrics.AttestationsFailed.WithLabelValues("vex").Inc()
+		} else {
+			result.VEXAttested = true
+			durations["vex_attest"] = time.Since(vexStart)
+			metrics.AttestationsCreated.WithLabelValues("vex").Inc()
+			p.logger.Info("VEX attestation created", "image_ref", imageRef, "duration", durations["vex_attest"])
+		}
+	}
+
 	// SCAI attestation (optional)
-	scaiAttested := false
 	if p.worker.scaiGenerator != nil {
 		scaiStart := time.Now()
 		p.logger.Debug("generating SCAI attestation", "image_ref", imageRef)
@@ -278,7 +318,7 @@ func (p *Pipeline) attestationPhase(ctx context.Context, task *queue.ScanTask, i
 				p.logger.Error("failed to attest SCAI", "image_ref", imageRef, "error", err)
 				metrics.AttestationsFailed.WithLabelValues("scai").Inc()
 			} else {
-				scaiAttested = true
+				result.SCAIAttested = true
 				durations["scai_attest"] = time.Since(scaiStart)
 				metrics.AttestationsCreated.WithLabelValues("scai").Inc()
 				p.logger.Info("SCAI attestation created", "image_ref", imageRef, "duration", durations["scai_attest"])
@@ -288,7 +328,7 @@ func (p *Pipeline) attestationPhase(ctx context.Context, task *queue.ScanTask, i
 		p.logger.Debug("SCAI generator not configured, skipping SCAI attestation", "image_ref", imageRef)
 	}
 
-	return durations, scaiAttested, nil
+	return durations, result, nil
 }
 
 // persistencePhase records scan results to state store
@@ -339,7 +379,7 @@ func (p *Pipeline) checkPolicyFailures(ctx context.Context, task *queue.ScanTask
 			"repository", task.Repository,
 			"tag", task.Tag,
 			"critical_vulns", policyDecision.CriticalVulnCount,
-			"tolerated_vulns", policyDecision.ToleratedVulnCount,
+			"exempted_vulns", policyDecision.ExemptedVulnCount,
 			"reason", policyDecision.Reason)
 	}
 
@@ -359,7 +399,7 @@ func (p *Pipeline) checkPolicyFailures(ctx context.Context, task *queue.ScanTask
 }
 
 // logCompletion logs the final workflow completion with all durations
-func (p *Pipeline) logCompletion(task *queue.ScanTask, imageRef string, startTime time.Time, scanDurations, attestDurations map[string]time.Duration, scaiAttested bool, policyDecision *policy.PolicyDecision, totalDuration time.Duration) {
+func (p *Pipeline) logCompletion(task *queue.ScanTask, imageRef string, startTime time.Time, scanDurations, attestDurations map[string]time.Duration, attestResult *attestationResult, policyDecision *policy.PolicyDecision, totalDuration time.Duration) {
 	p.logger.Info("scan workflow completed",
 		"task_id", task.ID,
 		"image_ref", imageRef,
@@ -368,8 +408,10 @@ func (p *Pipeline) logCompletion(task *queue.ScanTask, imageRef string, startTim
 		"vulnerability_scan_duration", scanDurations["vuln_scan"],
 		"sbom_attestation_duration", attestDurations["sbom_attest"],
 		"vulnerability_attestation_duration", attestDurations["vuln_attest"],
+		"vex_attestation_duration", attestDurations["vex_attest"],
 		"scai_attestation_duration", attestDurations["scai_attest"],
-		"scai_attested", scaiAttested,
+		"scai_attested", attestResult.SCAIAttested,
+		"vex_attested", attestResult.VEXAttested,
 		"policy_passed", policyDecision.Passed)
 }
 

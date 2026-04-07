@@ -68,42 +68,42 @@ func TestHandleListTolerations_ReturnsAllConfiguredTolerations(t *testing.T) {
 			t.Fatalf("Expected status 200, got %d: %s", w.Code, w.Body.String())
 		}
 
-		var tolerations []*types.TolerationSummary
-		if err := json.NewDecoder(w.Body).Decode(&tolerations); err != nil {
+		var vexStatements []*types.VEXSummary
+		if err := json.NewDecoder(w.Body).Decode(&vexStatements); err != nil {
 			t.Fatalf("Failed to decode response: %v", err)
 		}
 
 		// Expected: 4 unique CVE IDs (2 defaults + 1 nginx-specific + 1 alpine-specific)
 		expectedCount := 4
-		if len(tolerations) != expectedCount {
-			t.Errorf("Expected %d unique CVE tolerations, got %d", expectedCount, len(tolerations))
-			for i, tol := range tolerations {
-				t.Logf("Toleration %d: %s (%d repos)", i, tol.CVEID, len(tol.Repositories))
+		if len(vexStatements) != expectedCount {
+			t.Errorf("Expected %d unique CVE VEX statements, got %d", expectedCount, len(vexStatements))
+			for i, stmt := range vexStatements {
+				t.Logf("VEX statement %d: %s (%d repos)", i, stmt.CVEID, len(stmt.Repositories))
 			}
 		}
 
 		// Verify defaults appear for both repositories
-		for _, tol := range tolerations {
-			if tol.CVEID == "CVE-2024-0001" || tol.CVEID == "CVE-2024-0002" {
-				// Default tolerations should apply to both nginx and alpine
-				if len(tol.Repositories) != 2 {
-					t.Errorf("Expected default CVE %s to have 2 repositories, got %d", tol.CVEID, len(tol.Repositories))
+		for _, stmt := range vexStatements {
+			if stmt.CVEID == "CVE-2024-0001" || stmt.CVEID == "CVE-2024-0002" {
+				// Default VEX statements should apply to both nginx and alpine
+				if len(stmt.Repositories) != 2 {
+					t.Errorf("Expected default CVE %s to have 2 repositories, got %d", stmt.CVEID, len(stmt.Repositories))
 				}
-			} else if tol.CVEID == "CVE-2024-0003" {
+			} else if stmt.CVEID == "CVE-2024-0003" {
 				// Nginx-specific should only have 1 repo
-				if len(tol.Repositories) != 1 {
-					t.Errorf("Expected nginx-specific CVE to have 1 repository, got %d", len(tol.Repositories))
+				if len(stmt.Repositories) != 1 {
+					t.Errorf("Expected nginx-specific CVE to have 1 repository, got %d", len(stmt.Repositories))
 				}
-				if tol.Repositories[0].Repository != "myregistry.com/nginx" {
-					t.Errorf("Expected nginx repository, got %s", tol.Repositories[0].Repository)
+				if stmt.Repositories[0].Repository != "myregistry.com/nginx" {
+					t.Errorf("Expected nginx repository, got %s", stmt.Repositories[0].Repository)
 				}
-			} else if tol.CVEID == "CVE-2024-0004" {
+			} else if stmt.CVEID == "CVE-2024-0004" {
 				// Alpine-specific should only have 1 repo
-				if len(tol.Repositories) != 1 {
-					t.Errorf("Expected alpine-specific CVE to have 1 repository, got %d", len(tol.Repositories))
+				if len(stmt.Repositories) != 1 {
+					t.Errorf("Expected alpine-specific CVE to have 1 repository, got %d", len(stmt.Repositories))
 				}
-				if tol.Repositories[0].Repository != "myregistry.com/alpine" {
-					t.Errorf("Expected alpine repository, got %s", tol.Repositories[0].Repository)
+				if stmt.Repositories[0].Repository != "myregistry.com/alpine" {
+					t.Errorf("Expected alpine repository, got %s", stmt.Repositories[0].Repository)
 				}
 			}
 		}
@@ -120,24 +120,24 @@ func TestHandleListTolerations_ReturnsAllConfiguredTolerations(t *testing.T) {
 			t.Fatalf("Expected status 200, got %d: %s", w.Code, w.Body.String())
 		}
 
-		var tolerations []*types.TolerationSummary
-		if err := json.NewDecoder(w.Body).Decode(&tolerations); err != nil {
+		var vexStatements []*types.VEXSummary
+		if err := json.NewDecoder(w.Body).Decode(&vexStatements); err != nil {
 			t.Fatalf("Failed to decode response: %v", err)
 		}
 
 		// Expected: 3 unique CVEs for nginx (2 defaults + 1 nginx-specific)
 		expectedCount := 3
-		if len(tolerations) != expectedCount {
-			t.Errorf("Expected %d tolerations for nginx, got %d", expectedCount, len(tolerations))
+		if len(vexStatements) != expectedCount {
+			t.Errorf("Expected %d VEX statements for nginx, got %d", expectedCount, len(vexStatements))
 		}
 
 		// All should only have nginx repository
-		for _, tol := range tolerations {
-			if len(tol.Repositories) != 1 {
-				t.Errorf("Expected 1 repository for filtered result, got %d", len(tol.Repositories))
+		for _, stmt := range vexStatements {
+			if len(stmt.Repositories) != 1 {
+				t.Errorf("Expected 1 repository for filtered result, got %d", len(stmt.Repositories))
 			}
-			if tol.Repositories[0].Repository != "myregistry.com/nginx" {
-				t.Errorf("Expected nginx repository, got %s", tol.Repositories[0].Repository)
+			if stmt.Repositories[0].Repository != "myregistry.com/nginx" {
+				t.Errorf("Expected nginx repository, got %s", stmt.Repositories[0].Repository)
 			}
 		}
 	})
@@ -153,24 +153,24 @@ func TestHandleListTolerations_ReturnsAllConfiguredTolerations(t *testing.T) {
 			t.Fatalf("Expected status 200, got %d: %s", w.Code, w.Body.String())
 		}
 
-		var tolerations []*types.TolerationSummary
-		if err := json.NewDecoder(w.Body).Decode(&tolerations); err != nil {
+		var vexStatements []*types.VEXSummary
+		if err := json.NewDecoder(w.Body).Decode(&vexStatements); err != nil {
 			t.Fatalf("Failed to decode response: %v", err)
 		}
 
 		// Expected: 1 CVE with 2 repositories
-		if len(tolerations) != 1 {
-			t.Fatalf("Expected 1 toleration for CVE-2024-0001, got %d", len(tolerations))
+		if len(vexStatements) != 1 {
+			t.Fatalf("Expected 1 VEX statement for CVE-2024-0001, got %d", len(vexStatements))
 		}
 
-		tol := tolerations[0]
-		if tol.CVEID != "CVE-2024-0001" {
-			t.Errorf("Expected CVE-2024-0001, got %s", tol.CVEID)
+		stmt := vexStatements[0]
+		if stmt.CVEID != "CVE-2024-0001" {
+			t.Errorf("Expected CVE-2024-0001, got %s", stmt.CVEID)
 		}
 
 		// Should have both nginx and alpine repositories
-		if len(tol.Repositories) != 2 {
-			t.Errorf("Expected 2 repositories for CVE-2024-0001, got %d", len(tol.Repositories))
+		if len(stmt.Repositories) != 2 {
+			t.Errorf("Expected 2 repositories for CVE-2024-0001, got %d", len(stmt.Repositories))
 		}
 	})
 }
@@ -195,15 +195,16 @@ func TestHandleListTolerations_WithHistoricalData(t *testing.T) {
 	}
 
 	// Create mock state store with historical data
-	toleratedAt := int64(1700000000)
+	appliedAt := int64(1700000000)
 	mockStore := &mockStateStoreWithHistory{
-		tolerations: []*types.TolerationInfo{
+		vexInfos: []*types.VEXInfo{
 			{
-				CVEID:       "CVE-2024-0001",
-				Statement:   "Old statement",
-				ToleratedAt: toleratedAt,
-				ExpiresAt:   nil,
-				Repository:  "myregistry.com/nginx",
+				CVEID:      "CVE-2024-0001",
+				State:      types.VEXStateNotAffected,
+				Detail:     "Old statement",
+				AppliedAt:  appliedAt,
+				ExpiresAt:  nil,
+				Repository: "myregistry.com/nginx",
 			},
 		},
 	}
@@ -226,56 +227,56 @@ func TestHandleListTolerations_WithHistoricalData(t *testing.T) {
 		t.Fatalf("Expected status 200, got %d: %s", w.Code, w.Body.String())
 	}
 
-	var tolerations []*types.TolerationSummary
-	if err := json.NewDecoder(w.Body).Decode(&tolerations); err != nil {
+	var vexStatements []*types.VEXSummary
+	if err := json.NewDecoder(w.Body).Decode(&vexStatements); err != nil {
 		t.Fatalf("Failed to decode response: %v", err)
 	}
 
-	if len(tolerations) != 1 {
-		t.Fatalf("Expected 1 toleration summary, got %d", len(tolerations))
+	if len(vexStatements) != 1 {
+		t.Fatalf("Expected 1 VEX summary, got %d", len(vexStatements))
 	}
 
-	tol := tolerations[0]
+	stmt := vexStatements[0]
 
-	// Should use statement and expires_at from current config
-	if tol.Statement != "Default toleration 1" {
-		t.Errorf("Expected statement from config, got %s", tol.Statement)
+	// Should use detail and expires_at from current config
+	if stmt.Detail != "Default toleration 1" {
+		t.Errorf("Expected detail from config, got %s", stmt.Detail)
 	}
-	if tol.ExpiresAt == nil || *tol.ExpiresAt != expiresAt {
-		t.Errorf("Expected expires_at from config, got %v", tol.ExpiresAt)
+	if stmt.ExpiresAt == nil || *stmt.ExpiresAt != expiresAt {
+		t.Errorf("Expected expires_at from config, got %v", stmt.ExpiresAt)
 	}
 
 	// Should have 1 repository
-	if len(tol.Repositories) != 1 {
-		t.Fatalf("Expected 1 repository, got %d", len(tol.Repositories))
+	if len(stmt.Repositories) != 1 {
+		t.Fatalf("Expected 1 repository, got %d", len(stmt.Repositories))
 	}
 
-	// Should preserve historical tolerated_at timestamp for the repository
-	repo := tol.Repositories[0]
-	if repo.ToleratedAt != toleratedAt {
-		t.Errorf("Expected historical ToleratedAt %d, got %d", toleratedAt, repo.ToleratedAt)
+	// Should preserve historical AppliedAt timestamp for the repository
+	repo := stmt.Repositories[0]
+	if repo.AppliedAt != appliedAt {
+		t.Errorf("Expected historical AppliedAt %d, got %d", appliedAt, repo.AppliedAt)
 	}
 	if repo.Repository != "myregistry.com/nginx" {
 		t.Errorf("Expected nginx repository, got %s", repo.Repository)
 	}
 }
 
-// mockStateStoreWithHistory extends mockStateStore to return historical tolerations
+// mockStateStoreWithHistory extends mockStateStore to return historical VEX statements
 type mockStateStoreWithHistory struct {
 	mockStateStore
-	tolerations []*types.TolerationInfo
+	vexInfos []*types.VEXInfo
 }
 
-func (m *mockStateStoreWithHistory) ListTolerations(ctx context.Context, filter statestore.TolerationFilter) ([]*types.TolerationInfo, error) {
-	result := make([]*types.TolerationInfo, 0)
-	for _, tol := range m.tolerations {
-		if filter.CVEID != "" && tol.CVEID != filter.CVEID {
+func (m *mockStateStoreWithHistory) ListVEXStatements(ctx context.Context, filter statestore.TolerationFilter) ([]*types.VEXInfo, error) {
+	result := make([]*types.VEXInfo, 0)
+	for _, stmt := range m.vexInfos {
+		if filter.CVEID != "" && stmt.CVEID != filter.CVEID {
 			continue
 		}
-		if filter.Repository != "" && tol.Repository != filter.Repository {
+		if filter.Repository != "" && stmt.Repository != filter.Repository {
 			continue
 		}
-		result = append(result, tol)
+		result = append(result, stmt)
 	}
 	return result, nil
 }

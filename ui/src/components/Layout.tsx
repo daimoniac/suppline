@@ -1,7 +1,7 @@
 import { NavLink, Outlet } from 'react-router-dom';
 import { useAuth } from '../lib/auth';
 import {
-  LayoutDashboard, Layers, ScanSearch, ShieldAlert, Bug, FileWarning,
+  LayoutDashboard, Layers, ScanSearch, ShieldAlert, Bug, ShieldCheck,
   Plug, LogOut,
 } from 'lucide-react';
 import { ImageUsageFilterProvider, useImageUsageFilter } from '../lib/imageUsageFilter';
@@ -13,7 +13,7 @@ const navItems = [
   { to: '/scans', icon: ScanSearch, label: 'Scans' },
   { to: '/failed', icon: ShieldAlert, label: 'Policy Exceptions' },
   { to: '/vulnerabilities?severity=critical', icon: Bug, label: 'Vulnerabilities' },
-  { to: '/tolerations', icon: FileWarning, label: 'Tolerations' },
+  { to: '/vex', icon: ShieldCheck, label: 'VEX Statements' },
   { to: '/integrations', icon: Plug, label: 'Integrations' },
 ];
 

@@ -91,3 +91,15 @@ type RepositoryTolInfo struct {
 	Repository  string `json:"Repository"`
 	ToleratedAt int64  `json:"ToleratedAt"` // Unix timestamp when first tolerated, 0 if never applied
 }
+
+// CVETolerationToVEXStatement converts a legacy CVEToleration to a VEXStatement.
+// The toleration is mapped to state=not_affected with the statement as detail.
+// Deprecated: Use x-vex config entries directly instead of x-tolerate.
+func CVETolerationToVEXStatement(t CVEToleration) VEXStatement {
+	return VEXStatement{
+		ID:        t.ID,
+		State:     VEXStateNotAffected,
+		Detail:    t.Statement,
+		ExpiresAt: t.ExpiresAt,
+	}
+}

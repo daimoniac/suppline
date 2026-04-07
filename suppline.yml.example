@@ -40,12 +40,21 @@ sync:
     type: repository
     schedule: "0 */6 * * *"
     x-rescanInterval: 3d      # Override default rescan interval for this entry (optional)
-    x-tolerate:
+    x-vex:                     # VEX (Vulnerability Exploitability Exchange) statements
       - id: CVE-2024-56171
-        statement: initial toleration when introducing supplychain
+        state: not_affected
+        justification: vulnerable_code_not_present
+        detail: initial VEX statement when introducing supplychain
         expires_at: 2025-12-31T23:59:59Z
       - id: CVE-2025-0838
-        statement: no fix available, accepted risk
+        state: not_affected
+        justification: vulnerable_code_not_in_execute_path
+        detail: no fix available, accepted risk
+    # Legacy format still supported (auto-converts to VEX not_affected):
+    # x-tolerate:
+    #   - id: CVE-2024-56171
+    #     statement: initial toleration when introducing supplychain
+    #     expires_at: 2025-12-31T23:59:59Z
 
   - source: alpine
     target: myprivateregistry/alpine
@@ -59,9 +68,10 @@ sync:
       expression: "criticalCount == 0 && highCount == 0"
       failureMessage: "critical or high vulnerabilities found"
       minimumReleaseAge: "14d" # Override: require images to be at least 14 days old (optional)
-    x-tolerate:
+    x-vex:
       - id: CVE-2024-12345
-        statement: false positive, not applicable to our use case
+        state: false_positive
+        detail: not applicable to our use case
         expires_at: 2025-06-30T23:59:59Z
 
   - source: internal-tool

@@ -149,14 +149,14 @@ func TestWatcher_Discover_NewImages(t *testing.T) {
 	// Setup mock queue
 	mockQueue := queue.NewInMemoryQueue(100)
 
-	// Setup regsync config with tolerations
+	// Setup regsync config with VEX statements
 	expiresAt := time.Now().Add(30 * 24 * time.Hour).Unix()
 	regsyncCfg := &config.RegsyncConfig{
 		Sync: []config.SyncEntry{
 			{
 				Target: "myorg/app1",
-				Tolerate: []types.CVEToleration{
-					{ID: "CVE-2024-1234", Statement: "test toleration", ExpiresAt: &expiresAt},
+				VEX: []types.VEXStatement{
+					{ID: "CVE-2024-1234", State: types.VEXStateNotAffected, Detail: "test VEX statement", ExpiresAt: &expiresAt},
 				},
 			},
 			{
@@ -195,8 +195,8 @@ func TestWatcher_Discover_NewImages(t *testing.T) {
 	if !task1.IsFirstScan {
 		t.Error("Expected IsFirstScan to be true for never-scanned image")
 	}
-	if len(task1.Tolerations) != 1 {
-		t.Errorf("Expected 1 toleration, got %d", len(task1.Tolerations))
+	if len(task1.VEXStatements) != 1 {
+		t.Errorf("Expected 1 VEX statement, got %d", len(task1.VEXStatements))
 	}
 
 	task2, _ := mockQueue.Dequeue(ctx)
@@ -208,8 +208,8 @@ func TestWatcher_Discover_NewImages(t *testing.T) {
 	if task3.Repository != "myorg/app2" {
 		t.Errorf("Expected repository myorg/app2, got %s", task3.Repository)
 	}
-	if len(task3.Tolerations) != 0 {
-		t.Errorf("Expected 0 tolerations for app2, got %d", len(task3.Tolerations))
+	if len(task3.VEXStatements) != 0 {
+		t.Errorf("Expected 0 VEX statements for app2, got %d", len(task3.VEXStatements))
 	}
 }
 
