@@ -74,11 +74,24 @@ type ClusterImageSummary struct {
 	Digest    string
 }
 
-// RuntimeLocation describes where an image is currently running.
+// RuntimeLocation describes one matched runtime inventory entry.
 type RuntimeLocation struct {
 	Cluster   string
 	Namespace string
+	ImageRef  string
+	Tag       string
+	Digest    string
 }
+
+// RuntimeImage contains the stored runtime image details for one runtime match.
+type RuntimeImage struct {
+	ImageRef string
+	Tag      string
+	Digest   string
+}
+
+// RuntimeInventory groups runtime matches by cluster then namespace.
+type RuntimeInventory map[string]map[string][]RuntimeImage
 
 // RuntimeLookupInput identifies a scanned image for runtime matching.
 type RuntimeLookupInput struct {
@@ -89,9 +102,8 @@ type RuntimeLookupInput struct {
 
 // RuntimeUsage contains runtime usage details for one scanned image.
 type RuntimeUsage struct {
-	RuntimeUsed       bool
-	RuntimeClusters   []string
-	RuntimeNamespaces []RuntimeLocation
+	RuntimeUsed bool
+	Runtime     RuntimeInventory
 }
 
 // ClusterInventoryStore persists runtime cluster image inventory snapshots.
@@ -177,7 +189,7 @@ type TagInfo struct {
 	ReleaseAgeSource         string
 	ScanError                string // Non-empty when the last scan failed with an error
 	RuntimeUsed              bool
-	RuntimeClusters          []string
+	Runtime                  RuntimeInventory
 }
 
 // TagRef represents a repository+tag combination pointing to a digest
@@ -312,8 +324,7 @@ type ScanRecord struct {
 	AppliedVEXStatements []types.AppliedVEXStatement // VEX statements applied during this scan
 	VEXAttested          bool
 	RuntimeUsed          bool
-	RuntimeClusters      []string
-	RuntimeNamespaces    []RuntimeLocation
+	Runtime              RuntimeInventory
 }
 
 // VulnFilter defines criteria for querying vulnerabilities

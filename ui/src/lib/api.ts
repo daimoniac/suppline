@@ -166,6 +166,14 @@ export class APIClient {
 }
 
 // Types
+export interface RuntimeImage {
+  ImageRef: string;
+  Tag: string;
+  Digest: string;
+}
+
+export type RuntimeInventory = Record<string, Record<string, RuntimeImage[]>>;
+
 export interface Scan {
   Digest: string;
   Repository: string;
@@ -185,13 +193,7 @@ export interface Scan {
   SBOMAttested: boolean;
   VulnAttested: boolean;
   RuntimeUsed?: boolean;
-  RuntimeClusters?: string[];
-  RuntimeNamespaces?: RuntimeLocation[];
-}
-
-export interface RuntimeLocation {
-  Cluster: string;
-  Namespace: string;
+  Runtime?: RuntimeInventory;
 }
 
 export interface Vulnerability {
@@ -279,7 +281,7 @@ export interface RepositoryTag {
   ScanError: string;
   VulnerabilityCount: VulnCount;
   RuntimeUsed?: boolean;
-  RuntimeClusters?: string[];
+  Runtime?: RuntimeInventory;
 }
 
 export interface RepositoryDetailResponse {

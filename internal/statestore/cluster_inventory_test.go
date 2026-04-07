@@ -4,6 +4,8 @@ import (
 	"context"
 	"database/sql"
 	"os"
+	"reflect"
+	"sort"
 	"testing"
 	"time"
 
@@ -299,8 +301,11 @@ func TestGetRuntimeUsageForScan_DigestMatch(t *testing.T) {
 	if !usage.RuntimeUsed {
 		t.Fatalf("Expected runtime usage to be true")
 	}
-	if len(usage.RuntimeClusters) != 1 || usage.RuntimeClusters[0] != "cluster-a" {
-		t.Fatalf("Unexpected runtime clusters: %+v", usage.RuntimeClusters)
+	if got := runtimeClusterNames(usage.Runtime); !reflect.DeepEqual(got, []string{"cluster-a"}) {
+		t.Fatalf("Unexpected runtime clusters: %+v", got)
+	}
+	if images := usage.Runtime["cluster-a"]["default"]; len(images) != 1 || images[0].ImageRef != "docker.io/library/nginx" || images[0].Tag != "1.25" || images[0].Digest != "sha256:scan-digest" {
+		t.Fatalf("Unexpected runtime payload: %+v", usage.Runtime)
 	}
 
 	bulk, err := store.GetRuntimeUsageForScans(ctx, []RuntimeLookupInput{{
@@ -358,9 +363,148 @@ func TestGetRuntimeUsageForScan_FallbackRepositoryTagMatch(t *testing.T) {
 	if !usage.RuntimeUsed {
 		t.Fatalf("Expected fallback runtime usage to be true")
 	}
-	if len(usage.RuntimeClusters) != 1 || usage.RuntimeClusters[0] != "cluster-b" {
-		t.Fatalf("Unexpected runtime clusters: %+v", usage.RuntimeClusters)
+	if got := runtimeClusterNames(usage.Runtime); !reflect.DeepEqual(got, []string{"cluster-b"}) {
+		t.Fatalf("Unexpected runtime clusters: %+v", got)
 	}
+	if images := usage.Runtime["cluster-b"]["kube-system"]; len(images) != 1 || images[0].ImageRef != "nginx" || images[0].Tag != "1.26" || images[0].Digest != "" {
+		t.Fatalf("Unexpected fallback runtime payload: %+v", usage.Runtime)
+	}
+}
+
+func TestGetRuntimeUsageForScan_MergesDigestAndDigestlessTagFallback(t *testing.T) {
+	dbPath := "test_cluster_runtime_merge_" + t.Name() + ".db"
+	_ = os.Remove(dbPath)
+	defer os.Remove(dbPath)
+
+	store, err := NewSQLiteStore(dbPath)
+	if err != nil {
+		t.Fatalf("Failed to create SQLite store: %v", err)
+	}
+	defer store.Close()
+
+	ctx := context.Background()
+	record := &ScanRecord{
+		Repository:      "docker.io/library/nginx",
+		Tag:             "1.28",
+		Digest:          "sha256:merge-digest",
+		PolicyPassed:    true,
+		SBOMAttested:    true,
+		VulnAttested:    true,
+		SCAIAttested:    true,
+		Vulnerabilities: []types.VulnerabilityRecord{},
+		ToleratedCVEs:   []types.ToleratedCVE{},
+	}
+	if err := store.RecordScan(ctx, record); err != nil {
+		t.Fatalf("RecordScan failed: %v", err)
+	}
+
+	if err := store.RecordClusterInventory(ctx, "cluster-digest", []ClusterImageEntry{{
+		Namespace: "default",
+		ImageRef:  "docker.io/library/nginx",
+		Tag:       "1.28",
+		Digest:    "sha256:merge-digest",
+	}}, time.Now().UTC()); err != nil {
+		t.Fatalf("RecordClusterInventory(cluster-digest) failed: %v", err)
+	}
+
+	if err := store.RecordClusterInventory(ctx, "cluster-tag-only", []ClusterImageEntry{{
+		Namespace: "default",
+		ImageRef:  "nginx",
+		Tag:       "1.28",
+		Digest:    "",
+	}}, time.Now().UTC()); err != nil {
+		t.Fatalf("RecordClusterInventory(cluster-tag-only) failed: %v", err)
+	}
+
+	usage, err := store.GetRuntimeUsageForScan(ctx, record.Digest, record.Repository, record.Tag)
+	if err != nil {
+		t.Fatalf("GetRuntimeUsageForScan failed: %v", err)
+	}
+	if !usage.RuntimeUsed {
+		t.Fatalf("Expected merged runtime usage to be true")
+	}
+	wantClusters := []string{"cluster-digest", "cluster-tag-only"}
+	if got := runtimeClusterNames(usage.Runtime); !reflect.DeepEqual(wantClusters, got) {
+		t.Fatalf("Unexpected runtime clusters: got %+v want %+v", got, wantClusters)
+	}
+
+	bulk, err := store.GetRuntimeUsageForScans(ctx, []RuntimeLookupInput{{
+		Digest:     record.Digest,
+		Repository: record.Repository,
+		Tag:        record.Tag,
+	}})
+	if err != nil {
+		t.Fatalf("GetRuntimeUsageForScans failed: %v", err)
+	}
+
+	bulkUsage, ok := bulk[record.Digest]
+	if !ok || !bulkUsage.RuntimeUsed {
+		t.Fatalf("Expected digest runtime usage in bulk map, got: %+v", bulk)
+	}
+	if got := runtimeClusterNames(bulkUsage.Runtime); !reflect.DeepEqual(wantClusters, got) {
+		t.Fatalf("Unexpected bulk runtime clusters: got %+v want %+v", got, wantClusters)
+	}
+}
+
+func TestGetRuntimeUsageForScan_IncludesDistinctDigestVariantForMatchingTag(t *testing.T) {
+	dbPath := "test_cluster_runtime_include_distinct_digest_variant_" + t.Name() + ".db"
+	_ = os.Remove(dbPath)
+	defer os.Remove(dbPath)
+
+	store, err := NewSQLiteStore(dbPath)
+	if err != nil {
+		t.Fatalf("Failed to create SQLite store: %v", err)
+	}
+	defer store.Close()
+
+	ctx := context.Background()
+	if err := store.RecordClusterInventory(ctx, "cluster-has-other-digest", []ClusterImageEntry{{
+		Namespace: "default",
+		ImageRef:  "nginx",
+		Tag:       "1.29",
+		Digest:    "sha256:other-digest",
+	}}, time.Now().UTC()); err != nil {
+		t.Fatalf("RecordClusterInventory failed: %v", err)
+	}
+
+	usage, err := store.GetRuntimeUsageForScan(ctx, "sha256:expected-digest", "docker.io/library/nginx", "1.29")
+	if err != nil {
+		t.Fatalf("GetRuntimeUsageForScan failed: %v", err)
+	}
+	if !usage.RuntimeUsed {
+		t.Fatalf("Expected runtime usage when a matching repo+tag exists with a distinct digest")
+	}
+	if got := runtimeClusterNames(usage.Runtime); !reflect.DeepEqual(got, []string{"cluster-has-other-digest"}) {
+		t.Fatalf("Unexpected runtime clusters: %+v", got)
+	}
+	if images := usage.Runtime["cluster-has-other-digest"]["default"]; len(images) != 1 || images[0].Digest != "sha256:other-digest" {
+		t.Fatalf("Expected runtime payload to include the distinct digest variant, got %+v", usage.Runtime)
+	}
+
+	bulk, err := store.GetRuntimeUsageForScans(ctx, []RuntimeLookupInput{{
+		Digest:     "sha256:expected-digest",
+		Repository: "docker.io/library/nginx",
+		Tag:        "1.29",
+	}})
+	if err != nil {
+		t.Fatalf("GetRuntimeUsageForScans failed: %v", err)
+	}
+	bulkUsage, ok := bulk["sha256:expected-digest"]
+	if !ok || !bulkUsage.RuntimeUsed {
+		t.Fatalf("Expected bulk runtime usage when only a distinct digest variant exists, got %+v", bulk)
+	}
+	if images := bulkUsage.Runtime["cluster-has-other-digest"]["default"]; len(images) != 1 || images[0].Digest != "sha256:other-digest" {
+		t.Fatalf("Expected bulk runtime payload to include the distinct digest variant, got %+v", bulkUsage.Runtime)
+	}
+}
+
+func runtimeClusterNames(runtime RuntimeInventory) []string {
+	clusters := make([]string, 0, len(runtime))
+	for cluster := range runtime {
+		clusters = append(clusters, cluster)
+	}
+	sort.Strings(clusters)
+	return clusters
 }
 
 func TestGetRuntimeUsageForScan_NoMatch(t *testing.T) {

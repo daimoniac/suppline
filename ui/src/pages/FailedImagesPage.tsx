@@ -151,7 +151,7 @@ export default function FailedImagesPage() {
                 <td className="px-4 py-3">
                   <div className="flex items-center gap-2 flex-wrap">
                     <StatusBadge passed={s.PolicyPassed} status={s.PolicyStatus} label={s.PolicyStatus === 'pending' ? 'Pending Maturity' : undefined} />
-                    <RuntimeUsageBadge inUse={!!s.RuntimeUsed} clusters={s.RuntimeClusters} />
+                    <RuntimeUsageBadge inUse={!!s.RuntimeUsed} runtime={s.Runtime} />
                   </div>
                 </td>
                 <td className="px-4 py-3"><VulnCounts critical={s.CriticalVulnCount} high={s.HighVulnCount} medium={s.MediumVulnCount} low={s.LowVulnCount} /></td>

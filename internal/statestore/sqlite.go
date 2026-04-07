@@ -949,27 +949,28 @@ func (s *SQLiteStore) GetRuntimeUsageForScans(ctx context.Context, scans []Runti
 	fallbackCache := make(map[string]RuntimeUsage)
 	for _, scan := range scans {
 		digest := strings.TrimSpace(scan.Digest)
-		if usage, ok := byDigest[digest]; ok && usage.RuntimeUsed {
-			usageByDigest[digest] = usage
-			continue
-		}
+		usage := byDigest[digest]
 
 		repo := strings.TrimSpace(scan.Repository)
 		tag := strings.TrimSpace(scan.Tag)
 		if repo == "" || tag == "" || digest == "" {
+			if usage.RuntimeUsed {
+				usageByDigest[digest] = usage
+			}
 			continue
 		}
 
 		cacheKey := normalizeRepositoryRef(repo) + "|" + tag
-		usage, ok := fallbackCache[cacheKey]
+		fallbackUsage, ok := fallbackCache[cacheKey]
 		if !ok {
-			usage, err = s.queryRuntimeUsageByRepoTag(ctx, repo, tag)
+			fallbackUsage, err = s.queryRuntimeUsageByRepoTag(ctx, repo, tag)
 			if err != nil {
 				return nil, err
 			}
-			fallbackCache[cacheKey] = usage
+			fallbackCache[cacheKey] = fallbackUsage
 		}
 
+		usage = mergeRuntimeUsage(usage, fallbackUsage)
 		if usage.RuntimeUsed {
 			usageByDigest[digest] = usage
 		}
@@ -989,8 +990,15 @@ func (s *SQLiteStore) GetRuntimeUsageForScan(ctx context.Context, digest, reposi
 		if err != nil {
 			return nil, err
 		}
-		if usage, ok := byDigest[digest]; ok && usage.RuntimeUsed {
-			return &usage, nil
+		if usage, ok := byDigest[digest]; ok {
+			fallbackUsage, err := s.queryRuntimeUsageByRepoTag(ctx, repository, tag)
+			if err != nil {
+				return nil, err
+			}
+			merged := mergeRuntimeUsage(usage, fallbackUsage)
+			if merged.RuntimeUsed {
+				return &merged, nil
+			}
 		}
 	}
 
@@ -1010,7 +1018,7 @@ func (s *SQLiteStore) queryRuntimeUsageByDigests(ctx context.Context, digests []
 
 	placeholders := strings.TrimSuffix(strings.Repeat("?,", len(digests)), ",")
 	query := `
-		SELECT ci.digest, c.name, ci.namespace
+		SELECT ci.digest, ci.image_ref, COALESCE(ci.tag, ''), c.name, ci.namespace
 		FROM cluster_images ci
 		JOIN clusters c ON c.id = ci.cluster_id
 		WHERE ci.digest IN (` + placeholders + `)
@@ -1029,11 +1037,17 @@ func (s *SQLiteStore) queryRuntimeUsageByDigests(ctx context.Context, digests []
 
 	locationsByDigest := make(map[string][]RuntimeLocation)
 	for rows.Next() {
-		var digest, cluster, namespace string
-		if err := rows.Scan(&digest, &cluster, &namespace); err != nil {
+		var digest, imageRef, imageTag, cluster, namespace string
+		if err := rows.Scan(&digest, &imageRef, &imageTag, &cluster, &namespace); err != nil {
 			return nil, errors.NewTransientf("failed to scan runtime usage by digest: %w", err)
 		}
-		locationsByDigest[digest] = append(locationsByDigest[digest], RuntimeLocation{Cluster: cluster, Namespace: namespace})
+		locationsByDigest[digest] = append(locationsByDigest[digest], RuntimeLocation{
+			Cluster:   cluster,
+			Namespace: namespace,
+			ImageRef:  imageRef,
+			Tag:       imageTag,
+			Digest:    digest,
+		})
 	}
 
 	if err := rows.Err(); err != nil {
@@ -1055,7 +1069,7 @@ func (s *SQLiteStore) queryRuntimeUsageByRepoTag(ctx context.Context, repository
 	}
 
 	rows, err := s.db.QueryContext(ctx, `
-		SELECT ci.image_ref, COALESCE(ci.tag, ''), c.name, ci.namespace
+		SELECT ci.image_ref, COALESCE(ci.tag, ''), COALESCE(ci.digest, ''), c.name, ci.namespace
 		FROM cluster_images ci
 		JOIN clusters c ON c.id = ci.cluster_id
 		WHERE COALESCE(ci.tag, '') = ?
@@ -1067,8 +1081,8 @@ func (s *SQLiteStore) queryRuntimeUsageByRepoTag(ctx context.Context, repository
 
 	locations := make([]RuntimeLocation, 0)
 	for rows.Next() {
-		var imageRef, imageTag, cluster, namespace string
-		if err := rows.Scan(&imageRef, &imageTag, &cluster, &namespace); err != nil {
+		var imageRef, imageTag, imageDigest, cluster, namespace string
+		if err := rows.Scan(&imageRef, &imageTag, &imageDigest, &cluster, &namespace); err != nil {
 			return RuntimeUsage{}, errors.NewTransientf("failed to scan runtime fallback usage: %w", err)
 		}
 
@@ -1079,7 +1093,13 @@ func (s *SQLiteStore) queryRuntimeUsageByRepoTag(ctx context.Context, repository
 			continue
 		}
 
-		locations = append(locations, RuntimeLocation{Cluster: cluster, Namespace: namespace})
+		locations = append(locations, RuntimeLocation{
+			Cluster:   cluster,
+			Namespace: namespace,
+			ImageRef:  imageRef,
+			Tag:       imageTag,
+			Digest:    imageDigest,
+		})
 	}
 
 	if err := rows.Err(); err != nil {
@@ -1089,15 +1109,28 @@ func (s *SQLiteStore) queryRuntimeUsageByRepoTag(ctx context.Context, repository
 	return buildRuntimeUsage(locations), nil
 }
 
+func mergeRuntimeUsage(primary, secondary RuntimeUsage) RuntimeUsage {
+	if !primary.RuntimeUsed {
+		return secondary
+	}
+	if !secondary.RuntimeUsed {
+		return primary
+	}
+
+	locations := make([]RuntimeLocation, 0)
+	locations = appendRuntimeLocations(locations, primary.Runtime)
+	locations = appendRuntimeLocations(locations, secondary.Runtime)
+
+	return buildRuntimeUsage(locations)
+}
+
 func buildRuntimeUsage(locations []RuntimeLocation) RuntimeUsage {
 	if len(locations) == 0 {
 		return RuntimeUsage{}
 	}
 
-	clusterSet := make(map[string]struct{}, len(locations))
-	locationSet := make(map[string]RuntimeLocation, len(locations))
-	clusters := make([]string, 0, len(locations))
-	runtimeNamespaces := make([]RuntimeLocation, 0, len(locations))
+	runtime := make(RuntimeInventory)
+	entrySet := make(map[string]struct{}, len(locations))
 
 	for _, location := range locations {
 		cluster := strings.TrimSpace(location.Cluster)
@@ -1106,36 +1139,68 @@ func buildRuntimeUsage(locations []RuntimeLocation) RuntimeUsage {
 			continue
 		}
 
-		if _, ok := clusterSet[cluster]; !ok {
-			clusterSet[cluster] = struct{}{}
-			clusters = append(clusters, cluster)
-		}
-
-		key := cluster + "|" + namespace
-		if _, ok := locationSet[key]; ok {
+		key := strings.Join([]string{cluster, namespace, location.ImageRef, location.Tag, location.Digest}, "|")
+		if _, ok := entrySet[key]; ok {
 			continue
 		}
-		locationSet[key] = RuntimeLocation{Cluster: cluster, Namespace: namespace}
-		runtimeNamespaces = append(runtimeNamespaces, RuntimeLocation{Cluster: cluster, Namespace: namespace})
+		entrySet[key] = struct{}{}
+
+		namespaces := runtime[cluster]
+		if namespaces == nil {
+			namespaces = make(map[string][]RuntimeImage)
+			runtime[cluster] = namespaces
+		}
+
+		namespaces[namespace] = append(namespaces[namespace], RuntimeImage{
+			ImageRef: location.ImageRef,
+			Tag:      location.Tag,
+			Digest:   location.Digest,
+		})
 	}
 
-	sort.Strings(clusters)
-	sort.Slice(runtimeNamespaces, func(i, j int) bool {
-		if runtimeNamespaces[i].Cluster == runtimeNamespaces[j].Cluster {
-			return runtimeNamespaces[i].Namespace < runtimeNamespaces[j].Namespace
-		}
-		return runtimeNamespaces[i].Cluster < runtimeNamespaces[j].Cluster
-	})
-
-	if len(clusters) == 0 {
+	if len(runtime) == 0 {
 		return RuntimeUsage{}
 	}
 
-	return RuntimeUsage{
-		RuntimeUsed:       true,
-		RuntimeClusters:   clusters,
-		RuntimeNamespaces: runtimeNamespaces,
+	for cluster, namespaces := range runtime {
+		for namespace, images := range namespaces {
+			ordered := append([]RuntimeImage(nil), images...)
+			sort.Slice(ordered, func(i, j int) bool {
+				if ordered[i].ImageRef != ordered[j].ImageRef {
+					return ordered[i].ImageRef < ordered[j].ImageRef
+				}
+				if ordered[i].Tag != ordered[j].Tag {
+					return ordered[i].Tag < ordered[j].Tag
+				}
+				return ordered[i].Digest < ordered[j].Digest
+			})
+			namespaces[namespace] = ordered
+		}
+		runtime[cluster] = namespaces
 	}
+
+	return RuntimeUsage{
+		RuntimeUsed: true,
+		Runtime:     runtime,
+	}
+}
+
+func appendRuntimeLocations(locations []RuntimeLocation, runtime RuntimeInventory) []RuntimeLocation {
+	for cluster, namespaces := range runtime {
+		for namespace, images := range namespaces {
+			for _, image := range images {
+				locations = append(locations, RuntimeLocation{
+					Cluster:   cluster,
+					Namespace: namespace,
+					ImageRef:  image.ImageRef,
+					Tag:       image.Tag,
+					Digest:    image.Digest,
+				})
+			}
+		}
+	}
+
+	return locations
 }
 
 func normalizeRepositoryRef(imageRef string) string {

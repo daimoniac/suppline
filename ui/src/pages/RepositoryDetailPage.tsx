@@ -195,7 +195,7 @@ export default function RepositoryDetailPage() {
                           {formatRemainingDays(daysUntilReleaseAge(tag.ReleaseAgeSeconds, tag.MinimumReleaseAgeSeconds))}
                         </span>
                       )}
-                      <RuntimeUsageBadge inUse={!!tag.RuntimeUsed} clusters={tag.RuntimeClusters} />
+                      <RuntimeUsageBadge inUse={!!tag.RuntimeUsed} runtime={tag.Runtime} />
                     </div>
                   </td>
                   <td className="px-4 py-3">

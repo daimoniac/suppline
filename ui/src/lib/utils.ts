@@ -1,3 +1,5 @@
+import type { RuntimeImage, RuntimeInventory } from './api';
+
 export function escapeHtml(s: string): string {
   return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#039;');
 }
@@ -110,4 +112,27 @@ export function formatRemainingDays(days: number | null): string {
   if (days <= 0) return 'Ready';
   if (days === 1) return '1 day remaining';
   return `${days} days remaining`;
+}
+
+export function getRuntimeClusterNames(runtime?: RuntimeInventory): string[] {
+  if (!runtime) return [];
+  return Object.keys(runtime).sort((left, right) => left.localeCompare(right));
+}
+
+export function getRuntimeClusterCount(runtime?: RuntimeInventory): number {
+  return getRuntimeClusterNames(runtime).length;
+}
+
+export function getRuntimeNamespaceEntries(runtime?: RuntimeInventory): Array<{ cluster: string; namespace: string; images: RuntimeImage[] }> {
+  if (!runtime) return [];
+
+  const entries: Array<{ cluster: string; namespace: string; images: RuntimeImage[] }> = [];
+  for (const cluster of getRuntimeClusterNames(runtime)) {
+    const namespaces = runtime[cluster] || {};
+    for (const namespace of Object.keys(namespaces).sort((left, right) => left.localeCompare(right))) {
+      entries.push({ cluster, namespace, images: namespaces[namespace] || [] });
+    }
+  }
+
+  return entries;
 }

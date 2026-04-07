@@ -1,6 +1,7 @@
-import { cn, severityColor, copyToClipboard, truncateDigest } from '../lib/utils';
+import { cn, severityColor, copyToClipboard, truncateDigest, getRuntimeClusterCount, getRuntimeClusterNames } from '../lib/utils';
 import { Loader2, AlertCircle, Search, ChevronUp, ChevronDown, Copy } from 'lucide-react';
 import type { ReactNode } from 'react';
+import type { RuntimeInventory } from '../lib/api';
 import { Link } from 'react-router-dom';
 import { useImageUsageFilter } from '../lib/imageUsageFilter';
 import { useToast } from '../lib/toast';
@@ -99,10 +100,11 @@ export function DigestLinkWithCopy({ digest, to, showAsCode = false, wrap = fals
   return <div className={`flex items-center gap-1 ${wrap ? 'flex-wrap' : ''}`}>{digestNode}<button className="text-text-muted hover:text-text-primary p-0.5" onClick={() => { copyToClipboard(digest).then(ok => toast(ok ? 'Copied!' : 'Failed to copy', ok ? 'success' : 'error')); }}><Copy className="w-3 h-3" /></button></div>;
 }
 
-export function RuntimeUsageBadge({ inUse, clusters, showWhenNotInUse = false, showClusterCount = false }: { inUse: boolean; clusters?: string[]; showWhenNotInUse?: boolean; showClusterCount?: boolean }) {
+export function RuntimeUsageBadge({ inUse, runtime, showWhenNotInUse = false, showClusterCount = false }: { inUse: boolean; runtime?: RuntimeInventory; showWhenNotInUse?: boolean; showClusterCount?: boolean }) {
   if (!inUse && !showWhenNotInUse) return null;
-  const label = inUse ? (showClusterCount ? `In use on ${clusters?.length || 0} cluster(s)` : 'In use') : 'Not in use';
-  const title = inUse && clusters?.length ? `Running on: ${clusters.join(', ')}` : label;
+  const clusterNames = getRuntimeClusterNames(runtime);
+  const label = inUse ? (showClusterCount ? `In use on ${getRuntimeClusterCount(runtime)} cluster(s)` : 'In use') : 'Not in use';
+  const title = inUse && clusterNames.length ? `Running on: ${clusterNames.join(', ')}` : label;
   return <span className={`px-1.5 py-0.5 rounded text-[10px] font-semibold ${inUse ? 'bg-success-bg text-success' : 'bg-bg-tertiary text-text-muted'}`} title={title}>{label}</span>;
 }
 

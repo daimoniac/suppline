@@ -80,8 +80,7 @@ func (s *APIServer) handleGetScan(w http.ResponseWriter, r *http.Request) {
 		s.logger.Error("failed to get runtime usage for scan", "digest", digest, "error", err)
 	} else if runtimeUsage != nil {
 		record.RuntimeUsed = runtimeUsage.RuntimeUsed
-		record.RuntimeClusters = runtimeUsage.RuntimeClusters
-		record.RuntimeNamespaces = runtimeUsage.RuntimeNamespaces
+		record.Runtime = runtimeUsage.Runtime
 	}
 
 	s.respondJSON(w, http.StatusOK, record)
@@ -168,8 +167,7 @@ func (s *APIServer) handleListScans(w http.ResponseWriter, r *http.Request) {
 				continue
 			}
 			record.RuntimeUsed = usage.RuntimeUsed
-			record.RuntimeClusters = usage.RuntimeClusters
-			record.RuntimeNamespaces = usage.RuntimeNamespaces
+			record.Runtime = usage.Runtime
 		}
 	}
 
@@ -1213,7 +1211,7 @@ func (s *APIServer) handleGetRepository(w http.ResponseWriter, r *http.Request) 
 				continue
 			}
 			detail.Tags[i].RuntimeUsed = usage.RuntimeUsed
-			detail.Tags[i].RuntimeClusters = usage.RuntimeClusters
+			detail.Tags[i].Runtime = usage.Runtime
 		}
 	}
 

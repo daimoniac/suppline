@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
 import { useAuth } from '../lib/auth';
 import { useToast } from '../lib/toast';
-import { formatRelativeTime, formatDate, truncateDigest, copyToClipboard, daysUntilReleaseAge, formatRemainingDays } from '../lib/utils';
+import { formatRelativeTime, formatDate, truncateDigest, copyToClipboard, daysUntilReleaseAge, formatRemainingDays, getRuntimeClusterCount, getRuntimeNamespaceEntries } from '../lib/utils';
 import { LoadingState, ErrorState, StatusBadge, SeverityBadge } from '../components/ui';
 import type { ScanDetail, Vulnerability } from '../lib/api';
 import { ArrowLeft, RefreshCw, Copy, CheckCircle, XCircle, ChevronDown, ChevronRight, ExternalLink } from 'lucide-react';
@@ -74,6 +74,7 @@ export default function ScanDetailPage() {
   const exemptedIds = new Set(vexStatements.map(t => t.CVEID));
   const activeVulns = (scan.Vulnerabilities || []).filter(v => !exemptedIds.has(v.CVEID));
   const grouped = groupBySeverity(activeVulns);
+  const runtimeEntries = getRuntimeNamespaceEntries(scan.Runtime);
 
   return (
     <div className="space-y-6">
@@ -114,14 +115,21 @@ export default function ScanDetailPage() {
           <InfoItem label="Runtime" value={
             <div className="space-y-1">
               <span className={`inline-flex px-1.5 py-0.5 rounded text-[10px] font-semibold ${scan.RuntimeUsed ? 'bg-success-bg text-success' : 'bg-bg-tertiary text-text-muted'}`}>
-                {scan.RuntimeUsed ? `In use on ${scan.RuntimeClusters?.length || 0} cluster(s)` : 'Not in use'}
+                {scan.RuntimeUsed ? `In use on ${getRuntimeClusterCount(scan.Runtime)} cluster(s)` : 'Not in use'}
               </span>
-              {scan.RuntimeUsed && scan.RuntimeNamespaces && scan.RuntimeNamespaces.length > 0 && (
-                <div className="text-xs text-text-secondary">
-                  {scan.RuntimeNamespaces.map((entry, idx) => (
-                    <span key={`${entry.Cluster}-${entry.Namespace}-${idx}`} className="mr-2">
-                      {entry.Cluster}/{entry.Namespace}
-                    </span>
+              {scan.RuntimeUsed && runtimeEntries.length > 0 && (
+                <div className="space-y-2 text-xs text-text-secondary">
+                  {runtimeEntries.map(({ cluster, namespace, images }) => (
+                    <div key={`${cluster}-${namespace}`}>
+                      <div className="font-medium text-text-primary">{cluster}/{namespace}</div>
+                      <div className="mt-1 space-y-1">
+                        {images.map((image, idx) => (
+                          <div key={`${cluster}-${namespace}-${image.ImageRef}-${image.Tag}-${image.Digest}-${idx}`} className="font-mono text-[11px] text-text-secondary break-all">
+                            {image.ImageRef}{image.Tag ? `:${image.Tag}` : ''}{image.Digest ? ` @ ${truncateDigest(image.Digest)}` : ''}
+                          </div>
+                        ))}
+                      </div>
+                    </div>
                   ))}
                 </div>
               )}
