@@ -329,12 +329,12 @@ export interface SemverUpdateEntry {
   runtime_versions: string[];
   out_of_range_versions: string[];
   suggested_ranges: string[] | null;
-  /** "current" | "outdated" | "no_runtime_data" */
+  /** "current" | "out_of_bounds" | "tighten" | "no_runtime_data" */
   status: string;
 }
 
 export interface SemverUpdateTasksResponse {
   entries: SemverUpdateEntry[];
-  suggested_config: string;
+  ai_agent_prompt: string;
   no_runtime_data: boolean;
 }

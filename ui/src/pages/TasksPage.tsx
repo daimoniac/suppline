@@ -17,11 +17,19 @@ function SemverStatusBadge({ status }: { status: string }) {
       </span>
     );
   }
-  if (status === 'outdated') {
+  if (status === 'out_of_bounds') {
     return (
       <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-xs font-medium bg-warning-bg text-warning">
         <TriangleAlert className="w-3 h-3" />
-        Outdated
+        Out of bounds
+      </span>
+    );
+  }
+  if (status === 'tighten') {
+    return (
+      <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-xs font-medium bg-accent/15 text-accent">
+        <CheckCircle2 className="w-3 h-3" />
+        Tighten
       </span>
     );
   }
@@ -63,6 +71,7 @@ function RuntimeVersionsCell({ entry }: { entry: SemverUpdateEntry }) {
 function SemverUpdateTask({ data }: { data: SemverUpdateTasksResponse }) {
   const { toast } = useToast();
   const [configExpanded, setConfigExpanded] = useState(false);
+  const [showAll, setShowAll] = useState(false);
 
   if (data.no_runtime_data) {
     return (
@@ -84,29 +93,44 @@ function SemverUpdateTask({ data }: { data: SemverUpdateTasksResponse }) {
     );
   }
 
-  const outdatedCount = data.entries.filter(e => e.status === 'outdated').length;
-  const suggestedCount = data.entries.filter(e => (e.suggested_ranges || []).length > 0).length;
-  const hasUpdates = suggestedCount > 0 && data.suggested_config;
+  const outOfBoundsCount = data.entries.filter(e => e.status === 'out_of_bounds').length;
+  const tightenCount = data.entries.filter(e => e.status === 'tighten').length;
+  const defaultEntries = data.entries.filter(e => e.status === 'out_of_bounds' || e.status === 'tighten');
+  const displayedEntries = showAll ? data.entries : defaultEntries;
+  const hasUpdates = data.ai_agent_prompt.trim().length > 0;
 
   return (
     <div className="space-y-4">
-      {outdatedCount > 0 && (
+      {outOfBoundsCount > 0 && (
         <div className="flex items-center gap-2 px-4 py-3 rounded-lg bg-warning-bg border border-warning/20 text-sm text-warning">
           <TriangleAlert className="w-4 h-4 flex-shrink-0" />
           <span>
-            {outdatedCount} sync {outdatedCount === 1 ? 'entry has' : 'entries have'} runtime versions outside the configured range.
+            {outOfBoundsCount} sync {outOfBoundsCount === 1 ? 'entry has' : 'entries have'} runtime versions outside the configured range.
           </span>
         </div>
       )}
 
-      {suggestedCount > outdatedCount && (
+      {tightenCount > 0 && (
         <div className="flex items-center gap-2 px-4 py-3 rounded-lg bg-bg-secondary border border-border text-sm text-text-secondary">
           <CheckCircle2 className="w-4 h-4 flex-shrink-0 text-accent" />
           <span>
-            {suggestedCount - outdatedCount} sync {suggestedCount - outdatedCount === 1 ? 'entry has' : 'entries have'} optional range tightening suggestions based on currently running versions.
+            {tightenCount} sync {tightenCount === 1 ? 'entry has' : 'entries have'} optional range tightening suggestions based on currently running versions.
           </span>
         </div>
       )}
+
+      <div className="flex items-center justify-between gap-3">
+        <p className="text-xs text-text-muted">
+          Showing {displayedEntries.length} of {data.entries.length} entries
+          {!showAll ? ' (out of bounds + tighten only)' : ''}
+        </p>
+        <button
+          onClick={() => setShowAll(v => !v)}
+          className="px-3 py-1.5 text-xs rounded-lg border border-border text-text-secondary hover:bg-bg-tertiary flex items-center gap-1.5 transition-colors"
+        >
+          {showAll ? 'Show actionable' : 'Show all'}
+        </button>
+      </div>
 
       <div className="overflow-x-auto">
         <table className="min-w-full text-sm">
@@ -120,7 +144,7 @@ function SemverUpdateTask({ data }: { data: SemverUpdateTasksResponse }) {
             </tr>
           </thead>
           <tbody>
-            {data.entries.map((entry, idx) => (
+            {displayedEntries.map((entry, idx) => (
               <tr key={idx} className="border-b border-border/50 last:border-0">
                 <td className="px-3 py-3">
                   <div className="flex items-center gap-1.5 text-xs font-mono">
@@ -155,6 +179,13 @@ function SemverUpdateTask({ data }: { data: SemverUpdateTasksResponse }) {
                 </td>
               </tr>
             ))}
+            {displayedEntries.length === 0 && (
+              <tr>
+                <td colSpan={5} className="px-3 py-8 text-center text-xs text-text-muted">
+                  No out-of-bounds or tighten entries right now. Use Show all to view current entries.
+                </td>
+              </tr>
+            )}
           </tbody>
         </table>
       </div>
@@ -168,28 +199,28 @@ function SemverUpdateTask({ data }: { data: SemverUpdateTasksResponse }) {
           >
             <span className="flex items-center gap-2">
               <ClipboardList className="w-4 h-4 text-accent" />
-              Updated suppline.yml
+              AI Agent Prompt
             </span>
             <span className="text-xs text-text-muted">{configExpanded ? 'Hide' : 'Show'}</span>
           </button>
           {configExpanded && (
             <div className="border-t border-border">
               <div className="flex items-center justify-between px-4 py-2 bg-bg-secondary border-b border-border">
-                <p className="text-xs text-text-muted">Copy and paste this into your suppline.yml to apply the suggested updates.</p>
+                <p className="text-xs text-text-muted">Use this prompt with your AI coding agent to apply the semverRange updates to suppline.yml.</p>
                 <button
                   onClick={() => {
-                    copyToClipboard(data.suggested_config).then(ok =>
-                      toast(ok ? 'Copied to clipboard!' : 'Failed to copy', ok ? 'success' : 'error')
+                    copyToClipboard(data.ai_agent_prompt).then(ok =>
+                      toast(ok ? 'Prompt copied to clipboard!' : 'Failed to copy', ok ? 'success' : 'error')
                     );
                   }}
                   className="px-3 py-1.5 text-xs rounded-lg border border-border text-text-secondary hover:bg-bg-tertiary flex items-center gap-1.5 transition-colors"
                 >
                   <Copy className="w-3 h-3" />
-                  Copy
+                  Copy prompt
                 </button>
               </div>
               <pre className="text-xs font-mono text-text-secondary bg-bg-secondary p-4 overflow-x-auto whitespace-pre max-h-[28rem]">
-                {data.suggested_config}
+                {data.ai_agent_prompt}
               </pre>
             </div>
           )}
