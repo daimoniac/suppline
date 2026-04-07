@@ -251,16 +251,14 @@ func buildSemverUpdatePrompt(entries []internalSemverEntry) string {
 	var b strings.Builder
 	b.WriteString("Update suppline.yml in this repository using the semver recommendations below.\\n")
 	b.WriteString("Rules:\\n")
-	b.WriteString("1. Edit only sync entries that exactly match both source and target.\\n")
+	b.WriteString("1. Edit only sync entries that exactly match target.\\n")
 	b.WriteString("2. For each matched entry, set tags.semverRange to the suggested range list exactly.\\n")
 	b.WriteString("3. Preserve all comments, template expressions, and unrelated config.\\n")
 	b.WriteString("4. Do not change entry ordering.\\n")
 	b.WriteString("\\nSuggested updates:\\n")
 
 	for _, entry := range updates {
-		b.WriteString("- source: ")
-		b.WriteString(entry.Source)
-		b.WriteString("\\n  target: ")
+		b.WriteString("- target: ")
 		b.WriteString(entry.Target)
 		b.WriteString("\\n  semverRange: [")
 		b.WriteString(strings.Join(entry.SuggestedRanges, ", "))

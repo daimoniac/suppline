@@ -4,7 +4,7 @@ import { useToast } from '../lib/toast';
 import { copyToClipboard } from '../lib/utils';
 import { LoadingState, ErrorState, PageHeader, EmptyState } from '../components/ui';
 import type { SemverUpdateEntry, SemverUpdateTasksResponse } from '../lib/api';
-import { ArrowRight, CheckCircle2, ClipboardList, Copy, RefreshCw, Server, Tag, TriangleAlert } from 'lucide-react';
+import { CheckCircle2, ClipboardList, Copy, RefreshCw, Server, Tag, TriangleAlert } from 'lucide-react';
 
 // ─── status badge ─────────────────────────────────────────────────────────────
 
@@ -136,7 +136,7 @@ function SemverUpdateTask({ data }: { data: SemverUpdateTasksResponse }) {
         <table className="min-w-full text-sm">
           <thead>
             <tr className="border-b border-border">
-              <th className="px-3 py-2 text-left text-xs font-semibold text-text-muted uppercase tracking-wide">Source → Target</th>
+              <th className="px-3 py-2 text-left text-xs font-semibold text-text-muted uppercase tracking-wide">Target</th>
               <th className="px-3 py-2 text-left text-xs font-semibold text-text-muted uppercase tracking-wide">Semver Range</th>
               <th className="px-3 py-2 text-left text-xs font-semibold text-text-muted uppercase tracking-wide">Runtime Versions</th>
               <th className="px-3 py-2 text-left text-xs font-semibold text-text-muted uppercase tracking-wide">Status</th>
@@ -147,11 +147,7 @@ function SemverUpdateTask({ data }: { data: SemverUpdateTasksResponse }) {
             {displayedEntries.map((entry, idx) => (
               <tr key={idx} className="border-b border-border/50 last:border-0">
                 <td className="px-3 py-3">
-                  <div className="flex items-center gap-1.5 text-xs font-mono">
-                    <span className="text-text-secondary max-w-[14rem] truncate" title={entry.source}>{entry.source}</span>
-                    <ArrowRight className="w-3 h-3 flex-shrink-0 text-text-muted" />
-                    <span className="text-text-primary max-w-[14rem] truncate" title={entry.target}>{entry.target}</span>
-                  </div>
+                  <span className="text-xs font-mono text-text-primary max-w-[22rem] inline-block truncate" title={entry.target}>{entry.target}</span>
                 </td>
                 <td className="px-3 py-3">
                   <div className="flex flex-col gap-0.5">
