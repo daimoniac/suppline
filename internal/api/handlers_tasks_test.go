@@ -140,8 +140,8 @@ func TestHandleGetSemverUpdateTasks_AllVersionsInRange(t *testing.T) {
 		t.Fatalf("expected 1 entry, got %d", len(resp.Entries))
 	}
 	entry := resp.Entries[0]
-	if entry.Status != "current" {
-		t.Errorf("expected status=current, got %q", entry.Status)
+	if entry.Status != "tighten" {
+		t.Errorf("expected status=tighten, got %q", entry.Status)
 	}
 	if len(entry.SuggestedRanges) != 1 {
 		t.Fatalf("expected 1 suggested range, got %v", entry.SuggestedRanges)
@@ -185,8 +185,8 @@ func TestHandleGetSemverUpdateTasks_OutdatedRange(t *testing.T) {
 	}
 	entry := resp.Entries[0]
 
-	if entry.Status != "outdated" {
-		t.Errorf("expected status=outdated, got %q", entry.Status)
+	if entry.Status != "out_of_bounds" {
+		t.Errorf("expected status=out_of_bounds, got %q", entry.Status)
 	}
 	if len(entry.OutOfRangeVersions) != 1 || entry.OutOfRangeVersions[0] != "1.27.2" {
 		t.Errorf("expected out-of-range [1.27.2], got %v", entry.OutOfRangeVersions)
@@ -241,13 +241,13 @@ func TestHandleGetSemverUpdateTasks_NonSemverTagsIgnored(t *testing.T) {
 	if len(entry.RuntimeVersions) != 1 || entry.RuntimeVersions[0] != "1.25.0" {
 		t.Errorf("expected runtime versions [1.25.0], got %v", entry.RuntimeVersions)
 	}
-	if entry.Status != "current" {
-		t.Errorf("expected status=current, got %q", entry.Status)
+	if entry.Status != "tighten" {
+		t.Errorf("expected status=tighten, got %q", entry.Status)
 	}
 }
 
 func TestHandleGetSemverUpdateTasks_MultipleSyncEntries(t *testing.T) {
-	// Two semver entries: nginx current, redis outdated.
+	// Two semver entries: nginx tighten, redis out_of_bounds.
 	regsync := &config.RegsyncConfig{
 		Version: 1,
 		Sync: []config.SyncEntry{
@@ -305,13 +305,13 @@ func TestHandleGetSemverUpdateTasks_MultipleSyncEntries(t *testing.T) {
 	}
 
 	nginx := byTarget["registry.example.com/nginx"]
-	if nginx.Status != "current" {
-		t.Errorf("nginx: expected current, got %q", nginx.Status)
+	if nginx.Status != "tighten" {
+		t.Errorf("nginx: expected tighten, got %q", nginx.Status)
 	}
 
 	redis := byTarget["registry.example.com/redis"]
-	if redis.Status != "outdated" {
-		t.Errorf("redis: expected outdated, got %q", redis.Status)
+	if redis.Status != "out_of_bounds" {
+		t.Errorf("redis: expected out_of_bounds, got %q", redis.Status)
 	}
 	if len(redis.SuggestedRanges) != 1 {
 		t.Fatalf("redis: expected 1 suggested range, got %v", redis.SuggestedRanges)
@@ -343,8 +343,8 @@ func TestHandleGetSemverUpdateTasks_NoLowerBound(t *testing.T) {
 	}
 
 	entry := resp.Entries[0]
-	if entry.Status != "outdated" {
-		t.Fatalf("expected outdated, got %q", entry.Status)
+	if entry.Status != "out_of_bounds" {
+		t.Fatalf("expected out_of_bounds, got %q", entry.Status)
 	}
 	if entry.SuggestedRanges[0] != ">=1.27.0" {
 		t.Errorf("expected >=1.27.0, got %q", entry.SuggestedRanges[0])
@@ -386,6 +386,103 @@ func TestHandleGetSemverUpdateTasks_CurrentRangeAlreadyMatchesSuggested(t *testi
 	}
 	if len(entry.SuggestedRanges) != 0 {
 		t.Errorf("expected no suggestion when range already matches, got %v", entry.SuggestedRanges)
+	}
+}
+
+func TestHandleGetSemverUpdateTasks_MultipleRangesORLogic(t *testing.T) {
+	regsync := regsyncWithSemver("docker.io/nginx", "registry.example.com/nginx", []string{">=1.20.0 <1.25.0", ">=1.27.0"})
+	store := &mockClusterInventoryStore{
+		mockStateStore: &mockStateStore{},
+		summaries:      []statestore.ClusterSummary{{Name: "prod"}},
+		clusterImages: []statestore.ClusterImageSummary{
+			{Namespace: "default", ImageRef: "registry.example.com/nginx", Tag: "1.27.5"},
+		},
+	}
+	server := tasksTestServer(t, store, regsync)
+
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/tasks/semver-updates", nil)
+	w := httptest.NewRecorder()
+	server.router.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", w.Code, w.Body.String())
+	}
+
+	var resp SemverUpdateTasksResponse
+	if err := json.NewDecoder(w.Body).Decode(&resp); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+
+	entry := resp.Entries[0]
+	if entry.Status != "tighten" {
+		t.Fatalf("expected status=tighten with OR range match, got %q", entry.Status)
+	}
+	if len(entry.OutOfRangeVersions) != 0 {
+		t.Fatalf("expected no out-of-range versions, got %v", entry.OutOfRangeVersions)
+	}
+}
+
+func TestHandleGetSemverUpdateTasks_MultipleRangesMixedResults(t *testing.T) {
+	regsync := regsyncWithSemver("docker.io/nginx", "registry.example.com/nginx", []string{">=1.20.0 <1.25.0", ">=1.27.0"})
+	store := &mockClusterInventoryStore{
+		mockStateStore: &mockStateStore{},
+		summaries:      []statestore.ClusterSummary{{Name: "prod"}},
+		clusterImages: []statestore.ClusterImageSummary{
+			{Namespace: "default", ImageRef: "registry.example.com/nginx", Tag: "1.24.0"},
+			{Namespace: "default", ImageRef: "registry.example.com/nginx", Tag: "1.27.5"},
+			{Namespace: "default", ImageRef: "registry.example.com/nginx", Tag: "1.25.5"},
+		},
+	}
+	server := tasksTestServer(t, store, regsync)
+
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/tasks/semver-updates", nil)
+	w := httptest.NewRecorder()
+	server.router.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", w.Code, w.Body.String())
+	}
+
+	var resp SemverUpdateTasksResponse
+	if err := json.NewDecoder(w.Body).Decode(&resp); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+
+	entry := resp.Entries[0]
+	if entry.Status != "out_of_bounds" {
+		t.Fatalf("expected status=out_of_bounds with mixed matches, got %q", entry.Status)
+	}
+	if len(entry.OutOfRangeVersions) != 1 || entry.OutOfRangeVersions[0] != "1.25.5" {
+		t.Fatalf("expected out-of-range [1.25.5], got %v", entry.OutOfRangeVersions)
+	}
+}
+
+func TestHandleGetSemverUpdateTasks_AIAgentPromptReturnedWhenSuggestionsExist(t *testing.T) {
+	regsync := regsyncWithSemver("docker.io/nginx", "registry.example.com/nginx", []string{">=1.20.0 <1.26.0"})
+	store := &mockClusterInventoryStore{
+		mockStateStore: &mockStateStore{},
+		summaries:      []statestore.ClusterSummary{{Name: "prod"}},
+		clusterImages: []statestore.ClusterImageSummary{
+			{Namespace: "default", ImageRef: "registry.example.com/nginx", Tag: "1.25.0"},
+		},
+	}
+	server := tasksTestServer(t, store, regsync)
+
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/tasks/semver-updates", nil)
+	w := httptest.NewRecorder()
+	server.router.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", w.Code, w.Body.String())
+	}
+
+	var resp SemverUpdateTasksResponse
+	if err := json.NewDecoder(w.Body).Decode(&resp); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+
+	if resp.AIAgentPrompt == "" {
+		t.Fatal("expected non-empty ai_agent_prompt")
 	}
 }
 

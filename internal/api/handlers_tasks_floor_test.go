@@ -40,8 +40,8 @@ func TestHandleGetSemverUpdateTasks_CurrentWithUpperBoundGetsLowerOnlySuggestion
 		t.Fatalf("expected 1 entry, got %d", len(resp.Entries))
 	}
 	entry := resp.Entries[0]
-	if entry.Status != "current" {
-		t.Fatalf("expected current, got %q", entry.Status)
+	if entry.Status != "tighten" {
+		t.Fatalf("expected tighten, got %q", entry.Status)
 	}
 	if len(entry.SuggestedRanges) != 1 || entry.SuggestedRanges[0] != ">=1.26.13" {
 		t.Fatalf("expected suggested range >=1.26.13, got %v", entry.SuggestedRanges)
