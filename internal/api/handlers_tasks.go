@@ -1,16 +1,13 @@
 package api
 
 import (
-	"bytes"
 	"fmt"
 	"net/http"
-	"os"
 	"regexp"
 	"sort"
 	"strings"
 
 	semver "github.com/Masterminds/semver/v3"
-	"gopkg.in/yaml.v3"
 )
 
 // SemverUpdateEntry describes the state of a single sync entry with semverRange.
@@ -21,15 +18,15 @@ type SemverUpdateEntry struct {
 	RuntimeVersions    []string `json:"runtime_versions"`
 	OutOfRangeVersions []string `json:"out_of_range_versions"`
 	SuggestedRanges    []string `json:"suggested_ranges,omitempty"`
-	// Status is one of "current", "outdated", or "no_runtime_data".
+	// Status is one of "current", "out_of_bounds", "tighten", or "no_runtime_data".
 	Status string `json:"status"`
 }
 
 // SemverUpdateTasksResponse is returned by GET /api/v1/tasks/semver-updates.
 type SemverUpdateTasksResponse struct {
-	Entries         []SemverUpdateEntry `json:"entries"`
-	SuggestedConfig string              `json:"suggested_config"`
-	NoRuntimeData   bool                `json:"no_runtime_data"`
+	Entries       []SemverUpdateEntry `json:"entries"`
+	AIAgentPrompt string              `json:"ai_agent_prompt"`
+	NoRuntimeData bool                `json:"no_runtime_data"`
 }
 
 // internalSemverEntry carries both the public data and the original sync index
@@ -80,9 +77,9 @@ func (s *APIServer) handleGetSemverUpdateTasks(w http.ResponseWriter, r *http.Re
 
 	if len(candidates) == 0 {
 		s.respondJSON(w, http.StatusOK, SemverUpdateTasksResponse{
-			Entries:         []SemverUpdateEntry{},
-			SuggestedConfig: "",
-			NoRuntimeData:   false,
+			Entries:       []SemverUpdateEntry{},
+			AIAgentPrompt: "",
+			NoRuntimeData: false,
 		})
 		return
 	}
@@ -151,8 +148,9 @@ func (s *APIServer) handleGetSemverUpdateTasks(w http.ResponseWriter, r *http.Re
 			continue
 		}
 
-		// Join multiple range strings with a space; Masterminds treats spaces as AND.
-		constraintStr := strings.Join(c.CurrentRanges, " ")
+		// Join multiple range strings with || so a runtime version only needs
+		// to satisfy one configured range.
+		constraintStr := strings.Join(c.CurrentRanges, " || ")
 		constraint, err := semver.NewConstraint(constraintStr)
 		if err != nil {
 			s.logger.Warn("failed to parse semver constraint", "constraint", constraintStr, "error", err)
@@ -184,16 +182,18 @@ func (s *APIServer) handleGetSemverUpdateTasks(w http.ResponseWriter, r *http.Re
 
 		suggestedLower := minVer.String()
 		suggestedRange := fmt.Sprintf(">=%s", suggestedLower)
+		hasTighteningSuggestion := !sameSemverLowerOnlyRange(c.CurrentRanges, suggestedLower)
 
 		if len(outOfRange) == 0 {
 			c.Status = "current"
-			if !sameSemverLowerOnlyRange(c.CurrentRanges, suggestedLower) {
+			if hasTighteningSuggestion {
+				c.Status = "tighten"
 				c.SuggestedRanges = []string{suggestedRange}
 			}
 			continue
 		}
 
-		c.Status = "outdated"
+		c.Status = "out_of_bounds"
 		c.SuggestedRanges = []string{suggestedRange}
 	}
 
@@ -203,30 +203,12 @@ func (s *APIServer) handleGetSemverUpdateTasks(w http.ResponseWriter, r *http.Re
 		publicEntries[i] = c.SemverUpdateEntry
 	}
 
-	// Generate an updated suppline.yml with suggested ranges applied.
-	suggestedConfig := ""
-	if !noRuntimeData {
-		configPath := os.Getenv("SUPPLINE_CONFIG")
-		if configPath == "" {
-			configPath = "suppline.yml"
-		}
-		rawYAML, err := os.ReadFile(configPath)
-		if err != nil {
-			s.logger.Warn("could not read config file for suggested config generation", "path", configPath, "error", err)
-		} else {
-			updated, err := updateSemverRangesInYAML(rawYAML, candidates)
-			if err != nil {
-				s.logger.Warn("could not generate suggested config YAML", "error", err)
-			} else {
-				suggestedConfig = updated
-			}
-		}
-	}
+	aiAgentPrompt := buildSemverUpdatePrompt(candidates)
 
 	s.respondJSON(w, http.StatusOK, SemverUpdateTasksResponse{
-		Entries:         publicEntries,
-		SuggestedConfig: suggestedConfig,
-		NoRuntimeData:   noRuntimeData,
+		Entries:       publicEntries,
+		AIAgentPrompt: aiAgentPrompt,
+		NoRuntimeData: noRuntimeData,
 	})
 }
 
@@ -253,70 +235,39 @@ func sameSemverLowerOnlyRange(current []string, proposedLower string) bool {
 	return currentLower.Equal(proposed)
 }
 
-// updateSemverRangesInYAML parses rawYAML with yaml.Node (preserving template
-// variables and comments) and replaces semverRange sequences for outdated entries.
-func updateSemverRangesInYAML(rawYAML []byte, entries []internalSemverEntry) (string, error) {
-	var doc yaml.Node
-	if err := yaml.Unmarshal(rawYAML, &doc); err != nil {
-		return "", fmt.Errorf("parse yaml: %w", err)
-	}
-	if len(doc.Content) == 0 {
-		return string(rawYAML), nil
-	}
-	root := doc.Content[0]
-
-	// Find the "sync" sequence in the root mapping.
-	var syncSeq *yaml.Node
-	for i := 0; i+1 < len(root.Content); i += 2 {
-		if root.Content[i].Value == "sync" {
-			syncSeq = root.Content[i+1]
-			break
-		}
-	}
-	if syncSeq == nil {
-		return string(rawYAML), nil
-	}
-
+func buildSemverUpdatePrompt(entries []internalSemverEntry) string {
+	var updates []internalSemverEntry
 	for _, entry := range entries {
 		if len(entry.SuggestedRanges) == 0 {
 			continue
 		}
-		if entry.syncIndex >= len(syncSeq.Content) {
-			continue
-		}
-		syncNode := syncSeq.Content[entry.syncIndex]
-
-		// Navigate: sync entry mapping → "tags" → mapping → "semverRange" → sequence
-		for i := 0; i+1 < len(syncNode.Content); i += 2 {
-			if syncNode.Content[i].Value != "tags" {
-				continue
-			}
-			tagsNode := syncNode.Content[i+1]
-			for j := 0; j+1 < len(tagsNode.Content); j += 2 {
-				if tagsNode.Content[j].Value != "semverRange" {
-					continue
-				}
-				seqNode := tagsNode.Content[j+1]
-				newItems := make([]*yaml.Node, len(entry.SuggestedRanges))
-				for k, r := range entry.SuggestedRanges {
-					newItems[k] = &yaml.Node{
-						Kind:  yaml.ScalarNode,
-						Value: r,
-						Tag:   "!!str",
-					}
-				}
-				seqNode.Content = newItems
-				break
-			}
-			break
-		}
+		updates = append(updates, entry)
 	}
 
-	var buf bytes.Buffer
-	enc := yaml.NewEncoder(&buf)
-	enc.SetIndent(2)
-	if err := enc.Encode(&doc); err != nil {
-		return "", fmt.Errorf("encode yaml: %w", err)
+	if len(updates) == 0 {
+		return ""
 	}
-	return buf.String(), nil
+
+	var b strings.Builder
+	b.WriteString("Update suppline.yml in this repository using the semver recommendations below.\\n")
+	b.WriteString("Rules:\\n")
+	b.WriteString("1. Edit only sync entries that exactly match both source and target.\\n")
+	b.WriteString("2. For each matched entry, set tags.semverRange to the suggested range list exactly.\\n")
+	b.WriteString("3. Preserve all comments, template expressions, and unrelated config.\\n")
+	b.WriteString("4. Do not change entry ordering.\\n")
+	b.WriteString("\\nSuggested updates:\\n")
+
+	for _, entry := range updates {
+		b.WriteString("- source: ")
+		b.WriteString(entry.Source)
+		b.WriteString("\\n  target: ")
+		b.WriteString(entry.Target)
+		b.WriteString("\\n  semverRange: [")
+		b.WriteString(strings.Join(entry.SuggestedRanges, ", "))
+		b.WriteString("]\\n")
+	}
+
+	b.WriteString("\\nAfter editing, show a unified diff of suppline.yml only.\\n")
+
+	return b.String()
 }
