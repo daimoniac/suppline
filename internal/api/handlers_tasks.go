@@ -29,6 +29,22 @@ type SemverUpdateTasksResponse struct {
 	NoRuntimeData bool                `json:"no_runtime_data"`
 }
 
+// RuntimeUnusedRepoEntry describes whether a configured sync entry is observed
+// in runtime cluster inventory.
+type RuntimeUnusedRepoEntry struct {
+	Source string `json:"source"`
+	Target string `json:"target"`
+	// Status is one of "in_use", "unused", or "no_runtime_data".
+	Status string `json:"status"`
+}
+
+// RuntimeUnusedRepoTasksResponse is returned by GET /api/v1/tasks/runtime-unused-repositories.
+type RuntimeUnusedRepoTasksResponse struct {
+	Entries       []RuntimeUnusedRepoEntry `json:"entries"`
+	AIAgentPrompt string                   `json:"ai_agent_prompt"`
+	NoRuntimeData bool                     `json:"no_runtime_data"`
+}
+
 // internalSemverEntry carries both the public data and the original sync index
 // so that the yaml.Node updater can map suggestions back to the right YAML node.
 type internalSemverEntry struct {
@@ -209,6 +225,107 @@ func (s *APIServer) handleGetSemverUpdateTasks(w http.ResponseWriter, r *http.Re
 		Entries:       publicEntries,
 		AIAgentPrompt: aiAgentPrompt,
 		NoRuntimeData: noRuntimeData,
+	})
+}
+
+// handleGetRuntimeUnusedRepositoryTasks returns sync repository entries that are
+// not observed in runtime cluster inventory.
+//
+// @Summary     Get runtime-unused repository tasks
+// @Description Compares configured sync targets from suppline.yml with image
+// @Description references actively reported by clusterstate-agent and identifies
+// @Description sync entries that are currently not used at runtime.
+// @Tags        Tasks
+// @Produce     json
+// @Success     200  {object}  RuntimeUnusedRepoTasksResponse
+// @Failure     401  {object}  map[string]string  "Unauthorized"
+// @Failure     500  {object}  map[string]string  "Internal server error"
+// @Security    BearerAuth
+// @Router      /tasks/runtime-unused-repositories [get]
+func (s *APIServer) handleGetRuntimeUnusedRepositoryTasks(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		s.respondError(w, http.StatusMethodNotAllowed, "Method not allowed")
+		return
+	}
+
+	entries := make([]RuntimeUnusedRepoEntry, 0, len(s.regsyncConfig.Sync))
+	for _, entry := range s.regsyncConfig.Sync {
+		if strings.TrimSpace(entry.Target) == "" {
+			continue
+		}
+		entries = append(entries, RuntimeUnusedRepoEntry{
+			Source: entry.Source,
+			Target: entry.Target,
+		})
+	}
+
+	if len(entries) == 0 {
+		s.respondJSON(w, http.StatusOK, RuntimeUnusedRepoTasksResponse{
+			Entries:       []RuntimeUnusedRepoEntry{},
+			AIAgentPrompt: "",
+			NoRuntimeData: false,
+		})
+		return
+	}
+
+	ctx := r.Context()
+	noRuntimeData := true
+	runtimeImageRefs := map[string]struct{}{}
+	if s.clusterInventory != nil {
+		clusters, err := s.clusterInventory.ListClusterSummaries(ctx)
+		if err != nil {
+			s.logger.Error("failed to list cluster summaries", "error", err)
+			s.respondError(w, http.StatusInternalServerError, "Failed to list cluster summaries")
+			return
+		}
+
+		if len(clusters) > 0 {
+			noRuntimeData = false
+			for _, cluster := range clusters {
+				images, err := s.clusterInventory.ListClusterImages(ctx, cluster.Name)
+				if err != nil {
+					s.logger.Warn("failed to list cluster images", "cluster", cluster.Name, "error", err)
+					continue
+				}
+				for _, img := range images {
+					imageRef := strings.TrimSpace(strings.ToLower(img.ImageRef))
+					if imageRef == "" {
+						continue
+					}
+					runtimeImageRefs[imageRef] = struct{}{}
+				}
+			}
+		}
+	}
+
+	if noRuntimeData {
+		for i := range entries {
+			entries[i].Status = "no_runtime_data"
+		}
+		s.respondJSON(w, http.StatusOK, RuntimeUnusedRepoTasksResponse{
+			Entries:       entries,
+			AIAgentPrompt: "",
+			NoRuntimeData: true,
+		})
+		return
+	}
+
+	unusedEntries := make([]RuntimeUnusedRepoEntry, 0, len(entries))
+	for i := range entries {
+		target := strings.TrimSpace(strings.ToLower(entries[i].Target))
+		if _, ok := runtimeImageRefs[target]; ok {
+			entries[i].Status = "in_use"
+			continue
+		}
+
+		entries[i].Status = "unused"
+		unusedEntries = append(unusedEntries, entries[i])
+	}
+
+	s.respondJSON(w, http.StatusOK, RuntimeUnusedRepoTasksResponse{
+		Entries:       entries,
+		AIAgentPrompt: buildRuntimeUnusedRepositoriesPrompt(unusedEntries),
+		NoRuntimeData: false,
 	})
 }
 
@@ -457,6 +574,26 @@ func buildSemverUpdatePrompt(entries []internalSemverEntry) string {
 		b.WriteString("\n  semverRange: [")
 		b.WriteString(strings.Join(entry.SuggestedRanges, ", "))
 		b.WriteString("]\n")
+	}
+
+	return b.String()
+}
+
+func buildRuntimeUnusedRepositoriesPrompt(entries []RuntimeUnusedRepoEntry) string {
+	if len(entries) == 0 {
+		return ""
+	}
+
+	var b strings.Builder
+	b.WriteString("Update suppline.yml and remove the following unused sync entries from the sync list.\n")
+	b.WriteString("Each removal should match both source and target.\n")
+
+	for _, entry := range entries {
+		b.WriteString("- source: ")
+		b.WriteString(entry.Source)
+		b.WriteString("\n  target: ")
+		b.WriteString(entry.Target)
+		b.WriteString("\n")
 	}
 
 	return b.String()

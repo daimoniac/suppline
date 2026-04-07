@@ -47,6 +47,118 @@ func TestHandleGetSemverUpdateTasks_MethodNotAllowed(t *testing.T) {
 	}
 }
 
+func TestHandleGetRuntimeUnusedRepositoryTasks_MethodNotAllowed(t *testing.T) {
+	server := tasksTestServer(t, &mockStateStore{}, mockRegsyncConfig())
+
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/tasks/runtime-unused-repositories", nil)
+	w := httptest.NewRecorder()
+	server.router.ServeHTTP(w, req)
+
+	if w.Code != http.StatusMethodNotAllowed {
+		t.Fatalf("expected 405, got %d", w.Code)
+	}
+}
+
+func TestHandleGetRuntimeUnusedRepositoryTasks_NoRuntimeData(t *testing.T) {
+	regsync := &config.RegsyncConfig{
+		Version: 1,
+		Sync: []config.SyncEntry{
+			{Source: "docker.io/nginx", Target: "registry.example.com/nginx", Type: "repository"},
+			{Source: "docker.io/redis", Target: "registry.example.com/redis", Type: "repository"},
+		},
+	}
+	store := &mockClusterInventoryStore{
+		mockStateStore: &mockStateStore{},
+		summaries:      []statestore.ClusterSummary{},
+	}
+	server := tasksTestServer(t, store, regsync)
+
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/tasks/runtime-unused-repositories", nil)
+	w := httptest.NewRecorder()
+	server.router.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", w.Code, w.Body.String())
+	}
+
+	var resp RuntimeUnusedRepoTasksResponse
+	if err := json.NewDecoder(w.Body).Decode(&resp); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+
+	if !resp.NoRuntimeData {
+		t.Fatal("expected NoRuntimeData=true")
+	}
+	if len(resp.Entries) != 2 {
+		t.Fatalf("expected 2 entries, got %d", len(resp.Entries))
+	}
+	for _, e := range resp.Entries {
+		if e.Status != "no_runtime_data" {
+			t.Fatalf("expected no_runtime_data status, got %q", e.Status)
+		}
+	}
+	if resp.AIAgentPrompt != "" {
+		t.Fatalf("expected empty prompt without runtime data, got %q", resp.AIAgentPrompt)
+	}
+}
+
+func TestHandleGetRuntimeUnusedRepositoryTasks_DetectsUnusedAndBuildsPrompt(t *testing.T) {
+	regsync := &config.RegsyncConfig{
+		Version: 1,
+		Sync: []config.SyncEntry{
+			{Source: "docker.io/nginx", Target: "registry.example.com/nginx", Type: "repository"},
+			{Source: "docker.io/redis", Target: "registry.example.com/redis", Type: "repository"},
+		},
+	}
+	store := &mockClusterInventoryStore{
+		mockStateStore: &mockStateStore{},
+		summaries:      []statestore.ClusterSummary{{Name: "prod"}},
+		clusterImages: []statestore.ClusterImageSummary{
+			{Namespace: "default", ImageRef: "registry.example.com/nginx", Tag: "1.27.0"},
+		},
+	}
+	server := tasksTestServer(t, store, regsync)
+
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/tasks/runtime-unused-repositories", nil)
+	w := httptest.NewRecorder()
+	server.router.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", w.Code, w.Body.String())
+	}
+
+	var resp RuntimeUnusedRepoTasksResponse
+	if err := json.NewDecoder(w.Body).Decode(&resp); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+
+	if resp.NoRuntimeData {
+		t.Fatal("expected NoRuntimeData=false")
+	}
+	if len(resp.Entries) != 2 {
+		t.Fatalf("expected 2 entries, got %d", len(resp.Entries))
+	}
+
+	byTarget := map[string]RuntimeUnusedRepoEntry{}
+	for _, e := range resp.Entries {
+		byTarget[e.Target] = e
+	}
+
+	if byTarget["registry.example.com/nginx"].Status != "in_use" {
+		t.Fatalf("nginx should be in_use, got %q", byTarget["registry.example.com/nginx"].Status)
+	}
+	if byTarget["registry.example.com/redis"].Status != "unused" {
+		t.Fatalf("redis should be unused, got %q", byTarget["registry.example.com/redis"].Status)
+	}
+
+	if !strings.Contains(resp.AIAgentPrompt, "target: registry.example.com/redis") {
+		t.Fatalf("prompt should include unused redis target, got: %s", resp.AIAgentPrompt)
+	}
+	if strings.Contains(resp.AIAgentPrompt, "target: registry.example.com/nginx") {
+		t.Fatalf("prompt should not include in-use nginx target, got: %s", resp.AIAgentPrompt)
+	}
+}
+
 func TestHandleGetSemverUpdateTasks_NoSemverEntries(t *testing.T) {
 	// Config with a sync entry but no semverRange → empty entries list.
 	regsync := &config.RegsyncConfig{

@@ -3,8 +3,13 @@ import { useAuth } from '../lib/auth';
 import { useToast } from '../lib/toast';
 import { copyToClipboard } from '../lib/utils';
 import { LoadingState, ErrorState, PageHeader, EmptyState } from '../components/ui';
-import type { SemverUpdateEntry, SemverUpdateTasksResponse } from '../lib/api';
-import { CheckCircle2, Copy, RefreshCw, Server, Sparkles, Tag, TriangleAlert } from 'lucide-react';
+import type {
+  RuntimeUnusedRepoTaskEntry,
+  RuntimeUnusedRepoTasksResponse,
+  SemverUpdateEntry,
+  SemverUpdateTasksResponse,
+} from '../lib/api';
+import { CheckCircle2, Copy, RefreshCw, Server, Sparkles, Tag, TriangleAlert, Trash2 } from 'lucide-react';
 
 // ─── status badge ─────────────────────────────────────────────────────────────
 
@@ -223,11 +228,160 @@ function SemverUpdateTask({ data }: { data: SemverUpdateTasksResponse }) {
   );
 }
 
+function RuntimeUnusedRepoStatusBadge({ status }: { status: string }) {
+  if (status === 'in_use') {
+    return (
+      <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-xs font-medium bg-success-bg text-success">
+        <CheckCircle2 className="w-3 h-3" />
+        In use
+      </span>
+    );
+  }
+  if (status === 'unused') {
+    return (
+      <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-xs font-medium bg-warning-bg text-warning">
+        <TriangleAlert className="w-3 h-3" />
+        Unused
+      </span>
+    );
+  }
+  return (
+    <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-bg-tertiary text-text-muted">
+      No runtime data
+    </span>
+  );
+}
+
+function RuntimeUnusedRepositoryTask({ data }: { data: RuntimeUnusedRepoTasksResponse }) {
+  const { toast } = useToast();
+  const [showAll, setShowAll] = useState(false);
+
+  if (data.no_runtime_data) {
+    return (
+      <EmptyState
+        icon={<Server className="w-12 h-12 mb-4 opacity-30" />}
+        title="No runtime data"
+        message="Deploy the clusterstate-agent to your clusters so suppline can detect unused sync repositories."
+      />
+    );
+  }
+
+  if (data.entries.length === 0) {
+    return (
+      <EmptyState
+        icon={<Tag className="w-12 h-12 mb-4 opacity-30" />}
+        title="No sync entries"
+        message="No repository sync entries were found in your current suppline configuration."
+      />
+    );
+  }
+
+  const unusedCount = data.entries.filter(e => e.status === 'unused').length;
+  const actionableEntries = data.entries.filter(e => e.status === 'unused');
+  const displayedEntries = showAll ? data.entries : actionableEntries;
+  const hasUpdates = data.ai_agent_prompt.trim().length > 0;
+
+  return (
+    <div className="space-y-4">
+      {(unusedCount > 0 || hasUpdates) && (
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-3 items-start">
+          <div className="lg:col-span-2 space-y-2">
+            {unusedCount > 0 && (
+              <div className="flex items-center gap-2 px-4 py-3 rounded-lg bg-warning-bg border border-warning/20 text-sm text-warning">
+                <TriangleAlert className="w-4 h-4 flex-shrink-0" />
+                <span>
+                  {unusedCount} sync {unusedCount === 1 ? 'entry is' : 'entries are'} not observed in runtime inventory.
+                </span>
+              </div>
+            )}
+          </div>
+
+          {hasUpdates && (
+            <div className="relative overflow-hidden rounded-xl border border-accent/35 bg-gradient-to-r from-accent/15 via-bg-secondary to-warning/10 p-4">
+              <div className="absolute -top-10 -right-10 w-24 h-24 rounded-full bg-accent/20 blur-2xl pointer-events-none" />
+              <div className="relative flex flex-col gap-3">
+                <div className="flex items-center gap-2">
+                  <span className="inline-flex items-center justify-center w-7 h-7 rounded-lg bg-accent/20 text-accent">
+                    <Sparkles className="w-4 h-4" />
+                  </span>
+                  <div>
+                    <h3 className="text-sm font-semibold text-text-primary">AI Agent Prompt</h3>
+                    <p className="text-xs text-text-secondary">Ready to remove unused sync entries.</p>
+                  </div>
+                </div>
+                <button
+                  onClick={() => {
+                    copyToClipboard(data.ai_agent_prompt).then(ok =>
+                      toast(ok ? 'Prompt copied to clipboard!' : 'Failed to copy', ok ? 'success' : 'error')
+                    );
+                  }}
+                  className="inline-flex items-center justify-center gap-1.5 px-3 py-2 text-xs rounded-lg border border-accent/30 text-text-primary bg-bg-primary/70 hover:bg-bg-primary transition-colors"
+                >
+                  <Copy className="w-3 h-3" />
+                  Copy prompt to clipboard
+                </button>
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+
+      <div className="flex items-center justify-between gap-3">
+        <p className="text-xs text-text-muted">
+          Showing {displayedEntries.length} of {data.entries.length} entries
+          {!showAll ? ' (unused only)' : ''}
+        </p>
+        <button
+          onClick={() => setShowAll(v => !v)}
+          className="px-3 py-1.5 text-xs rounded-lg border border-border text-text-secondary hover:bg-bg-tertiary flex items-center gap-1.5 transition-colors"
+        >
+          {showAll ? 'Show actionable' : 'Show all'}
+        </button>
+      </div>
+
+      <div className="overflow-x-auto">
+        <table className="min-w-full text-sm">
+          <thead>
+            <tr className="border-b border-border">
+              <th className="px-3 py-2 text-left text-xs font-semibold text-text-muted uppercase tracking-wide">Source</th>
+              <th className="px-3 py-2 text-left text-xs font-semibold text-text-muted uppercase tracking-wide">Target</th>
+              <th className="px-3 py-2 text-left text-xs font-semibold text-text-muted uppercase tracking-wide">Status</th>
+            </tr>
+          </thead>
+          <tbody>
+            {displayedEntries.map((entry: RuntimeUnusedRepoTaskEntry, idx) => (
+              <tr key={idx} className="border-b border-border/50 last:border-0">
+                <td className="px-3 py-3">
+                  <span className="text-xs font-mono text-text-secondary max-w-[20rem] inline-block truncate" title={entry.source}>{entry.source}</span>
+                </td>
+                <td className="px-3 py-3">
+                  <span className="text-xs font-mono text-text-primary max-w-[24rem] inline-block truncate" title={entry.target}>{entry.target}</span>
+                </td>
+                <td className="px-3 py-3">
+                  <RuntimeUnusedRepoStatusBadge status={entry.status} />
+                </td>
+              </tr>
+            ))}
+            {displayedEntries.length === 0 && (
+              <tr>
+                <td colSpan={3} className="px-3 py-8 text-center text-xs text-text-muted">
+                  No unused sync entries right now. Use Show all to view all configured entries.
+                </td>
+              </tr>
+            )}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
+}
+
 // ─── page ─────────────────────────────────────────────────────────────────────
 
 export default function TasksPage() {
   const { apiClient } = useAuth();
-  const [data, setData] = useState<SemverUpdateTasksResponse | null>(null);
+  const [semverData, setSemverData] = useState<SemverUpdateTasksResponse | null>(null);
+  const [runtimeUnusedData, setRuntimeUnusedData] = useState<RuntimeUnusedRepoTasksResponse | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
 
@@ -235,8 +389,12 @@ export default function TasksPage() {
     setLoading(true);
     setError('');
     try {
-      const result = await apiClient.getSemverUpdateTasks();
-      setData(result);
+      const [semverResult, runtimeUnusedResult] = await Promise.all([
+        apiClient.getSemverUpdateTasks(),
+        apiClient.getRuntimeUnusedRepositoryTasks(),
+      ]);
+      setSemverData(semverResult);
+      setRuntimeUnusedData(runtimeUnusedResult);
     } catch (e: unknown) {
       setError(e instanceof Error ? e.message : 'Failed to load tasks');
     } finally {
@@ -280,8 +438,30 @@ export default function TasksPage() {
             <LoadingState message="Checking runtime versions..." />
           ) : error ? (
             <ErrorState message={error} onRetry={load} />
-          ) : data ? (
-            <SemverUpdateTask data={data} />
+          ) : semverData ? (
+            <SemverUpdateTask data={semverData} />
+          ) : null}
+        </div>
+      </div>
+
+      {/* Runtime Unused Repositories */}
+      <div className="bg-bg-primary border border-border rounded-xl overflow-hidden">
+        <div className="flex items-center justify-between px-5 py-4 border-b border-border">
+          <div className="flex items-center gap-2">
+            <Trash2 className="w-4 h-4 text-warning" />
+            <h2 className="text-sm font-semibold">Unused Sync Repositories</h2>
+          </div>
+          <p className="text-xs text-text-muted">
+            Sync targets from <code className="bg-bg-tertiary px-1 rounded">suppline.yml</code> compared against runtime image inventory
+          </p>
+        </div>
+        <div className="p-4">
+          {loading ? (
+            <LoadingState message="Checking runtime repository usage..." />
+          ) : error ? (
+            <ErrorState message={error} onRetry={load} />
+          ) : runtimeUnusedData ? (
+            <RuntimeUnusedRepositoryTask data={runtimeUnusedData} />
           ) : null}
         </div>
       </div>

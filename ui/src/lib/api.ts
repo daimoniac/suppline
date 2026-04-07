@@ -165,6 +165,9 @@ export class APIClient {
   async getSemverUpdateTasks(): Promise<SemverUpdateTasksResponse> {
     return this.request<SemverUpdateTasksResponse>('/api/v1/tasks/semver-updates');
   }
+  async getRuntimeUnusedRepositoryTasks(): Promise<RuntimeUnusedRepoTasksResponse> {
+    return this.request<RuntimeUnusedRepoTasksResponse>('/api/v1/tasks/runtime-unused-repositories');
+  }
 
   // Health
   async getHealth() { return this.request<Record<string, unknown>>('/health'); }
@@ -335,6 +338,19 @@ export interface SemverUpdateEntry {
 
 export interface SemverUpdateTasksResponse {
   entries: SemverUpdateEntry[];
+  ai_agent_prompt: string;
+  no_runtime_data: boolean;
+}
+
+export interface RuntimeUnusedRepoTaskEntry {
+  source: string;
+  target: string;
+  /** "in_use" | "unused" | "no_runtime_data" */
+  status: string;
+}
+
+export interface RuntimeUnusedRepoTasksResponse {
+  entries: RuntimeUnusedRepoTaskEntry[];
   ai_agent_prompt: string;
   no_runtime_data: boolean;
 }

@@ -4,8 +4,8 @@ import { useAuth } from '../lib/auth';
 import { formatRelativeTime } from '../lib/utils';
 import { useImageUsageFilter } from '../lib/imageUsageFilter';
 import { LoadingState, ErrorState, StatusBadge, SeverityBadge, VulnCounts, DigestLinkWithCopy } from '../components/ui';
-import type { Scan, VEXSummary, SemverUpdateTasksResponse } from '../lib/api';
-import { ShieldAlert, ShieldCheck, Clock, CheckSquare, ExternalLink, ArrowRight, ClipboardList, Sparkles } from 'lucide-react';
+import type { RuntimeUnusedRepoTasksResponse, Scan, SemverUpdateTasksResponse, VEXSummary } from '../lib/api';
+import { ShieldAlert, ShieldCheck, Clock, CheckSquare, ExternalLink, ArrowRight, ClipboardList, Sparkles, Trash2 } from 'lucide-react';
 
 interface DashboardData {
   recentScans: Scan[];
@@ -20,6 +20,7 @@ interface DashboardData {
   policyByRepo: Record<string, { failed: number; pending: number }>;
   outOfBoundsTaskCount: number;
   tightenTaskCount: number;
+  runtimeUnusedTaskCount: number;
 }
 
 export default function DashboardPage() {
@@ -33,13 +34,14 @@ export default function DashboardPage() {
     setLoading(true);
     setError('');
     try {
-      const [recentScans, nonPassedScans, allVEXStatements, inactiveVEXStatements, vulnStats, semverTasksResult] = await Promise.all([
+      const [recentScans, nonPassedScans, allVEXStatements, inactiveVEXStatements, vulnStats, semverTasksResult, runtimeUnusedTasksResult] = await Promise.all([
         apiClient.getScans({ limit: 20, ...(inUseQuery !== undefined && { in_use: inUseQuery }) }),
         apiClient.getScans({ policy_passed: false, ...(inUseQuery !== undefined && { in_use: inUseQuery }) }),
         apiClient.getVEXStatements({}),
         apiClient.getInactiveVEXStatements(),
         apiClient.getVulnerabilityStats(),
         apiClient.getSemverUpdateTasks().catch(() => null as SemverUpdateTasksResponse | null),
+        apiClient.getRuntimeUnusedRepositoryTasks().catch(() => null as RuntimeUnusedRepoTasksResponse | null),
       ]);
 
       const now = Date.now();
@@ -62,6 +64,7 @@ export default function DashboardPage() {
       }, {});
       const outOfBoundsTaskCount = semverTasksResult?.entries?.filter(entry => entry.status === 'out_of_bounds').length ?? 0;
       const tightenTaskCount = semverTasksResult?.entries?.filter(entry => entry.status === 'tighten').length ?? 0;
+      const runtimeUnusedTaskCount = runtimeUnusedTasksResult?.entries?.filter(entry => entry.status === 'unused').length ?? 0;
 
       setData({
         recentScans,
@@ -81,6 +84,7 @@ export default function DashboardPage() {
         policyByRepo,
         outOfBoundsTaskCount,
         tightenTaskCount,
+        runtimeUnusedTaskCount,
       });
     } catch (e: unknown) {
       setError(e instanceof Error ? e.message : 'Failed to load dashboard');
@@ -122,13 +126,24 @@ export default function DashboardPage() {
         <SummaryCard icon={<CheckSquare className="w-5 h-5" />} value={data.inactiveVEXStatements.length} label="Inactive VEX Statements" variant="muted" />
       </div>
 
-      {(data.outOfBoundsTaskCount > 0 || data.tightenTaskCount > 0) && (
+      {(data.outOfBoundsTaskCount > 0 || data.tightenTaskCount > 0 || data.runtimeUnusedTaskCount > 0) && (
         <div className="bg-bg-primary border border-border rounded-xl p-4 space-y-3">
           <div className="flex items-center gap-2">
             <ClipboardList className="w-4 h-4 text-accent" />
             <h2 className="text-sm font-semibold">Task Notifications</h2>
           </div>
           <div className="space-y-2">
+            {data.runtimeUnusedTaskCount > 0 && (
+              <Link
+                to="/tasks"
+                className="flex items-center justify-between gap-3 rounded-lg border border-warning/30 bg-warning-bg px-3 py-2 text-sm text-warning hover:brightness-95 transition"
+              >
+                <span>
+                  {data.runtimeUnusedTaskCount} sync {data.runtimeUnusedTaskCount === 1 ? 'entry is' : 'entries are'} configured but not observed in runtime inventory.
+                </span>
+                <Trash2 className="w-4 h-4 flex-shrink-0" />
+              </Link>
+            )}
             {data.outOfBoundsTaskCount > 0 && (
               <Link
                 to="/tasks"
