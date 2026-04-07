@@ -4,7 +4,7 @@ import { useToast } from '../lib/toast';
 import { copyToClipboard } from '../lib/utils';
 import { LoadingState, ErrorState, PageHeader, EmptyState } from '../components/ui';
 import type { SemverUpdateEntry, SemverUpdateTasksResponse } from '../lib/api';
-import { CheckCircle2, ClipboardList, Copy, RefreshCw, Server, Tag, TriangleAlert } from 'lucide-react';
+import { CheckCircle2, Copy, RefreshCw, Server, Sparkles, Tag, TriangleAlert } from 'lucide-react';
 
 // ─── status badge ─────────────────────────────────────────────────────────────
 
@@ -70,7 +70,6 @@ function RuntimeVersionsCell({ entry }: { entry: SemverUpdateEntry }) {
 
 function SemverUpdateTask({ data }: { data: SemverUpdateTasksResponse }) {
   const { toast } = useToast();
-  const [configExpanded, setConfigExpanded] = useState(false);
   const [showAll, setShowAll] = useState(false);
 
   if (data.no_runtime_data) {
@@ -101,21 +100,55 @@ function SemverUpdateTask({ data }: { data: SemverUpdateTasksResponse }) {
 
   return (
     <div className="space-y-4">
-      {outOfBoundsCount > 0 && (
-        <div className="flex items-center gap-2 px-4 py-3 rounded-lg bg-warning-bg border border-warning/20 text-sm text-warning">
-          <TriangleAlert className="w-4 h-4 flex-shrink-0" />
-          <span>
-            {outOfBoundsCount} sync {outOfBoundsCount === 1 ? 'entry has' : 'entries have'} runtime versions outside the configured range.
-          </span>
-        </div>
-      )}
+      {(outOfBoundsCount > 0 || tightenCount > 0 || hasUpdates) && (
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-3 items-start">
+          <div className="lg:col-span-2 space-y-2">
+            {outOfBoundsCount > 0 && (
+              <div className="flex items-center gap-2 px-4 py-3 rounded-lg bg-warning-bg border border-warning/20 text-sm text-warning">
+                <TriangleAlert className="w-4 h-4 flex-shrink-0" />
+                <span>
+                  {outOfBoundsCount} sync {outOfBoundsCount === 1 ? 'entry has' : 'entries have'} runtime versions outside the configured range.
+                </span>
+              </div>
+            )}
 
-      {tightenCount > 0 && (
-        <div className="flex items-center gap-2 px-4 py-3 rounded-lg bg-bg-secondary border border-border text-sm text-text-secondary">
-          <CheckCircle2 className="w-4 h-4 flex-shrink-0 text-accent" />
-          <span>
-            {tightenCount} sync {tightenCount === 1 ? 'entry has' : 'entries have'} optional range tightening suggestions based on currently running versions.
-          </span>
+            {tightenCount > 0 && (
+              <div className="flex items-center gap-2 px-4 py-3 rounded-lg bg-bg-secondary border border-border text-sm text-text-secondary">
+                <CheckCircle2 className="w-4 h-4 flex-shrink-0 text-accent" />
+                <span>
+                  {tightenCount} sync {tightenCount === 1 ? 'entry has' : 'entries have'} optional range tightening suggestions based on currently running versions.
+                </span>
+              </div>
+            )}
+          </div>
+
+          {hasUpdates && (
+            <div className="relative overflow-hidden rounded-xl border border-accent/35 bg-gradient-to-r from-accent/15 via-bg-secondary to-warning/10 p-4">
+              <div className="absolute -top-10 -right-10 w-24 h-24 rounded-full bg-accent/20 blur-2xl pointer-events-none" />
+              <div className="relative flex flex-col gap-3">
+                <div className="flex items-center gap-2">
+                  <span className="inline-flex items-center justify-center w-7 h-7 rounded-lg bg-accent/20 text-accent">
+                    <Sparkles className="w-4 h-4" />
+                  </span>
+                  <div>
+                    <h3 className="text-sm font-semibold text-text-primary">AI Agent Prompt</h3>
+                    <p className="text-xs text-text-secondary">Ready to apply semverRange updates.</p>
+                  </div>
+                </div>
+                <button
+                  onClick={() => {
+                    copyToClipboard(data.ai_agent_prompt).then(ok =>
+                      toast(ok ? 'Prompt copied to clipboard!' : 'Failed to copy', ok ? 'success' : 'error')
+                    );
+                  }}
+                  className="inline-flex items-center justify-center gap-1.5 px-3 py-2 text-xs rounded-lg border border-accent/30 text-text-primary bg-bg-primary/70 hover:bg-bg-primary transition-colors"
+                >
+                  <Copy className="w-3 h-3" />
+                  Copy prompt to clipboard
+                </button>
+              </div>
+            </div>
+          )}
         </div>
       )}
 
@@ -186,42 +219,6 @@ function SemverUpdateTask({ data }: { data: SemverUpdateTasksResponse }) {
         </table>
       </div>
 
-      {hasUpdates && (
-        <div className="border border-border rounded-lg overflow-hidden">
-          <button
-            className="w-full flex items-center justify-between px-4 py-3 text-sm font-medium text-text-primary hover:bg-bg-tertiary transition-colors"
-            onClick={() => setConfigExpanded(v => !v)}
-            aria-expanded={configExpanded}
-          >
-            <span className="flex items-center gap-2">
-              <ClipboardList className="w-4 h-4 text-accent" />
-              AI Agent Prompt
-            </span>
-            <span className="text-xs text-text-muted">{configExpanded ? 'Hide' : 'Show'}</span>
-          </button>
-          {configExpanded && (
-            <div className="border-t border-border">
-              <div className="flex items-center justify-between px-4 py-2 bg-bg-secondary border-b border-border">
-                <p className="text-xs text-text-muted">Use this prompt with your AI coding agent to apply the semverRange updates to suppline.yml.</p>
-                <button
-                  onClick={() => {
-                    copyToClipboard(data.ai_agent_prompt).then(ok =>
-                      toast(ok ? 'Prompt copied to clipboard!' : 'Failed to copy', ok ? 'success' : 'error')
-                    );
-                  }}
-                  className="px-3 py-1.5 text-xs rounded-lg border border-border text-text-secondary hover:bg-bg-tertiary flex items-center gap-1.5 transition-colors"
-                >
-                  <Copy className="w-3 h-3" />
-                  Copy prompt
-                </button>
-              </div>
-              <pre className="text-xs font-mono text-text-secondary bg-bg-secondary p-4 overflow-x-auto whitespace-pre max-h-[28rem]">
-                {data.ai_agent_prompt}
-              </pre>
-            </div>
-          )}
-        </div>
-      )}
     </div>
   );
 }

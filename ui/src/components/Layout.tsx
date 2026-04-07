@@ -1,4 +1,4 @@
-import { NavLink, Outlet } from 'react-router-dom';
+import { Link, NavLink, Outlet } from 'react-router-dom';
 import { useAuth } from '../lib/auth';
 import {
   LayoutDashboard, Layers, ScanSearch, ShieldAlert, Bug, ShieldCheck,
@@ -9,13 +9,13 @@ import supplineIcon from '../assets/suppline-icon.svg';
 
 const navItems = [
   { to: '/', icon: LayoutDashboard, label: 'Dashboard', end: true },
+  { to: '/tasks', icon: ClipboardList, label: 'Tasks' },
   { to: '/repositories', icon: Layers, label: 'Repositories' },
   { to: '/scans', icon: ScanSearch, label: 'Scans' },
   { to: '/failed', icon: ShieldAlert, label: 'Policy Exceptions' },
   { to: '/vulnerabilities?severity=critical', icon: Bug, label: 'Vulnerabilities' },
   { to: '/vex', icon: ShieldCheck, label: 'VEX Statements' },
   { to: '/integrations', icon: Plug, label: 'Integrations' },
-  { to: '/tasks', icon: ClipboardList, label: 'Tasks' },
 ];
 
 export default function Layout() {
@@ -35,10 +35,10 @@ function LayoutContent() {
       {/* Sidebar */}
       <aside className="w-56 flex-shrink-0 bg-bg-primary border-r border-border flex flex-col">
         {/* Logo */}
-        <div className="h-14 flex items-center gap-2.5 px-4 border-b border-border">
+        <Link to="/" className="h-14 flex items-center gap-2.5 px-4 border-b border-border hover:bg-bg-tertiary transition-colors">
           <img src={supplineIcon} alt="suppline" className="w-7 h-7" />
           <span className="font-semibold text-sm tracking-tight">suppline</span>
-        </div>
+        </Link>
 
         {/* Nav */}
         <nav className="flex-1 py-3 px-2 space-y-0.5 overflow-y-auto">

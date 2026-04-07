@@ -4,8 +4,8 @@ import { useAuth } from '../lib/auth';
 import { formatRelativeTime } from '../lib/utils';
 import { useImageUsageFilter } from '../lib/imageUsageFilter';
 import { LoadingState, ErrorState, StatusBadge, SeverityBadge, VulnCounts, DigestLinkWithCopy } from '../components/ui';
-import type { Scan, VEXSummary } from '../lib/api';
-import { ShieldAlert, ShieldCheck, Clock, CheckSquare, ExternalLink, ArrowRight } from 'lucide-react';
+import type { Scan, VEXSummary, SemverUpdateTasksResponse } from '../lib/api';
+import { ShieldAlert, ShieldCheck, Clock, CheckSquare, ExternalLink, ArrowRight, ClipboardList, Sparkles } from 'lucide-react';
 
 interface DashboardData {
   recentScans: Scan[];
@@ -18,6 +18,8 @@ interface DashboardData {
   inactiveVEXStatements: VEXSummary[];
   vulnBreakdown: { critical: number; high: number; medium: number; low: number };
   policyByRepo: Record<string, { failed: number; pending: number }>;
+  outOfBoundsTaskCount: number;
+  tightenTaskCount: number;
 }
 
 export default function DashboardPage() {
@@ -31,12 +33,13 @@ export default function DashboardPage() {
     setLoading(true);
     setError('');
     try {
-      const [recentScans, nonPassedScans, allVEXStatements, inactiveVEXStatements, vulnStats] = await Promise.all([
+      const [recentScans, nonPassedScans, allVEXStatements, inactiveVEXStatements, vulnStats, semverTasksResult] = await Promise.all([
         apiClient.getScans({ limit: 20, ...(inUseQuery !== undefined && { in_use: inUseQuery }) }),
         apiClient.getScans({ policy_passed: false, ...(inUseQuery !== undefined && { in_use: inUseQuery }) }),
         apiClient.getVEXStatements({}),
         apiClient.getInactiveVEXStatements(),
         apiClient.getVulnerabilityStats(),
+        apiClient.getSemverUpdateTasks().catch(() => null as SemverUpdateTasksResponse | null),
       ]);
 
       const now = Date.now();
@@ -57,6 +60,8 @@ export default function DashboardPage() {
         else acc[repo].failed += 1;
         return acc;
       }, {});
+      const outOfBoundsTaskCount = semverTasksResult?.entries?.filter(entry => entry.status === 'out_of_bounds').length ?? 0;
+      const tightenTaskCount = semverTasksResult?.entries?.filter(entry => entry.status === 'tighten').length ?? 0;
 
       setData({
         recentScans,
@@ -74,6 +79,8 @@ export default function DashboardPage() {
           low: vulnStats?.LOW || 0,
         },
         policyByRepo,
+        outOfBoundsTaskCount,
+        tightenTaskCount,
       });
     } catch (e: unknown) {
       setError(e instanceof Error ? e.message : 'Failed to load dashboard');
@@ -115,45 +122,35 @@ export default function DashboardPage() {
         <SummaryCard icon={<CheckSquare className="w-5 h-5" />} value={data.inactiveVEXStatements.length} label="Inactive VEX Statements" variant="muted" />
       </div>
 
-      {attentionCount > 0 && (
-        <div className="bg-bg-primary border border-border rounded-xl p-5">
-          <h2 className="text-sm font-semibold mb-3">VEX Statements Requiring Attention</h2>
-          <div className="flex gap-2 mb-4 flex-wrap">
-            {data.expiredVEXStatements.length > 0 && <span className="px-2 py-1 rounded text-xs font-medium bg-danger-bg text-danger">{data.expiredVEXStatements.length} Expired</span>}
-            {data.expiringVEXStatements.length > 0 && <span className="px-2 py-1 rounded text-xs font-medium bg-warning-bg text-warning">{data.expiringVEXStatements.length} Expiring Soon</span>}
-            {data.inactiveVEXStatements.length > 0 && <span className="px-2 py-1 rounded text-xs font-medium bg-bg-tertiary text-text-secondary">{data.inactiveVEXStatements.length} Inactive</span>}
+      {(data.outOfBoundsTaskCount > 0 || data.tightenTaskCount > 0) && (
+        <div className="bg-bg-primary border border-border rounded-xl p-4 space-y-3">
+          <div className="flex items-center gap-2">
+            <ClipboardList className="w-4 h-4 text-accent" />
+            <h2 className="text-sm font-semibold">Task Notifications</h2>
           </div>
-          <div className="space-y-2 max-h-64 overflow-y-auto">
-            {data.expiredVEXStatements.slice(0, 5).map(t => (
-              <VEXAttentionItem key={`exp-${t.CVEID}`} statement={t} status="expired" to={`/vulnerabilities?cve_id=${encodeURIComponent(t.CVEID)}`} />
-            ))}
-            {data.expiringVEXStatements.slice(0, 5).map(t => (
-              <VEXAttentionItem key={`expiring-${t.CVEID}`} statement={t} status="expiring" to={`/vulnerabilities?cve_id=${encodeURIComponent(t.CVEID)}`} />
-            ))}
-            {data.inactiveVEXStatements.slice(0, 3).map(t => (
-              <VEXAttentionItem key={`inactive-${t.CVEID}`} statement={t} status="inactive" to={`/vulnerabilities?cve_id=${encodeURIComponent(t.CVEID)}`} />
-            ))}
-          </div>
-        </div>
-      )}
-
-      {totalVulns > 0 && (
-        <div className="bg-bg-primary border border-border rounded-xl p-5">
-          <h2 className="text-sm font-semibold mb-4">Vulnerability Breakdown</h2>
-          <div className="h-3 rounded-full overflow-hidden flex bg-bg-tertiary mb-4">
-            {data.vulnBreakdown.critical > 0 && <div className="bg-severity-critical transition-all" style={{ width: `${(data.vulnBreakdown.critical / totalVulns) * 100}%` }} />}
-            {data.vulnBreakdown.high > 0 && <div className="bg-severity-high transition-all" style={{ width: `${(data.vulnBreakdown.high / totalVulns) * 100}%` }} />}
-            {data.vulnBreakdown.medium > 0 && <div className="bg-severity-medium transition-all" style={{ width: `${(data.vulnBreakdown.medium / totalVulns) * 100}%` }} />}
-            {data.vulnBreakdown.low > 0 && <div className="bg-severity-low transition-all" style={{ width: `${(data.vulnBreakdown.low / totalVulns) * 100}%` }} />}
-          </div>
-          <div className="grid grid-cols-4 gap-4">
-            {(['critical', 'high', 'medium', 'low'] as const).map(sev => (
-              <Link key={sev} to={`/vulnerabilities?severity=${sev}`} className="text-center rounded-lg p-2 -m-2 hover:bg-bg-secondary transition-colors">
-                <SeverityBadge severity={sev} />
-                <div className="text-lg font-bold mt-1">{data.vulnBreakdown[sev]}</div>
-                <div className="text-xs text-text-muted">{totalVulns > 0 ? ((data.vulnBreakdown[sev] / totalVulns) * 100).toFixed(0) : 0}%</div>
+          <div className="space-y-2">
+            {data.outOfBoundsTaskCount > 0 && (
+              <Link
+                to="/tasks"
+                className="flex items-center justify-between gap-3 rounded-lg border border-warning/30 bg-warning-bg px-3 py-2 text-sm text-warning hover:brightness-95 transition"
+              >
+                <span>
+                  {data.outOfBoundsTaskCount} sync {data.outOfBoundsTaskCount === 1 ? 'entry has' : 'entries have'} runtime versions outside the configured range.
+                </span>
+                <ArrowRight className="w-4 h-4 flex-shrink-0" />
               </Link>
-            ))}
+            )}
+            {data.tightenTaskCount > 0 && (
+              <Link
+                to="/tasks"
+                className="flex items-center justify-between gap-3 rounded-lg border border-accent/20 bg-bg-secondary px-3 py-2 text-sm text-text-secondary hover:bg-bg-tertiary transition"
+              >
+                <span>
+                  {data.tightenTaskCount} sync {data.tightenTaskCount === 1 ? 'entry has' : 'entries have'} optional range tightening suggestions based on currently running versions.
+                </span>
+                <Sparkles className="w-4 h-4 flex-shrink-0 text-accent" />
+              </Link>
+            )}
           </div>
         </div>
       )}
@@ -191,6 +188,27 @@ export default function DashboardPage() {
           </div>
         )}
       </div>
+
+      {totalVulns > 0 && (
+        <div className="bg-bg-primary border border-border rounded-xl p-5">
+          <h2 className="text-sm font-semibold mb-4">Vulnerability Breakdown</h2>
+          <div className="h-3 rounded-full overflow-hidden flex bg-bg-tertiary mb-4">
+            {data.vulnBreakdown.critical > 0 && <div className="bg-severity-critical transition-all" style={{ width: `${(data.vulnBreakdown.critical / totalVulns) * 100}%` }} />}
+            {data.vulnBreakdown.high > 0 && <div className="bg-severity-high transition-all" style={{ width: `${(data.vulnBreakdown.high / totalVulns) * 100}%` }} />}
+            {data.vulnBreakdown.medium > 0 && <div className="bg-severity-medium transition-all" style={{ width: `${(data.vulnBreakdown.medium / totalVulns) * 100}%` }} />}
+            {data.vulnBreakdown.low > 0 && <div className="bg-severity-low transition-all" style={{ width: `${(data.vulnBreakdown.low / totalVulns) * 100}%` }} />}
+          </div>
+          <div className="grid grid-cols-4 gap-4">
+            {(['critical', 'high', 'medium', 'low'] as const).map(sev => (
+              <Link key={sev} to={`/vulnerabilities?severity=${sev}`} className="text-center rounded-lg p-2 -m-2 hover:bg-bg-secondary transition-colors">
+                <SeverityBadge severity={sev} />
+                <div className="text-lg font-bold mt-1">{data.vulnBreakdown[sev]}</div>
+                <div className="text-xs text-text-muted">{totalVulns > 0 ? ((data.vulnBreakdown[sev] / totalVulns) * 100).toFixed(0) : 0}%</div>
+              </Link>
+            ))}
+          </div>
+        </div>
+      )}
 
       <div className="bg-bg-primary border border-border rounded-xl overflow-hidden">
         <div className="px-5 py-4 border-b border-border flex items-center justify-between gap-3">
@@ -234,6 +252,28 @@ export default function DashboardPage() {
           </div>
         )}
       </div>
+
+      {attentionCount > 0 && (
+        <div className="bg-bg-primary border border-border rounded-xl p-5">
+          <h2 className="text-sm font-semibold mb-3">VEX Statements Requiring Attention</h2>
+          <div className="flex gap-2 mb-4 flex-wrap">
+            {data.expiredVEXStatements.length > 0 && <span className="px-2 py-1 rounded text-xs font-medium bg-danger-bg text-danger">{data.expiredVEXStatements.length} Expired</span>}
+            {data.expiringVEXStatements.length > 0 && <span className="px-2 py-1 rounded text-xs font-medium bg-warning-bg text-warning">{data.expiringVEXStatements.length} Expiring Soon</span>}
+            {data.inactiveVEXStatements.length > 0 && <span className="px-2 py-1 rounded text-xs font-medium bg-bg-tertiary text-text-secondary">{data.inactiveVEXStatements.length} Inactive</span>}
+          </div>
+          <div className="space-y-2 max-h-64 overflow-y-auto">
+            {data.expiredVEXStatements.slice(0, 5).map(t => (
+              <VEXAttentionItem key={`exp-${t.CVEID}`} statement={t} status="expired" to={`/vulnerabilities?cve_id=${encodeURIComponent(t.CVEID)}`} />
+            ))}
+            {data.expiringVEXStatements.slice(0, 5).map(t => (
+              <VEXAttentionItem key={`expiring-${t.CVEID}`} statement={t} status="expiring" to={`/vulnerabilities?cve_id=${encodeURIComponent(t.CVEID)}`} />
+            ))}
+            {data.inactiveVEXStatements.slice(0, 3).map(t => (
+              <VEXAttentionItem key={`inactive-${t.CVEID}`} statement={t} status="inactive" to={`/vulnerabilities?cve_id=${encodeURIComponent(t.CVEID)}`} />
+            ))}
+          </div>
+        </div>
+      )}
     </div>
   );
 }
