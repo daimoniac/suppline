@@ -199,39 +199,29 @@ export default function DashboardPage() {
         {data.recentScans.length === 0 ? (
           <div className="p-8 text-center text-text-secondary text-sm">No scans found</div>
         ) : (
-          <div className="overflow-x-auto">
-            <table className="w-full">
-              <thead>
-                <tr className="border-b border-border">
-                  <th className="px-4 py-3 text-left text-xs font-medium text-text-secondary uppercase">Repository</th>
-                  <th className="px-4 py-3 text-left text-xs font-medium text-text-secondary uppercase">Tag</th>
-                  <th className="px-4 py-3 text-left text-xs font-medium text-text-secondary uppercase">Digest</th>
-                  <th className="px-4 py-3 text-left text-xs font-medium text-text-secondary uppercase">Scanned</th>
-                  <th className="px-4 py-3 text-left text-xs font-medium text-text-secondary uppercase">Status</th>
-                  <th className="px-4 py-3 text-left text-xs font-medium text-text-secondary uppercase">Vulns</th>
-                </tr>
-              </thead>
-              <tbody>
-                {data.recentScans.map(scan => (
-                  <tr key={scan.Digest} className="border-b border-border/50 hover:bg-bg-secondary transition-colors">
-                    <td className="px-4 py-3 text-sm">
-                      <Link className="text-accent hover:underline" to={`/repositories/${encodeURIComponent(scan.Repository)}`}>
-                        {scan.Repository || 'N/A'}
-                      </Link>
-                    </td>
-                    <td className="px-4 py-3 text-sm text-text-secondary">{scan.Tag || 'N/A'}</td>
-                    <td className="px-4 py-3 text-sm">
-                      <DigestLinkWithCopy digest={scan.Digest} to={`/scans/${scan.Digest}`} />
-                    </td>
-                    <td className="px-4 py-3 text-sm text-text-secondary">{formatRelativeTime(scan.CreatedAt)}</td>
-                    <td className="px-4 py-3"><StatusBadge passed={scan.PolicyPassed} status={scan.PolicyStatus} /></td>
-                    <td className="px-4 py-3">
-                      <VulnCounts critical={scan.CriticalVulnCount} high={scan.HighVulnCount} medium={scan.MediumVulnCount} low={scan.LowVulnCount} />
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+          <div className="p-4 space-y-3">
+            {data.recentScans.map(scan => (
+              <div key={scan.Digest} className="rounded-lg border border-border bg-bg-secondary/40 hover:bg-bg-secondary transition-colors p-4">
+                <div className="flex flex-wrap items-center gap-2 mb-3">
+                  <Link className="text-sm font-medium text-accent hover:underline" to={`/repositories/${encodeURIComponent(scan.Repository)}`}>
+                    {scan.Repository || 'N/A'}
+                  </Link>
+                  <span className="px-2 py-0.5 rounded text-xs bg-bg-tertiary text-text-secondary">{scan.Tag || 'untagged'}</span>
+                  <span className="text-xs text-text-muted">{formatRelativeTime(scan.CreatedAt)}</span>
+                  <div className="ml-auto">
+                    <StatusBadge passed={scan.PolicyPassed} status={scan.PolicyStatus} />
+                  </div>
+                </div>
+                <div className="flex flex-col sm:flex-row sm:items-center gap-3">
+                  <div className="min-w-0">
+                    <DigestLinkWithCopy digest={scan.Digest} to={`/scans/${scan.Digest}`} />
+                  </div>
+                  <div className="sm:ml-auto">
+                    <VulnCounts critical={scan.CriticalVulnCount} high={scan.HighVulnCount} medium={scan.MediumVulnCount} low={scan.LowVulnCount} />
+                  </div>
+                </div>
+              </div>
+            ))}
           </div>
         )}
       </div>
