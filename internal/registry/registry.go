@@ -8,6 +8,7 @@ import (
 	"log/slog"
 	"net/http"
 	"os"
+	"regexp"
 	"strings"
 	"time"
 
@@ -37,6 +38,11 @@ type Client interface {
 
 	// GetManifestWithTagVerification verifies tag exists then retrieves manifest by digest
 	GetManifestWithTagVerification(ctx context.Context, repo, tag, digest string) (*Manifest, error)
+
+	// CleanupLegacyCosignTags removes orphaned legacy attachment tags (.att/.sig)
+	// from a storage repository. A legacy tag is deleted only when the digest
+	// encoded in the tag name does not exist in the subject repository.
+	CleanupLegacyCosignTags(ctx context.Context, storageRepo, subjectRepo string) error
 }
 
 // Manifest represents a container image manifest
@@ -72,6 +78,8 @@ type clientImpl struct {
 	remoteOpts    []remote.Option
 	logger        *slog.Logger
 }
+
+var legacyAttachmentTagPattern = regexp.MustCompile(`^sha256-([a-f0-9]{64})\.(att|sig)$`)
 
 // NewClient creates a new registry client configured with credentials from regsync config
 func NewClient(regsyncConfig *config.RegsyncConfig) (Client, error) {
@@ -204,6 +212,62 @@ func (c *clientImpl) ListTags(ctx context.Context, repo string) ([]string, error
 	return filteredTags, nil
 }
 
+// CleanupLegacyCosignTags removes orphaned legacy attachment tags in storageRepo.
+// subjectRepo is where the referenced digest must exist to keep the attachment.
+func (c *clientImpl) CleanupLegacyCosignTags(ctx context.Context, storageRepo, subjectRepo string) error {
+	if strings.TrimSpace(storageRepo) == "" {
+		return nil
+	}
+	if strings.TrimSpace(subjectRepo) == "" {
+		subjectRepo = storageRepo
+	}
+
+	tags, err := c.listAllTags(ctx, storageRepo)
+	if err != nil {
+		return err
+	}
+
+	for _, tag := range tags {
+		digest, ok := extractDigestFromLegacyAttachmentTag(tag)
+		if !ok {
+			continue
+		}
+
+		exists, err := c.digestExists(ctx, subjectRepo, digest)
+		if err != nil {
+			c.logger.Warn("failed to validate legacy attachment subject digest",
+				"storage_repo", storageRepo,
+				"subject_repo", subjectRepo,
+				"tag", tag,
+				"digest", digest,
+				"error", err)
+			continue
+		}
+
+		if exists {
+			continue
+		}
+
+		if err := c.deleteTag(ctx, storageRepo, tag); err != nil {
+			c.logger.Warn("failed to delete orphaned legacy attachment tag",
+				"storage_repo", storageRepo,
+				"subject_repo", subjectRepo,
+				"tag", tag,
+				"digest", digest,
+				"error", err)
+			continue
+		}
+
+		c.logger.Info("deleted orphaned legacy attachment tag",
+			"storage_repo", storageRepo,
+			"subject_repo", subjectRepo,
+			"tag", tag,
+			"digest", digest)
+	}
+
+	return nil
+}
+
 // GetDigest returns the digest for a specific tag
 func (c *clientImpl) GetDigest(ctx context.Context, repo, tag string) (string, error) {
 	registry, repository, err := parseImageRef(repo)
@@ -227,6 +291,89 @@ func (c *clientImpl) GetDigest(ctx context.Context, repo, tag string) (string, e
 	}
 
 	return desc.Digest.String(), nil
+}
+
+func (c *clientImpl) listAllTags(ctx context.Context, repo string) ([]string, error) {
+	registry, repository, err := parseImageRef(repo)
+	if err != nil {
+		return nil, errors.NewPermanentf("failed to parse repository: %w", err)
+	}
+
+	repoRef := fmt.Sprintf("%s/%s", registry, repository)
+	ref, err := name.NewRepository(repoRef)
+	if err != nil {
+		return nil, errors.NewPermanentf("failed to create repository reference: %w", err)
+	}
+
+	auth := c.getAuthForRegistry(registry)
+	opts := append([]remote.Option{remote.WithAuth(auth), remote.WithContext(ctx)}, c.remoteOpts...)
+	tags, err := remote.List(ref, opts...)
+	if err != nil {
+		return nil, errors.ClassifyRegistryError(fmt.Errorf("failed to list tags for %s: %w", repo, err))
+	}
+
+	return tags, nil
+}
+
+func (c *clientImpl) digestExists(ctx context.Context, repo, digest string) (bool, error) {
+	registry, repository, err := parseImageRef(repo)
+	if err != nil {
+		return false, errors.NewPermanentf("failed to parse repository: %w", err)
+	}
+
+	imageRef := fmt.Sprintf("%s/%s@%s", registry, repository, digest)
+	ref, err := name.ParseReference(imageRef)
+	if err != nil {
+		return false, errors.NewPermanentf("failed to parse image reference: %w", err)
+	}
+
+	auth := c.getAuthForRegistry(registry)
+	opts := append([]remote.Option{remote.WithAuth(auth), remote.WithContext(ctx)}, c.remoteOpts...)
+	_, err = remote.Get(ref, opts...)
+	if err == nil {
+		return true, nil
+	}
+
+	classifiedErr := errors.ClassifyRegistryError(err)
+	if errors.IsManifestNotFound(classifiedErr) {
+		return false, nil
+	}
+
+	return false, classifiedErr
+}
+
+func (c *clientImpl) deleteTag(ctx context.Context, repo, tag string) error {
+	registry, repository, err := parseImageRef(repo)
+	if err != nil {
+		return errors.NewPermanentf("failed to parse repository: %w", err)
+	}
+
+	imageRef := fmt.Sprintf("%s/%s:%s", registry, repository, tag)
+	ref, err := name.NewTag(imageRef)
+	if err != nil {
+		return errors.NewPermanentf("failed to parse tag reference: %w", err)
+	}
+
+	auth := c.getAuthForRegistry(registry)
+	opts := append([]remote.Option{remote.WithAuth(auth), remote.WithContext(ctx)}, c.remoteOpts...)
+	if err := remote.Delete(ref, opts...); err != nil {
+		classifiedErr := errors.ClassifyRegistryError(err)
+		if errors.IsManifestNotFound(classifiedErr) {
+			return nil
+		}
+		return classifiedErr
+	}
+
+	return nil
+}
+
+func extractDigestFromLegacyAttachmentTag(tag string) (string, bool) {
+	matches := legacyAttachmentTagPattern.FindStringSubmatch(tag)
+	if len(matches) != 3 {
+		return "", false
+	}
+
+	return "sha256:" + matches[1], true
 }
 
 // GetManifest retrieves image manifest by digest

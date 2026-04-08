@@ -98,6 +98,7 @@ creds:
 # Default settings
 defaults:
   parallel: int               # Parallel sync operations
+  x-cosignRepository: string  # Optional dedicated repository namespace for cosign .sig/.att artifacts
   x-rescanInterval: string    # Default rescan interval (e.g., "7d", "24h")
   x-policy:                   # Default policy
     expression: string        # CEL expression

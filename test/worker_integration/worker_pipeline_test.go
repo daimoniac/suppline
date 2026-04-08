@@ -60,6 +60,10 @@ func (m *mockRegistry) GetManifestWithTagVerification(ctx context.Context, repo,
 	}, nil
 }
 
+func (m *mockRegistry) CleanupLegacyCosignTags(ctx context.Context, storageRepo, subjectRepo string) error {
+	return nil
+}
+
 type mockScanner struct {
 	sbomError error
 	vulnError error

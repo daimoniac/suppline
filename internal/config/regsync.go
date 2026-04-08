@@ -45,6 +45,14 @@ func expandConfig(config *RegsyncConfig) error {
 		"env": os.Getenv,
 	}
 
+	if config.Defaults.CosignRepository != "" {
+		expanded, err := expandTemplate(config.Defaults.CosignRepository, funcMap)
+		if err != nil {
+			return errors.NewPermanentf("failed to expand defaults.x-cosignRepository: %w", err)
+		}
+		config.Defaults.CosignRepository = expanded
+	}
+
 	// Expand credential fields
 	for i := range config.Creds {
 		cred := &config.Creds[i]
@@ -91,6 +99,56 @@ func expandConfig(config *RegsyncConfig) error {
 	}
 
 	return nil
+}
+
+// GetCosignRepository returns the configured default repository used by cosign
+// for storing signature and attestation attachments. Empty string means
+// attachments are stored next to the subject image repository.
+func (c *RegsyncConfig) GetCosignRepository() string {
+	return strings.TrimSpace(c.Defaults.CosignRepository)
+}
+
+// ResolveCosignStorageRepositoryForTarget maps a target repository to the
+// repository where cosign attachments are expected to be stored.
+//
+// Example:
+//   target: docker.io/org/nginx
+//   defaults.x-cosignRepository: docker.io/security/cosign
+//   result: docker.io/security/cosign/nginx
+//
+// Returns empty string when defaults.x-cosignRepository is not configured.
+func (c *RegsyncConfig) ResolveCosignStorageRepositoryForTarget(target string) string {
+	base := c.GetCosignRepository()
+	if base == "" {
+		return ""
+	}
+
+	baseRegistry, baseRepo := splitRegistryAndRepo(base)
+	_, targetRepo := splitRegistryAndRepo(target)
+
+	segment := targetRepo
+	if idx := strings.LastIndex(targetRepo, "/"); idx != -1 {
+		segment = targetRepo[idx+1:]
+	}
+
+	if baseRepo == "" {
+		return fmt.Sprintf("%s/%s", baseRegistry, segment)
+	}
+
+	return fmt.Sprintf("%s/%s/%s", baseRegistry, strings.Trim(baseRepo, "/"), segment)
+}
+
+func splitRegistryAndRepo(ref string) (string, string) {
+	parts := strings.SplitN(ref, "/", 2)
+	if len(parts) == 2 && (strings.Contains(parts[0], ".") || strings.Contains(parts[0], ":")) {
+		return parts[0], parts[1]
+	}
+
+	if len(parts) == 1 {
+		return "docker.io", parts[0]
+	}
+
+	return "docker.io", ref
 }
 
 // expandTemplate expands a Go template string with the provided function map

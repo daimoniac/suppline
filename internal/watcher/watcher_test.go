@@ -21,6 +21,7 @@ type mockRegistryClient struct {
 	repositories []string
 	tags         map[string][]string
 	digests      map[string]string // repo:tag -> digest
+	cleanupCalls []string
 	err          error
 }
 
@@ -78,6 +79,14 @@ func (m *mockRegistryClient) GetManifestWithTagVerification(ctx context.Context,
 	}
 	// Then get manifest
 	return m.GetManifest(ctx, repo, digest)
+}
+
+func (m *mockRegistryClient) CleanupLegacyCosignTags(ctx context.Context, storageRepo, subjectRepo string) error {
+	if m.err != nil {
+		return m.err
+	}
+	m.cleanupCalls = append(m.cleanupCalls, storageRepo+"=>"+subjectRepo)
+	return nil
 }
 
 type mockStateStore struct {
@@ -437,6 +446,55 @@ func TestWatcher_Discover_ErrorHandling(t *testing.T) {
 	queueDepth, _ := mockQueue.GetQueueDepth(ctx)
 	if queueDepth != 0 {
 		t.Errorf("Expected 0 tasks in queue, got %d", queueDepth)
+	}
+}
+
+func TestWatcher_Discover_CleanupIncludesDedicatedCosignStorage(t *testing.T) {
+	ctx := context.Background()
+
+	mockRegistry := &mockRegistryClient{
+		repositories: []string{"docker.io/myorg/nginx"},
+		tags: map[string][]string{
+			"docker.io/myorg/nginx": {"1.27"},
+		},
+		digests: map[string]string{
+			"docker.io/myorg/nginx:1.27": "sha256:digest1",
+		},
+	}
+
+	mockStore := &mockStateStore{scans: make(map[string]*statestore.ScanRecord)}
+	mockQueue := queue.NewInMemoryQueue(100)
+
+	regsyncCfg := &config.RegsyncConfig{
+		Defaults: config.Defaults{CosignRepository: "docker.io/security/cosign"},
+		Sync: []config.SyncEntry{
+			{Target: "docker.io/myorg/nginx", Type: "repository"},
+		},
+	}
+
+	logger := observability.NewLogger("error")
+	w := NewWatcher(mockRegistry, regsyncCfg, mockStore, mockQueue, Config{
+		PollInterval:   5 * time.Second,
+		RescanInterval: 24 * time.Hour,
+	}, logger)
+
+	if err := w.Discover(ctx); err != nil {
+		t.Fatalf("Discover failed: %v", err)
+	}
+
+	expectedCalls := map[string]bool{
+		"docker.io/myorg/nginx=>docker.io/myorg/nginx":          true,
+		"docker.io/security/cosign/nginx=>docker.io/myorg/nginx": true,
+	}
+
+	if len(mockRegistry.cleanupCalls) != len(expectedCalls) {
+		t.Fatalf("expected %d cleanup calls, got %d (%v)", len(expectedCalls), len(mockRegistry.cleanupCalls), mockRegistry.cleanupCalls)
+	}
+
+	for _, call := range mockRegistry.cleanupCalls {
+		if !expectedCalls[call] {
+			t.Fatalf("unexpected cleanup call %q", call)
+		}
 	}
 }
 

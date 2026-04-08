@@ -100,6 +100,16 @@ func run() error {
 		"sync_entries", len(regsyncCfg.Sync),
 		"credentials", len(regsyncCfg.Creds))
 
+	if cosignRepository := regsyncCfg.GetCosignRepository(); cosignRepository != "" {
+		if err := os.Setenv("COSIGN_REPOSITORY", cosignRepository); err != nil {
+			return fmt.Errorf("failed to set COSIGN_REPOSITORY: %w", err)
+		}
+		logger.Info("configured dedicated cosign repository",
+			"cosign_repository", cosignRepository)
+	} else {
+		logger.Debug("using default cosign repository behavior")
+	}
+
 	logger.Debug("initializing state store",
 		"type", cfg.StateStore.Type)
 	var store statestore.StateStoreQuery
