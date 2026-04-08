@@ -171,6 +171,42 @@ func TestHandleGetSemverUpdateTasks_AllVersionsInRange(t *testing.T) {
 	}
 }
 
+func TestHandleGetSemverUpdateTasks_MatchesCanonicalDockerHubRepositoryRefs(t *testing.T) {
+	regsync := regsyncWithSemver("docker.io/falcosecurity/falco", "hostingmaloonde/falcosecurity_falco", []string{">=0.40.0 <0.42.0"})
+	store := &mockClusterInventoryStore{
+		mockStateStore: &mockStateStore{},
+		summaries:      []statestore.ClusterSummary{{Name: "prod"}},
+		clusterImages: []statestore.ClusterImageSummary{
+			{Namespace: "security", ImageRef: "docker.io/hostingmaloonde/falcosecurity_falco", Tag: "0.41.3"},
+		},
+	}
+	server := tasksTestServer(t, store, regsync)
+
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/tasks/semver-updates", nil)
+	w := httptest.NewRecorder()
+	server.router.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", w.Code, w.Body.String())
+	}
+
+	var resp SemverUpdateTasksResponse
+	if err := json.NewDecoder(w.Body).Decode(&resp); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if len(resp.Entries) != 1 {
+		t.Fatalf("expected 1 entry, got %d", len(resp.Entries))
+	}
+
+	entry := resp.Entries[0]
+	if len(entry.RuntimeVersions) != 1 || entry.RuntimeVersions[0] != "0.41.3" {
+		t.Fatalf("expected runtime versions [0.41.3], got %v", entry.RuntimeVersions)
+	}
+	if entry.Status == "no_runtime_data" {
+		t.Fatalf("expected runtime data match after canonicalization, got status=%q", entry.Status)
+	}
+}
+
 func TestHandleGetSemverUpdateTasks_OutdatedRange(t *testing.T) {
 	// 1.27.2 is outside >=1.20.0 <1.26.0 → should suggest >=1.25.3.
 	regsync := regsyncWithSemver("docker.io/nginx", "registry.example.com/nginx", []string{">=1.20.0 <1.26.0"})

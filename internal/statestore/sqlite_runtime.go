@@ -606,7 +606,9 @@ func appendRuntimeLocations(locations []RuntimeLocation, runtime RuntimeInventor
 	return locations
 }
 
-func normalizeRepositoryRef(imageRef string) string {
+// NormalizeRepositoryRef canonicalizes an image reference to a repository-only
+// form suitable for matching runtime inventory to scanned/configured images.
+func NormalizeRepositoryRef(imageRef string) string {
 	ref := strings.ToLower(strings.TrimSpace(imageRef))
 	if ref == "" {
 		return ""
@@ -655,6 +657,10 @@ func normalizeRepositoryRef(imageRef string) string {
 	}
 
 	return registry + "/" + path
+}
+
+func normalizeRepositoryRef(imageRef string) string {
+	return NormalizeRepositoryRef(imageRef)
 }
 
 // GetUniqueVulnerabilityCounts returns the count of unique CVE IDs by severity across all latest scans.

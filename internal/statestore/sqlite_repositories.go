@@ -336,8 +336,6 @@ func (s *SQLiteStore) repositoryRuntimeUsageByID(ctx context.Context, repoNamesB
 
 // GetRepository returns a repository with all its tags
 func (s *SQLiteStore) GetRepository(ctx context.Context, name string, filter RepositoryTagFilter) (*RepositoryDetail, error) {
-	cutoffUnix := s.runtimeInUseCutoffUnix()
-
 	// First, get total count of unique tags for this repository
 	countQuery := `
 		SELECT COUNT(DISTINCT a.tag)
@@ -355,11 +353,6 @@ func (s *SQLiteStore) GetRepository(ctx context.Context, name string, filter Rep
 			countQuery += " AND a.tag LIKE ?"
 			countArgs = append(countArgs, filter.Search+"%")
 		}
-	}
-
-	if filter.InUseOnly {
-		countQuery += " AND (EXISTS (SELECT 1 FROM cluster_images_seen ci WHERE ci.last_seen_at >= ? AND ci.digest = COALESCE(a.digest, '')) OR EXISTS (SELECT 1 FROM cluster_images_seen ci WHERE ci.last_seen_at >= ? AND COALESCE(ci.tag, '') = COALESCE(a.tag, '')))"
-		countArgs = append(countArgs, cutoffUnix, cutoffUnix)
 	}
 
 	var total int
@@ -398,16 +391,11 @@ func (s *SQLiteStore) GetRepository(ctx context.Context, name string, filter Rep
 			FROM artifacts a2
 			JOIN repositories r2 ON a2.repository_id = r2.id
 			WHERE r2.name = ?
-			AND (? = 0 OR EXISTS (SELECT 1 FROM cluster_images_seen ci2 WHERE ci2.last_seen_at >= ? AND (ci2.digest = COALESCE(a2.digest, '') OR COALESCE(ci2.tag, '') = COALESCE(a2.tag, ''))))
 			GROUP BY a2.tag
 		) latest ON a.tag = latest.tag AND a.id = latest.max_id
 		WHERE r.name = ?
 	`
-	inUseOnly := 0
-	if filter.InUseOnly {
-		inUseOnly = 1
-	}
-	args := []interface{}{name, inUseOnly, cutoffUnix, name}
+	args := []interface{}{name, name}
 
 	if filter.Search != "" {
 		if filter.ExactMatch {
@@ -419,19 +407,14 @@ func (s *SQLiteStore) GetRepository(ctx context.Context, name string, filter Rep
 		}
 	}
 
-	if filter.InUseOnly {
-		query += " AND (EXISTS (SELECT 1 FROM cluster_images_seen ci WHERE ci.last_seen_at >= ? AND ci.digest = COALESCE(a.digest, '')) OR EXISTS (SELECT 1 FROM cluster_images_seen ci WHERE ci.last_seen_at >= ? AND COALESCE(ci.tag, '') = COALESCE(a.tag, '')))"
-		args = append(args, cutoffUnix, cutoffUnix)
-	}
-
 	query += " ORDER BY a.tag ASC"
 
-	if filter.Limit > 0 {
+	if !filter.InUseOnly && filter.Limit > 0 {
 		query += " LIMIT ?"
 		args = append(args, filter.Limit)
 	}
 
-	if filter.Offset > 0 {
+	if !filter.InUseOnly && filter.Offset > 0 {
 		query += " OFFSET ?"
 		args = append(args, filter.Offset)
 	}
@@ -496,6 +479,53 @@ func (s *SQLiteStore) GetRepository(ctx context.Context, name string, filter Rep
 
 	if err := rows.Err(); err != nil {
 		return nil, errors.NewTransientf("error iterating tag rows: %w", err)
+	}
+
+	if filter.InUseOnly {
+		lookups := make([]RuntimeLookupInput, 0, len(detail.Tags))
+		for _, tag := range detail.Tags {
+			lookups = append(lookups, RuntimeLookupInput{
+				Digest:     tag.Digest,
+				Repository: name,
+				Tag:        tag.Name,
+			})
+		}
+
+		runtimeUsageByDigest, err := s.GetRuntimeUsageForScans(ctx, lookups)
+		if err != nil {
+			return nil, err
+		}
+
+		filtered := make([]TagInfo, 0, len(detail.Tags))
+		for _, tag := range detail.Tags {
+			usage, ok := runtimeUsageByDigest[tag.Digest]
+			if !ok || !usage.RuntimeUsed {
+				continue
+			}
+			tag.RuntimeUsed = usage.RuntimeUsed
+			tag.Runtime = usage.Runtime
+			filtered = append(filtered, tag)
+		}
+
+		detail.Total = len(filtered)
+
+		start := filter.Offset
+		if start < 0 {
+			start = 0
+		}
+		if start > len(filtered) {
+			start = len(filtered)
+		}
+
+		end := len(filtered)
+		if filter.Limit > 0 {
+			candidateEnd := start + filter.Limit
+			if candidateEnd < end {
+				end = candidateEnd
+			}
+		}
+
+		detail.Tags = filtered[start:end]
 	}
 
 	return detail, nil

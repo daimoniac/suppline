@@ -9,6 +9,7 @@ import (
 	"time"
 
 	semver "github.com/Masterminds/semver/v3"
+	"github.com/daimoniac/suppline/internal/statestore"
 )
 
 // SemverUpdateEntry describes the state of a single sync entry with semverRange.
@@ -116,7 +117,7 @@ func (s *APIServer) handleGetSemverUpdateTasks(w http.ResponseWriter, r *http.Re
 		if len(clusters) > 0 {
 			noRuntimeData = false
 
-			// Build: imageRef -> deduplicated set of semver tags
+			// Build: normalized imageRef -> deduplicated set of semver tags
 			imageTagMap := make(map[string]map[string]struct{})
 			for _, cluster := range clusters {
 				images, err := s.clusterInventory.ListClusterImages(ctx, cluster.Name)
@@ -131,23 +132,34 @@ func (s *APIServer) handleGetSemverUpdateTasks(w http.ResponseWriter, r *http.Re
 					if _, err := semver.NewVersion(img.Tag); err != nil {
 						continue // not a semver tag
 					}
-					if _, ok := imageTagMap[img.ImageRef]; !ok {
-						imageTagMap[img.ImageRef] = make(map[string]struct{})
+
+					normalizedRef := statestore.NormalizeRepositoryRef(img.ImageRef)
+					if normalizedRef == "" {
+						continue
 					}
-					imageTagMap[img.ImageRef][img.Tag] = struct{}{}
+
+					if _, ok := imageTagMap[normalizedRef]; !ok {
+						imageTagMap[normalizedRef] = make(map[string]struct{})
+					}
+					imageTagMap[normalizedRef][img.Tag] = struct{}{}
 				}
 			}
 
-			// Match runtime images to sync entries by comparing imageRef to entry.Target.
+			// Match runtime images to sync entries using canonical repository references.
 			for i := range candidates {
 				c := &candidates[i]
-				for imageRef, tagSet := range imageTagMap {
-					if !strings.EqualFold(imageRef, c.Target) {
-						continue
-					}
-					for tag := range tagSet {
-						c.RuntimeVersions = append(c.RuntimeVersions, tag)
-					}
+				normalizedTarget := statestore.NormalizeRepositoryRef(c.Target)
+				if normalizedTarget == "" {
+					continue
+				}
+
+				tagSet, ok := imageTagMap[normalizedTarget]
+				if !ok {
+					continue
+				}
+
+				for tag := range tagSet {
+					c.RuntimeVersions = append(c.RuntimeVersions, tag)
 				}
 				sort.Slice(c.RuntimeVersions, func(a, b int) bool {
 					va, _ := semver.NewVersion(c.RuntimeVersions[a])

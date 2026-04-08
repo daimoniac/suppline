@@ -325,11 +325,8 @@ func buildScanFilterClause(filter ScanFilter) (string, []interface{}) {
 	}
 
 	if filter.InUse != nil {
-		if *filter.InUse {
-			clause += " AND EXISTS (SELECT 1 FROM cluster_images ci WHERE ci.digest = a.digest)"
-		} else {
-			clause += " AND NOT EXISTS (SELECT 1 FROM cluster_images ci WHERE ci.digest = a.digest)"
-		}
+		// In-use filtering is applied after query via runtime usage lookups so
+		// digest and repository/tag fallback matching stay consistent.
 	}
 
 	if filter.MaxAge > 0 {
@@ -346,6 +343,13 @@ func buildScanFilterClause(filter ScanFilter) (string, []interface{}) {
 // also reads the current state via last_scan_id, and avoids surfacing stale
 // historical records (e.g. an old failed scan after a subsequent passing scan).
 func (s *SQLiteStore) ListScans(ctx context.Context, filter ScanFilter) ([]*ScanRecord, error) {
+	originalLimit := filter.Limit
+	originalOffset := filter.Offset
+	if filter.InUse != nil {
+		filter.Limit = 0
+		filter.Offset = 0
+	}
+
 	query := `
 		SELECT sr.id, sr.artifact_id, sr.scan_duration_ms,
 			sr.critical_vuln_count, sr.high_vuln_count, sr.medium_vuln_count, sr.low_vuln_count,
@@ -431,12 +435,72 @@ func (s *SQLiteStore) ListScans(ctx context.Context, filter ScanFilter) ([]*Scan
 		return nil, errors.NewTransientf("error iterating rows: %w", err)
 	}
 
+	if filter.InUse != nil {
+		lookups := make([]RuntimeLookupInput, 0, len(records))
+		for _, record := range records {
+			lookups = append(lookups, RuntimeLookupInput{
+				Digest:     record.Digest,
+				Repository: record.Repository,
+				Tag:        record.Tag,
+			})
+		}
+
+		runtimeUsageByDigest, err := s.GetRuntimeUsageForScans(ctx, lookups)
+		if err != nil {
+			return nil, err
+		}
+
+		filtered := make([]*ScanRecord, 0, len(records))
+		for _, record := range records {
+			usage, ok := runtimeUsageByDigest[record.Digest]
+			used := ok && usage.RuntimeUsed
+			if used != *filter.InUse {
+				continue
+			}
+			record.RuntimeUsed = used
+			if used {
+				record.Runtime = usage.Runtime
+			}
+			filtered = append(filtered, record)
+		}
+
+		start := originalOffset
+		if start < 0 {
+			start = 0
+		}
+		if start > len(filtered) {
+			start = len(filtered)
+		}
+
+		end := len(filtered)
+		if originalLimit > 0 {
+			candidateEnd := start + originalLimit
+			if candidateEnd < end {
+				end = candidateEnd
+			}
+		}
+
+		records = filtered[start:end]
+	}
+
 	return records, nil
 }
 
 // CountScans returns the total number of scan records that match the filters.
 // Pagination fields (Limit/Offset) are intentionally ignored.
 func (s *SQLiteStore) CountScans(ctx context.Context, filter ScanFilter) (int, error) {
+	if filter.InUse != nil {
+		fullFilter := filter
+		fullFilter.Limit = 0
+		fullFilter.Offset = 0
+
+		records, err := s.ListScans(ctx, fullFilter)
+		if err != nil {
+			return 0, err
+		}
+		return len(records), nil
+	}
+
 	query := `
 		SELECT COUNT(*)
 		FROM artifacts a

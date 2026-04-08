@@ -534,6 +534,69 @@ func TestGetRuntimeUsageForScan_NoMatch(t *testing.T) {
 	}
 }
 
+func TestListScans_InUseFilter_UsesCanonicalRepositoryTagFallback(t *testing.T) {
+	dbPath := "test_cluster_runtime_scan_in_use_canonical_" + t.Name() + ".db"
+	_ = os.Remove(dbPath)
+	defer os.Remove(dbPath)
+
+	store, err := NewSQLiteStore(dbPath)
+	if err != nil {
+		t.Fatalf("Failed to create SQLite store: %v", err)
+	}
+	defer store.Close()
+
+	ctx := context.Background()
+	record := &ScanRecord{
+		Repository:      "hostingmaloonde/falcosecurity_falco",
+		Tag:             "0.41.3",
+		Digest:          "sha256:scan-digest-not-in-runtime",
+		PolicyPassed:    true,
+		SBOMAttested:    true,
+		VulnAttested:    true,
+		SCAIAttested:    true,
+		Vulnerabilities: []types.VulnerabilityRecord{},
+		ToleratedCVEs:   []types.ToleratedCVE{},
+	}
+	if err := store.RecordScan(ctx, record); err != nil {
+		t.Fatalf("RecordScan failed: %v", err)
+	}
+
+	if err := store.RecordClusterInventory(ctx, "cluster-falco", []ClusterImageEntry{{
+		Namespace: "falco",
+		ImageRef:  "docker.io/hostingmaloonde/falcosecurity_falco",
+		Tag:       "0.41.3",
+		Digest:    "",
+	}}, time.Now().UTC()); err != nil {
+		t.Fatalf("RecordClusterInventory failed: %v", err)
+	}
+
+	inUse := true
+	inUseScans, err := store.ListScans(ctx, ScanFilter{InUse: &inUse, Limit: 100, Offset: 0})
+	if err != nil {
+		t.Fatalf("ListScans(in_use=true) failed: %v", err)
+	}
+	if len(inUseScans) != 1 || inUseScans[0].Digest != record.Digest {
+		t.Fatalf("expected one in-use scan for %s, got %+v", record.Digest, inUseScans)
+	}
+
+	inUseCount, err := store.CountScans(ctx, ScanFilter{InUse: &inUse})
+	if err != nil {
+		t.Fatalf("CountScans(in_use=true) failed: %v", err)
+	}
+	if inUseCount != 1 {
+		t.Fatalf("expected CountScans(in_use=true)=1, got %d", inUseCount)
+	}
+
+	notInUse := false
+	notInUseScans, err := store.ListScans(ctx, ScanFilter{InUse: &notInUse, Limit: 100, Offset: 0})
+	if err != nil {
+		t.Fatalf("ListScans(in_use=false) failed: %v", err)
+	}
+	if len(notInUseScans) != 0 {
+		t.Fatalf("expected no scans for in_use=false, got %+v", notInUseScans)
+	}
+}
+
 func TestListRepositories_RuntimeUsageFallbackRepositoryTag(t *testing.T) {
 	dbPath := "test_cluster_runtime_repo_list_fallback_" + t.Name() + ".db"
 	_ = os.Remove(dbPath)
