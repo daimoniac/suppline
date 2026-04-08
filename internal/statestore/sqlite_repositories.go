@@ -315,11 +315,29 @@ func (s *SQLiteStore) repositoryRuntimeUsageByID(ctx context.Context, repoNamesB
 		}
 	}
 
+	// Repository-level fallback: if any image of this repository was seen recently,
+	// treat the repository as in use even when tag/digest do not match scanned artifacts.
+	for repoID, repoName := range repoNamesByID {
+		if runtimeUsedByRepoID[repoID] {
+			continue
+		}
+
+		usage, err := s.queryRuntimeUsageByRepository(ctx, repoName)
+		if err != nil {
+			return nil, err
+		}
+		if usage.RuntimeUsed {
+			runtimeUsedByRepoID[repoID] = true
+		}
+	}
+
 	return runtimeUsedByRepoID, nil
 }
 
 // GetRepository returns a repository with all its tags
 func (s *SQLiteStore) GetRepository(ctx context.Context, name string, filter RepositoryTagFilter) (*RepositoryDetail, error) {
+	cutoffUnix := s.runtimeInUseCutoffUnix()
+
 	// First, get total count of unique tags for this repository
 	countQuery := `
 		SELECT COUNT(DISTINCT a.tag)
@@ -340,7 +358,8 @@ func (s *SQLiteStore) GetRepository(ctx context.Context, name string, filter Rep
 	}
 
 	if filter.InUseOnly {
-		countQuery += " AND (EXISTS (SELECT 1 FROM cluster_images ci WHERE ci.digest = a.digest) OR EXISTS (SELECT 1 FROM cluster_images ci WHERE COALESCE(ci.tag, '') = a.tag))"
+		countQuery += " AND (EXISTS (SELECT 1 FROM cluster_images_seen ci WHERE ci.last_seen_at >= ? AND ci.digest = COALESCE(a.digest, '')) OR EXISTS (SELECT 1 FROM cluster_images_seen ci WHERE ci.last_seen_at >= ? AND COALESCE(ci.tag, '') = COALESCE(a.tag, '')))"
+		countArgs = append(countArgs, cutoffUnix, cutoffUnix)
 	}
 
 	var total int
@@ -379,7 +398,7 @@ func (s *SQLiteStore) GetRepository(ctx context.Context, name string, filter Rep
 			FROM artifacts a2
 			JOIN repositories r2 ON a2.repository_id = r2.id
 			WHERE r2.name = ?
-			AND (? = 0 OR EXISTS (SELECT 1 FROM cluster_images ci2 WHERE ci2.digest = a2.digest OR COALESCE(ci2.tag, '') = a2.tag))
+			AND (? = 0 OR EXISTS (SELECT 1 FROM cluster_images_seen ci2 WHERE ci2.last_seen_at >= ? AND (ci2.digest = COALESCE(a2.digest, '') OR COALESCE(ci2.tag, '') = COALESCE(a2.tag, ''))))
 			GROUP BY a2.tag
 		) latest ON a.tag = latest.tag AND a.id = latest.max_id
 		WHERE r.name = ?
@@ -388,7 +407,7 @@ func (s *SQLiteStore) GetRepository(ctx context.Context, name string, filter Rep
 	if filter.InUseOnly {
 		inUseOnly = 1
 	}
-	args := []interface{}{name, inUseOnly, name}
+	args := []interface{}{name, inUseOnly, cutoffUnix, name}
 
 	if filter.Search != "" {
 		if filter.ExactMatch {
@@ -401,7 +420,8 @@ func (s *SQLiteStore) GetRepository(ctx context.Context, name string, filter Rep
 	}
 
 	if filter.InUseOnly {
-		query += " AND (EXISTS (SELECT 1 FROM cluster_images ci WHERE ci.digest = a.digest) OR EXISTS (SELECT 1 FROM cluster_images ci WHERE COALESCE(ci.tag, '') = a.tag))"
+		query += " AND (EXISTS (SELECT 1 FROM cluster_images_seen ci WHERE ci.last_seen_at >= ? AND ci.digest = COALESCE(a.digest, '')) OR EXISTS (SELECT 1 FROM cluster_images_seen ci WHERE ci.last_seen_at >= ? AND COALESCE(ci.tag, '') = COALESCE(a.tag, '')))"
+		args = append(args, cutoffUnix, cutoffUnix)
 	}
 
 	query += " ORDER BY a.tag ASC"

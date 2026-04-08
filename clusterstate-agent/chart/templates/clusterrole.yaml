@@ -13,7 +13,7 @@ rules:
   resources: ["events"]
   verbs: ["get", "list", "watch"]
 - apiGroups: ["apps"]
-  resources: ["deployments", "statefulsets", "daemonsets"]
+  resources: ["deployments", "statefulsets", "daemonsets", "replicasets"]
   verbs: ["list"]
 - apiGroups: ["batch"]
   resources: ["jobs", "cronjobs"]

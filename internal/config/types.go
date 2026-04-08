@@ -58,10 +58,11 @@ type AttestationConfig struct {
 
 // StateStoreConfig configures the state store
 type StateStoreConfig struct {
-	Type           string
-	PostgresURL    string
-	SQLitePath     string
-	RescanInterval time.Duration
+	Type               string
+	PostgresURL        string
+	SQLitePath         string
+	RescanInterval     time.Duration
+	RuntimeInUseWindow time.Duration
 }
 
 // APIConfig configures the HTTP API server
@@ -101,6 +102,7 @@ type RegistryCredential struct {
 type Defaults struct {
 	Parallel              int                   `yaml:"parallel"`
 	RescanInterval        string                `yaml:"x-rescanInterval,omitempty"`
+	RuntimeInUseWindow    string                `yaml:"x-runtimeInUseWindow,omitempty"`
 	WorkerPollInterval    string                `yaml:"x-worker-poll-interval,omitempty"`
 	WorkerConcurrency     int                   `yaml:"x-worker-concurrency,omitempty"`
 	WorkerRetryAttempts   int                   `yaml:"x-worker-retry-attempts,omitempty"`

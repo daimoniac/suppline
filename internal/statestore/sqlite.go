@@ -11,8 +11,11 @@ import (
 
 // SQLiteStore implements StateStore using SQLite
 type SQLiteStore struct {
-	db *sql.DB
+	db                 *sql.DB
+	runtimeInUseWindow time.Duration
 }
+
+const defaultRuntimeInUseWindow = 7 * 24 * time.Hour
 
 type clusterImageIdentity struct {
 	namespace string
@@ -58,7 +61,7 @@ func NewSQLiteStore(dbPath string) (*SQLiteStore, error) {
 		return nil, errors.NewTransientf("foreign keys are not enabled (got %d, expected 1)", fkEnabled)
 	}
 
-	store := &SQLiteStore{db: db}
+	store := &SQLiteStore{db: db, runtimeInUseWindow: defaultRuntimeInUseWindow}
 
 	// Initialize schema
 	if err := store.initSchema(); err != nil {
@@ -72,6 +75,16 @@ func NewSQLiteStore(dbPath string) (*SQLiteStore, error) {
 // Close closes the database connection
 func (s *SQLiteStore) Close() error {
 	return s.db.Close()
+}
+
+// SetRuntimeInUseWindow configures the time window used to treat runtime images as in use.
+func (s *SQLiteStore) SetRuntimeInUseWindow(window time.Duration) {
+	if window <= 0 {
+		s.runtimeInUseWindow = defaultRuntimeInUseWindow
+		return
+	}
+
+	s.runtimeInUseWindow = window
 }
 
 // initSchema creates the database schema with all tables and indexes
@@ -156,6 +169,19 @@ func (s *SQLiteStore) initSchema() error {
 		FOREIGN KEY (cluster_id) REFERENCES clusters(id) ON DELETE CASCADE
 	);
 
+	CREATE TABLE IF NOT EXISTS cluster_images_seen (
+		id INTEGER PRIMARY KEY AUTOINCREMENT,
+		cluster_id INTEGER NOT NULL,
+		namespace TEXT NOT NULL,
+		image_ref TEXT NOT NULL,
+		tag TEXT NOT NULL DEFAULT '',
+		digest TEXT NOT NULL DEFAULT '',
+		first_seen_at INTEGER NOT NULL,
+		last_seen_at INTEGER NOT NULL,
+		FOREIGN KEY (cluster_id) REFERENCES clusters(id) ON DELETE CASCADE,
+		UNIQUE(cluster_id, namespace, image_ref, tag, digest)
+	);
+
 	CREATE INDEX IF NOT EXISTS idx_artifacts_repository ON artifacts(repository_id);
 	CREATE INDEX IF NOT EXISTS idx_artifacts_digest ON artifacts(digest);
 	CREATE INDEX IF NOT EXISTS idx_artifacts_next_scan ON artifacts(next_scan_at);
@@ -171,6 +197,10 @@ func (s *SQLiteStore) initSchema() error {
 	CREATE INDEX IF NOT EXISTS idx_cluster_images_cluster ON cluster_images(cluster_id);
 	CREATE INDEX IF NOT EXISTS idx_cluster_images_digest ON cluster_images(digest);
 	CREATE INDEX IF NOT EXISTS idx_cluster_images_image_ref_tag ON cluster_images(image_ref, tag);
+	CREATE INDEX IF NOT EXISTS idx_cluster_images_seen_cluster ON cluster_images_seen(cluster_id);
+	CREATE INDEX IF NOT EXISTS idx_cluster_images_seen_digest ON cluster_images_seen(digest);
+	CREATE INDEX IF NOT EXISTS idx_cluster_images_seen_image_ref_tag ON cluster_images_seen(image_ref, tag);
+	CREATE INDEX IF NOT EXISTS idx_cluster_images_seen_last_seen_at ON cluster_images_seen(last_seen_at);
 	`
 
 	_, err := s.db.Exec(schema)

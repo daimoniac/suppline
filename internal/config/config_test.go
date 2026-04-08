@@ -50,6 +50,9 @@ sync:
 	if cfg.Queue.BufferSize != 1000 {
 		t.Errorf("Expected buffer size 1000, got %d", cfg.Queue.BufferSize)
 	}
+	if cfg.StateStore.RuntimeInUseWindow != 7*24*time.Hour {
+		t.Errorf("Expected runtime in-use window 7d, got %v", cfg.StateStore.RuntimeInUseWindow)
+	}
 
 	if cfg.Worker.RetryAttempts != 3 {
 		t.Errorf("Expected 3 retry attempts, got %d", cfg.Worker.RetryAttempts)
@@ -76,15 +79,18 @@ func TestLoadWithCustomValues(t *testing.T) {
 	}
 	defer os.Remove(tmpfile.Name())
 
-	content := `version: 1
-defaults:
-  x-queue-buffer-size: 2000
-  x-worker-retry-attempts: 5
-sync:
-  - source: nginx
-    target: myprivateregistry/nginx
-    type: repository
-`
+	content := strings.Join([]string{
+		"version: 1",
+		"defaults:",
+		"  x-queue-buffer-size: 2000",
+		"  x-worker-retry-attempts: 5",
+		"  x-runtimeInUseWindow: 14d",
+		"sync:",
+		"  - source: nginx",
+		"    target: myprivateregistry/nginx",
+		"    type: repository",
+		"",
+	}, "\n")
 	if _, err := tmpfile.Write([]byte(content)); err != nil {
 		t.Fatal(err)
 	}
@@ -113,6 +119,9 @@ sync:
 
 	if cfg.Queue.BufferSize != 2000 {
 		t.Errorf("Expected buffer size 2000, got %d", cfg.Queue.BufferSize)
+	}
+	if cfg.StateStore.RuntimeInUseWindow != 14*24*time.Hour {
+		t.Errorf("Expected runtime in-use window 14d, got %v", cfg.StateStore.RuntimeInUseWindow)
 	}
 
 	if cfg.Worker.RetryAttempts != 5 {

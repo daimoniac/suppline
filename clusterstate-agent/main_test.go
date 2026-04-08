@@ -1,13 +1,16 @@
 package main
 
 import (
+	"context"
 	"io"
 	"log/slog"
 	"testing"
 	"time"
 
+	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/client-go/kubernetes/fake"
 )
 
 func testLogger() *slog.Logger {
@@ -471,5 +474,88 @@ func TestCollectEventObservationIgnoresStaleEvents(t *testing.T) {
 
 	if got := buffer.Snapshot(); len(got) != 1 {
 		t.Fatalf("expected one observed image from fresh event, got %d", len(got))
+	}
+}
+
+func TestExtractImageFromEventMessageVariants(t *testing.T) {
+	tests := []struct {
+		name    string
+		message string
+		want    string
+	}{
+		{
+			name:    "pulling quoted",
+			message: "Pulling image \"ghcr.io/example/runner:1.2.3\"",
+			want:    "ghcr.io/example/runner:1.2.3",
+		},
+		{
+			name:    "failed to pull and unpack image",
+			message: "Failed to pull and unpack image \"docker.io/library/alpine:3.20\": failed to resolve reference",
+			want:    "docker.io/library/alpine:3.20",
+		},
+		{
+			name:    "failed to resolve reference",
+			message: "rpc error: code = Unknown desc = failed to resolve reference ghcr.io/org/app:2.4.1: not found",
+			want:    "ghcr.io/org/app:2.4.1",
+		},
+		{
+			name:    "ignore non image text",
+			message: "Created container: scan",
+			want:    "",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := extractImageFromEventMessage(tt.message)
+			if got != tt.want {
+				t.Fatalf("extractImageFromEventMessage(%q) = %q, want %q", tt.message, got, tt.want)
+			}
+		})
+	}
+}
+
+func TestCollectWorkloadImagesIncludesReplicaSets(t *testing.T) {
+	client := fake.NewSimpleClientset(
+		&appsv1.ReplicaSet{
+			ObjectMeta: metav1.ObjectMeta{Name: "rs-one", Namespace: "apps"},
+			Spec: appsv1.ReplicaSetSpec{
+				Template: corev1.PodTemplateSpec{
+					Spec: corev1.PodSpec{
+						Containers: []corev1.Container{{Name: "app", Image: "ghcr.io/example/kaniko-executor:v1.23.0"}},
+					},
+				},
+			},
+		},
+		&appsv1.ReplicaSet{
+			ObjectMeta: metav1.ObjectMeta{Name: "rs-excluded", Namespace: "kube-system"},
+			Spec: appsv1.ReplicaSetSpec{
+				Template: corev1.PodTemplateSpec{
+					Spec: corev1.PodSpec{
+						Containers: []corev1.Container{{Name: "skip", Image: "docker.io/library/busybox:1.36"}},
+					},
+				},
+			},
+		},
+	)
+
+	excluded := map[string]bool{"kube-system": true}
+	images, err := collectWorkloadImages(context.Background(), client, excluded, testLogger())
+	if err != nil {
+		t.Fatalf("collectWorkloadImages returned error: %v", err)
+	}
+
+	found := false
+	for _, img := range images {
+		if img.Namespace == "apps" && img.ImageRef == "ghcr.io/example/kaniko-executor" && img.Tag == "v1.23.0" {
+			found = true
+		}
+		if img.Namespace == "kube-system" {
+			t.Fatalf("did not expect images from excluded namespace, got %+v", img)
+		}
+	}
+
+	if !found {
+		t.Fatalf("expected ReplicaSet image to be collected")
 	}
 }

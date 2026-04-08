@@ -55,14 +55,43 @@ func (s *SQLiteStore) RecordClusterInventory(ctx context.Context, clusterName st
 	}
 	defer insertStmt.Close()
 
+	seenStmt, err := tx.PrepareContext(ctx, `
+		INSERT INTO cluster_images_seen (cluster_id, namespace, image_ref, tag, digest, first_seen_at, last_seen_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?)
+		ON CONFLICT(cluster_id, namespace, image_ref, tag, digest)
+		DO UPDATE SET last_seen_at = excluded.last_seen_at
+	`)
+	if err != nil {
+		return errors.NewTransientf("failed to prepare cluster image seen upsert: %w", err)
+	}
+	defer seenStmt.Close()
+
 	for _, image := range normalizedImages {
+		namespace := strings.TrimSpace(image.Namespace)
+		imageRef := strings.TrimSpace(image.ImageRef)
+		tag := strings.TrimSpace(image.Tag)
+		digest := strings.TrimSpace(image.Digest)
+
+		if _, err := seenStmt.ExecContext(
+			ctx,
+			clusterID,
+			namespace,
+			imageRef,
+			tag,
+			digest,
+			reportedAtUnix,
+			reportedAtUnix,
+		); err != nil {
+			return errors.NewTransientf("failed to upsert cluster image seen row: %w", err)
+		}
+
 		if _, err := insertStmt.ExecContext(
 			ctx,
 			clusterID,
-			strings.TrimSpace(image.Namespace),
-			strings.TrimSpace(image.ImageRef),
-			strings.TrimSpace(image.Tag),
-			strings.TrimSpace(image.Digest),
+			namespace,
+			imageRef,
+			tag,
+			digest,
 			reportedAtUnix,
 		); err != nil {
 			return errors.NewTransientf("failed to insert cluster image: %w", err)
@@ -74,6 +103,15 @@ func (s *SQLiteStore) RecordClusterInventory(ctx context.Context, clusterName st
 	}
 
 	return nil
+}
+
+func (s *SQLiteStore) runtimeInUseCutoffUnix() int64 {
+	window := s.runtimeInUseWindow
+	if window <= 0 {
+		window = defaultRuntimeInUseWindow
+	}
+
+	return time.Now().UTC().Add(-window).Unix()
 }
 
 // normalizeClusterInventoryEntries keeps distinct digest variants, but removes
@@ -328,15 +366,19 @@ func (s *SQLiteStore) queryRuntimeUsageByDigests(ctx context.Context, digests []
 		return result, nil
 	}
 
+	cutoffUnix := s.runtimeInUseCutoffUnix()
+
 	placeholders := strings.TrimSuffix(strings.Repeat("?,", len(digests)), ",")
 	query := `
 		SELECT ci.digest, ci.image_ref, COALESCE(ci.tag, ''), c.name, ci.namespace
-		FROM cluster_images ci
+		FROM cluster_images_seen ci
 		JOIN clusters c ON c.id = ci.cluster_id
-		WHERE ci.digest IN (` + placeholders + `)
+		WHERE ci.last_seen_at >= ?
+		  AND ci.digest IN (` + placeholders + `)
 	`
 
-	args := make([]interface{}, 0, len(digests))
+	args := make([]interface{}, 0, len(digests)+1)
+	args = append(args, cutoffUnix)
 	for _, digest := range digests {
 		args = append(args, digest)
 	}
@@ -380,12 +422,15 @@ func (s *SQLiteStore) queryRuntimeUsageByRepoTag(ctx context.Context, repository
 		return RuntimeUsage{}, nil
 	}
 
+	cutoffUnix := s.runtimeInUseCutoffUnix()
+
 	rows, err := s.db.QueryContext(ctx, `
 		SELECT ci.image_ref, COALESCE(ci.tag, ''), COALESCE(ci.digest, ''), c.name, ci.namespace
-		FROM cluster_images ci
+		FROM cluster_images_seen ci
 		JOIN clusters c ON c.id = ci.cluster_id
-		WHERE COALESCE(ci.tag, '') = ?
-	`, tag)
+		WHERE ci.last_seen_at >= ?
+		  AND COALESCE(ci.tag, '') = ?
+	`, cutoffUnix, tag)
 	if err != nil {
 		return RuntimeUsage{}, errors.NewTransientf("failed to query runtime fallback usage: %w", err)
 	}
@@ -416,6 +461,52 @@ func (s *SQLiteStore) queryRuntimeUsageByRepoTag(ctx context.Context, repository
 
 	if err := rows.Err(); err != nil {
 		return RuntimeUsage{}, errors.NewTransientf("error iterating runtime fallback usage rows: %w", err)
+	}
+
+	return buildRuntimeUsage(locations), nil
+}
+
+func (s *SQLiteStore) queryRuntimeUsageByRepository(ctx context.Context, repository string) (RuntimeUsage, error) {
+	repository = normalizeRepositoryRef(repository)
+	if repository == "" {
+		return RuntimeUsage{}, nil
+	}
+
+	cutoffUnix := s.runtimeInUseCutoffUnix()
+
+	rows, err := s.db.QueryContext(ctx, `
+		SELECT ci.image_ref, COALESCE(ci.tag, ''), COALESCE(ci.digest, ''), c.name, ci.namespace
+		FROM cluster_images_seen ci
+		JOIN clusters c ON c.id = ci.cluster_id
+		WHERE ci.last_seen_at >= ?
+	`, cutoffUnix)
+	if err != nil {
+		return RuntimeUsage{}, errors.NewTransientf("failed to query runtime repository usage: %w", err)
+	}
+	defer rows.Close()
+
+	locations := make([]RuntimeLocation, 0)
+	for rows.Next() {
+		var imageRef, imageTag, imageDigest, cluster, namespace string
+		if err := rows.Scan(&imageRef, &imageTag, &imageDigest, &cluster, &namespace); err != nil {
+			return RuntimeUsage{}, errors.NewTransientf("failed to scan runtime repository usage: %w", err)
+		}
+
+		if normalizeRepositoryRef(imageRef) != repository {
+			continue
+		}
+
+		locations = append(locations, RuntimeLocation{
+			Cluster:   cluster,
+			Namespace: namespace,
+			ImageRef:  imageRef,
+			Tag:       imageTag,
+			Digest:    imageDigest,
+		})
+	}
+
+	if err := rows.Err(); err != nil {
+		return RuntimeUsage{}, errors.NewTransientf("error iterating runtime repository usage rows: %w", err)
 	}
 
 	return buildRuntimeUsage(locations), nil

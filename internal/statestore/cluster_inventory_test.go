@@ -629,6 +629,138 @@ func TestListRepositories_RuntimeUsageFallbackRepositoryTag(t *testing.T) {
 	}
 }
 
+func TestGetRuntimeUsageForScan_RespectsRuntimeInUseWindow(t *testing.T) {
+	dbPath := "test_cluster_runtime_window_" + t.Name() + ".db"
+	_ = os.Remove(dbPath)
+	defer os.Remove(dbPath)
+
+	store, err := NewSQLiteStore(dbPath)
+	if err != nil {
+		t.Fatalf("Failed to create SQLite store: %v", err)
+	}
+	defer store.Close()
+	store.SetRuntimeInUseWindow(7 * 24 * time.Hour)
+
+	ctx := context.Background()
+	record := &ScanRecord{
+		Repository:      "docker.io/library/nginx",
+		Tag:             "1.25",
+		Digest:          "sha256:window-digest",
+		PolicyPassed:    true,
+		SBOMAttested:    true,
+		VulnAttested:    true,
+		SCAIAttested:    true,
+		Vulnerabilities: []types.VulnerabilityRecord{},
+		ToleratedCVEs:   []types.ToleratedCVE{},
+	}
+	if err := store.RecordScan(ctx, record); err != nil {
+		t.Fatalf("RecordScan failed: %v", err)
+	}
+
+	staleSeenAt := time.Now().UTC().Add(-8 * 24 * time.Hour)
+	if err := store.RecordClusterInventory(ctx, "cluster-old", []ClusterImageEntry{{
+		Namespace: "default",
+		ImageRef:  "docker.io/library/nginx",
+		Tag:       "1.25",
+		Digest:    "sha256:window-digest",
+	}}, staleSeenAt); err != nil {
+		t.Fatalf("RecordClusterInventory(stale) failed: %v", err)
+	}
+
+	usage, err := store.GetRuntimeUsageForScan(ctx, record.Digest, record.Repository, record.Tag)
+	if err != nil {
+		t.Fatalf("GetRuntimeUsageForScan(stale) failed: %v", err)
+	}
+	if usage.RuntimeUsed {
+		t.Fatalf("expected stale runtime match to be excluded by in-use window")
+	}
+
+	recentSeenAt := time.Now().UTC().Add(-2 * 24 * time.Hour)
+	if err := store.RecordClusterInventory(ctx, "cluster-recent", []ClusterImageEntry{{
+		Namespace: "default",
+		ImageRef:  "docker.io/library/nginx",
+		Tag:       "1.25",
+		Digest:    "sha256:window-digest",
+	}}, recentSeenAt); err != nil {
+		t.Fatalf("RecordClusterInventory(recent) failed: %v", err)
+	}
+
+	usage, err = store.GetRuntimeUsageForScan(ctx, record.Digest, record.Repository, record.Tag)
+	if err != nil {
+		t.Fatalf("GetRuntimeUsageForScan(recent) failed: %v", err)
+	}
+	if !usage.RuntimeUsed {
+		t.Fatalf("expected recent runtime match to be in use")
+	}
+}
+
+func TestListRepositories_RuntimeUsedWhenRepositorySeenWithDifferentTag(t *testing.T) {
+	dbPath := "test_cluster_runtime_repo_seen_diff_tag_" + t.Name() + ".db"
+	_ = os.Remove(dbPath)
+	defer os.Remove(dbPath)
+
+	store, err := NewSQLiteStore(dbPath)
+	if err != nil {
+		t.Fatalf("Failed to create SQLite store: %v", err)
+	}
+	defer store.Close()
+	store.SetRuntimeInUseWindow(7 * 24 * time.Hour)
+
+	ctx := context.Background()
+	if err := store.RecordScan(ctx, &ScanRecord{
+		Repository:      "hostingmaloonde/minio_minio",
+		Tag:             "RELEASE.2024-11-07T00-52-20Z",
+		Digest:          "sha256:minio-scanned",
+		PolicyPassed:    true,
+		SBOMAttested:    true,
+		VulnAttested:    true,
+		SCAIAttested:    true,
+		Vulnerabilities: []types.VulnerabilityRecord{},
+		ToleratedCVEs:   []types.ToleratedCVE{},
+	}); err != nil {
+		t.Fatalf("RecordScan failed: %v", err)
+	}
+
+	if err := store.RecordClusterInventory(ctx, "cluster-a", []ClusterImageEntry{{
+		Namespace: "gitlab-runner",
+		ImageRef:  "hostingmaloonde/minio_minio",
+		Tag:       "RELEASE.2024-12-18T13-15-44Z",
+		Digest:    "",
+	}}, time.Now().UTC()); err != nil {
+		t.Fatalf("RecordClusterInventory failed: %v", err)
+	}
+
+	resp, err := store.ListRepositories(ctx, RepositoryFilter{Limit: 100, Offset: 0})
+	if err != nil {
+		t.Fatalf("ListRepositories failed: %v", err)
+	}
+
+	var found *RepositoryInfo
+	for i := range resp.Repositories {
+		if resp.Repositories[i].Name == "hostingmaloonde/minio_minio" {
+			found = &resp.Repositories[i]
+			break
+		}
+	}
+	if found == nil {
+		t.Fatalf("expected repository hostingmaloonde/minio_minio in response")
+	}
+	if !found.RuntimeUsed {
+		t.Fatalf("expected RuntimeUsed=true when repository was seen recently with a different tag")
+	}
+
+	notInUse := false
+	notInUseResp, err := store.ListRepositories(ctx, RepositoryFilter{InUse: &notInUse, Limit: 100, Offset: 0})
+	if err != nil {
+		t.Fatalf("ListRepositories(in_use=false) failed: %v", err)
+	}
+	for _, repo := range notInUseResp.Repositories {
+		if repo.Name == "hostingmaloonde/minio_minio" {
+			t.Fatalf("did not expect hostingmaloonde/minio_minio in in_use=false results")
+		}
+	}
+}
+
 type clusterImageRow struct {
 	namespace string
 	imageRef  string

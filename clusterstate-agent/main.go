@@ -39,7 +39,10 @@ type clusterInventoryRequest struct {
 	Images  []clusterImageInput `json:"images"`
 }
 
-var quotedStringRe = regexp.MustCompile(`"([^"]+)"|'([^']+)'`)
+var (
+	quotedStringRe   = regexp.MustCompile(`"([^"]+)"|'([^']+)'`)
+	eventImageHintRe = regexp.MustCompile(`(?i)(?:pulling image|failed to pull image|failed to pull and unpack image|error pulling image|failed to resolve reference|failed to resolve image|failed to unpack image)\s*["']?([^"'\s]+)`)
+)
 
 type seenEntry struct {
 	img      clusterImageInput
@@ -542,6 +545,14 @@ func extractImageFromEventMessage(message string) string {
 		return ""
 	}
 
+	if match := eventImageHintRe.FindStringSubmatch(trimmed); len(match) == 2 {
+		candidate := strings.TrimSpace(match[1])
+		candidate = strings.TrimRight(candidate, ",.;:")
+		if isLikelyImageRef(candidate) {
+			return candidate
+		}
+	}
+
 	matches := quotedStringRe.FindAllStringSubmatch(trimmed, -1)
 	for _, m := range matches {
 		candidate := strings.TrimSpace(m[1])
@@ -554,7 +565,7 @@ func extractImageFromEventMessage(message string) string {
 	}
 
 	for _, token := range strings.Fields(trimmed) {
-		token = strings.Trim(token, ",.;()[]{}\"")
+		token = strings.Trim(token, ",.;()[]{}\"'`")
 		if isLikelyImageRef(token) {
 			return token
 		}
@@ -569,6 +580,9 @@ func isLikelyImageRef(v string) bool {
 		return false
 	}
 	if strings.Contains(v, " ") {
+		return false
+	}
+	if strings.HasSuffix(v, ":") {
 		return false
 	}
 	return strings.Contains(v, "/") || strings.Contains(v, ":") || strings.Contains(v, "@sha256:")
@@ -873,8 +887,8 @@ func extractDigestFromImageID(imageID string) string {
 	return ""
 }
 
-// collectWorkloadImages gathers images from Deployments, StatefulSets, DaemonSets, Jobs, and CronJobs.
-func collectWorkloadImages(ctx context.Context, kubeClient *kubernetes.Clientset, excludedNS map[string]bool, logger *slog.Logger) ([]clusterImageInput, error) {
+// collectWorkloadImages gathers images from common workload controllers.
+func collectWorkloadImages(ctx context.Context, kubeClient kubernetes.Interface, excludedNS map[string]bool, logger *slog.Logger) ([]clusterImageInput, error) {
 	var images []clusterImageInput
 
 	// Collect from Deployments
@@ -913,6 +927,19 @@ func collectWorkloadImages(ctx context.Context, kubeClient *kubernetes.Clientset
 				continue
 			}
 			images = appendWorkloadPodSpecImages(images, ds.Namespace, ds.Spec.Template.Spec)
+		}
+	}
+
+	// Collect from ReplicaSets (captures standalone or transient rollout states).
+	replicaSets, err := kubeClient.AppsV1().ReplicaSets("").List(ctx, metav1.ListOptions{})
+	if err != nil {
+		logger.Warn("failed to list replicasets", "error", err)
+	} else {
+		for _, rs := range replicaSets.Items {
+			if excludedNS[rs.Namespace] {
+				continue
+			}
+			images = appendWorkloadPodSpecImages(images, rs.Namespace, rs.Spec.Template.Spec)
 		}
 	}
 

@@ -19,6 +19,7 @@ func Load() (*Config, error) {
 	var workerRetryAttempts int
 	var workerRetryBackoff time.Duration
 	var queueBufferSize int
+	var runtimeInUseWindow time.Duration
 
 	// Try to load regsync config for defaults
 	if regsyncCfg, err := ParseRegsync(regsyncPath); err == nil {
@@ -34,6 +35,9 @@ func Load() (*Config, error) {
 			workerRetryBackoff = backoff
 		}
 		queueBufferSize = regsyncCfg.GetQueueBufferSize()
+		if window, err := regsyncCfg.GetRuntimeInUseWindow(); err == nil {
+			runtimeInUseWindow = window
+		}
 	}
 
 	// Use defaults from suppline.yml, or fall back to hardcoded defaults
@@ -54,6 +58,9 @@ func Load() (*Config, error) {
 	}
 	if queueBufferSize == 0 {
 		queueBufferSize = 1000
+	}
+	if runtimeInUseWindow == 0 {
+		runtimeInUseWindow = 7 * 24 * time.Hour
 	}
 
 	cfg := &Config{
@@ -89,10 +96,11 @@ func Load() (*Config, error) {
 			OIDCClientID: getEnv("OIDC_CLIENT_ID", ""),
 		},
 		StateStore: StateStoreConfig{
-			Type:           getEnv("STATE_STORE_TYPE", "sqlite"),
-			PostgresURL:    getEnv("POSTGRES_URL", ""),
-			SQLitePath:     getEnv("SQLITE_PATH", "suppline.db"),
-			RescanInterval: rescanInterval,
+			Type:               getEnv("STATE_STORE_TYPE", "sqlite"),
+			PostgresURL:        getEnv("POSTGRES_URL", ""),
+			SQLitePath:         getEnv("SQLITE_PATH", "suppline.db"),
+			RescanInterval:     rescanInterval,
+			RuntimeInUseWindow: runtimeInUseWindow,
 		},
 		API: APIConfig{
 			Enabled:  getEnvBool("API_ENABLED", true),
