@@ -79,7 +79,6 @@ All routes live in `src/App.tsx`. The app renders `<LoginPage />` full-screen wh
 /failed                        → FailedImagesPage
 /vulnerabilities               → VulnerabilitiesPage
 /vex                           → VEXPage
-/tolerations                   → redirect to /vex
 /integrations                  → IntegrationsPage
 *                              → redirect to /
 ```

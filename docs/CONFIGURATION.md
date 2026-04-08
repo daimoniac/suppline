@@ -281,7 +281,7 @@ Policies use CEL (Common Expression Language) to evaluate security posture.
 - `highCount` - Number of high vulnerabilities (excluding VEX-exempted)
 - `mediumCount` - Number of medium vulnerabilities (excluding VEX-exempted)
 - `lowCount` - Number of low vulnerabilities (excluding VEX-exempted)
-- `exemptedCount` - Number of VEX-exempted vulnerabilities (`toleratedCount` also works for backward compatibility)
+- `exemptedCount` - Number of VEX-exempted vulnerabilities
 - `vulnerabilities` - List of all vulnerabilities with details
 - `imageRef` - Image reference being evaluated
 
@@ -420,8 +420,6 @@ sync:
 - Expired statements are ignored (CVE counts normally)
 - Warnings logged for statements expiring within 7 days
 - Statements without `expires_at` never expire
-
-> **Migration note:** The legacy `x-tolerate` format is still supported and auto-converts to VEX `not_affected` statements with a deprecation warning. Update to `x-vex` at your earliest convenience.
 
 ## Examples
 

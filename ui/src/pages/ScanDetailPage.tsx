@@ -70,7 +70,7 @@ export default function ScanDetailPage() {
   if (error) return <ErrorState message={error} onRetry={load} />;
   if (!scan) return null;
 
-  const vexStatements = scan.AppliedVEXStatements || scan.ToleratedCVEs || [];
+  const vexStatements = scan.AppliedVEXStatements || [];
   const exemptedIds = new Set(vexStatements.map(t => t.CVEID));
   const activeVulns = (scan.Vulnerabilities || []).filter(v => !exemptedIds.has(v.CVEID));
   const grouped = groupBySeverity(activeVulns);

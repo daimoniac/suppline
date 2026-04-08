@@ -335,12 +335,14 @@ func TestStateStore(t *testing.T) {
 					Description:      "Test vulnerability",
 				},
 			},
-			ToleratedCVEs: []types.ToleratedCVE{
+			AppliedVEXStatements: []types.AppliedVEXStatement{
 				{
-					CVEID:       "CVE-2024-99999",
-					Statement:   "Test toleration",
-					ToleratedAt: time.Now().Unix(),
-					ExpiresAt:   &expiresAt,
+					CVEID:         "CVE-2024-99999",
+					State:         types.VEXStateNotAffected,
+					Justification: types.VEXJustCodeNotReachable,
+					Detail:        "Test VEX statement",
+					AppliedAt:     time.Now().Unix(),
+					ExpiresAt:     &expiresAt,
 				},
 			},
 		}
@@ -368,8 +370,8 @@ func TestStateStore(t *testing.T) {
 			t.Errorf("Expected 1 vulnerability, got %d", len(retrieved.Vulnerabilities))
 		}
 
-		if len(retrieved.ToleratedCVEs) != 1 {
-			t.Errorf("Expected 1 tolerated CVE, got %d", len(retrieved.ToleratedCVEs))
+		if len(retrieved.AppliedVEXStatements) != 1 {
+			t.Errorf("Expected 1 exempted CVE, got %d", len(retrieved.AppliedVEXStatements))
 		}
 	})
 
@@ -705,7 +707,7 @@ func TestPolicyEngine(t *testing.T) {
 	expiresAt := time.Now().Add(30 * 24 * time.Hour).Unix()
 	expiredAt := time.Now().Add(-1 * time.Hour).Unix()
 
-	tolerations := []types.VEXStatement{
+	vexStatements := []types.VEXStatement{
 		{
 			ID:        "CVE-2024-TOLERATED",
 			State:     types.VEXStateNotAffected,
@@ -715,7 +717,7 @@ func TestPolicyEngine(t *testing.T) {
 		{
 			ID:        "CVE-2024-EXPIRED",
 			State:     types.VEXStateNotAffected,
-			Detail:    "This toleration has expired",
+			Detail:    "This VEX statement has expired",
 			ExpiresAt: &expiredAt,
 		},
 	}
@@ -734,7 +736,7 @@ func TestPolicyEngine(t *testing.T) {
 			Vulnerabilities: []types.Vulnerability{},
 		}
 
-		decision, err := engine.Evaluate(ctx, "myregistry.com/nginx:latest", result, tolerations)
+		decision, err := engine.Evaluate(ctx, "myregistry.com/nginx:latest", result, vexStatements)
 		if err != nil {
 			t.Fatalf("Failed to evaluate policy: %v", err)
 		}
@@ -763,7 +765,7 @@ func TestPolicyEngine(t *testing.T) {
 			},
 		}
 
-		decision, err := engine.Evaluate(ctx, "myregistry.com/nginx:latest", result, tolerations)
+		decision, err := engine.Evaluate(ctx, "myregistry.com/nginx:latest", result, vexStatements)
 		if err != nil {
 			t.Fatalf("Failed to evaluate policy: %v", err)
 		}
@@ -777,7 +779,7 @@ func TestPolicyEngine(t *testing.T) {
 		}
 	})
 
-	t.Run("PassWithToleratedCVE", func(t *testing.T) {
+	t.Run("PassWithExemptedCVE", func(t *testing.T) {
 		result := &scanner.ScanResult{
 			ImageRef: "myregistry.com/nginx:latest",
 			Vulnerabilities: []types.Vulnerability{
@@ -788,17 +790,17 @@ func TestPolicyEngine(t *testing.T) {
 			},
 		}
 
-		decision, err := engine.Evaluate(ctx, "myregistry.com/nginx:latest", result, tolerations)
+		decision, err := engine.Evaluate(ctx, "myregistry.com/nginx:latest", result, vexStatements)
 		if err != nil {
 			t.Fatalf("Failed to evaluate policy: %v", err)
 		}
 
 		if !decision.Passed {
-			t.Error("Expected policy to pass with tolerated CVE")
+			t.Error("Expected policy to pass with exempted CVE")
 		}
 
 		if len(decision.ExemptedCVEs) != 1 {
-			t.Errorf("Expected 1 tolerated CVE, got %d", len(decision.ExemptedCVEs))
+			t.Errorf("Expected 1 exempted CVE, got %d", len(decision.ExemptedCVEs))
 		}
 
 		if decision.ExemptedCVEs[0] != "CVE-2024-TOLERATED" {
@@ -817,17 +819,17 @@ func TestPolicyEngine(t *testing.T) {
 			},
 		}
 
-		decision, err := engine.Evaluate(ctx, "myregistry.com/nginx:latest", result, tolerations)
+		decision, err := engine.Evaluate(ctx, "myregistry.com/nginx:latest", result, vexStatements)
 		if err != nil {
 			t.Fatalf("Failed to evaluate policy: %v", err)
 		}
 
 		if decision.Passed {
-			t.Error("Expected policy to fail with expired toleration")
+			t.Error("Expected policy to fail with expired VEX statement")
 		}
 
 		if decision.CriticalVulnCount != 1 {
-			t.Errorf("Expected 1 critical vulnerability (expired toleration), got %d", decision.CriticalVulnCount)
+			t.Errorf("Expected 1 critical vulnerability (expired VEX statement), got %d", decision.CriticalVulnCount)
 		}
 	})
 
@@ -858,11 +860,11 @@ func TestPolicyEngine(t *testing.T) {
 		}
 
 		if !decision.Passed {
-			t.Error("Expected policy to pass with expiring toleration")
+			t.Error("Expected policy to pass with expiring VEX statement")
 		}
 
 		if len(decision.ExpiringVEXStatements) != 1 {
-			t.Errorf("Expected 1 expiring toleration, got %d", len(decision.ExpiringVEXStatements))
+			t.Errorf("Expected 1 expiring VEX statement, got %d", len(decision.ExpiringVEXStatements))
 		}
 	})
 }
@@ -1061,7 +1063,7 @@ func TestAttestation(t *testing.T) {
 func TestPolicyAndAttestationWorkflow(t *testing.T) {
 	// Setup policy engine
 	expiresAt := time.Now().Add(30 * 24 * time.Hour).Unix()
-	tolerations := []types.VEXStatement{
+	vexStatements := []types.VEXStatement{
 		{
 			ID:        "CVE-2024-TOLERATED",
 			State:     types.VEXStateNotAffected,
@@ -1079,7 +1081,7 @@ func TestPolicyAndAttestationWorkflow(t *testing.T) {
 	ctx := context.Background()
 
 	t.Run("WorkflowWithPolicyPass", func(t *testing.T) {
-		// Scan result with tolerated CVE
+		// Scan result with exempted CVE
 		scanResult := &scanner.ScanResult{
 			ImageRef: "myregistry.com/nginx:latest",
 			Vulnerabilities: []types.Vulnerability{
@@ -1095,13 +1097,13 @@ func TestPolicyAndAttestationWorkflow(t *testing.T) {
 		}
 
 		// Evaluate policy
-		decision, err := engine.Evaluate(ctx, "myregistry.com/nginx:latest", scanResult, tolerations)
+		decision, err := engine.Evaluate(ctx, "myregistry.com/nginx:latest", scanResult, vexStatements)
 		if err != nil {
 			t.Fatalf("Failed to evaluate policy: %v", err)
 		}
 
 		if !decision.Passed {
-			t.Error("Expected policy to pass with tolerated CVE")
+			t.Error("Expected policy to pass with exempted CVE")
 		}
 
 		// In a real workflow, we would:
@@ -1111,12 +1113,12 @@ func TestPolicyAndAttestationWorkflow(t *testing.T) {
 
 		t.Logf("Policy passed: %v", decision.Passed)
 		t.Logf("Critical count: %d", decision.CriticalVulnCount)
-		t.Logf("Tolerated CVEs: %v", decision.ExemptedCVEs)
+		t.Logf("Exempted CVEs: %v", decision.ExemptedCVEs)
 		t.Log("Would attest SBOM, vulnerabilities, and SCAI")
 	})
 
 	t.Run("WorkflowWithPolicyFail", func(t *testing.T) {
-		// Scan result with non-tolerated critical CVE
+		// Scan result with non-exempted critical CVE
 		scanResult := &scanner.ScanResult{
 			ImageRef: "myregistry.com/nginx:latest",
 			Vulnerabilities: []types.Vulnerability{
@@ -1128,13 +1130,13 @@ func TestPolicyAndAttestationWorkflow(t *testing.T) {
 		}
 
 		// Evaluate policy
-		decision, err := engine.Evaluate(ctx, "myregistry.com/nginx:latest", scanResult, tolerations)
+		decision, err := engine.Evaluate(ctx, "myregistry.com/nginx:latest", scanResult, vexStatements)
 		if err != nil {
 			t.Fatalf("Failed to evaluate policy: %v", err)
 		}
 
 		if decision.Passed {
-			t.Error("Expected policy to fail with non-tolerated critical CVE")
+			t.Error("Expected policy to fail with non-exempted critical CVE")
 		}
 
 		// In a real workflow, we would:
@@ -1511,7 +1513,7 @@ func TestCompleteWorkerWorkflow(t *testing.T) {
 		}
 		t.Logf("Generated SBOM: %d bytes", len(sbom.Data))
 
-		// Step 3: Evaluate policy (no tolerations)
+		// Step 3: Evaluate policy (no vexStatements)
 		t.Log("Step 3: Evaluating policy...")
 		decision, err := policyEngine.Evaluate(ctx, imageRef, scanResult, []types.VEXStatement{})
 		if err != nil {
@@ -1619,7 +1621,7 @@ func TestCompleteWorkerWorkflow(t *testing.T) {
 		}
 		t.Logf("Generated SBOM: %d bytes", len(sbom.Data))
 
-		// Step 3: Evaluate policy (no tolerations - should fail if critical vulns exist)
+		// Step 3: Evaluate policy (no vexStatements - should fail if critical vulns exist)
 		t.Log("Step 3: Evaluating policy...")
 		decision, err := policyEngine.Evaluate(ctx, imageRef, scanResult, []types.VEXStatement{})
 		if err != nil {
@@ -1706,10 +1708,10 @@ func TestCompleteWorkerWorkflow(t *testing.T) {
 		t.Logf("  - Policy passed: %v", retrieved.PolicyPassed)
 	})
 
-	t.Run("WorkflowWithToleratedCVEs", func(t *testing.T) {
+	t.Run("WorkflowWithExemptedCVEs", func(t *testing.T) {
 		// Use an old Alpine image
 		imageRef := "alpine:3.7"
-		digest := "sha256:tolerated-test-789"
+		digest := "sha256:exempted-test-789"
 
 		// Step 1: Scan for vulnerabilities
 		t.Log("Step 1: Scanning image...")
@@ -1718,7 +1720,7 @@ func TestCompleteWorkerWorkflow(t *testing.T) {
 			t.Fatalf("Failed to scan vulnerabilities: %v", err)
 		}
 
-		// Find a critical CVE to tolerate
+		// Find a critical CVE to exempt
 		var criticalCVE string
 		for _, vuln := range scanResult.Vulnerabilities {
 			if vuln.Severity == "CRITICAL" {
@@ -1728,10 +1730,10 @@ func TestCompleteWorkerWorkflow(t *testing.T) {
 		}
 
 		if criticalCVE == "" {
-			t.Skip("No critical CVEs found to test toleration")
+			t.Skip("No critical CVEs found to test VEX statement")
 		}
 
-		t.Logf("Found critical CVE to tolerate: %s", criticalCVE)
+		t.Logf("Found critical CVE to exempt: %s", criticalCVE)
 
 		// Step 2: Generate SBOM
 		t.Log("Step 2: Generating SBOM...")
@@ -1740,10 +1742,10 @@ func TestCompleteWorkerWorkflow(t *testing.T) {
 			t.Fatalf("Failed to generate SBOM: %v", err)
 		}
 
-		// Step 3: Evaluate policy WITH toleration
-		t.Log("Step 3: Evaluating policy with toleration...")
+		// Step 3: Evaluate policy WITH VEX statement
+		t.Log("Step 3: Evaluating policy with VEX statement...")
 		expiresAt := time.Now().Add(30 * 24 * time.Hour).Unix()
-		tolerations := []types.VEXStatement{
+		vexStatements := []types.VEXStatement{
 			{
 				ID:        criticalCVE,
 				State:     types.VEXStateNotAffected,
@@ -1752,33 +1754,33 @@ func TestCompleteWorkerWorkflow(t *testing.T) {
 			},
 		}
 
-		decision, err := policyEngine.Evaluate(ctx, imageRef, scanResult, tolerations)
+		decision, err := policyEngine.Evaluate(ctx, imageRef, scanResult, vexStatements)
 		if err != nil {
 			t.Fatalf("Failed to evaluate policy: %v", err)
 		}
 
-		t.Logf("Policy decision: passed=%v, critical=%d, tolerated=%d",
+		t.Logf("Policy decision: passed=%v, critical=%d, exempted=%d",
 			decision.Passed, decision.CriticalVulnCount, decision.ExemptedVulnCount)
 
-		// Verify the CVE was tolerated
+		// Verify the CVE was exempted
 		if len(decision.ExemptedCVEs) == 0 {
-			t.Error("Expected at least one tolerated CVE")
+			t.Error("Expected at least one exempted CVE")
 		}
 
 		found := false
-		for _, toleratedID := range decision.ExemptedCVEs {
-			if toleratedID == criticalCVE {
+		for _, exemptedID := range decision.ExemptedCVEs {
+			if exemptedID == criticalCVE {
 				found = true
 				break
 			}
 		}
 
 		if !found {
-			t.Errorf("Expected CVE %s to be in tolerated list", criticalCVE)
+			t.Errorf("Expected CVE %s to be in exempted list", criticalCVE)
 		}
 
-		// Step 4: Record scan results with tolerations
-		t.Log("Step 4: Recording scan results with tolerations...")
+		// Step 4: Record scan results with vexStatements
+		t.Log("Step 4: Recording scan results with vexStatements...")
 		vulnRecords := make([]types.VulnerabilityRecord, 0, len(scanResult.Vulnerabilities))
 		criticalCount := 0
 		highCount := 0
@@ -1809,29 +1811,31 @@ func TestCompleteWorkerWorkflow(t *testing.T) {
 			}
 		}
 
-		toleratedCVEs := []types.ToleratedCVE{
+		exemptedStatements := []types.AppliedVEXStatement{
 			{
-				CVEID:       criticalCVE,
-				Statement:   "Accepted risk for integration testing",
-				ToleratedAt: time.Now().Unix(),
-				ExpiresAt:   &expiresAt,
+				CVEID:         criticalCVE,
+				State:         types.VEXStateNotAffected,
+				Justification: types.VEXJustCodeNotReachable,
+				Detail:        "Accepted risk for integration testing",
+				AppliedAt:     time.Now().Unix(),
+				ExpiresAt:     &expiresAt,
 			},
 		}
 
 		record := &statestore.ScanRecord{
-			Digest:            digest,
-			Repository:        "library/alpine",
-			Tag:               "3.7",
-			CreatedAt:         time.Now().Unix(),
-			CriticalVulnCount: criticalCount,
-			HighVulnCount:     highCount,
-			MediumVulnCount:   mediumCount,
-			LowVulnCount:      lowCount,
-			PolicyPassed:      decision.Passed,
-			SBOMAttested:      true,
-			VulnAttested:      true,
-			Vulnerabilities:   vulnRecords,
-			ToleratedCVEs:     toleratedCVEs,
+			Digest:               digest,
+			Repository:           "library/alpine",
+			Tag:                  "3.7",
+			CreatedAt:            time.Now().Unix(),
+			CriticalVulnCount:    criticalCount,
+			HighVulnCount:        highCount,
+			MediumVulnCount:      mediumCount,
+			LowVulnCount:         lowCount,
+			PolicyPassed:         decision.Passed,
+			SBOMAttested:         true,
+			VulnAttested:         true,
+			Vulnerabilities:      vulnRecords,
+			AppliedVEXStatements: exemptedStatements,
 		}
 
 		err = store.RecordScan(ctx, record)
@@ -1839,26 +1843,26 @@ func TestCompleteWorkerWorkflow(t *testing.T) {
 			t.Fatalf("Failed to record scan: %v", err)
 		}
 
-		// Step 5: Verify the scan was recorded with tolerations
-		t.Log("Step 5: Verifying scan record with tolerations...")
+		// Step 5: Verify the scan was recorded with vexStatements
+		t.Log("Step 5: Verifying scan record with vexStatements...")
 		retrieved, err := store.GetLastScan(ctx, digest)
 		if err != nil {
 			t.Fatalf("Failed to retrieve scan: %v", err)
 		}
 
-		if len(retrieved.ToleratedCVEs) == 0 {
-			t.Error("Expected tolerated CVEs to be recorded")
+		if len(retrieved.AppliedVEXStatements) == 0 {
+			t.Error("Expected exempted CVEs to be recorded")
 		}
 
-		if retrieved.ToleratedCVEs[0].CVEID != criticalCVE {
-			t.Errorf("Expected tolerated CVE %s, got %s", criticalCVE, retrieved.ToleratedCVEs[0].CVEID)
+		if retrieved.AppliedVEXStatements[0].CVEID != criticalCVE {
+			t.Errorf("Expected exempted CVE %s, got %s", criticalCVE, retrieved.AppliedVEXStatements[0].CVEID)
 		}
 
-		t.Logf("Workflow with tolerations completed successfully:")
+		t.Logf("Workflow with vexStatements completed successfully:")
 		t.Logf("  - Image: %s", imageRef)
 		t.Logf("  - Vulnerabilities: %d (Critical: %d, High: %d, Medium: %d, Low: %d)",
 			len(retrieved.Vulnerabilities), criticalCount, highCount, mediumCount, lowCount)
-		t.Logf("  - Tolerated CVEs: %d", len(retrieved.ToleratedCVEs))
+		t.Logf("  - Exempted CVEs: %d", len(retrieved.AppliedVEXStatements))
 		t.Logf("  - Policy passed: %v", retrieved.PolicyPassed)
 	})
 
@@ -1867,8 +1871,8 @@ func TestCompleteWorkerWorkflow(t *testing.T) {
 		imageRef := "alpine:3.7"
 		digest := "sha256:rescan-test-999"
 
-		// First scan: with toleration (should pass and sign)
-		t.Log("First scan: with toleration...")
+		// First scan: with VEX statement (should pass and sign)
+		t.Log("First scan: with VEX statement...")
 		scanResult, err := trivyScanner.ScanVulnerabilities(ctx, imageRef, false)
 		if err != nil {
 			t.Fatalf("Failed to scan vulnerabilities: %v", err)
@@ -1888,7 +1892,7 @@ func TestCompleteWorkerWorkflow(t *testing.T) {
 		}
 
 		expiresAt := time.Now().Add(30 * 24 * time.Hour).Unix()
-		tolerations := []types.VEXStatement{
+		vexStatements := []types.VEXStatement{
 			{
 				ID:        criticalCVE,
 				State:     types.VEXStateNotAffected,
@@ -1897,7 +1901,7 @@ func TestCompleteWorkerWorkflow(t *testing.T) {
 			},
 		}
 
-		_, err = policyEngine.Evaluate(ctx, imageRef, scanResult, tolerations)
+		_, err = policyEngine.Evaluate(ctx, imageRef, scanResult, vexStatements)
 		if err != nil {
 			t.Fatalf("Failed to evaluate policy: %v", err)
 		}
@@ -1908,7 +1912,7 @@ func TestCompleteWorkerWorkflow(t *testing.T) {
 			Repository:        "library/alpine",
 			Tag:               "3.7",
 			CreatedAt:         time.Now().Add(-24 * time.Hour).Unix(), // Yesterday
-			CriticalVulnCount: 0,                                      // Tolerated
+			CriticalVulnCount: 0,                                      // Exempted
 			PolicyPassed:      true,
 			SBOMAttested:      true,
 			VulnAttested:      true,
@@ -1919,8 +1923,8 @@ func TestCompleteWorkerWorkflow(t *testing.T) {
 			t.Fatalf("Failed to record first scan: %v", err)
 		}
 
-		// Second scan: without toleration (should fail)
-		t.Log("Second scan: without toleration (rescan)...")
+		// Second scan: without VEX statement (should fail)
+		t.Log("Second scan: without VEX statement (rescan)...")
 		decision2, err := policyEngine.Evaluate(ctx, imageRef, scanResult, []types.VEXStatement{})
 		if err != nil {
 			t.Fatalf("Failed to evaluate policy on rescan: %v", err)
@@ -1950,7 +1954,7 @@ func TestCompleteWorkerWorkflow(t *testing.T) {
 		}
 
 		if retrieved.PolicyPassed {
-			t.Error("Expected policy to fail on rescan without toleration")
+			t.Error("Expected policy to fail on rescan without VEX statement")
 		}
 
 		t.Logf("Rescan workflow completed successfully:")

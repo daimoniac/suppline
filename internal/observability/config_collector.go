@@ -23,53 +23,53 @@ type ConfigCollector struct {
 	logger     *slog.Logger
 
 	// Metric descriptors
-	toleratedCVEsDesc            *prometheus.Desc
-	expiredTolerationsDesc       *prometheus.Desc
-	expiringTolerationsDesc      *prometheus.Desc
-	tolerationsWithoutExpiryDesc *prometheus.Desc
-	inactiveTolerationsDesc      *prometheus.Desc
+	exemptedCVEsDesc     *prometheus.Desc
+	expiredVEXDesc       *prometheus.Desc
+	expiringVEXDesc      *prometheus.Desc
+	vexWithoutExpiryDesc *prometheus.Desc
+	inactiveVEXDesc      *prometheus.Desc
 
-	// Cache for inactive tolerations (10-minute TTL)
-	inactiveTolerationsMutex sync.RWMutex
-	inactiveTolerationsCache int
-	inactiveTolerationsTime  time.Time
-	inactiveTolerationsTTL   time.Duration
+	// Cache for inactive VEX statements (10-minute TTL)
+	inactiveVEXMutex sync.RWMutex
+	inactiveVEXCache int
+	inactiveVEXTime  time.Time
+	inactiveVEXTTL   time.Duration
 }
 
 // NewConfigCollector creates a new configuration metrics collector
 func NewConfigCollector(regsyncCfg *config.RegsyncConfig, store statestore.StateStore, logger *slog.Logger) *ConfigCollector {
 	return &ConfigCollector{
-		regsyncCfg:             regsyncCfg,
-		store:                  store,
-		logger:                 logger,
-		inactiveTolerationsTTL: 10 * time.Minute,
-		toleratedCVEsDesc: prometheus.NewDesc(
-			"suppline_tolerated_cves",
-			"Current total number of CVEs that are tolerated in configuration",
+		regsyncCfg:     regsyncCfg,
+		store:          store,
+		logger:         logger,
+		inactiveVEXTTL: 10 * time.Minute,
+		exemptedCVEsDesc: prometheus.NewDesc(
+			"suppline_exempted_cves",
+			"Current total number of CVEs exempted by VEX statements in configuration",
 			nil,
 			nil,
 		),
-		expiredTolerationsDesc: prometheus.NewDesc(
-			"suppline_expired_tolerations",
-			"Number of expired tolerations per repository in configuration",
+		expiredVEXDesc: prometheus.NewDesc(
+			"suppline_expired_vex_statements",
+			"Number of expired VEX statements per repository in configuration",
 			[]string{"repository"},
 			nil,
 		),
-		expiringTolerationsDesc: prometheus.NewDesc(
-			"suppline_expiring_tolerations_soon",
-			"Number of tolerations expiring within 7 days per repository in configuration",
+		expiringVEXDesc: prometheus.NewDesc(
+			"suppline_expiring_vex_statements_soon",
+			"Number of VEX statements expiring within 7 days per repository in configuration",
 			[]string{"repository"},
 			nil,
 		),
-		tolerationsWithoutExpiryDesc: prometheus.NewDesc(
-			"suppline_tolerations_without_expiry",
-			"Number of tolerations without an expiry date per repository in configuration",
+		vexWithoutExpiryDesc: prometheus.NewDesc(
+			"suppline_vex_statements_without_expiry",
+			"Number of VEX statements without an expiry date per repository in configuration",
 			[]string{"repository"},
 			nil,
 		),
-		inactiveTolerationsDesc: prometheus.NewDesc(
-			"suppline_inactive_tolerations",
-			"Number of toleration CVE IDs defined in configuration that have never been applied to any digest",
+		inactiveVEXDesc: prometheus.NewDesc(
+			"suppline_inactive_vex_statements",
+			"Number of configured VEX CVE IDs that have never been applied to any digest",
 			nil,
 			nil,
 		),
@@ -87,11 +87,11 @@ func RegisterConfigCollector(regsyncCfg *config.RegsyncConfig, store statestore.
 
 // Describe sends the metric descriptors to the provided channel
 func (c *ConfigCollector) Describe(ch chan<- *prometheus.Desc) {
-	ch <- c.toleratedCVEsDesc
-	ch <- c.expiredTolerationsDesc
-	ch <- c.expiringTolerationsDesc
-	ch <- c.tolerationsWithoutExpiryDesc
-	ch <- c.inactiveTolerationsDesc
+	ch <- c.exemptedCVEsDesc
+	ch <- c.expiredVEXDesc
+	ch <- c.expiringVEXDesc
+	ch <- c.vexWithoutExpiryDesc
+	ch <- c.inactiveVEXDesc
 }
 
 // Collect sends current metrics from configuration to the provided channel
@@ -103,24 +103,24 @@ func (c *ConfigCollector) Collect(ch chan<- prometheus.Metric) {
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 	defer cancel()
 
-	// Collect tolerated CVEs metric
-	c.collectToleratedCVEs(ch)
+	// Collect exempted CVEs metric
+	c.collectExemptedCVEs(ch)
 
-	// Collect toleration expiry metrics
-	c.collectTolerationExpiry(ch)
+	// Collect VEX expiry metrics
+	c.collectVEXExpiry(ch)
 
-	// Collect tolerations without expiry metric
-	c.collectTolerationsWithoutExpiry(ch)
+	// Collect VEX statements without expiry metric
+	c.collectVEXWithoutExpiry(ch)
 
-	// Collect inactive tolerations metric (needs store)
+	// Collect inactive VEX metric (needs store)
 	if c.store != nil {
 		if queryStore, ok := c.store.(statestore.StateStoreQuery); ok {
-			c.collectInactiveTolerations(ctx, queryStore, ch)
+			c.collectInactiveVEX(ctx, queryStore, ch)
 		}
 	}
 }
 
-func (c *ConfigCollector) collectToleratedCVEs(ch chan<- prometheus.Metric) {
+func (c *ConfigCollector) collectExemptedCVEs(ch chan<- prometheus.Metric) {
 	total := 0
 	targets := c.regsyncCfg.GetTargetRepositories()
 	for _, target := range targets {
@@ -128,13 +128,13 @@ func (c *ConfigCollector) collectToleratedCVEs(ch chan<- prometheus.Metric) {
 	}
 
 	ch <- prometheus.MustNewConstMetric(
-		c.toleratedCVEsDesc,
+		c.exemptedCVEsDesc,
 		prometheus.GaugeValue,
 		float64(total),
 	)
 }
 
-func (c *ConfigCollector) collectTolerationExpiry(ch chan<- prometheus.Metric) {
+func (c *ConfigCollector) collectVEXExpiry(ch chan<- prometheus.Metric) {
 	now := time.Now()
 	threshold := now.Add(7 * 24 * time.Hour)
 	targets := c.regsyncCfg.GetTargetRepositories()
@@ -158,13 +158,13 @@ func (c *ConfigCollector) collectTolerationExpiry(ch chan<- prometheus.Metric) {
 		}
 
 		ch <- prometheus.MustNewConstMetric(
-			c.expiredTolerationsDesc,
+			c.expiredVEXDesc,
 			prometheus.GaugeValue,
 			float64(expired),
 			target,
 		)
 		ch <- prometheus.MustNewConstMetric(
-			c.expiringTolerationsDesc,
+			c.expiringVEXDesc,
 			prometheus.GaugeValue,
 			float64(expiring),
 			target,
@@ -172,7 +172,7 @@ func (c *ConfigCollector) collectTolerationExpiry(ch chan<- prometheus.Metric) {
 	}
 }
 
-func (c *ConfigCollector) collectTolerationsWithoutExpiry(ch chan<- prometheus.Metric) {
+func (c *ConfigCollector) collectVEXWithoutExpiry(ch chan<- prometheus.Metric) {
 	targets := c.regsyncCfg.GetTargetRepositories()
 
 	for _, target := range targets {
@@ -186,7 +186,7 @@ func (c *ConfigCollector) collectTolerationsWithoutExpiry(ch chan<- prometheus.M
 		}
 
 		ch <- prometheus.MustNewConstMetric(
-			c.tolerationsWithoutExpiryDesc,
+			c.vexWithoutExpiryDesc,
 			prometheus.GaugeValue,
 			float64(noExpiryCount),
 			target,
@@ -194,36 +194,28 @@ func (c *ConfigCollector) collectTolerationsWithoutExpiry(ch chan<- prometheus.M
 	}
 }
 
-func (c *ConfigCollector) collectInactiveTolerations(ctx context.Context, store statestore.StateStoreQuery, ch chan<- prometheus.Metric) {
-	c.inactiveTolerationsMutex.RLock()
-	if time.Since(c.inactiveTolerationsTime) < c.inactiveTolerationsTTL {
-		cachedValue := c.inactiveTolerationsCache
-		c.inactiveTolerationsMutex.RUnlock()
+func (c *ConfigCollector) collectInactiveVEX(ctx context.Context, store statestore.StateStoreQuery, ch chan<- prometheus.Metric) {
+	c.inactiveVEXMutex.RLock()
+	if time.Since(c.inactiveVEXTime) < c.inactiveVEXTTL {
+		cachedValue := c.inactiveVEXCache
+		c.inactiveVEXMutex.RUnlock()
 		ch <- prometheus.MustNewConstMetric(
-			c.inactiveTolerationsDesc,
+			c.inactiveVEXDesc,
 			prometheus.GaugeValue,
 			float64(cachedValue),
 		)
 		return
 	}
-	c.inactiveTolerationsMutex.RUnlock()
+	c.inactiveVEXMutex.RUnlock()
 
 	definedCVEIDs := make(map[string]bool)
 	for _, stmt := range c.regsyncCfg.Defaults.VEX {
 		definedCVEIDs[stmt.ID] = true
 	}
-	// Also include legacy tolerations for backward compat
-	for _, toleration := range c.regsyncCfg.Defaults.Tolerate {
-		definedCVEIDs[toleration.ID] = true
-	}
-
 	if c.regsyncCfg.Sync != nil {
 		for _, sync := range c.regsyncCfg.Sync {
 			for _, stmt := range sync.VEX {
 				definedCVEIDs[stmt.ID] = true
-			}
-			for _, toleration := range sync.Tolerate {
-				definedCVEIDs[toleration.ID] = true
 			}
 		}
 	}
@@ -236,20 +228,20 @@ func (c *ConfigCollector) collectInactiveTolerations(ctx context.Context, store 
 	inactiveCount, err := store.GetInactiveVEXCount(ctx, cveIDSlice)
 	if err != nil {
 		if ctx.Err() != nil {
-			c.logger.Debug("inactive tolerations metric collection timed out", "error", err)
+			c.logger.Debug("inactive VEX metric collection timed out", "error", err)
 		} else {
-			c.logger.Error("failed to collect inactive tolerations metric", "error", err)
+			c.logger.Error("failed to collect inactive VEX metric", "error", err)
 		}
 		return
 	}
 
-	c.inactiveTolerationsMutex.Lock()
-	c.inactiveTolerationsCache = inactiveCount
-	c.inactiveTolerationsTime = time.Now()
-	c.inactiveTolerationsMutex.Unlock()
+	c.inactiveVEXMutex.Lock()
+	c.inactiveVEXCache = inactiveCount
+	c.inactiveVEXTime = time.Now()
+	c.inactiveVEXMutex.Unlock()
 
 	ch <- prometheus.MustNewConstMetric(
-		c.inactiveTolerationsDesc,
+		c.inactiveVEXDesc,
 		prometheus.GaugeValue,
 		float64(inactiveCount),
 	)

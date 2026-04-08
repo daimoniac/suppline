@@ -274,15 +274,15 @@ func TestGetRuntimeUsageForScan_DigestMatch(t *testing.T) {
 
 	ctx := context.Background()
 	record := &ScanRecord{
-		Repository:      "docker.io/library/nginx",
-		Tag:             "1.25",
-		Digest:          "sha256:scan-digest",
-		PolicyPassed:    true,
-		SBOMAttested:    true,
-		VulnAttested:    true,
-		SCAIAttested:    true,
-		Vulnerabilities: []types.VulnerabilityRecord{},
-		ToleratedCVEs:   []types.ToleratedCVE{},
+		Repository:           "docker.io/library/nginx",
+		Tag:                  "1.25",
+		Digest:               "sha256:scan-digest",
+		PolicyPassed:         true,
+		SBOMAttested:         true,
+		VulnAttested:         true,
+		SCAIAttested:         true,
+		Vulnerabilities:      []types.VulnerabilityRecord{},
+		AppliedVEXStatements: []types.AppliedVEXStatement{},
 	}
 	if err := store.RecordScan(ctx, record); err != nil {
 		t.Fatalf("RecordScan failed: %v", err)
@@ -336,15 +336,15 @@ func TestGetRuntimeUsageForScan_FallbackRepositoryTagMatch(t *testing.T) {
 
 	ctx := context.Background()
 	record := &ScanRecord{
-		Repository:      "docker.io/library/nginx",
-		Tag:             "1.26",
-		Digest:          "sha256:unmatched-scan-digest",
-		PolicyPassed:    true,
-		SBOMAttested:    true,
-		VulnAttested:    true,
-		SCAIAttested:    true,
-		Vulnerabilities: []types.VulnerabilityRecord{},
-		ToleratedCVEs:   []types.ToleratedCVE{},
+		Repository:           "docker.io/library/nginx",
+		Tag:                  "1.26",
+		Digest:               "sha256:unmatched-scan-digest",
+		PolicyPassed:         true,
+		SBOMAttested:         true,
+		VulnAttested:         true,
+		SCAIAttested:         true,
+		Vulnerabilities:      []types.VulnerabilityRecord{},
+		AppliedVEXStatements: []types.AppliedVEXStatement{},
 	}
 	if err := store.RecordScan(ctx, record); err != nil {
 		t.Fatalf("RecordScan failed: %v", err)
@@ -384,15 +384,15 @@ func TestGetRuntimeUsageForScan_MergesDigestAndDigestlessTagFallback(t *testing.
 
 	ctx := context.Background()
 	record := &ScanRecord{
-		Repository:      "docker.io/library/nginx",
-		Tag:             "1.28",
-		Digest:          "sha256:merge-digest",
-		PolicyPassed:    true,
-		SBOMAttested:    true,
-		VulnAttested:    true,
-		SCAIAttested:    true,
-		Vulnerabilities: []types.VulnerabilityRecord{},
-		ToleratedCVEs:   []types.ToleratedCVE{},
+		Repository:           "docker.io/library/nginx",
+		Tag:                  "1.28",
+		Digest:               "sha256:merge-digest",
+		PolicyPassed:         true,
+		SBOMAttested:         true,
+		VulnAttested:         true,
+		SCAIAttested:         true,
+		Vulnerabilities:      []types.VulnerabilityRecord{},
+		AppliedVEXStatements: []types.AppliedVEXStatement{},
 	}
 	if err := store.RecordScan(ctx, record); err != nil {
 		t.Fatalf("RecordScan failed: %v", err)
@@ -547,15 +547,15 @@ func TestListScans_InUseFilter_UsesCanonicalRepositoryTagFallback(t *testing.T) 
 
 	ctx := context.Background()
 	record := &ScanRecord{
-		Repository:      "hostingmaloonde/falcosecurity_falco",
-		Tag:             "0.41.3",
-		Digest:          "sha256:scan-digest-not-in-runtime",
-		PolicyPassed:    true,
-		SBOMAttested:    true,
-		VulnAttested:    true,
-		SCAIAttested:    true,
-		Vulnerabilities: []types.VulnerabilityRecord{},
-		ToleratedCVEs:   []types.ToleratedCVE{},
+		Repository:           "hostingmaloonde/falcosecurity_falco",
+		Tag:                  "0.41.3",
+		Digest:               "sha256:scan-digest-not-in-runtime",
+		PolicyPassed:         true,
+		SBOMAttested:         true,
+		VulnAttested:         true,
+		SCAIAttested:         true,
+		Vulnerabilities:      []types.VulnerabilityRecord{},
+		AppliedVEXStatements: []types.AppliedVEXStatement{},
 	}
 	if err := store.RecordScan(ctx, record); err != nil {
 		t.Fatalf("RecordScan failed: %v", err)
@@ -610,30 +610,30 @@ func TestListRepositories_RuntimeUsageFallbackRepositoryTag(t *testing.T) {
 
 	ctx := context.Background()
 	record := &ScanRecord{
-		Repository:      "docker.io/library/nginx",
-		Tag:             "1.27",
-		Digest:          "sha256:repo-list-fallback-digest",
-		PolicyPassed:    true,
-		SBOMAttested:    true,
-		VulnAttested:    true,
-		SCAIAttested:    true,
-		Vulnerabilities: []types.VulnerabilityRecord{},
-		ToleratedCVEs:   []types.ToleratedCVE{},
+		Repository:           "docker.io/library/nginx",
+		Tag:                  "1.27",
+		Digest:               "sha256:repo-list-fallback-digest",
+		PolicyPassed:         true,
+		SBOMAttested:         true,
+		VulnAttested:         true,
+		SCAIAttested:         true,
+		Vulnerabilities:      []types.VulnerabilityRecord{},
+		AppliedVEXStatements: []types.AppliedVEXStatement{},
 	}
 	if err := store.RecordScan(ctx, record); err != nil {
 		t.Fatalf("RecordScan failed: %v", err)
 	}
 
 	other := &ScanRecord{
-		Repository:      "docker.io/library/busybox",
-		Tag:             "latest",
-		Digest:          "sha256:repo-list-not-in-use",
-		PolicyPassed:    true,
-		SBOMAttested:    true,
-		VulnAttested:    true,
-		SCAIAttested:    true,
-		Vulnerabilities: []types.VulnerabilityRecord{},
-		ToleratedCVEs:   []types.ToleratedCVE{},
+		Repository:           "docker.io/library/busybox",
+		Tag:                  "latest",
+		Digest:               "sha256:repo-list-not-in-use",
+		PolicyPassed:         true,
+		SBOMAttested:         true,
+		VulnAttested:         true,
+		SCAIAttested:         true,
+		Vulnerabilities:      []types.VulnerabilityRecord{},
+		AppliedVEXStatements: []types.AppliedVEXStatement{},
 	}
 	if err := store.RecordScan(ctx, other); err != nil {
 		t.Fatalf("RecordScan(other) failed: %v", err)
@@ -706,15 +706,15 @@ func TestGetRuntimeUsageForScan_RespectsRuntimeInUseWindow(t *testing.T) {
 
 	ctx := context.Background()
 	record := &ScanRecord{
-		Repository:      "docker.io/library/nginx",
-		Tag:             "1.25",
-		Digest:          "sha256:window-digest",
-		PolicyPassed:    true,
-		SBOMAttested:    true,
-		VulnAttested:    true,
-		SCAIAttested:    true,
-		Vulnerabilities: []types.VulnerabilityRecord{},
-		ToleratedCVEs:   []types.ToleratedCVE{},
+		Repository:           "docker.io/library/nginx",
+		Tag:                  "1.25",
+		Digest:               "sha256:window-digest",
+		PolicyPassed:         true,
+		SBOMAttested:         true,
+		VulnAttested:         true,
+		SCAIAttested:         true,
+		Vulnerabilities:      []types.VulnerabilityRecord{},
+		AppliedVEXStatements: []types.AppliedVEXStatement{},
 	}
 	if err := store.RecordScan(ctx, record); err != nil {
 		t.Fatalf("RecordScan failed: %v", err)
@@ -771,15 +771,15 @@ func TestListRepositories_RuntimeUsedWhenRepositorySeenWithDifferentTag(t *testi
 
 	ctx := context.Background()
 	if err := store.RecordScan(ctx, &ScanRecord{
-		Repository:      "hostingmaloonde/minio_minio",
-		Tag:             "RELEASE.2024-11-07T00-52-20Z",
-		Digest:          "sha256:minio-scanned",
-		PolicyPassed:    true,
-		SBOMAttested:    true,
-		VulnAttested:    true,
-		SCAIAttested:    true,
-		Vulnerabilities: []types.VulnerabilityRecord{},
-		ToleratedCVEs:   []types.ToleratedCVE{},
+		Repository:           "hostingmaloonde/minio_minio",
+		Tag:                  "RELEASE.2024-11-07T00-52-20Z",
+		Digest:               "sha256:minio-scanned",
+		PolicyPassed:         true,
+		SBOMAttested:         true,
+		VulnAttested:         true,
+		SCAIAttested:         true,
+		Vulnerabilities:      []types.VulnerabilityRecord{},
+		AppliedVEXStatements: []types.AppliedVEXStatement{},
 	}); err != nil {
 		t.Fatalf("RecordScan failed: %v", err)
 	}

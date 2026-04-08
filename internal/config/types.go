@@ -100,36 +100,34 @@ type RegistryCredential struct {
 
 // Defaults contains default configuration values
 type Defaults struct {
-	Parallel              int                   `yaml:"parallel"`
-	RescanInterval        string                `yaml:"x-rescanInterval,omitempty"`
-	RuntimeInUseWindow    string                `yaml:"x-runtimeInUseWindow,omitempty"`
-	WorkerPollInterval    string                `yaml:"x-worker-poll-interval,omitempty"`
-	WorkerConcurrency     int                   `yaml:"x-worker-concurrency,omitempty"`
-	WorkerRetryAttempts   int                   `yaml:"x-worker-retry-attempts,omitempty"`
-	WorkerRetryBackoff    string                `yaml:"x-worker-retry-backoff,omitempty"`
-	QueueBufferSize       int                   `yaml:"x-queue-buffer-size,omitempty"`
-	SCAIValidityExtension string                `yaml:"x-scaiValidityExtension,omitempty"`
-	Policy                *PolicyConfig         `yaml:"x-policy,omitempty"`
-	VEXRepo               *bool                 `yaml:"x-vex-repo,omitempty"`
-	Tolerate              []types.CVEToleration `yaml:"x-tolerate,omitempty"` // Deprecated: use VEX instead
-	VEX                   []types.VEXStatement  `yaml:"x-vex,omitempty"`      // CycloneDX VEX statements merged with sync-specific ones
+	Parallel              int                  `yaml:"parallel"`
+	RescanInterval        string               `yaml:"x-rescanInterval,omitempty"`
+	RuntimeInUseWindow    string               `yaml:"x-runtimeInUseWindow,omitempty"`
+	WorkerPollInterval    string               `yaml:"x-worker-poll-interval,omitempty"`
+	WorkerConcurrency     int                  `yaml:"x-worker-concurrency,omitempty"`
+	WorkerRetryAttempts   int                  `yaml:"x-worker-retry-attempts,omitempty"`
+	WorkerRetryBackoff    string               `yaml:"x-worker-retry-backoff,omitempty"`
+	QueueBufferSize       int                  `yaml:"x-queue-buffer-size,omitempty"`
+	SCAIValidityExtension string               `yaml:"x-scaiValidityExtension,omitempty"`
+	Policy                *PolicyConfig        `yaml:"x-policy,omitempty"`
+	VEXRepo               *bool                `yaml:"x-vex-repo,omitempty"`
+	VEX                   []types.VEXStatement `yaml:"x-vex,omitempty"` // CycloneDX VEX statements merged with sync-specific ones
 }
 
 // SyncEntry represents a single sync configuration
 type SyncEntry struct {
-	Source                string                `yaml:"source"`
-	Target                string                `yaml:"target"`
-	Type                  string                `yaml:"type"`
-	Schedule              string                `yaml:"schedule,omitempty"`
-	Platform              string                `yaml:"platform,omitempty"`
-	Tags                  *TagFilter            `yaml:"tags,omitempty"`
-	Tolerate              []types.CVEToleration `yaml:"x-tolerate,omitempty"` // Deprecated: use VEX instead
-	VEX                   []types.VEXStatement  `yaml:"x-vex,omitempty"`      // CycloneDX VEX statements
-	RescanInterval        string                `yaml:"x-rescanInterval,omitempty"`
-	SCAIValidityExtension string                `yaml:"x-scaiValidityExtension,omitempty"`
-	Policy                *PolicyConfig         `yaml:"x-policy,omitempty"`
-	VEXRepo               *bool                 `yaml:"x-vex-repo,omitempty"`
-	Ignore                bool                  `yaml:"x-supplineIgnore,omitempty"` // If true, suppline skips this entry entirely
+	Source                string               `yaml:"source"`
+	Target                string               `yaml:"target"`
+	Type                  string               `yaml:"type"`
+	Schedule              string               `yaml:"schedule,omitempty"`
+	Platform              string               `yaml:"platform,omitempty"`
+	Tags                  *TagFilter           `yaml:"tags,omitempty"`
+	VEX                   []types.VEXStatement `yaml:"x-vex,omitempty"` // CycloneDX VEX statements
+	RescanInterval        string               `yaml:"x-rescanInterval,omitempty"`
+	SCAIValidityExtension string               `yaml:"x-scaiValidityExtension,omitempty"`
+	Policy                *PolicyConfig        `yaml:"x-policy,omitempty"`
+	VEXRepo               *bool                `yaml:"x-vex-repo,omitempty"`
+	Ignore                bool                 `yaml:"x-supplineIgnore,omitempty"` // If true, suppline skips this entry entirely
 }
 
 // TagFilter defines tag filtering rules

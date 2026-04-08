@@ -215,7 +215,7 @@ Images are continuously mirrored from source to target, then scanned and evaluat
 Policies use CEL (Common Expression Language). Available variables:
 
 - `criticalCount`, `highCount`, `mediumCount`, `lowCount` - Vulnerability counts (excluding VEX-exempted)
-- `exemptedCount` - Number of VEX-exempted CVEs (`toleratedCount` also works for backward compatibility)
+- `exemptedCount` - Number of VEX-exempted CVEs
 - `vulnerabilities` - Full vulnerability list with details
 - `imageRef` - Image reference
 

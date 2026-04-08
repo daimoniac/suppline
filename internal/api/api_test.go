@@ -46,25 +46,25 @@ func (m *mockStateStore) RecordScan(ctx context.Context, record *statestore.Scan
 func (m *mockStateStore) GetLastScan(ctx context.Context, digest string) (*statestore.ScanRecord, error) {
 	// Return a minimal scan record for testing
 	return &statestore.ScanRecord{
-		ID:                1,
-		ArtifactID:        1,
-		ScanDurationMs:    100,
-		CriticalVulnCount: 0,
-		HighVulnCount:     0,
-		MediumVulnCount:   0,
-		LowVulnCount:      0,
-		PolicyPassed:      true,
-		SBOMAttested:      false,
-		VulnAttested:      false,
-		SCAIAttested:      false,
-		ErrorMessage:      "",
-		CreatedAt:         time.Now().Unix(),
-		Digest:            digest,
-		Repository:        "test/repo",
-		Tag:               "latest",
-		Tags:              []statestore.TagRef{},
-		Vulnerabilities:   []types.VulnerabilityRecord{},
-		ToleratedCVEs:     []types.ToleratedCVE{},
+		ID:                   1,
+		ArtifactID:           1,
+		ScanDurationMs:       100,
+		CriticalVulnCount:    0,
+		HighVulnCount:        0,
+		MediumVulnCount:      0,
+		LowVulnCount:         0,
+		PolicyPassed:         true,
+		SBOMAttested:         false,
+		VulnAttested:         false,
+		SCAIAttested:         false,
+		ErrorMessage:         "",
+		CreatedAt:            time.Now().Unix(),
+		Digest:               digest,
+		Repository:           "test/repo",
+		Tag:                  "latest",
+		Tags:                 []statestore.TagRef{},
+		Vulnerabilities:      []types.VulnerabilityRecord{},
+		AppliedVEXStatements: []types.AppliedVEXStatement{},
 	}, nil
 }
 
@@ -108,7 +108,7 @@ func (m *mockStateStore) CountScans(ctx context.Context, filter statestore.ScanF
 	return 0, nil
 }
 
-func (m *mockStateStore) ListVEXStatements(ctx context.Context, filter statestore.TolerationFilter) ([]*types.VEXInfo, error) {
+func (m *mockStateStore) ListVEXStatements(ctx context.Context, filter statestore.VEXFilter) ([]*types.VEXInfo, error) {
 	return nil, nil
 }
 
@@ -412,7 +412,7 @@ func TestRoutes_QueryEndpoints(t *testing.T) {
 		{"GetScan", "/api/v1/scans/sha256:abc123", http.MethodGet},
 		{"ListScans", "/api/v1/scans", http.MethodGet},
 		{"QueryVulnerabilities", "/api/v1/vulnerabilities", http.MethodGet},
-		{"ListTolerations", "/api/v1/tolerations", http.MethodGet},
+		{"ListTolerations", "/api/v1/vex", http.MethodGet},
 		{"ListFailedImages", "/api/v1/images/failed", http.MethodGet},
 	}
 

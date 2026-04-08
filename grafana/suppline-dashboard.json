@@ -404,13 +404,13 @@
             "uid": "Prometheus"
           },
           "editorMode": "code",
-          "expr": "sum(suppline_tolerations_without_expiry)",
+          "expr": "sum(suppline_vex_statements_without_expiry)",
           "legendFormat": "{{repository}}",
           "range": true,
           "refId": "A"
         }
       ],
-      "title": "tolerations without expiry",
+      "title": "VEX statements without expiry",
       "type": "timeseries"
     },
     {
@@ -497,13 +497,13 @@
             "uid": "Prometheus"
           },
           "editorMode": "code",
-          "expr": "sum(suppline_tolerated_cves)",
-          "legendFormat": "Tolerated CVEs",
+          "expr": "sum(suppline_exempted_cves)",
+          "legendFormat": "Exempted CVEs",
           "range": true,
           "refId": "A"
         }
       ],
-      "title": "Tolerated CVEs",
+      "title": "Exempted CVEs",
       "type": "timeseries"
     },
     {
@@ -590,13 +590,13 @@
             "uid": "Prometheus"
           },
           "editorMode": "code",
-          "expr": "suppline_expired_tolerations > 0",
+          "expr": "suppline_expired_vex_statements > 0",
           "legendFormat": "{{repository}}",
           "range": true,
           "refId": "A"
         }
       ],
-      "title": "Expired Tolerations",
+      "title": "Expired VEX Statements",
       "type": "timeseries"
     },
     {
@@ -683,13 +683,13 @@
             "uid": "Prometheus"
           },
           "editorMode": "code",
-          "expr": "suppline_expiring_tolerations_soon >0",
+          "expr": "suppline_expiring_vex_statements_soon >0",
           "legendFormat": "{{repository}}",
           "range": true,
           "refId": "A"
         }
       ],
-      "title": "Tolerations Expiring Soon (7 days) by Repository",
+      "title": "VEX Statements Expiring Soon (7 days) by Repository",
       "type": "timeseries"
     },
     {
@@ -776,13 +776,13 @@
             "uid": "Prometheus"
           },
           "editorMode": "code",
-          "expr": "sum(suppline_unapplied_tolerations)",
+          "expr": "sum(suppline_inactive_vex_statements)",
           "legendFormat": "{{repository}}",
           "range": true,
           "refId": "A"
         }
       ],
-      "title": "unapplied tolerations",
+      "title": "Inactive VEX Statements",
       "type": "timeseries"
     },
     {

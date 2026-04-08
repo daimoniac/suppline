@@ -65,12 +65,12 @@ func TestSQLiteStore(t *testing.T) {
 					PrimaryURL:       "https://cve.mitre.org/cgi-bin/cvename.cgi?name=CVE-2024-5678",
 				},
 			},
-			ToleratedCVEs: []types.ToleratedCVE{
+			AppliedVEXStatements: []types.AppliedVEXStatement{
 				{
-					CVEID:       "CVE-2024-1234",
-					Statement:   "Accepted risk for legacy system",
-					ToleratedAt: time.Now().Unix(),
-					ExpiresAt:   &expiresAtUnix,
+					CVEID:     "CVE-2024-1234",
+					Detail:    "Accepted risk for legacy system",
+					AppliedAt: time.Now().Unix(),
+					ExpiresAt: &expiresAtUnix,
 				},
 			},
 		}
@@ -96,8 +96,8 @@ func TestSQLiteStore(t *testing.T) {
 		if len(record.Vulnerabilities) != 2 {
 			t.Errorf("Expected 2 vulnerabilities, got %d", len(record.Vulnerabilities))
 		}
-		if len(record.ToleratedCVEs) != 1 {
-			t.Errorf("Expected 1 tolerated CVE, got %d", len(record.ToleratedCVEs))
+		if len(record.AppliedVEXStatements) != 1 {
+			t.Errorf("Expected 1 exempted CVE, got %d", len(record.AppliedVEXStatements))
 		}
 	})
 
@@ -132,7 +132,7 @@ func TestSQLiteStore(t *testing.T) {
 					PrimaryURL:       "https://cve.mitre.org/cgi-bin/cvename.cgi?name=CVE-2024-5678",
 				},
 			},
-			ToleratedCVEs: []types.ToleratedCVE{},
+			AppliedVEXStatements: []types.AppliedVEXStatement{},
 		}
 		err := store.RecordScan(ctx, record)
 		if err != nil {
@@ -198,20 +198,20 @@ func TestSQLiteStore(t *testing.T) {
 	t.Run("ListDueForRescan", func(t *testing.T) {
 		// Add an old scan
 		oldRecord := &ScanRecord{
-			Digest:            "sha256:old123",
-			Repository:        "myorg/oldapp",
-			Tag:               "v0.1.0",
-			ScanDurationMs:    800,
-			CriticalVulnCount: 0,
-			HighVulnCount:     0,
-			MediumVulnCount:   0,
-			LowVulnCount:      0,
-			PolicyPassed:      true,
-			SBOMAttested:      true,
-			VulnAttested:      true,
-			SCAIAttested:      false,
-			Vulnerabilities:   []types.VulnerabilityRecord{},
-			ToleratedCVEs:     []types.ToleratedCVE{},
+			Digest:               "sha256:old123",
+			Repository:           "myorg/oldapp",
+			Tag:                  "v0.1.0",
+			ScanDurationMs:       800,
+			CriticalVulnCount:    0,
+			HighVulnCount:        0,
+			MediumVulnCount:      0,
+			LowVulnCount:         0,
+			PolicyPassed:         true,
+			SBOMAttested:         true,
+			VulnAttested:         true,
+			SCAIAttested:         false,
+			Vulnerabilities:      []types.VulnerabilityRecord{},
+			AppliedVEXStatements: []types.AppliedVEXStatement{},
 		}
 		err := store.RecordScan(ctx, oldRecord)
 		if err != nil {
@@ -481,7 +481,7 @@ func TestSQLiteStore(t *testing.T) {
 		digest := "sha256:regression001"
 		repo := "org/regression-app"
 
-		// Step 1: scan fails policy (e.g. before tolerations were added)
+		// Step 1: scan fails policy (e.g. before vexStatements were added)
 		err = rStore.RecordScan(ctx, &ScanRecord{
 			Digest:            digest,
 			Repository:        repo,
@@ -500,7 +500,7 @@ func TestSQLiteStore(t *testing.T) {
 			t.Fatalf("Failed to record failing scan: %v", err)
 		}
 
-		// Step 2: rescan passes (e.g. CVEs are now tolerated)
+		// Step 2: rescan passes (e.g. CVEs are now exempted)
 		err = rStore.RecordScan(ctx, &ScanRecord{
 			Digest:            digest,
 			Repository:        repo,
@@ -548,38 +548,38 @@ func TestSQLiteStore(t *testing.T) {
 
 	// Test ListVEXStatements with no filters
 	t.Run("ListVEXStatements with no filters", func(t *testing.T) {
-		filter := TolerationFilter{
+		filter := VEXFilter{
 			Limit: 100,
 		}
-		tolerations, err := store.ListVEXStatements(ctx, filter)
+		vexStatements, err := store.ListVEXStatements(ctx, filter)
 		if err != nil {
-			t.Fatalf("Failed to list tolerations: %v", err)
+			t.Fatalf("Failed to list vexStatements: %v", err)
 		}
-		if len(tolerations) != 1 {
-			t.Errorf("Expected 1 toleration, got %d", len(tolerations))
+		if len(vexStatements) != 1 {
+			t.Errorf("Expected 1 VEX statement, got %d", len(vexStatements))
 		}
-		if tolerations[0].CVEID != "CVE-2024-1234" {
-			t.Errorf("Expected CVE-2024-1234, got %s", tolerations[0].CVEID)
+		if vexStatements[0].CVEID != "CVE-2024-1234" {
+			t.Errorf("Expected CVE-2024-1234, got %s", vexStatements[0].CVEID)
 		}
-		if tolerations[0].Repository != "myorg/myapp" {
-			t.Errorf("Expected repository myorg/myapp, got %s", tolerations[0].Repository)
+		if vexStatements[0].Repository != "myorg/myapp" {
+			t.Errorf("Expected repository myorg/myapp, got %s", vexStatements[0].Repository)
 		}
 	})
 
 	// Test ListVEXStatements with repository filter
 	t.Run("ListVEXStatements with repository filter", func(t *testing.T) {
-		filter := TolerationFilter{
+		filter := VEXFilter{
 			Repository: "myorg/myapp",
 			Limit:      100,
 		}
-		tolerations, err := store.ListVEXStatements(ctx, filter)
+		vexStatements, err := store.ListVEXStatements(ctx, filter)
 		if err != nil {
-			t.Fatalf("Failed to list tolerations: %v", err)
+			t.Fatalf("Failed to list vexStatements: %v", err)
 		}
-		if len(tolerations) != 1 {
-			t.Errorf("Expected 1 toleration for myorg/myapp, got %d", len(tolerations))
+		if len(vexStatements) != 1 {
+			t.Errorf("Expected 1 VEX statement for myorg/myapp, got %d", len(vexStatements))
 		}
-		for _, tol := range tolerations {
+		for _, tol := range vexStatements {
 			if tol.Repository != "myorg/myapp" {
 				t.Errorf("Expected repository myorg/myapp, got %s", tol.Repository)
 			}
@@ -588,19 +588,19 @@ func TestSQLiteStore(t *testing.T) {
 
 	// Test ListVEXStatements with CVE ID filter
 	t.Run("ListVEXStatements with CVE ID filter", func(t *testing.T) {
-		filter := TolerationFilter{
+		filter := VEXFilter{
 			CVEID: "CVE-2024-1234",
 			Limit: 100,
 		}
-		tolerations, err := store.ListVEXStatements(ctx, filter)
+		vexStatements, err := store.ListVEXStatements(ctx, filter)
 		if err != nil {
-			t.Fatalf("Failed to list tolerations: %v", err)
+			t.Fatalf("Failed to list vexStatements: %v", err)
 		}
-		if len(tolerations) != 1 {
-			t.Errorf("Expected 1 toleration with CVE-2024-1234, got %d", len(tolerations))
+		if len(vexStatements) != 1 {
+			t.Errorf("Expected 1 VEX statement with CVE-2024-1234, got %d", len(vexStatements))
 		}
-		if tolerations[0].CVEID != "CVE-2024-1234" {
-			t.Errorf("Expected CVE-2024-1234, got %s", tolerations[0].CVEID)
+		if vexStatements[0].CVEID != "CVE-2024-1234" {
+			t.Errorf("Expected CVE-2024-1234, got %s", vexStatements[0].CVEID)
 		}
 	})
 
@@ -608,33 +608,33 @@ func TestSQLiteStore(t *testing.T) {
 
 	// Test ListVEXStatements with pagination
 	t.Run("ListVEXStatements with pagination", func(t *testing.T) {
-		filter := TolerationFilter{
+		filter := VEXFilter{
 			Limit: 1,
 		}
-		tolerations, err := store.ListVEXStatements(ctx, filter)
+		vexStatements, err := store.ListVEXStatements(ctx, filter)
 		if err != nil {
-			t.Fatalf("Failed to list tolerations: %v", err)
+			t.Fatalf("Failed to list vexStatements: %v", err)
 		}
-		if len(tolerations) != 1 {
-			t.Errorf("Expected 1 toleration with limit=1, got %d", len(tolerations))
+		if len(vexStatements) != 1 {
+			t.Errorf("Expected 1 VEX statement with limit=1, got %d", len(vexStatements))
 		}
 	})
 
 	// Test ListVEXStatements returns TolerationInfo with all fields
 	t.Run("ListVEXStatements returns complete TolerationInfo", func(t *testing.T) {
-		filter := TolerationFilter{
+		filter := VEXFilter{
 			CVEID: "CVE-2024-1234",
 			Limit: 100,
 		}
-		tolerations, err := store.ListVEXStatements(ctx, filter)
+		vexStatements, err := store.ListVEXStatements(ctx, filter)
 		if err != nil {
-			t.Fatalf("Failed to list tolerations: %v", err)
+			t.Fatalf("Failed to list vexStatements: %v", err)
 		}
-		if len(tolerations) == 0 {
-			t.Fatal("Expected at least one toleration")
+		if len(vexStatements) == 0 {
+			t.Fatal("Expected at least one VEX statement")
 		}
 
-		tol := tolerations[0]
+		tol := vexStatements[0]
 		if tol.CVEID == "" {
 			t.Error("Expected CVEID to be set")
 		}
@@ -655,7 +655,7 @@ func TestSQLiteStore(t *testing.T) {
 
 // TestInactiveVEXCount tests the GetInactiveVEXCount method
 func TestInactiveVEXCount(t *testing.T) {
-	dbPath := "test_inactive_tolerations_" + t.Name() + ".db"
+	dbPath := "test_inactive_VEX statements_" + t.Name() + ".db"
 	os.Remove(dbPath)
 	defer os.Remove(dbPath)
 
@@ -667,7 +667,7 @@ func TestInactiveVEXCount(t *testing.T) {
 
 	ctx := context.Background()
 
-	// Record a scan with some tolerated CVEs
+	// Record a scan with some exempted CVEs
 	record := &ScanRecord{
 		Digest:            "sha256:abc123",
 		Repository:        "myorg/myapp",
@@ -677,16 +677,16 @@ func TestInactiveVEXCount(t *testing.T) {
 		MediumVulnCount:   0,
 		LowVulnCount:      0,
 		PolicyPassed:      true,
-		ToleratedCVEs: []types.ToleratedCVE{
+		AppliedVEXStatements: []types.AppliedVEXStatement{
 			{
-				CVEID:       "CVE-2024-1234",
-				Statement:   "Acceptable risk",
-				ToleratedAt: time.Now().Unix(),
+				CVEID:     "CVE-2024-1234",
+				Detail:    "Acceptable risk",
+				AppliedAt: time.Now().Unix(),
 			},
 			{
-				CVEID:       "CVE-2024-5678",
-				Statement:   "Acceptable risk",
-				ToleratedAt: time.Now().Unix(),
+				CVEID:     "CVE-2024-5678",
+				Detail:    "Acceptable risk",
+				AppliedAt: time.Now().Unix(),
 			},
 		},
 	}
@@ -699,29 +699,29 @@ func TestInactiveVEXCount(t *testing.T) {
 	t.Run("GetInactiveVEXCount with empty list returns 0", func(t *testing.T) {
 		count, err := store.GetInactiveVEXCount(ctx, []string{})
 		if err != nil {
-			t.Fatalf("Failed to get inactive tolerations count: %v", err)
+			t.Fatalf("Failed to get inactive vexStatements count: %v", err)
 		}
 		if count != 0 {
 			t.Errorf("Expected 0 for empty list, got %d", count)
 		}
 	})
 
-	t.Run("GetInactiveVEXCount finds applied tolerations", func(t *testing.T) {
+	t.Run("GetInactiveVEXCount finds applied vexStatements", func(t *testing.T) {
 		// These CVEs have been applied
 		count, err := store.GetInactiveVEXCount(ctx, []string{"CVE-2024-1234", "CVE-2024-5678"})
 		if err != nil {
-			t.Fatalf("Failed to get inactive tolerations count: %v", err)
+			t.Fatalf("Failed to get inactive vexStatements count: %v", err)
 		}
 		if count != 0 {
 			t.Errorf("Expected 0 for applied CVEs, got %d", count)
 		}
 	})
 
-	t.Run("GetInactiveVEXCount finds inactive tolerations", func(t *testing.T) {
-		// CVE-2024-9999 has never been tolerated
+	t.Run("GetInactiveVEXCount finds inactive vexStatements", func(t *testing.T) {
+		// CVE-2024-9999 has never been exempted
 		count, err := store.GetInactiveVEXCount(ctx, []string{"CVE-2024-9999"})
 		if err != nil {
-			t.Fatalf("Failed to get inactive tolerations count: %v", err)
+			t.Fatalf("Failed to get inactive vexStatements count: %v", err)
 		}
 		if count != 1 {
 			t.Errorf("Expected 1 for inactive CVE, got %d", count)
@@ -736,7 +736,7 @@ func TestInactiveVEXCount(t *testing.T) {
 			"CVE-2024-8888", // inactive
 		})
 		if err != nil {
-			t.Fatalf("Failed to get inactive tolerations count: %v", err)
+			t.Fatalf("Failed to get inactive vexStatements count: %v", err)
 		}
 		if count != 2 {
 			t.Errorf("Expected 2 inactive CVEs, got %d", count)
@@ -758,7 +758,7 @@ func TestGetAppliedVEXCVEIDs(t *testing.T) {
 
 	ctx := context.Background()
 
-	// Record a scan with some tolerated CVEs
+	// Record a scan with some exempted CVEs
 	record := &ScanRecord{
 		Digest:            "sha256:def456",
 		Repository:        "myorg/testapp",
@@ -768,16 +768,16 @@ func TestGetAppliedVEXCVEIDs(t *testing.T) {
 		MediumVulnCount:   0,
 		LowVulnCount:      0,
 		PolicyPassed:      true,
-		ToleratedCVEs: []types.ToleratedCVE{
+		AppliedVEXStatements: []types.AppliedVEXStatement{
 			{
-				CVEID:       "CVE-2024-1111",
-				Statement:   "Low risk",
-				ToleratedAt: time.Now().Unix(),
+				CVEID:     "CVE-2024-1111",
+				Detail:    "Low risk",
+				AppliedAt: time.Now().Unix(),
 			},
 			{
-				CVEID:       "CVE-2024-2222",
-				Statement:   "Mitigated",
-				ToleratedAt: time.Now().Unix(),
+				CVEID:     "CVE-2024-2222",
+				Detail:    "Mitigated",
+				AppliedAt: time.Now().Unix(),
 			},
 		},
 	}
@@ -1318,8 +1318,8 @@ func TestSchemaAndConstraints(t *testing.T) {
 		}
 	})
 
-	// Test 17: Verify scan_records table has tolerated_cves_json column
-	t.Run("Verify scan_records table has tolerated_cves_json column", func(t *testing.T) {
+	// Test 17: Verify scan_records table has vex_statements_json column.
+	t.Run("Verify scan_records table has vex_statements_json column", func(t *testing.T) {
 		rows, err := store.db.QueryContext(ctx, "PRAGMA table_info(scan_records)")
 		if err != nil {
 			t.Fatalf("Failed to get scan_records table info: %v", err)
@@ -1335,11 +1335,11 @@ func TestSchemaAndConstraints(t *testing.T) {
 			columns[name.(string)] = type_.(string)
 		}
 
-		// Check for tolerated_cves_json column
-		if actualType, exists := columns["tolerated_cves_json"]; !exists {
-			t.Errorf("Column tolerated_cves_json not found in scan_records table")
+		// Check for vex_statements_json column.
+		if actualType, exists := columns["vex_statements_json"]; !exists {
+			t.Errorf("Column vex_statements_json not found in scan_records table")
 		} else if actualType != "TEXT" {
-			t.Errorf("Column tolerated_cves_json has type %s, expected TEXT", actualType)
+			t.Errorf("Column vex_statements_json has type %s, expected TEXT", actualType)
 		}
 	})
 }
@@ -1361,20 +1361,20 @@ func TestRescanScheduling(t *testing.T) {
 	// Test 1: next_scan_at is updated when recording a scan
 	t.Run("next_scan_at is updated when recording a scan", func(t *testing.T) {
 		record := &ScanRecord{
-			Digest:            "sha256:rescan-test-1",
-			Repository:        "myorg/rescanapp",
-			Tag:               "v1.0.0",
-			ScanDurationMs:    1000,
-			CriticalVulnCount: 0,
-			HighVulnCount:     0,
-			MediumVulnCount:   0,
-			LowVulnCount:      0,
-			PolicyPassed:      true,
-			SBOMAttested:      true,
-			VulnAttested:      true,
-			SCAIAttested:      false,
-			Vulnerabilities:   []types.VulnerabilityRecord{},
-			ToleratedCVEs:     []types.ToleratedCVE{},
+			Digest:               "sha256:rescan-test-1",
+			Repository:           "myorg/rescanapp",
+			Tag:                  "v1.0.0",
+			ScanDurationMs:       1000,
+			CriticalVulnCount:    0,
+			HighVulnCount:        0,
+			MediumVulnCount:      0,
+			LowVulnCount:         0,
+			PolicyPassed:         true,
+			SBOMAttested:         true,
+			VulnAttested:         true,
+			SCAIAttested:         false,
+			Vulnerabilities:      []types.VulnerabilityRecord{},
+			AppliedVEXStatements: []types.AppliedVEXStatement{},
 		}
 
 		err := store.RecordScan(ctx, record)
@@ -1400,20 +1400,20 @@ func TestRescanScheduling(t *testing.T) {
 	t.Run("ListDueForRescan returns artifacts due for rescan", func(t *testing.T) {
 		// Record a scan
 		record := &ScanRecord{
-			Digest:            "sha256:rescan-test-2",
-			Repository:        "myorg/rescanapp2",
-			Tag:               "v1.0.0",
-			ScanDurationMs:    1000,
-			CriticalVulnCount: 0,
-			HighVulnCount:     0,
-			MediumVulnCount:   0,
-			LowVulnCount:      0,
-			PolicyPassed:      true,
-			SBOMAttested:      true,
-			VulnAttested:      true,
-			SCAIAttested:      false,
-			Vulnerabilities:   []types.VulnerabilityRecord{},
-			ToleratedCVEs:     []types.ToleratedCVE{},
+			Digest:               "sha256:rescan-test-2",
+			Repository:           "myorg/rescanapp2",
+			Tag:                  "v1.0.0",
+			ScanDurationMs:       1000,
+			CriticalVulnCount:    0,
+			HighVulnCount:        0,
+			MediumVulnCount:      0,
+			LowVulnCount:         0,
+			PolicyPassed:         true,
+			SBOMAttested:         true,
+			VulnAttested:         true,
+			SCAIAttested:         false,
+			Vulnerabilities:      []types.VulnerabilityRecord{},
+			AppliedVEXStatements: []types.AppliedVEXStatement{},
 		}
 
 		err := store.RecordScan(ctx, record)
@@ -1452,20 +1452,20 @@ func TestRescanScheduling(t *testing.T) {
 	t.Run("ListDueForRescan excludes artifacts not due for rescan", func(t *testing.T) {
 		// Record a scan
 		record := &ScanRecord{
-			Digest:            "sha256:rescan-test-3",
-			Repository:        "myorg/rescanapp3",
-			Tag:               "v1.0.0",
-			ScanDurationMs:    1000,
-			CriticalVulnCount: 0,
-			HighVulnCount:     0,
-			MediumVulnCount:   0,
-			LowVulnCount:      0,
-			PolicyPassed:      true,
-			SBOMAttested:      true,
-			VulnAttested:      true,
-			SCAIAttested:      false,
-			Vulnerabilities:   []types.VulnerabilityRecord{},
-			ToleratedCVEs:     []types.ToleratedCVE{},
+			Digest:               "sha256:rescan-test-3",
+			Repository:           "myorg/rescanapp3",
+			Tag:                  "v1.0.0",
+			ScanDurationMs:       1000,
+			CriticalVulnCount:    0,
+			HighVulnCount:        0,
+			MediumVulnCount:      0,
+			LowVulnCount:         0,
+			PolicyPassed:         true,
+			SBOMAttested:         true,
+			VulnAttested:         true,
+			SCAIAttested:         false,
+			Vulnerabilities:      []types.VulnerabilityRecord{},
+			AppliedVEXStatements: []types.AppliedVEXStatement{},
 		}
 
 		err := store.RecordScan(ctx, record)
@@ -1507,20 +1507,20 @@ func TestRescanScheduling(t *testing.T) {
 			digest := fmt.Sprintf("sha256:rescan-order-%d", i)
 			repo := fmt.Sprintf("myorg/rescanorder%d", i)
 			record := &ScanRecord{
-				Digest:            digest,
-				Repository:        repo,
-				Tag:               "v1.0.0",
-				ScanDurationMs:    1000,
-				CriticalVulnCount: 0,
-				HighVulnCount:     0,
-				MediumVulnCount:   0,
-				LowVulnCount:      0,
-				PolicyPassed:      true,
-				SBOMAttested:      true,
-				VulnAttested:      true,
-				SCAIAttested:      false,
-				Vulnerabilities:   []types.VulnerabilityRecord{},
-				ToleratedCVEs:     []types.ToleratedCVE{},
+				Digest:               digest,
+				Repository:           repo,
+				Tag:                  "v1.0.0",
+				ScanDurationMs:       1000,
+				CriticalVulnCount:    0,
+				HighVulnCount:        0,
+				MediumVulnCount:      0,
+				LowVulnCount:         0,
+				PolicyPassed:         true,
+				SBOMAttested:         true,
+				VulnAttested:         true,
+				SCAIAttested:         false,
+				Vulnerabilities:      []types.VulnerabilityRecord{},
+				AppliedVEXStatements: []types.AppliedVEXStatement{},
 			}
 
 			err := store.RecordScan(ctx, record)
@@ -1643,20 +1643,20 @@ func TestRescanScheduling(t *testing.T) {
 
 		// Record first scan
 		record1 := &ScanRecord{
-			Digest:            digest,
-			Repository:        repo,
-			Tag:               "v1.0.0",
-			ScanDurationMs:    1000,
-			CriticalVulnCount: 0,
-			HighVulnCount:     0,
-			MediumVulnCount:   0,
-			LowVulnCount:      0,
-			PolicyPassed:      true,
-			SBOMAttested:      true,
-			VulnAttested:      true,
-			SCAIAttested:      false,
-			Vulnerabilities:   []types.VulnerabilityRecord{},
-			ToleratedCVEs:     []types.ToleratedCVE{},
+			Digest:               digest,
+			Repository:           repo,
+			Tag:                  "v1.0.0",
+			ScanDurationMs:       1000,
+			CriticalVulnCount:    0,
+			HighVulnCount:        0,
+			MediumVulnCount:      0,
+			LowVulnCount:         0,
+			PolicyPassed:         true,
+			SBOMAttested:         true,
+			VulnAttested:         true,
+			SCAIAttested:         false,
+			Vulnerabilities:      []types.VulnerabilityRecord{},
+			AppliedVEXStatements: []types.AppliedVEXStatement{},
 		}
 
 		err := store.RecordScan(ctx, record1)
@@ -1678,20 +1678,20 @@ func TestRescanScheduling(t *testing.T) {
 
 		// Record second scan
 		record2 := &ScanRecord{
-			Digest:            digest,
-			Repository:        repo,
-			Tag:               "v1.0.1",
-			ScanDurationMs:    1200,
-			CriticalVulnCount: 0,
-			HighVulnCount:     0,
-			MediumVulnCount:   0,
-			LowVulnCount:      0,
-			PolicyPassed:      true,
-			SBOMAttested:      true,
-			VulnAttested:      true,
-			SCAIAttested:      false,
-			Vulnerabilities:   []types.VulnerabilityRecord{},
-			ToleratedCVEs:     []types.ToleratedCVE{},
+			Digest:               digest,
+			Repository:           repo,
+			Tag:                  "v1.0.1",
+			ScanDurationMs:       1200,
+			CriticalVulnCount:    0,
+			HighVulnCount:        0,
+			MediumVulnCount:      0,
+			LowVulnCount:         0,
+			PolicyPassed:         true,
+			SBOMAttested:         true,
+			VulnAttested:         true,
+			SCAIAttested:         false,
+			Vulnerabilities:      []types.VulnerabilityRecord{},
+			AppliedVEXStatements: []types.AppliedVEXStatement{},
 		}
 
 		err = store.RecordScan(ctx, record2)
@@ -1777,20 +1777,20 @@ func TestRepositoryAggregation(t *testing.T) {
 
 	// Record scans for myapp repository
 	record1 := &ScanRecord{
-		Digest:            "sha256:myapp-latest",
-		Repository:        "myapp",
-		Tag:               "latest",
-		ScanDurationMs:    1000,
-		CriticalVulnCount: 2,
-		HighVulnCount:     3,
-		MediumVulnCount:   5,
-		LowVulnCount:      1,
-		PolicyPassed:      false,
-		SBOMAttested:      true,
-		VulnAttested:      true,
-		SCAIAttested:      false,
-		Vulnerabilities:   []types.VulnerabilityRecord{},
-		ToleratedCVEs:     []types.ToleratedCVE{},
+		Digest:               "sha256:myapp-latest",
+		Repository:           "myapp",
+		Tag:                  "latest",
+		ScanDurationMs:       1000,
+		CriticalVulnCount:    2,
+		HighVulnCount:        3,
+		MediumVulnCount:      5,
+		LowVulnCount:         1,
+		PolicyPassed:         false,
+		SBOMAttested:         true,
+		VulnAttested:         true,
+		SCAIAttested:         false,
+		Vulnerabilities:      []types.VulnerabilityRecord{},
+		AppliedVEXStatements: []types.AppliedVEXStatement{},
 	}
 	err = store.RecordScan(ctx, record1)
 	if err != nil {
@@ -1798,20 +1798,20 @@ func TestRepositoryAggregation(t *testing.T) {
 	}
 
 	record2 := &ScanRecord{
-		Digest:            "sha256:myapp-v1.0",
-		Repository:        "myapp",
-		Tag:               "v1.0",
-		ScanDurationMs:    1000,
-		CriticalVulnCount: 1,
-		HighVulnCount:     2,
-		MediumVulnCount:   3,
-		LowVulnCount:      0,
-		PolicyPassed:      true,
-		SBOMAttested:      true,
-		VulnAttested:      true,
-		SCAIAttested:      false,
-		Vulnerabilities:   []types.VulnerabilityRecord{},
-		ToleratedCVEs:     []types.ToleratedCVE{},
+		Digest:               "sha256:myapp-v1.0",
+		Repository:           "myapp",
+		Tag:                  "v1.0",
+		ScanDurationMs:       1000,
+		CriticalVulnCount:    1,
+		HighVulnCount:        2,
+		MediumVulnCount:      3,
+		LowVulnCount:         0,
+		PolicyPassed:         true,
+		SBOMAttested:         true,
+		VulnAttested:         true,
+		SCAIAttested:         false,
+		Vulnerabilities:      []types.VulnerabilityRecord{},
+		AppliedVEXStatements: []types.AppliedVEXStatement{},
 	}
 	err = store.RecordScan(ctx, record2)
 	if err != nil {
@@ -1819,20 +1819,20 @@ func TestRepositoryAggregation(t *testing.T) {
 	}
 
 	record3 := &ScanRecord{
-		Digest:            "sha256:myapp-v0.9",
-		Repository:        "myapp",
-		Tag:               "v0.9",
-		ScanDurationMs:    1000,
-		CriticalVulnCount: 0,
-		HighVulnCount:     1,
-		MediumVulnCount:   2,
-		LowVulnCount:      1,
-		PolicyPassed:      true,
-		SBOMAttested:      true,
-		VulnAttested:      true,
-		SCAIAttested:      false,
-		Vulnerabilities:   []types.VulnerabilityRecord{},
-		ToleratedCVEs:     []types.ToleratedCVE{},
+		Digest:               "sha256:myapp-v0.9",
+		Repository:           "myapp",
+		Tag:                  "v0.9",
+		ScanDurationMs:       1000,
+		CriticalVulnCount:    0,
+		HighVulnCount:        1,
+		MediumVulnCount:      2,
+		LowVulnCount:         1,
+		PolicyPassed:         true,
+		SBOMAttested:         true,
+		VulnAttested:         true,
+		SCAIAttested:         false,
+		Vulnerabilities:      []types.VulnerabilityRecord{},
+		AppliedVEXStatements: []types.AppliedVEXStatement{},
 	}
 	err = store.RecordScan(ctx, record3)
 	if err != nil {
@@ -1841,20 +1841,20 @@ func TestRepositoryAggregation(t *testing.T) {
 
 	// Record scans for database repository
 	record4 := &ScanRecord{
-		Digest:            "sha256:database-latest",
-		Repository:        "database",
-		Tag:               "latest",
-		ScanDurationMs:    1000,
-		CriticalVulnCount: 0,
-		HighVulnCount:     0,
-		MediumVulnCount:   1,
-		LowVulnCount:      0,
-		PolicyPassed:      true,
-		SBOMAttested:      true,
-		VulnAttested:      true,
-		SCAIAttested:      false,
-		Vulnerabilities:   []types.VulnerabilityRecord{},
-		ToleratedCVEs:     []types.ToleratedCVE{},
+		Digest:               "sha256:database-latest",
+		Repository:           "database",
+		Tag:                  "latest",
+		ScanDurationMs:       1000,
+		CriticalVulnCount:    0,
+		HighVulnCount:        0,
+		MediumVulnCount:      1,
+		LowVulnCount:         0,
+		PolicyPassed:         true,
+		SBOMAttested:         true,
+		VulnAttested:         true,
+		SCAIAttested:         false,
+		Vulnerabilities:      []types.VulnerabilityRecord{},
+		AppliedVEXStatements: []types.AppliedVEXStatement{},
 	}
 	err = store.RecordScan(ctx, record4)
 	if err != nil {
@@ -1862,20 +1862,20 @@ func TestRepositoryAggregation(t *testing.T) {
 	}
 
 	record5 := &ScanRecord{
-		Digest:            "sha256:database-v5.0",
-		Repository:        "database",
-		Tag:               "v5.0",
-		ScanDurationMs:    1000,
-		CriticalVulnCount: 0,
-		HighVulnCount:     0,
-		MediumVulnCount:   0,
-		LowVulnCount:      0,
-		PolicyPassed:      true,
-		SBOMAttested:      true,
-		VulnAttested:      true,
-		SCAIAttested:      false,
-		Vulnerabilities:   []types.VulnerabilityRecord{},
-		ToleratedCVEs:     []types.ToleratedCVE{},
+		Digest:               "sha256:database-v5.0",
+		Repository:           "database",
+		Tag:                  "v5.0",
+		ScanDurationMs:       1000,
+		CriticalVulnCount:    0,
+		HighVulnCount:        0,
+		MediumVulnCount:      0,
+		LowVulnCount:         0,
+		PolicyPassed:         true,
+		SBOMAttested:         true,
+		VulnAttested:         true,
+		SCAIAttested:         false,
+		Vulnerabilities:      []types.VulnerabilityRecord{},
+		AppliedVEXStatements: []types.AppliedVEXStatement{},
 	}
 	err = store.RecordScan(ctx, record5)
 	if err != nil {
@@ -2249,20 +2249,20 @@ func TestRepositoryAggregation(t *testing.T) {
 
 		// First digest (oldest)
 		record1 := &ScanRecord{
-			Digest:            "sha256:f7d0d0f2ebc0486dc110278672b9073f7fd641e58376b112b0c8865cf36d2e36",
-			Repository:        "hostingmaloonde/nginxinc_nginx-unprivileged",
-			Tag:               "1.29-alpine",
-			ScanDurationMs:    1000,
-			CriticalVulnCount: 3,
-			HighVulnCount:     4,
-			MediumVulnCount:   22,
-			LowVulnCount:      3,
-			PolicyPassed:      false,
-			SBOMAttested:      true,
-			VulnAttested:      true,
-			SCAIAttested:      false,
-			Vulnerabilities:   []types.VulnerabilityRecord{},
-			ToleratedCVEs:     []types.ToleratedCVE{},
+			Digest:               "sha256:f7d0d0f2ebc0486dc110278672b9073f7fd641e58376b112b0c8865cf36d2e36",
+			Repository:           "hostingmaloonde/nginxinc_nginx-unprivileged",
+			Tag:                  "1.29-alpine",
+			ScanDurationMs:       1000,
+			CriticalVulnCount:    3,
+			HighVulnCount:        4,
+			MediumVulnCount:      22,
+			LowVulnCount:         3,
+			PolicyPassed:         false,
+			SBOMAttested:         true,
+			VulnAttested:         true,
+			SCAIAttested:         false,
+			Vulnerabilities:      []types.VulnerabilityRecord{},
+			AppliedVEXStatements: []types.AppliedVEXStatement{},
 		}
 		err := store.RecordScan(ctx, record1)
 		if err != nil {
@@ -2274,20 +2274,20 @@ func TestRepositoryAggregation(t *testing.T) {
 
 		// Second digest
 		record2 := &ScanRecord{
-			Digest:            "sha256:f856da9f9b5cc94a1be923a11030633def427c6ad05de345ad8d6bb614b63e69",
-			Repository:        "hostingmaloonde/nginxinc_nginx-unprivileged",
-			Tag:               "1.29-alpine",
-			ScanDurationMs:    1000,
-			CriticalVulnCount: 0,
-			HighVulnCount:     0,
-			MediumVulnCount:   0,
-			LowVulnCount:      0,
-			PolicyPassed:      true,
-			SBOMAttested:      true,
-			VulnAttested:      true,
-			SCAIAttested:      false,
-			Vulnerabilities:   []types.VulnerabilityRecord{},
-			ToleratedCVEs:     []types.ToleratedCVE{},
+			Digest:               "sha256:f856da9f9b5cc94a1be923a11030633def427c6ad05de345ad8d6bb614b63e69",
+			Repository:           "hostingmaloonde/nginxinc_nginx-unprivileged",
+			Tag:                  "1.29-alpine",
+			ScanDurationMs:       1000,
+			CriticalVulnCount:    0,
+			HighVulnCount:        0,
+			MediumVulnCount:      0,
+			LowVulnCount:         0,
+			PolicyPassed:         true,
+			SBOMAttested:         true,
+			VulnAttested:         true,
+			SCAIAttested:         false,
+			Vulnerabilities:      []types.VulnerabilityRecord{},
+			AppliedVEXStatements: []types.AppliedVEXStatement{},
 		}
 		err = store.RecordScan(ctx, record2)
 		if err != nil {
@@ -2298,20 +2298,20 @@ func TestRepositoryAggregation(t *testing.T) {
 
 		// Third digest
 		record3 := &ScanRecord{
-			Digest:            "sha256:45f5c575b82708d0b6cacb5ea428642d95cf4b5e766f0de5b42eaa15a0970052",
-			Repository:        "hostingmaloonde/nginxinc_nginx-unprivileged",
-			Tag:               "1.29-alpine",
-			ScanDurationMs:    1000,
-			CriticalVulnCount: 0,
-			HighVulnCount:     0,
-			MediumVulnCount:   0,
-			LowVulnCount:      0,
-			PolicyPassed:      true,
-			SBOMAttested:      true,
-			VulnAttested:      true,
-			SCAIAttested:      false,
-			Vulnerabilities:   []types.VulnerabilityRecord{},
-			ToleratedCVEs:     []types.ToleratedCVE{},
+			Digest:               "sha256:45f5c575b82708d0b6cacb5ea428642d95cf4b5e766f0de5b42eaa15a0970052",
+			Repository:           "hostingmaloonde/nginxinc_nginx-unprivileged",
+			Tag:                  "1.29-alpine",
+			ScanDurationMs:       1000,
+			CriticalVulnCount:    0,
+			HighVulnCount:        0,
+			MediumVulnCount:      0,
+			LowVulnCount:         0,
+			PolicyPassed:         true,
+			SBOMAttested:         true,
+			VulnAttested:         true,
+			SCAIAttested:         false,
+			Vulnerabilities:      []types.VulnerabilityRecord{},
+			AppliedVEXStatements: []types.AppliedVEXStatement{},
 		}
 		err = store.RecordScan(ctx, record3)
 		if err != nil {
@@ -2322,20 +2322,20 @@ func TestRepositoryAggregation(t *testing.T) {
 
 		// Fourth digest (newest - this is the one we expect)
 		record4 := &ScanRecord{
-			Digest:            "sha256:47ac856415c885f6ca892fa57408ce8ef414fffffc4bd4e8f2b7f298d4d0461c",
-			Repository:        "hostingmaloonde/nginxinc_nginx-unprivileged",
-			Tag:               "1.29-alpine",
-			ScanDurationMs:    1000,
-			CriticalVulnCount: 0,
-			HighVulnCount:     0,
-			MediumVulnCount:   0,
-			LowVulnCount:      0,
-			PolicyPassed:      true,
-			SBOMAttested:      true,
-			VulnAttested:      true,
-			SCAIAttested:      false,
-			Vulnerabilities:   []types.VulnerabilityRecord{},
-			ToleratedCVEs:     []types.ToleratedCVE{},
+			Digest:               "sha256:47ac856415c885f6ca892fa57408ce8ef414fffffc4bd4e8f2b7f298d4d0461c",
+			Repository:           "hostingmaloonde/nginxinc_nginx-unprivileged",
+			Tag:                  "1.29-alpine",
+			ScanDurationMs:       1000,
+			CriticalVulnCount:    0,
+			HighVulnCount:        0,
+			MediumVulnCount:      0,
+			LowVulnCount:         0,
+			PolicyPassed:         true,
+			SBOMAttested:         true,
+			VulnAttested:         true,
+			SCAIAttested:         false,
+			Vulnerabilities:      []types.VulnerabilityRecord{},
+			AppliedVEXStatements: []types.AppliedVEXStatement{},
 		}
 		err = store.RecordScan(ctx, record4)
 		if err != nil {
@@ -2534,20 +2534,20 @@ func TestGetFailedArtifacts(t *testing.T) {
 
 	// Record a passing scan
 	passingRecord := &ScanRecord{
-		Digest:            "sha256:passing123",
-		Repository:        "myorg/passing-app",
-		Tag:               "v1.0.0",
-		ScanDurationMs:    1000,
-		CriticalVulnCount: 0,
-		HighVulnCount:     0,
-		MediumVulnCount:   0,
-		LowVulnCount:      0,
-		PolicyPassed:      true,
-		SBOMAttested:      true,
-		VulnAttested:      true,
-		SCAIAttested:      false,
-		Vulnerabilities:   []types.VulnerabilityRecord{},
-		ToleratedCVEs:     []types.ToleratedCVE{},
+		Digest:               "sha256:passing123",
+		Repository:           "myorg/passing-app",
+		Tag:                  "v1.0.0",
+		ScanDurationMs:       1000,
+		CriticalVulnCount:    0,
+		HighVulnCount:        0,
+		MediumVulnCount:      0,
+		LowVulnCount:         0,
+		PolicyPassed:         true,
+		SBOMAttested:         true,
+		VulnAttested:         true,
+		SCAIAttested:         false,
+		Vulnerabilities:      []types.VulnerabilityRecord{},
+		AppliedVEXStatements: []types.AppliedVEXStatement{},
 	}
 
 	if err := store.RecordScan(ctx, passingRecord); err != nil {
@@ -2580,7 +2580,7 @@ func TestGetFailedArtifacts(t *testing.T) {
 				PrimaryURL:       "https://cve.mitre.org/cgi-bin/cvename.cgi?name=CVE-2024-1234",
 			},
 		},
-		ToleratedCVEs: []types.ToleratedCVE{},
+		AppliedVEXStatements: []types.AppliedVEXStatement{},
 	}
 
 	if err := store.RecordScan(ctx, failingRecord); err != nil {
@@ -2589,20 +2589,20 @@ func TestGetFailedArtifacts(t *testing.T) {
 
 	// Record another failing scan for a different repository
 	failingRecord2 := &ScanRecord{
-		Digest:            "sha256:failing456",
-		Repository:        "myorg/another-failing-app",
-		Tag:               "v2.0.0",
-		ScanDurationMs:    2000,
-		CriticalVulnCount: 3,
-		HighVulnCount:     8,
-		MediumVulnCount:   12,
-		LowVulnCount:      5,
-		PolicyPassed:      false,
-		SBOMAttested:      true,
-		VulnAttested:      true,
-		SCAIAttested:      false,
-		Vulnerabilities:   []types.VulnerabilityRecord{},
-		ToleratedCVEs:     []types.ToleratedCVE{},
+		Digest:               "sha256:failing456",
+		Repository:           "myorg/another-failing-app",
+		Tag:                  "v2.0.0",
+		ScanDurationMs:       2000,
+		CriticalVulnCount:    3,
+		HighVulnCount:        8,
+		MediumVulnCount:      12,
+		LowVulnCount:         5,
+		PolicyPassed:         false,
+		SBOMAttested:         true,
+		VulnAttested:         true,
+		SCAIAttested:         false,
+		Vulnerabilities:      []types.VulnerabilityRecord{},
+		AppliedVEXStatements: []types.AppliedVEXStatement{},
 	}
 
 	if err := store.RecordScan(ctx, failingRecord2); err != nil {
@@ -2672,19 +2672,19 @@ func TestGetFailedArtifacts(t *testing.T) {
 
 		// Record only passing scans
 		passingRecord := &ScanRecord{
-			Digest:            "sha256:allgood",
-			Repository:        "myorg/good-app",
-			Tag:               "v1.0.0",
-			ScanDurationMs:    1000,
-			CriticalVulnCount: 0,
-			HighVulnCount:     0,
-			MediumVulnCount:   0,
-			LowVulnCount:      0,
-			PolicyPassed:      true,
-			SBOMAttested:      true,
-			VulnAttested:      true,
-			Vulnerabilities:   []types.VulnerabilityRecord{},
-			ToleratedCVEs:     []types.ToleratedCVE{},
+			Digest:               "sha256:allgood",
+			Repository:           "myorg/good-app",
+			Tag:                  "v1.0.0",
+			ScanDurationMs:       1000,
+			CriticalVulnCount:    0,
+			HighVulnCount:        0,
+			MediumVulnCount:      0,
+			LowVulnCount:         0,
+			PolicyPassed:         true,
+			SBOMAttested:         true,
+			VulnAttested:         true,
+			Vulnerabilities:      []types.VulnerabilityRecord{},
+			AppliedVEXStatements: []types.AppliedVEXStatement{},
 		}
 
 		if err := store2.RecordScan(ctx, passingRecord); err != nil {

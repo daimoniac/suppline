@@ -428,7 +428,7 @@ func (s *SQLiteStore) GetImagesByCVE(ctx context.Context, cveID string) ([]*Scan
 			sr.sbom_attested, sr.vuln_attested, sr.scai_attested, COALESCE(sr.vex_attested, 0), sr.error_message, sr.created_at,
 			COALESCE(a.image_created_at, 0) as image_created_at,
 			a.digest, a.tag, r.name,
-			sr.tolerated_cves_json, sr.vex_statements_json
+			sr.vex_statements_json
 		FROM scan_records sr
 		JOIN artifacts a ON sr.artifact_id = a.id
 		JOIN repositories r ON a.repository_id = r.id
@@ -446,7 +446,6 @@ func (s *SQLiteStore) GetImagesByCVE(ctx context.Context, cveID string) ([]*Scan
 	var records []*ScanRecord
 	for rows.Next() {
 		var record ScanRecord
-		var toleratedJSON sql.NullString
 		var vexJSON sql.NullString
 
 		err := rows.Scan(
@@ -456,7 +455,7 @@ func (s *SQLiteStore) GetImagesByCVE(ctx context.Context, cveID string) ([]*Scan
 			&record.SBOMAttested, &record.VulnAttested, &record.SCAIAttested, &record.VEXAttested, &record.ErrorMessage, &record.CreatedAt,
 			&record.ImageCreatedAt,
 			&record.Digest, &record.Tag, &record.Repository,
-			&toleratedJSON, &vexJSON,
+			&vexJSON,
 		)
 		if err != nil {
 			return nil, errors.NewTransientf("failed to scan row: %w", err)
@@ -469,7 +468,7 @@ func (s *SQLiteStore) GetImagesByCVE(ctx context.Context, cveID string) ([]*Scan
 		}
 		record.Vulnerabilities = vulns
 
-		if err := applyStoredExemptions(&record, toleratedJSON, vexJSON); err != nil {
+		if err := applyStoredExemptions(&record, vexJSON); err != nil {
 			return nil, err
 		}
 

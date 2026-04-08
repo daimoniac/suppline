@@ -31,7 +31,6 @@ function AppRoutes() {
         <Route path="failed" element={<FailedImagesPage />} />
         <Route path="vulnerabilities" element={<VulnerabilitiesPage />} />
         <Route path="vex" element={<VEXPage />} />
-        <Route path="tolerations" element={<Navigate to="/vex" replace />} />
         <Route path="integrations" element={<IntegrationsPage />} />
         <Route path="tasks" element={<TasksPage />} />
         <Route path="*" element={<Navigate to="/" replace />} />

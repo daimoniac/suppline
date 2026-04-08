@@ -125,7 +125,7 @@ func (s *SQLiteStore) CleanupOrphanedRepositories(ctx context.Context) ([]string
 	var deletedRepos []string
 
 	err := s.executeCleanup(ctx, func(tx *sql.Tx) error {
-		// Find repositories with no artifacts and no tolerated CVEs
+		// Find repositories with no artifacts.
 		rows, err := tx.QueryContext(ctx, `
 			SELECT r.id, r.name 
 			FROM repositories r 

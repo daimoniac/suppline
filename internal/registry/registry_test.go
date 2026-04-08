@@ -2,9 +2,9 @@ package registry
 
 import (
 	"context"
-	"github.com/daimoniac/suppline/internal/types"
 	"testing"
-	"time"
+
+	"github.com/daimoniac/suppline/internal/types"
 
 	"github.com/daimoniac/suppline/internal/config"
 )
@@ -205,8 +205,7 @@ func TestListRepositoriesEmpty(t *testing.T) {
 	}
 }
 
-func TestClientWithTolerations(t *testing.T) {
-	expiresAt := time.Now().Add(30 * 24 * time.Hour).Unix()
+func TestClientWithVEX(t *testing.T) {
 	config := &config.RegsyncConfig{
 		Version: 1,
 		Creds: []config.RegistryCredential{
@@ -221,11 +220,11 @@ func TestClientWithTolerations(t *testing.T) {
 				Source: "nginx",
 				Target: "myregistry.com/nginx",
 				Type:   "repository",
-				Tolerate: []types.CVEToleration{
+				VEX: []types.VEXStatement{
 					{
-						ID:        "CVE-2024-12345",
-						Statement: "Accepted risk for testing",
-						ExpiresAt: &expiresAt,
+						ID:     "CVE-2024-12345",
+						State:  types.VEXStateNotAffected,
+						Detail: "Accepted risk for testing",
 					},
 				},
 			},
@@ -241,14 +240,14 @@ func TestClientWithTolerations(t *testing.T) {
 		t.Errorf("expected client but got nil")
 	}
 
-	// Verify tolerations are accessible through regsync config
-	tolerations := config.GetTolerationsForTarget("myregistry.com/nginx")
-	if len(tolerations) != 1 {
-		t.Errorf("expected 1 toleration but got %d", len(tolerations))
+	// Verify VEX statements are accessible through regsync config.
+	vexStatements := config.GetVEXStatementsForTarget("myregistry.com/nginx")
+	if len(vexStatements) != 1 {
+		t.Errorf("expected 1 VEX statement but got %d", len(vexStatements))
 	}
 
-	if tolerations[0].ID != "CVE-2024-12345" {
-		t.Errorf("expected CVE-2024-12345 but got %s", tolerations[0].ID)
+	if vexStatements[0].ID != "CVE-2024-12345" {
+		t.Errorf("expected CVE-2024-12345 but got %s", vexStatements[0].ID)
 	}
 }
 

@@ -100,7 +100,7 @@ func TestEngine_Evaluate_ExemptedCVEs(t *testing.T) {
 		},
 	}
 
-	tolerations := []types.VEXStatement{
+	vexStatements := []types.VEXStatement{
 		{
 			ID:     "CVE-2024-0001",
 			State:  types.VEXStateNotAffected,
@@ -109,11 +109,11 @@ func TestEngine_Evaluate_ExemptedCVEs(t *testing.T) {
 		{
 			ID:     "CVE-2024-0002",
 			State:  types.VEXStateNotAffected,
-			Detail: "temporary toleration",
+			Detail: "temporary VEX statement",
 		},
 	}
 
-	decision, err := engine.Evaluate(ctx, "test/image:v1", result, tolerations)
+	decision, err := engine.Evaluate(ctx, "test/image:v1", result, vexStatements)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -152,7 +152,7 @@ func TestEngine_Evaluate_AllCriticalVulnerabilitiesExempted(t *testing.T) {
 		},
 	}
 
-	tolerations := []types.VEXStatement{
+	vexStatements := []types.VEXStatement{
 		{
 			ID:     "CVE-2024-0001",
 			State:  types.VEXStateNotAffected,
@@ -165,7 +165,7 @@ func TestEngine_Evaluate_AllCriticalVulnerabilitiesExempted(t *testing.T) {
 		},
 	}
 
-	decision, err := engine.Evaluate(ctx, "test/image:v1", result, tolerations)
+	decision, err := engine.Evaluate(ctx, "test/image:v1", result, vexStatements)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -200,16 +200,16 @@ func TestEngine_Evaluate_ExpiredVEXStatement(t *testing.T) {
 	}
 
 	expiredTime := time.Now().Add(-24 * time.Hour).Unix()
-	tolerations := []types.VEXStatement{
+	vexStatements := []types.VEXStatement{
 		{
 			ID:        "CVE-2024-0001",
 			State:     types.VEXStateNotAffected,
-			Detail:    "temporary toleration",
+			Detail:    "temporary VEX statement",
 			ExpiresAt: &expiredTime,
 		},
 	}
 
-	decision, err := engine.Evaluate(ctx, "test/image:v1", result, tolerations)
+	decision, err := engine.Evaluate(ctx, "test/image:v1", result, vexStatements)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -244,16 +244,16 @@ func TestEngine_Evaluate_ActiveVEXStatement(t *testing.T) {
 	}
 
 	futureTime := time.Now().Add(30 * 24 * time.Hour).Unix()
-	tolerations := []types.VEXStatement{
+	vexStatements := []types.VEXStatement{
 		{
 			ID:        "CVE-2024-0001",
 			State:     types.VEXStateNotAffected,
-			Detail:    "temporary toleration",
+			Detail:    "temporary VEX statement",
 			ExpiresAt: &futureTime,
 		},
 	}
 
-	decision, err := engine.Evaluate(ctx, "test/image:v1", result, tolerations)
+	decision, err := engine.Evaluate(ctx, "test/image:v1", result, vexStatements)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -289,7 +289,7 @@ func TestEngine_Evaluate_ExpiringVEXStatementWarning(t *testing.T) {
 
 	// VEX statement expires in 3 days (within 7-day warning window)
 	expiringTime := time.Now().Add(3 * 24 * time.Hour).Unix()
-	tolerations := []types.VEXStatement{
+	vexStatements := []types.VEXStatement{
 		{
 			ID:        "CVE-2024-0001",
 			State:     types.VEXStateNotAffected,
@@ -298,7 +298,7 @@ func TestEngine_Evaluate_ExpiringVEXStatementWarning(t *testing.T) {
 		},
 	}
 
-	decision, err := engine.Evaluate(ctx, "test/image:v1", result, tolerations)
+	decision, err := engine.Evaluate(ctx, "test/image:v1", result, vexStatements)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -340,7 +340,7 @@ func TestEngine_Evaluate_NoExpiringVEXStatementWarning(t *testing.T) {
 
 	// VEX statement expires in 30 days (outside 7-day warning window)
 	futureTime := time.Now().Add(30 * 24 * time.Hour).Unix()
-	tolerations := []types.VEXStatement{
+	vexStatements := []types.VEXStatement{
 		{
 			ID:        "CVE-2024-0001",
 			State:     types.VEXStateNotAffected,
@@ -349,7 +349,7 @@ func TestEngine_Evaluate_NoExpiringVEXStatementWarning(t *testing.T) {
 		},
 	}
 
-	decision, err := engine.Evaluate(ctx, "test/image:v1", result, tolerations)
+	decision, err := engine.Evaluate(ctx, "test/image:v1", result, vexStatements)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -376,16 +376,16 @@ func TestEngine_Evaluate_PermanentVEXStatement(t *testing.T) {
 	}
 
 	// VEX statement with no expiry date (permanent)
-	tolerations := []types.VEXStatement{
+	vexStatements := []types.VEXStatement{
 		{
 			ID:        "CVE-2024-0001",
 			State:     types.VEXStateNotAffected,
-			Detail:    "permanent toleration",
+			Detail:    "permanent VEX statement",
 			ExpiresAt: nil,
 		},
 	}
 
-	decision, err := engine.Evaluate(ctx, "test/image:v1", result, tolerations)
+	decision, err := engine.Evaluate(ctx, "test/image:v1", result, vexStatements)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -463,7 +463,7 @@ func TestEngine_SetExpiryWarningWindow(t *testing.T) {
 
 	// VEX statement expires in 10 days (within 14-day window)
 	expiringTime := time.Now().Add(10 * 24 * time.Hour).Unix()
-	tolerations := []types.VEXStatement{
+	vexStatements := []types.VEXStatement{
 		{
 			ID:        "CVE-2024-0001",
 			State:     types.VEXStateNotAffected,
@@ -472,7 +472,7 @@ func TestEngine_SetExpiryWarningWindow(t *testing.T) {
 		},
 	}
 
-	decision, err := engine.Evaluate(ctx, "test/image:v1", result, tolerations)
+	decision, err := engine.Evaluate(ctx, "test/image:v1", result, vexStatements)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -545,7 +545,7 @@ func TestEngine_CEL_BlockMediumAndAbove(t *testing.T) {
 
 func TestEngine_CEL_AllowVulnsWithoutFix(t *testing.T) {
 	engine, err := NewEngine(slog.Default(), PolicyConfig{
-		Expression: `vulnerabilities.filter(v, v.severity == "CRITICAL" && v.fixedVersion != "" && !v.tolerated).size() == 0`,
+		Expression: `vulnerabilities.filter(v, v.severity == "CRITICAL" && v.fixedVersion != "" && !v.exempted).size() == 0`,
 	})
 	if err != nil {
 		t.Fatalf("failed to create engine: %v", err)
@@ -572,7 +572,7 @@ func TestEngine_CEL_AllowVulnsWithoutFix(t *testing.T) {
 
 func TestEngine_CEL_ComplexExpression(t *testing.T) {
 	engine, err := NewEngine(slog.Default(), PolicyConfig{
-		Expression: `(criticalCount == 0 && highCount <= 2) || toleratedCount >= 5`,
+		Expression: `(criticalCount == 0 && highCount <= 2) || exemptedCount >= 5`,
 	})
 	if err != nil {
 		t.Fatalf("failed to create engine: %v", err)
@@ -663,28 +663,28 @@ func TestEngine_Evaluate_MixedExpiredAndActiveVEXStatements(t *testing.T) {
 	expiredTime := time.Now().Add(-24 * time.Hour).Unix()
 	futureTime := time.Now().Add(30 * 24 * time.Hour).Unix()
 
-	tolerations := []types.VEXStatement{
+	vexStatements := []types.VEXStatement{
 		{
 			ID:        "CVE-2024-0001",
 			State:     types.VEXStateNotAffected,
-			Detail:    "expired toleration",
+			Detail:    "expired VEX statement",
 			ExpiresAt: &expiredTime,
 		},
 		{
 			ID:        "CVE-2024-0002",
 			State:     types.VEXStateNotAffected,
-			Detail:    "active toleration",
+			Detail:    "active VEX statement",
 			ExpiresAt: &futureTime,
 		},
 		{
 			ID:        "CVE-2024-0003",
 			State:     types.VEXStateNotAffected,
-			Detail:    "permanent toleration",
+			Detail:    "permanent VEX statement",
 			ExpiresAt: nil,
 		},
 	}
 
-	decision, err := engine.Evaluate(ctx, "test/image:v1", result, tolerations)
+	decision, err := engine.Evaluate(ctx, "test/image:v1", result, vexStatements)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -737,7 +737,7 @@ func TestEngine_Evaluate_AllVEXStatementsExpired(t *testing.T) {
 	expiredTime1 := time.Now().Add(-48 * time.Hour).Unix()
 	expiredTime2 := time.Now().Add(-1 * time.Hour).Unix()
 
-	tolerations := []types.VEXStatement{
+	vexStatements := []types.VEXStatement{
 		{
 			ID:        "CVE-2024-0001",
 			State:     types.VEXStateNotAffected,
@@ -752,7 +752,7 @@ func TestEngine_Evaluate_AllVEXStatementsExpired(t *testing.T) {
 		},
 	}
 
-	decision, err := engine.Evaluate(ctx, "test/image:v1", result, tolerations)
+	decision, err := engine.Evaluate(ctx, "test/image:v1", result, vexStatements)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -778,9 +778,9 @@ func TestEngine_Evaluate_AllVEXStatementsExpired(t *testing.T) {
 }
 
 func TestEngine_Evaluate_ExpiredVEXStatementWithCELFilter(t *testing.T) {
-	// Test that expired VEX statements work correctly with CEL expressions that reference tolerated field
+	// Test that expired VEX statements work correctly with CEL expressions that reference exempted field.
 	engine, err := NewEngine(slog.Default(), PolicyConfig{
-		Expression: `vulnerabilities.filter(v, v.severity == "CRITICAL" && !v.tolerated).size() == 0`,
+		Expression: `vulnerabilities.filter(v, v.severity == "CRITICAL" && !v.exempted).size() == 0`,
 	})
 	if err != nil {
 		t.Fatalf("failed to create engine: %v", err)
@@ -798,22 +798,22 @@ func TestEngine_Evaluate_ExpiredVEXStatementWithCELFilter(t *testing.T) {
 	expiredTime := time.Now().Add(-24 * time.Hour).Unix()
 	futureTime := time.Now().Add(30 * 24 * time.Hour).Unix()
 
-	tolerations := []types.VEXStatement{
+	vexStatements := []types.VEXStatement{
 		{
 			ID:        "CVE-2024-0001",
 			State:     types.VEXStateNotAffected,
-			Detail:    "expired toleration",
+			Detail:    "expired VEX statement",
 			ExpiresAt: &expiredTime,
 		},
 		{
 			ID:        "CVE-2024-0002",
 			State:     types.VEXStateNotAffected,
-			Detail:    "active toleration",
+			Detail:    "active VEX statement",
 			ExpiresAt: &futureTime,
 		},
 	}
 
-	decision, err := engine.Evaluate(ctx, "test/image:v1", result, tolerations)
+	decision, err := engine.Evaluate(ctx, "test/image:v1", result, vexStatements)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}

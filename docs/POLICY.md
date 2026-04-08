@@ -49,7 +49,7 @@ sync:
 - `highCount` - Number of high vulnerabilities (excluding VEX-exempted)
 - `mediumCount` - Number of medium vulnerabilities (excluding VEX-exempted)
 - `lowCount` - Number of low vulnerabilities (excluding VEX-exempted)
-- `exemptedCount` - Number of VEX-exempted vulnerabilities (`toleratedCount` also works for backward compatibility)
+- `exemptedCount` - Number of VEX-exempted vulnerabilities
 
 ### Other Variables
 
@@ -66,9 +66,10 @@ Each item in the `vulnerabilities` list has:
 - `version` - Installed version (string)
 - `fixedVersion` - Version with fix (string, empty if no fix)
 - `description` - Vulnerability description (string)
-- `tolerated` - Whether this CVE is exempted by a VEX statement (bool; alias: `exempted`)
-- `tolerationStatement` - VEX detail/reason (string, if exempted; alias: `vexDetail`)
-- `tolerationExpiry` - Expiry timestamp (string, RFC3339, if exempted; alias: `vexExpiry`)
+- `exempted` - Whether this CVE is exempted by a VEX statement (bool)
+- `vexState` - VEX analysis state for this CVE (string, if exempted)
+- `vexJustification` - VEX justification (string, if exempted)
+- `vexDetail` - VEX detail/reason (string, if exempted)
 
 ## CEL Operators
 
@@ -209,7 +210,7 @@ sync:
 
 **Behavior:**
 - VEX-exempted CVEs (state `not_affected` and not expired) are excluded from `criticalCount`, `highCount`, etc.
-- Exempted CVEs have `exempted: true` (and `tolerated: true` for backward compatibility) in the `vulnerabilities` list
+- Exempted CVEs have `exempted: true` in the `vulnerabilities` list
 - Expired VEX statements are ignored (CVE counts as normal)
 - Only `not_affected` state exempts CVEs from policy counts; other states (e.g. `in_triage`, `affected`) are informational
 

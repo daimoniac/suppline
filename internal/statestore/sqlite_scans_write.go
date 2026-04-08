@@ -84,16 +84,7 @@ func (s *SQLiteStore) RecordScan(ctx context.Context, record *ScanRecord) error 
 		}
 	}
 
-	// Insert scan record with VEX statements as JSON (and legacy tolerated CVEs for backward compat)
-	toleratedJSON := "[]"
-	if len(record.ToleratedCVEs) > 0 {
-		jsonBytes, err := json.Marshal(record.ToleratedCVEs)
-		if err != nil {
-			return errors.NewTransientf("failed to marshal tolerated CVEs: %w", err)
-		}
-		toleratedJSON = string(jsonBytes)
-	}
-
+	// Insert scan record with applied VEX statements as JSON.
 	vexJSON := "[]"
 	if len(record.AppliedVEXStatements) > 0 {
 		jsonBytes, err := json.Marshal(record.AppliedVEXStatements)
@@ -109,14 +100,14 @@ func (s *SQLiteStore) RecordScan(ctx context.Context, record *ScanRecord) error 
 			critical_vuln_count, high_vuln_count, medium_vuln_count, low_vuln_count,
 			policy_passed, policy_status, policy_reason, release_age_seconds, minimum_release_age_seconds, release_age_source,
 			sbom_attested, vuln_attested, scai_attested, vex_attested, error_message,
-			tolerated_cves_json, vex_statements_json
-		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+			vex_statements_json
+		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 	`,
 		artifactID, record.ScanDurationMs,
 		record.CriticalVulnCount, record.HighVulnCount, record.MediumVulnCount, record.LowVulnCount,
 		record.PolicyPassed, record.PolicyStatus, record.PolicyReason, record.ReleaseAgeSeconds, record.MinimumReleaseAgeSeconds, record.ReleaseAgeSource,
 		record.SBOMAttested, record.VulnAttested, record.SCAIAttested, record.VEXAttested, record.ErrorMessage,
-		toleratedJSON, vexJSON,
+		vexJSON,
 	)
 	if err != nil {
 		return errors.NewTransientf("failed to insert scan record: %w", err)
@@ -162,9 +153,6 @@ func (s *SQLiteStore) RecordScan(ctx context.Context, record *ScanRecord) error 
 			}
 		}
 	}
-
-	// Note: ToleratedCVEs are now stored only in the scan_record JSON metadata
-	// and computed from current config at query time for API responses
 
 	if err := tx.Commit(); err != nil {
 		return errors.NewTransientf("failed to commit transaction: %w", err)

@@ -72,7 +72,7 @@ func (s *APIServer) handleGetScan(w http.ResponseWriter, r *http.Request) {
 		record.Tags = tags
 	}
 
-	// Enrich with current tolerations from config instead of stale DB values
+	// Enrich with current VEX metadata when needed.
 	s.enrichScanRecord(record)
 
 	runtimeUsage, err := s.stateStore.GetRuntimeUsageForScan(r.Context(), record.Digest, record.Repository, record.Tag)
@@ -143,7 +143,7 @@ func (s *APIServer) handleListScans(w http.ResponseWriter, r *http.Request) {
 		records = make([]*statestore.ScanRecord, 0)
 	}
 
-	// Enrich each record with current tolerations from config
+	// Enrich each record with current VEX metadata when needed.
 	for _, record := range records {
 		s.enrichScanRecord(record)
 	}
@@ -1454,38 +1454,15 @@ func (s *APIServer) handleRescanTag(w http.ResponseWriter, r *http.Request) {
 }
 
 // enrichScanRecord updates a scan record with current config values.
-// If AppliedVEXStatements is populated (new data), leave it as is.
-// If only ToleratedCVEs is populated (legacy data), enrich those with current config.
+// If AppliedVEXStatements is populated, leave it as is.
 func (s *APIServer) enrichScanRecord(record *statestore.ScanRecord) {
 	if record == nil || s.regsyncConfig == nil {
 		return
 	}
 
-	// New VEX data takes precedence — if populated, nothing to enrich
+	// VEX data is already persisted; nothing to enrich for VEX-only deployments.
 	if len(record.AppliedVEXStatements) > 0 {
 		return
-	}
-
-	// Legacy path: enrich ToleratedCVEs with current config values
-	// Build map of historically tolerated CVEs (cveID -> toleratedAt timestamp)
-	historicalMap := make(map[string]int64)
-	for _, stored := range record.ToleratedCVEs {
-		historicalMap[stored.CVEID] = stored.ToleratedAt
-	}
-
-	// Get current config and rebuild toleration list
-	configTolerations := s.regsyncConfig.GetTolerationsForTarget(record.Repository)
-	record.ToleratedCVEs = make([]types.ToleratedCVE, 0, len(historicalMap))
-
-	for _, configTol := range configTolerations {
-		if toleratedAt, wasHistoricallyTolerated := historicalMap[configTol.ID]; wasHistoricallyTolerated {
-			record.ToleratedCVEs = append(record.ToleratedCVEs, types.ToleratedCVE{
-				CVEID:       configTol.ID,
-				Statement:   configTol.Statement, // Current from config
-				ToleratedAt: toleratedAt,         // Historical timestamp (audit trail)
-				ExpiresAt:   configTol.ExpiresAt, // Current from config
-			})
-		}
 	}
 }
 
@@ -1576,7 +1553,7 @@ func (s *APIServer) enrichWithHistoricalVEXTimestamps(ctx context.Context, vexIn
 	}
 
 	// Query historical VEX statements from state store to get AppliedAt timestamps
-	filter := statestore.TolerationFilter{
+	filter := statestore.VEXFilter{
 		Limit: 0, // No limit, get all historical records
 	}
 

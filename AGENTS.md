@@ -191,7 +191,7 @@ WAL mode, foreign keys enabled, 5-connection pool. Schema:
 - `artifacts` — per-digest record with scan schedule
 - `scans` — vuln counts, policy pass/fail, attest flags, duration, error
 - `vulnerabilities` — individual CVEs linked to scans
-- `tolerated_cves` — applied VEX exemptions per scan (legacy name retained for backward compatibility)
+- `vex_statements_json` — applied VEX exemptions per scan
 
 Postgres is planned but not implemented. Do not add a second store backend without discussion.
 

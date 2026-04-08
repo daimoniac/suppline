@@ -30,52 +30,52 @@ func TestCleanupExcessScans(t *testing.T) {
 	// Create multiple scan records for the same artifact
 	scanRecords := []*ScanRecord{
 		{
-			Digest:            digest,
-			Repository:        repo,
-			Tag:               tag,
-			ScanDurationMs:    1000,
-			CriticalVulnCount: 1,
-			HighVulnCount:     2,
-			MediumVulnCount:   3,
-			LowVulnCount:      4,
-			PolicyPassed:      true,
-			SBOMAttested:      true,
-			VulnAttested:      true,
-			SCAIAttested:      false,
-			Vulnerabilities:   []types.VulnerabilityRecord{},
-			ToleratedCVEs:     []types.ToleratedCVE{},
+			Digest:               digest,
+			Repository:           repo,
+			Tag:                  tag,
+			ScanDurationMs:       1000,
+			CriticalVulnCount:    1,
+			HighVulnCount:        2,
+			MediumVulnCount:      3,
+			LowVulnCount:         4,
+			PolicyPassed:         true,
+			SBOMAttested:         true,
+			VulnAttested:         true,
+			SCAIAttested:         false,
+			Vulnerabilities:      []types.VulnerabilityRecord{},
+			AppliedVEXStatements: []types.AppliedVEXStatement{},
 		},
 		{
-			Digest:            digest,
-			Repository:        repo,
-			Tag:               tag,
-			ScanDurationMs:    1100,
-			CriticalVulnCount: 2,
-			HighVulnCount:     3,
-			MediumVulnCount:   4,
-			LowVulnCount:      5,
-			PolicyPassed:      true,
-			SBOMAttested:      true,
-			VulnAttested:      true,
-			SCAIAttested:      false,
-			Vulnerabilities:   []types.VulnerabilityRecord{},
-			ToleratedCVEs:     []types.ToleratedCVE{},
+			Digest:               digest,
+			Repository:           repo,
+			Tag:                  tag,
+			ScanDurationMs:       1100,
+			CriticalVulnCount:    2,
+			HighVulnCount:        3,
+			MediumVulnCount:      4,
+			LowVulnCount:         5,
+			PolicyPassed:         true,
+			SBOMAttested:         true,
+			VulnAttested:         true,
+			SCAIAttested:         false,
+			Vulnerabilities:      []types.VulnerabilityRecord{},
+			AppliedVEXStatements: []types.AppliedVEXStatement{},
 		},
 		{
-			Digest:            digest,
-			Repository:        repo,
-			Tag:               tag,
-			ScanDurationMs:    1200,
-			CriticalVulnCount: 3,
-			HighVulnCount:     4,
-			MediumVulnCount:   5,
-			LowVulnCount:      6,
-			PolicyPassed:      true,
-			SBOMAttested:      true,
-			VulnAttested:      true,
-			SCAIAttested:      false,
-			Vulnerabilities:   []types.VulnerabilityRecord{},
-			ToleratedCVEs:     []types.ToleratedCVE{},
+			Digest:               digest,
+			Repository:           repo,
+			Tag:                  tag,
+			ScanDurationMs:       1200,
+			CriticalVulnCount:    3,
+			HighVulnCount:        4,
+			MediumVulnCount:      5,
+			LowVulnCount:         6,
+			PolicyPassed:         true,
+			SBOMAttested:         true,
+			VulnAttested:         true,
+			SCAIAttested:         false,
+			Vulnerabilities:      []types.VulnerabilityRecord{},
+			AppliedVEXStatements: []types.AppliedVEXStatement{},
 		},
 	}
 
@@ -141,23 +141,23 @@ func TestCleanupExcessScans_KeepMultiple(t *testing.T) {
 	baseTime := time.Now().Unix()
 	for i := 0; i < 5; i++ {
 		record := &ScanRecord{
-			Digest:            digest,
-			Repository:        repo,
-			Tag:               tag,
-			CreatedAt:         baseTime + int64(i), // Ensure different timestamps
-			ScanDurationMs:    1000 + i*100,
-			CriticalVulnCount: i,
-			HighVulnCount:     i,
-			MediumVulnCount:   i,
-			LowVulnCount:      i,
-			PolicyPassed:      true,
-			SBOMAttested:      true,
-			VulnAttested:      true,
-			SCAIAttested:      false,
-			Vulnerabilities:   []types.VulnerabilityRecord{},
-			ToleratedCVEs:     []types.ToleratedCVE{},
+			Digest:               digest,
+			Repository:           repo,
+			Tag:                  tag,
+			CreatedAt:            baseTime + int64(i), // Ensure different timestamps
+			ScanDurationMs:       1000 + i*100,
+			CriticalVulnCount:    i,
+			HighVulnCount:        i,
+			MediumVulnCount:      i,
+			LowVulnCount:         i,
+			PolicyPassed:         true,
+			SBOMAttested:         true,
+			VulnAttested:         true,
+			SCAIAttested:         false,
+			Vulnerabilities:      []types.VulnerabilityRecord{},
+			AppliedVEXStatements: []types.AppliedVEXStatement{},
 		}
-		
+
 		err := store.RecordScan(ctx, record)
 		if err != nil {
 			t.Fatalf("Failed to record scan %d: %v", i, err)
@@ -185,26 +185,26 @@ func TestCleanupExcessScans_KeepMultiple(t *testing.T) {
 	for i, scan := range history {
 		actualDurations[i] = scan.ScanDurationMs
 	}
-	
+
 	// Sort the durations to compare (we expect the 3 highest: 1200, 1300, 1400)
 	expectedDurations := []int{1200, 1300, 1400}
-	
+
 	// Check that we have exactly these durations (order doesn't matter due to timestamp collision)
 	if len(actualDurations) != len(expectedDurations) {
 		t.Fatalf("Expected %d scans, got %d", len(expectedDurations), len(actualDurations))
 	}
-	
+
 	// Create a map to count occurrences
 	actualCount := make(map[int]int)
 	expectedCount := make(map[int]int)
-	
+
 	for _, duration := range actualDurations {
 		actualCount[duration]++
 	}
 	for _, duration := range expectedDurations {
 		expectedCount[duration]++
 	}
-	
+
 	// Compare the maps
 	for duration, count := range expectedCount {
 		if actualCount[duration] != count {
@@ -233,20 +233,20 @@ func TestCleanupExcessScans_NoExcessScans(t *testing.T) {
 
 	// Create only 1 scan record
 	record := &ScanRecord{
-		Digest:            digest,
-		Repository:        repo,
-		Tag:               tag,
-		ScanDurationMs:    1000,
-		CriticalVulnCount: 1,
-		HighVulnCount:     1,
-		MediumVulnCount:   1,
-		LowVulnCount:      1,
-		PolicyPassed:      true,
-		SBOMAttested:      true,
-		VulnAttested:      true,
-		SCAIAttested:      false,
-		Vulnerabilities:   []types.VulnerabilityRecord{},
-		ToleratedCVEs:     []types.ToleratedCVE{},
+		Digest:               digest,
+		Repository:           repo,
+		Tag:                  tag,
+		ScanDurationMs:       1000,
+		CriticalVulnCount:    1,
+		HighVulnCount:        1,
+		MediumVulnCount:      1,
+		LowVulnCount:         1,
+		PolicyPassed:         true,
+		SBOMAttested:         true,
+		VulnAttested:         true,
+		SCAIAttested:         false,
+		Vulnerabilities:      []types.VulnerabilityRecord{},
+		AppliedVEXStatements: []types.AppliedVEXStatement{},
 	}
 
 	err = store.RecordScan(ctx, record)

@@ -116,7 +116,7 @@ func (g *SCAIGenerator) matchExemptedVulnerabilities(scanResult *scanner.ScanRes
 //   - ctx: context for cancellation
 //   - imageRef: full image reference with digest
 //   - scanResult: vulnerability scan results
-//   - target: target repository from regsync config (for toleration lookup)
+//   - target: target repository from regsync config (for VEX lookup)
 //   - policyDecision: policy evaluation result to determine scan status
 //
 // Returns: SCAI attestation structure ready for JSON serialization

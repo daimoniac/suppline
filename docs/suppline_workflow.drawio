@@ -53,7 +53,7 @@
         <mxCell id="zFd6CkcNNh1L-_P9VyZs-10" parent="zFd6CkcNNh1L-_P9VyZs-9" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffe3b3;strokeColor=#333333;" value="updates / patches images" vertex="1">
           <mxGeometry height="60" width="230" x="10" y="129.5" as="geometry" />
         </mxCell>
-        <mxCell id="zFd6CkcNNh1L-_P9VyZs-11" parent="zFd6CkcNNh1L-_P9VyZs-9" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffe3b3;strokeColor=#333333;" value="create tolerations &lt;br&gt;for accepted vulnerabilities" vertex="1">
+        <mxCell id="zFd6CkcNNh1L-_P9VyZs-11" parent="zFd6CkcNNh1L-_P9VyZs-9" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffe3b3;strokeColor=#333333;" value="create VEX exemptions &lt;br&gt;for accepted vulnerabilities" vertex="1">
           <mxGeometry height="60" width="230" x="10" y="49" as="geometry" />
         </mxCell>
         <mxCell id="zFd6CkcNNh1L-_P9VyZs-12" parent="1" style="swimlane;html=1;rounded=0;horizontal=0;startSize=30;fillColor=#e8f3ff;strokeColor=#999999;fontStyle=1;" value="Kubernetes Cluster" vertex="1">
@@ -102,7 +102,7 @@
             </Array>
           </mxGeometry>
         </mxCell>
-        <mxCell id="HTWb-hQ2shF_DW2LDiDQ-9" connectable="0" parent="HTWb-hQ2shF_DW2LDiDQ-7" style="edgeLabel;html=1;align=center;verticalAlign=middle;resizable=0;points=[];" value="Policy exceptions /&lt;br&gt;tolerations" vertex="1">
+        <mxCell id="HTWb-hQ2shF_DW2LDiDQ-9" connectable="0" parent="HTWb-hQ2shF_DW2LDiDQ-7" style="edgeLabel;html=1;align=center;verticalAlign=middle;resizable=0;points=[];" value="Policy exceptions /&lt;br&gt;VEX exemptions" vertex="1">
           <mxGeometry relative="1" x="-0.1818" y="2" as="geometry">
             <mxPoint as="offset" />
           </mxGeometry>

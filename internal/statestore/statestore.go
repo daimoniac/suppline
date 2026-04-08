@@ -234,7 +234,7 @@ type StateStoreQuery interface {
 	CountScans(ctx context.Context, filter ScanFilter) (int, error)
 
 	// ListVEXStatements returns applied VEX statements with optional filters
-	ListVEXStatements(ctx context.Context, filter TolerationFilter) ([]*types.VEXInfo, error)
+	ListVEXStatements(ctx context.Context, filter VEXFilter) ([]*types.VEXInfo, error)
 
 	// GetExemptedCVEImageCounts returns a map of CVE ID → count of distinct digests
 	// that have this CVE exempted (via VEX) in their latest scan.
@@ -320,7 +320,6 @@ type ScanRecord struct {
 	Tag                  string                      // Primary tag from the artifact that was scanned
 	Tags                 []TagRef                    // All tags pointing to this digest (loaded separately)
 	Vulnerabilities      []types.VulnerabilityRecord // Using canonical type
-	ToleratedCVEs        []types.ToleratedCVE        // Deprecated: kept for reading legacy data
 	AppliedVEXStatements []types.AppliedVEXStatement // VEX statements applied during this scan
 	VEXAttested          bool
 	RuntimeUsed          bool
@@ -348,8 +347,8 @@ type ScanFilter struct {
 	Offset       int
 }
 
-// TolerationFilter defines criteria for listing tolerations
-type TolerationFilter struct {
+// VEXFilter defines criteria for listing VEX statements
+type VEXFilter struct {
 	CVEID      string
 	Repository string
 	Limit      int

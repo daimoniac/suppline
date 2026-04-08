@@ -15,14 +15,14 @@ import (
 )
 
 func TestHandleListTolerations_ReturnsAllConfiguredTolerations(t *testing.T) {
-	// Create a regsync config with tolerations
+	// Create a regsync config with vexStatements
 	expiresAt := int64(1735689600) // 2025-01-01
 	regsyncCfg := &config.RegsyncConfig{
 		Version: 1,
 		Defaults: config.Defaults{
-			Tolerate: []types.CVEToleration{
-				{ID: "CVE-2024-0001", Statement: "Default toleration 1", ExpiresAt: &expiresAt},
-				{ID: "CVE-2024-0002", Statement: "Default toleration 2", ExpiresAt: nil},
+			VEX: []types.VEXStatement{
+				{ID: "CVE-2024-0001", Detail: "Default VEX statement 1", ExpiresAt: &expiresAt},
+				{ID: "CVE-2024-0002", Detail: "Default VEX statement 2", ExpiresAt: nil},
 			},
 		},
 		Sync: []config.SyncEntry{
@@ -30,16 +30,16 @@ func TestHandleListTolerations_ReturnsAllConfiguredTolerations(t *testing.T) {
 				Source: "docker.io/nginx:latest",
 				Target: "myregistry.com/nginx:latest",
 				Type:   "image",
-				Tolerate: []types.CVEToleration{
-					{ID: "CVE-2024-0003", Statement: "Sync-specific toleration", ExpiresAt: &expiresAt},
+				VEX: []types.VEXStatement{
+					{ID: "CVE-2024-0003", Detail: "Sync-specific VEX statement", ExpiresAt: &expiresAt},
 				},
 			},
 			{
 				Source: "docker.io/alpine",
 				Target: "myregistry.com/alpine",
 				Type:   "repository",
-				Tolerate: []types.CVEToleration{
-					{ID: "CVE-2024-0004", Statement: "Alpine-specific toleration", ExpiresAt: nil},
+				VEX: []types.VEXStatement{
+					{ID: "CVE-2024-0004", Detail: "Alpine-specific VEX statement", ExpiresAt: nil},
 				},
 			},
 		},
@@ -57,9 +57,9 @@ func TestHandleListTolerations_ReturnsAllConfiguredTolerations(t *testing.T) {
 
 	server := NewAPIServer(cfg, mockAttestationConfig(), mockStore, queue.NewInMemoryQueue(100), regsyncCfg, observability.NewLogger("error"))
 
-	// Test 1: Get all tolerations (no filter)
+	// Test 1: Get all vexStatements (no filter)
 	t.Run("GetAllTolerations", func(t *testing.T) {
-		req := httptest.NewRequest(http.MethodGet, "/api/v1/tolerations", nil)
+		req := httptest.NewRequest(http.MethodGet, "/api/v1/vex", nil)
 		w := httptest.NewRecorder()
 
 		server.router.ServeHTTP(w, req)
@@ -111,7 +111,7 @@ func TestHandleListTolerations_ReturnsAllConfiguredTolerations(t *testing.T) {
 
 	// Test 2: Filter by repository
 	t.Run("FilterByRepository", func(t *testing.T) {
-		req := httptest.NewRequest(http.MethodGet, "/api/v1/tolerations?repository=myregistry.com/nginx", nil)
+		req := httptest.NewRequest(http.MethodGet, "/api/v1/vex?repository=myregistry.com/nginx", nil)
 		w := httptest.NewRecorder()
 
 		server.router.ServeHTTP(w, req)
@@ -144,7 +144,7 @@ func TestHandleListTolerations_ReturnsAllConfiguredTolerations(t *testing.T) {
 
 	// Test 3: Filter by CVE ID
 	t.Run("FilterByCVEID", func(t *testing.T) {
-		req := httptest.NewRequest(http.MethodGet, "/api/v1/tolerations?cve_id=CVE-2024-0001", nil)
+		req := httptest.NewRequest(http.MethodGet, "/api/v1/vex?cve_id=CVE-2024-0001", nil)
 		w := httptest.NewRecorder()
 
 		server.router.ServeHTTP(w, req)
@@ -176,13 +176,13 @@ func TestHandleListTolerations_ReturnsAllConfiguredTolerations(t *testing.T) {
 }
 
 func TestHandleListTolerations_WithHistoricalData(t *testing.T) {
-	// Create a regsync config with tolerations
+	// Create a regsync config with vexStatements
 	expiresAt := int64(1735689600) // 2025-01-01
 	regsyncCfg := &config.RegsyncConfig{
 		Version: 1,
 		Defaults: config.Defaults{
-			Tolerate: []types.CVEToleration{
-				{ID: "CVE-2024-0001", Statement: "Default toleration 1", ExpiresAt: &expiresAt},
+			VEX: []types.VEXStatement{
+				{ID: "CVE-2024-0001", Detail: "Default VEX statement 1", ExpiresAt: &expiresAt},
 			},
 		},
 		Sync: []config.SyncEntry{
@@ -218,7 +218,7 @@ func TestHandleListTolerations_WithHistoricalData(t *testing.T) {
 
 	server := NewAPIServer(cfg, mockAttestationConfig(), mockStore, queue.NewInMemoryQueue(100), regsyncCfg, observability.NewLogger("error"))
 
-	req := httptest.NewRequest(http.MethodGet, "/api/v1/tolerations", nil)
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/vex", nil)
 	w := httptest.NewRecorder()
 
 	server.router.ServeHTTP(w, req)
@@ -239,7 +239,7 @@ func TestHandleListTolerations_WithHistoricalData(t *testing.T) {
 	stmt := vexStatements[0]
 
 	// Should use detail and expires_at from current config
-	if stmt.Detail != "Default toleration 1" {
+	if stmt.Detail != "Default VEX statement 1" {
 		t.Errorf("Expected detail from config, got %s", stmt.Detail)
 	}
 	if stmt.ExpiresAt == nil || *stmt.ExpiresAt != expiresAt {
@@ -267,7 +267,7 @@ type mockStateStoreWithHistory struct {
 	vexInfos []*types.VEXInfo
 }
 
-func (m *mockStateStoreWithHistory) ListVEXStatements(ctx context.Context, filter statestore.TolerationFilter) ([]*types.VEXInfo, error) {
+func (m *mockStateStoreWithHistory) ListVEXStatements(ctx context.Context, filter statestore.VEXFilter) ([]*types.VEXInfo, error) {
 	result := make([]*types.VEXInfo, 0)
 	for _, stmt := range m.vexInfos {
 		if filter.CVEID != "" && stmt.CVEID != filter.CVEID {

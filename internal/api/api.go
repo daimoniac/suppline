@@ -19,7 +19,7 @@ import (
 
 // @title suppline API
 // @version 1.0
-// @description REST API for querying container image scan results, managing CVE tolerations, and triggering security operations.
+// @description REST API for querying container image scan results, managing VEX statements, and triggering security operations.
 // @description
 // @description ## Features
 // @description - Query scan results and vulnerability data
@@ -112,9 +112,6 @@ func (s *APIServer) setupRoutes() {
 	s.router.HandleFunc("/api/v1/vulnerabilities/", s.corsMiddleware(s.authMiddleware(s.handleGetVulnerabilityDetails, false)))
 	s.router.HandleFunc("/api/v1/vex", s.corsMiddleware(s.authMiddleware(s.handleListVEX, false)))
 	s.router.HandleFunc("/api/v1/vex/inactive", s.corsMiddleware(s.authMiddleware(s.handleListInactiveVEX, false)))
-	// Keep old routes as aliases for backward compatibility
-	s.router.HandleFunc("/api/v1/tolerations", s.corsMiddleware(s.authMiddleware(s.handleListVEX, false)))
-	s.router.HandleFunc("/api/v1/tolerations/inactive", s.corsMiddleware(s.authMiddleware(s.handleListInactiveVEX, false)))
 	s.router.HandleFunc("/api/v1/images/failed", s.corsMiddleware(s.authMiddleware(s.handleListFailedImages, false)))
 	s.router.HandleFunc("/api/v1/repositories", s.corsMiddleware(s.authMiddleware(s.handleListRepositories, false)))
 	s.router.HandleFunc("/api/v1/repositories/", s.corsMiddleware(s.authMiddleware(s.handleRepositoriesRouter, false)))

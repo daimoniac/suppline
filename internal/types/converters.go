@@ -21,24 +21,3 @@ func ToVulnerabilityRecord(
 		ScannedAt:        scannedAt,
 	}
 }
-
-// FilterToleratedCVEs filters tolerations based on a set of tolerated IDs.
-// Only tolerations whose IDs are in the toleratedSet will be included.
-func FilterToleratedCVEs(
-	tolerations []CVEToleration,
-	toleratedSet map[string]bool,
-	toleratedAt int64,
-) []ToleratedCVE {
-	filtered := make([]ToleratedCVE, 0, len(tolerations))
-	for _, toleration := range tolerations {
-		if toleratedSet[toleration.ID] {
-			filtered = append(filtered, ToleratedCVE{
-				CVEID:       toleration.ID,
-				Statement:   toleration.Statement,
-				ToleratedAt: toleratedAt,
-				ExpiresAt:   toleration.ExpiresAt,
-			})
-		}
-	}
-	return filtered
-}

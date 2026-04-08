@@ -31,7 +31,6 @@ type PolicyConfig struct {
 	//   - highCount: number of high vulnerabilities (not exempted)
 	//   - mediumCount: number of medium vulnerabilities (not exempted)
 	//   - exemptedCount: number of exempted vulnerabilities
-	//   - toleratedCount: alias for exemptedCount (backward compat)
 	Expression string `yaml:"expression" json:"expression"`
 
 	// FailureMessage is the message to return when the policy fails (optional)
@@ -100,7 +99,6 @@ func NewEngine(logger *slog.Logger, config PolicyConfig) (*Engine, error) {
 		cel.Variable("highCount", cel.IntType),
 		cel.Variable("mediumCount", cel.IntType),
 		cel.Variable("lowCount", cel.IntType),
-		cel.Variable("toleratedCount", cel.IntType),
 		cel.Variable("exemptedCount", cel.IntType),
 	)
 	if err != nil {
@@ -256,18 +254,12 @@ func (e *Engine) Evaluate(ctx context.Context, imageRef string, result *scanner.
 			"fixedVersion": vuln.FixedVersion,
 			"description":  vuln.Description,
 			"exempted":     isExempted,
-			"tolerated":    isExempted, // backward compat alias
 		}
 
 		if isExempted {
 			enriched["vexState"] = string(stmt.State)
 			enriched["vexJustification"] = string(stmt.Justification)
 			enriched["vexDetail"] = stmt.Detail
-			// backward compat aliases
-			enriched["tolerationStatement"] = stmt.Detail
-			if stmt.ExpiresAt != nil {
-				enriched["tolerationExpiry"] = time.Unix(*stmt.ExpiresAt, 0).UTC().Format(time.RFC3339)
-			}
 			exemptedCount++
 			decision.ExemptedCVEs = append(decision.ExemptedCVEs, vuln.ID)
 
@@ -310,7 +302,6 @@ func (e *Engine) Evaluate(ctx context.Context, imageRef string, result *scanner.
 		"highCount":       highCount,
 		"mediumCount":     mediumCount,
 		"lowCount":        lowCount,
-		"toleratedCount":  exemptedCount, // backward compat
 		"exemptedCount":   exemptedCount,
 	}
 

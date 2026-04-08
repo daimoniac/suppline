@@ -8,17 +8,15 @@ import (
 	"github.com/daimoniac/suppline/internal/types"
 )
 
-func (s *SQLiteStore) ListVEXStatements(ctx context.Context, filter TolerationFilter) ([]*types.VEXInfo, error) {
+func (s *SQLiteStore) ListVEXStatements(ctx context.Context, filter VEXFilter) ([]*types.VEXInfo, error) {
 	query := `
 		SELECT 
 			r.name as repository,
-			sr.tolerated_cves_json,
 			sr.vex_statements_json
 		FROM scan_records sr
 		JOIN artifacts a ON sr.artifact_id = a.id
 		JOIN repositories r ON a.repository_id = r.id
 		WHERE (sr.vex_statements_json IS NOT NULL AND sr.vex_statements_json != '[]' AND sr.vex_statements_json != '')
-			OR (sr.tolerated_cves_json IS NOT NULL AND sr.tolerated_cves_json != '[]' AND sr.tolerated_cves_json != '')
 	`
 	args := []interface{}{}
 
@@ -40,48 +38,26 @@ func (s *SQLiteStore) ListVEXStatements(ctx context.Context, filter TolerationFi
 
 	for rows.Next() {
 		var repository string
-		var toleratedJSON sql.NullString
 		var vexJSON sql.NullString
 
-		if err := rows.Scan(&repository, &toleratedJSON, &vexJSON); err != nil {
+		if err := rows.Scan(&repository, &vexJSON); err != nil {
 			return nil, errors.NewTransientf("failed to scan row: %w", err)
 		}
 
-		vexStmts, tolerated := decodeStoredExemptionsLenient(toleratedJSON, vexJSON)
-
-		if len(vexStmts) > 0 {
-			for _, vs := range vexStmts {
-				if filter.CVEID != "" && vs.CVEID != filter.CVEID {
-					continue
-				}
-				key := repository + ":" + vs.CVEID
-				if _, found := vexMap[key]; !found {
-					vexMap[key] = &types.VEXInfo{
-						CVEID:         vs.CVEID,
-						State:         vs.State,
-						Justification: vs.Justification,
-						Detail:        vs.Detail,
-						AppliedAt:     vs.AppliedAt,
-						ExpiresAt:     vs.ExpiresAt,
-						Repository:    repository,
-					}
-				}
+		for _, vs := range decodeStoredExemptionsLenient(vexJSON) {
+			if filter.CVEID != "" && vs.CVEID != filter.CVEID {
+				continue
 			}
-		} else if len(tolerated) > 0 {
-			for _, tc := range tolerated {
-				if filter.CVEID != "" && tc.CVEID != filter.CVEID {
-					continue
-				}
-				key := repository + ":" + tc.CVEID
-				if _, found := vexMap[key]; !found {
-					vexMap[key] = &types.VEXInfo{
-						CVEID:      tc.CVEID,
-						State:      types.VEXStateNotAffected,
-						Detail:     tc.Statement,
-						AppliedAt:  tc.ToleratedAt,
-						ExpiresAt:  tc.ExpiresAt,
-						Repository: repository,
-					}
+			key := repository + ":" + vs.CVEID
+			if _, found := vexMap[key]; !found {
+				vexMap[key] = &types.VEXInfo{
+					CVEID:         vs.CVEID,
+					State:         vs.State,
+					Justification: vs.Justification,
+					Detail:        vs.Detail,
+					AppliedAt:     vs.AppliedAt,
+					ExpiresAt:     vs.ExpiresAt,
+					Repository:    repository,
 				}
 			}
 		}
@@ -106,14 +82,13 @@ func (s *SQLiteStore) ListVEXStatements(ctx context.Context, filter TolerationFi
 }
 
 // GetExemptedCVEImageCounts returns a map of CVE ID → count of distinct digests
-// that have this CVE exempted (via VEX or legacy toleration) in the latest scan for each artifact.
+// that have this CVE exempted via VEX in the latest scan for each artifact.
 func (s *SQLiteStore) GetExemptedCVEImageCounts(ctx context.Context) (map[string]int, error) {
 	query := `
-		SELECT a.digest, sr.tolerated_cves_json, sr.vex_statements_json
+		SELECT a.digest, sr.vex_statements_json
 		FROM artifacts a
 		JOIN scan_records sr ON a.last_scan_id = sr.id
 		WHERE (sr.vex_statements_json IS NOT NULL AND sr.vex_statements_json != '[]' AND sr.vex_statements_json != '')
-			OR (sr.tolerated_cves_json IS NOT NULL AND sr.tolerated_cves_json != '[]' AND sr.tolerated_cves_json != '')
 	`
 
 	rows, err := s.db.QueryContext(ctx, query)
@@ -125,13 +100,12 @@ func (s *SQLiteStore) GetExemptedCVEImageCounts(ctx context.Context) (map[string
 	counts := make(map[string]int)
 	for rows.Next() {
 		var digest string
-		var toleratedJSON sql.NullString
 		var vexJSON sql.NullString
-		if err := rows.Scan(&digest, &toleratedJSON, &vexJSON); err != nil {
+		if err := rows.Scan(&digest, &vexJSON); err != nil {
 			return nil, errors.NewTransientf("failed to scan row: %w", err)
 		}
 
-		for _, cveID := range extractAppliedCVEIDs(toleratedJSON, vexJSON) {
+		for _, cveID := range extractAppliedCVEIDs(vexJSON) {
 			counts[cveID]++
 		}
 	}
@@ -141,16 +115,14 @@ func (s *SQLiteStore) GetExemptedCVEImageCounts(ctx context.Context) (map[string
 	return counts, nil
 }
 
-// getAppliedCVESet returns a set of all CVE IDs that have been applied (exempted via VEX or tolerated)
+// getAppliedCVESet returns a set of all CVE IDs that have been applied (exempted via VEX)
 // in at least one scan record. This is a helper method for inactive VEX queries.
 func (s *SQLiteStore) getAppliedCVESet(ctx context.Context) (map[string]bool, error) {
 	query := `
 		SELECT 
-			sr.tolerated_cves_json,
 			sr.vex_statements_json
 		FROM scan_records sr
 		WHERE (sr.vex_statements_json IS NOT NULL AND sr.vex_statements_json != '[]' AND sr.vex_statements_json != '')
-			OR (sr.tolerated_cves_json IS NOT NULL AND sr.tolerated_cves_json != '[]' AND sr.tolerated_cves_json != '')
 	`
 
 	rows, err := s.db.QueryContext(ctx, query)
@@ -162,14 +134,13 @@ func (s *SQLiteStore) getAppliedCVESet(ctx context.Context) (map[string]bool, er
 	appliedCVEs := make(map[string]bool)
 
 	for rows.Next() {
-		var toleratedJSON sql.NullString
 		var vexJSON sql.NullString
 
-		if err := rows.Scan(&toleratedJSON, &vexJSON); err != nil {
+		if err := rows.Scan(&vexJSON); err != nil {
 			return nil, errors.NewTransientf("failed to scan row: %w", err)
 		}
 
-		for _, cveID := range extractAppliedCVEIDs(toleratedJSON, vexJSON) {
+		for _, cveID := range extractAppliedCVEIDs(vexJSON) {
 			appliedCVEs[cveID] = true
 		}
 	}

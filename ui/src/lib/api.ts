@@ -226,7 +226,6 @@ export interface AppliedVEXStatement {
 
 export interface ScanDetail extends Scan {
   Vulnerabilities: Vulnerability[];
-  ToleratedCVEs: AppliedVEXStatement[]; // legacy field name kept for API compat
   AppliedVEXStatements: AppliedVEXStatement[];
   Tags: { Repository: string; Tag: string }[];
 }

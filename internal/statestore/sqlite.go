@@ -131,7 +131,6 @@ func (s *SQLiteStore) initSchema() error {
 		vuln_attested BOOLEAN NOT NULL,
 		scai_attested BOOLEAN NOT NULL,
 		error_message TEXT,
-		tolerated_cves_json TEXT, -- JSON array of ToleratedCVE objects for audit trail
 		created_at INTEGER NOT NULL DEFAULT (cast(strftime('%s', 'now') as integer)),
 		FOREIGN KEY (artifact_id) REFERENCES artifacts(id) ON DELETE CASCADE
 	);
