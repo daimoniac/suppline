@@ -340,7 +340,7 @@ func (s *SQLiteStore) GetRepository(ctx context.Context, name string, filter Rep
 	}
 
 	if filter.InUseOnly {
-		countQuery += " AND EXISTS (SELECT 1 FROM cluster_images ci WHERE ci.digest = a.digest)"
+		countQuery += " AND (EXISTS (SELECT 1 FROM cluster_images ci WHERE ci.digest = a.digest) OR EXISTS (SELECT 1 FROM cluster_images ci WHERE COALESCE(ci.tag, '') = a.tag))"
 	}
 
 	var total int
@@ -379,7 +379,7 @@ func (s *SQLiteStore) GetRepository(ctx context.Context, name string, filter Rep
 			FROM artifacts a2
 			JOIN repositories r2 ON a2.repository_id = r2.id
 			WHERE r2.name = ?
-				AND (? = 0 OR EXISTS (SELECT 1 FROM cluster_images ci2 WHERE ci2.digest = a2.digest))
+			AND (? = 0 OR EXISTS (SELECT 1 FROM cluster_images ci2 WHERE ci2.digest = a2.digest OR COALESCE(ci2.tag, '') = a2.tag))
 			GROUP BY a2.tag
 		) latest ON a.tag = latest.tag AND a.id = latest.max_id
 		WHERE r.name = ?
@@ -401,7 +401,7 @@ func (s *SQLiteStore) GetRepository(ctx context.Context, name string, filter Rep
 	}
 
 	if filter.InUseOnly {
-		query += " AND EXISTS (SELECT 1 FROM cluster_images ci WHERE ci.digest = a.digest)"
+		query += " AND (EXISTS (SELECT 1 FROM cluster_images ci WHERE ci.digest = a.digest) OR EXISTS (SELECT 1 FROM cluster_images ci WHERE COALESCE(ci.tag, '') = a.tag))"
 	}
 
 	query += " ORDER BY a.tag ASC"
