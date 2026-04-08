@@ -56,6 +56,25 @@ var validVEXJustifications = map[VEXJustification]bool{
 	VEXJustProtectedByMitigations: true,
 }
 
+// legacyVEXJustificationAliases maps legacy/public examples to canonical values.
+// This preserves backward compatibility for existing user config files.
+var legacyVEXJustificationAliases = map[VEXJustification]VEXJustification{
+	"component_not_present":                             VEXJustCodeNotPresent,
+	"vulnerable_code_not_present":                       VEXJustCodeNotPresent,
+	"vulnerable_code_cannot_be_controlled_by_adversary": VEXJustCodeNotReachable,
+	"vulnerable_code_not_in_execute_path":               VEXJustCodeNotReachable,
+	"inline_mitigations_already_exist":                  VEXJustProtectedByMitigations,
+	"protected_by_mitigating_control":                   VEXJustProtectedByMitigations,
+}
+
+// NormalizeVEXJustification converts legacy aliases to canonical justification values.
+func NormalizeVEXJustification(j VEXJustification) VEXJustification {
+	if canonical, ok := legacyVEXJustificationAliases[j]; ok {
+		return canonical
+	}
+	return j
+}
+
 // VEXStatement represents a CycloneDX VEX statement for a vulnerability.
 // This is the config-level type parsed from suppline.yml x-vex entries.
 type VEXStatement struct {
@@ -84,7 +103,7 @@ func (v *VEXStatement) UnmarshalYAML(unmarshal func(interface{}) error) error {
 
 	v.ID = temp.ID
 	v.State = VEXAnalysisState(temp.State)
-	v.Justification = VEXJustification(temp.Justification)
+	v.Justification = NormalizeVEXJustification(VEXJustification(temp.Justification))
 	v.Detail = temp.Detail
 
 	// Parse expires_at if provided
@@ -119,10 +138,11 @@ func ValidateVEXStatement(v VEXStatement) error {
 	}
 
 	if v.Justification != "" {
+		normalized := NormalizeVEXJustification(v.Justification)
 		if v.State != VEXStateNotAffected {
 			return fmt.Errorf("VEX justification is only valid when state is not_affected, got state %q for %s", v.State, v.ID)
 		}
-		if !validVEXJustifications[v.Justification] {
+		if !validVEXJustifications[normalized] {
 			return fmt.Errorf("invalid VEX justification %q for %s", v.Justification, v.ID)
 		}
 	}

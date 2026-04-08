@@ -391,16 +391,23 @@ sync:
   - `false_positive` - Incorrectly identified as vulnerable
   - `resolved` - The vulnerability has been remediated
   - `resolved_with_pedigree` - Resolved and provenance is tracked
-- `justification` (required when state is `not_affected`): One of:
-  - `component_not_present`
-  - `vulnerable_code_not_present`
-  - `vulnerable_code_cannot_be_controlled_by_adversary`
-  - `vulnerable_code_not_in_execute_path`
-  - `inline_mitigations_already_exist`
+- `justification` (required when state is `not_affected`): Canonical values:
+  - `code_not_present`
+  - `code_not_reachable`
+  - `requires_configuration`
+  - `requires_dependency`
+  - `requires_environment`
   - `protected_by_compiler`
   - `protected_at_runtime`
   - `protected_at_perimeter`
-  - `protected_by_mitigating_control`
+  - `protected_by_mitigations`
+  - Legacy aliases are still accepted and normalized internally:
+  - `component_not_present` -> `code_not_present`
+  - `vulnerable_code_not_present` -> `code_not_present`
+  - `vulnerable_code_cannot_be_controlled_by_adversary` -> `code_not_reachable`
+  - `vulnerable_code_not_in_execute_path` -> `code_not_reachable`
+  - `inline_mitigations_already_exist` -> `protected_by_mitigations`
+  - `protected_by_mitigating_control` -> `protected_by_mitigations`
 - `detail` (optional): Human-readable explanation for audit and compliance
 - `expires_at` (optional): When the statement expires. Supports:
   - RFC3339 timestamp: `2026-02-28T23:59:59Z`
