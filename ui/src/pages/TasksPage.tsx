@@ -238,7 +238,26 @@ function RuntimeUnusedRepoStatusBadge() {
   );
 }
 
+function buildRuntimeUnusedPrompt(entries: RepositoriesResponse['Repositories']): string {
+  if (!entries || entries.length === 0) {
+    return '';
+  }
+
+  const uniqueTargets = Array.from(new Set(entries.map(entry => entry.Name).filter(Boolean))).sort();
+  if (uniqueTargets.length === 0) {
+    return '';
+  }
+
+  const targetsList = uniqueTargets.map(target => `  - ${target}`).join('\n');
+  return [
+    'Remove the following sync entries completely:',
+    targetsList,
+  ].join('\n');
+}
+
 function RuntimeUnusedRepositoryTask({ data }: { data: RepositoriesResponse }) {
+  const { toast } = useToast();
+
   if (data.Repositories.length === 0) {
     return (
       <EmptyState
@@ -250,15 +269,51 @@ function RuntimeUnusedRepositoryTask({ data }: { data: RepositoriesResponse }) {
   }
 
   const unusedCount = data.Total;
+  const aiAgentPrompt = buildRuntimeUnusedPrompt(data.Repositories);
+  const hasUpdates = aiAgentPrompt.trim().length > 0;
 
   return (
     <div className="space-y-4">
-      {unusedCount > 0 && (
-        <div className="flex items-center gap-2 px-4 py-3 rounded-lg bg-warning-bg border border-warning/20 text-sm text-warning">
-          <TriangleAlert className="w-4 h-4 flex-shrink-0" />
-          <span>
-            {unusedCount} {unusedCount === 1 ? 'repository is' : 'repositories are'} not observed in runtime inventory.
-          </span>
+      {(unusedCount > 0 || hasUpdates) && (
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-3 items-start">
+          <div className="lg:col-span-2">
+            {unusedCount > 0 && (
+              <div className="flex items-center gap-2 px-4 py-3 rounded-lg bg-warning-bg border border-warning/20 text-sm text-warning">
+                <TriangleAlert className="w-4 h-4 flex-shrink-0" />
+                <span>
+                  {unusedCount} {unusedCount === 1 ? 'repository is' : 'repositories are'} not observed in runtime inventory.
+                </span>
+              </div>
+            )}
+          </div>
+
+          {hasUpdates && (
+            <div className="relative overflow-hidden rounded-xl border border-accent/35 bg-gradient-to-r from-accent/15 via-bg-secondary to-warning/10 p-4">
+              <div className="absolute -top-10 -right-10 w-24 h-24 rounded-full bg-accent/20 blur-2xl pointer-events-none" />
+              <div className="relative flex flex-col gap-3">
+                <div className="flex items-center gap-2">
+                  <span className="inline-flex items-center justify-center w-7 h-7 rounded-lg bg-accent/20 text-accent">
+                    <Sparkles className="w-4 h-4" />
+                  </span>
+                  <div>
+                    <h3 className="text-sm font-semibold text-text-primary">AI Agent Prompt</h3>
+                    <p className="text-xs text-text-secondary">Ready to remove or disable unused sync targets.</p>
+                  </div>
+                </div>
+                <button
+                  onClick={() => {
+                    copyToClipboard(aiAgentPrompt).then(ok =>
+                      toast(ok ? 'Prompt copied to clipboard!' : 'Failed to copy', ok ? 'success' : 'error')
+                    );
+                  }}
+                  className="inline-flex items-center justify-center gap-1.5 px-3 py-2 text-xs rounded-lg border border-accent/30 text-text-primary bg-bg-primary/70 hover:bg-bg-primary transition-colors"
+                >
+                  <Copy className="w-3 h-3" />
+                  Copy prompt to clipboard
+                </button>
+              </div>
+            </div>
+          )}
         </div>
       )}
 
@@ -268,7 +323,8 @@ function RuntimeUnusedRepositoryTask({ data }: { data: RepositoriesResponse }) {
         <table className="min-w-full text-sm">
           <thead>
             <tr className="border-b border-border">
-              <th className="px-3 py-2 text-left text-xs font-semibold text-text-muted uppercase tracking-wide">Target</th>
+              <th className="px-3 py-2 text-left text-xs font-semibold text-text-muted uppercase tracking-wide">Repository</th>
+              <th className="px-3 py-2 text-left text-xs font-semibold text-text-muted uppercase tracking-wide">Artifacts</th>
               <th className="px-3 py-2 text-left text-xs font-semibold text-text-muted uppercase tracking-wide">Status</th>
             </tr>
           </thead>
@@ -276,7 +332,10 @@ function RuntimeUnusedRepositoryTask({ data }: { data: RepositoriesResponse }) {
             {data.Repositories.map((entry, idx) => (
               <tr key={idx} className="border-b border-border/50 last:border-0">
                 <td className="px-3 py-3">
-                  <span className="text-xs font-mono text-text-primary break-all">{entry.Name}</span>
+                  <span className="text-xs font-mono text-text-primary max-w-[24rem] inline-block truncate" title={entry.Name}>{entry.Name}</span>
+                </td>
+                <td className="px-3 py-3">
+                  <span className="text-xs text-text-secondary">{entry.ArtifactCount}</span>
                 </td>
                 <td className="px-3 py-3">
                   <RuntimeUnusedRepoStatusBadge />
@@ -285,7 +344,7 @@ function RuntimeUnusedRepositoryTask({ data }: { data: RepositoriesResponse }) {
             ))}
             {data.Repositories.length === 0 && (
               <tr>
-                <td colSpan={2} className="px-3 py-8 text-center text-xs text-text-muted">
+                <td colSpan={3} className="px-3 py-8 text-center text-xs text-text-muted">
                   No unused repositories right now.
                 </td>
               </tr>
