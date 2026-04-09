@@ -142,6 +142,28 @@ function TaskSection({
   );
 }
 
+function TaskListControls({
+  summary,
+  toggleLabel,
+  onToggle,
+}: {
+  summary: ReactNode;
+  toggleLabel: string;
+  onToggle: () => void;
+}) {
+  return (
+    <div className="flex items-center justify-between gap-3">
+      <p className="text-xs text-text-muted">{summary}</p>
+      <button
+        onClick={onToggle}
+        className="px-3 py-1.5 text-xs rounded-lg border border-border text-text-secondary hover:bg-bg-tertiary flex items-center gap-1.5 transition-colors"
+      >
+        {toggleLabel}
+      </button>
+    </div>
+  );
+}
+
 // ─── semver update task card ──────────────────────────────────────────────────
 
 function SemverUpdateTask({ data }: { data: SemverUpdateTasksResponse }) {
@@ -211,18 +233,11 @@ function SemverUpdateTask({ data }: { data: SemverUpdateTasksResponse }) {
         </div>
       )}
 
-      <div className="flex items-center justify-between gap-3">
-        <p className="text-xs text-text-muted">
-          Showing {displayedEntries.length} of {data.entries.length} entries
-          {!showAll ? ' (out of bounds + tighten only)' : ''}
-        </p>
-        <button
-          onClick={() => setShowAll(v => !v)}
-          className="px-3 py-1.5 text-xs rounded-lg border border-border text-text-secondary hover:bg-bg-tertiary flex items-center gap-1.5 transition-colors"
-        >
-          {showAll ? 'Show actionable' : 'Show all'}
-        </button>
-      </div>
+      <TaskListControls
+        summary={<>Showing {displayedEntries.length} of {data.entries.length} entries{!showAll ? ' (out of bounds + tighten only)' : ''}</>}
+        toggleLabel={showAll ? 'Show actionable' : 'Show all'}
+        onToggle={() => setShowAll(v => !v)}
+      />
 
       <div className="overflow-x-auto">
         <table className="min-w-full text-sm">
@@ -419,18 +434,11 @@ function RuntimeUnusedRepositoryTask({
         </div>
       )}
 
-      <div className="flex items-center justify-between gap-3">
-        <p className="text-xs text-text-muted">
-          Showing {displayedRepositories.length} of {data.Repositories.length} unused repositories
-          {!showAll ? ' (excluding whitelist)' : ''}
-        </p>
-        <button
-          onClick={() => setShowAll(v => !v)}
-          className="px-3 py-1.5 text-xs rounded-lg border border-border text-text-secondary hover:bg-bg-tertiary flex items-center gap-1.5 transition-colors"
-        >
-          {showAll ? 'Show actionable' : 'Show all'}
-        </button>
-      </div>
+      <TaskListControls
+        summary={<>Showing {displayedRepositories.length} of {data.Repositories.length} unused repositories{!showAll ? ' (excluding whitelist)' : ''}</>}
+        toggleLabel={showAll ? 'Show actionable' : 'Show all'}
+        onToggle={() => setShowAll(v => !v)}
+      />
 
       <div className="overflow-x-auto">
         <table className="min-w-full text-sm">
@@ -598,15 +606,11 @@ function VEXExpiryTask({ data, inactiveEntries }: { data: VEXExpiryTasksResponse
       </div>
 
       {hasExpiryEntries && (
-        <div className="flex items-center justify-between gap-3">
-          <p className="text-xs text-text-muted">Showing {displayedEntries.length} of {data.entries.length} expiring or expired entries</p>
-          <button
-            onClick={() => setShowAll(v => !v)}
-            className="px-3 py-1.5 text-xs rounded-lg border border-border text-text-secondary hover:bg-bg-tertiary flex items-center gap-1.5 transition-colors"
-          >
-            {showAll ? 'Show less' : 'Show more'}
-          </button>
-        </div>
+        <TaskListControls
+          summary={<>Showing {displayedEntries.length} of {data.entries.length} expiring or expired entries</>}
+          toggleLabel={showAll ? 'Show less' : 'Show more'}
+          onToggle={() => setShowAll(v => !v)}
+        />
       )}
 
       {hasExpiryEntries && (
