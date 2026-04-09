@@ -5,7 +5,7 @@ import { formatRelativeTime } from '../lib/utils';
 import { useImageUsageFilter } from '../lib/imageUsageFilter';
 import { LoadingState, ErrorState, StatusBadge, SeverityBadge, VulnCounts, DigestLinkWithCopy } from '../components/ui';
 import type { RepositoriesResponse, Scan, SemverUpdateTasksResponse, VEXExpiryTasksResponse } from '../lib/api';
-import { ShieldAlert, ShieldCheck, Clock, Clock3, CheckSquare, ArrowRight, ClipboardList, Sparkles, Trash2, TriangleAlert } from 'lucide-react';
+import { ShieldAlert, ShieldCheck, Clock, Clock3, ArrowRight, ClipboardList, Sparkles, Trash2, TriangleAlert } from 'lucide-react';
 
 interface DashboardData {
   recentScans: Scan[];
@@ -105,7 +105,7 @@ export default function DashboardPage() {
         <p className="text-sm text-text-secondary mt-1">Container image security overview</p>
       </div>
 
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
         <SummaryCard
           icon={<ShieldAlert className="w-5 h-5" />}
           value={data.failedCount}
@@ -116,16 +116,26 @@ export default function DashboardPage() {
         />
         <SummaryCard icon={<Clock className="w-5 h-5" />} value={data.pendingCount} label="Pending Release" variant="warning" detail="Waiting to mature" />
         <SummaryCard icon={<ShieldCheck className="w-5 h-5" />} value={data.activeVEXStatements} label="Active VEX Statements" variant="info" to="/vex" />
-        <SummaryCard icon={<CheckSquare className="w-5 h-5" />} value={data.inactiveVEXStatements} label="Inactive VEX Statements" variant="muted" />
       </div>
 
-      {(data.outOfBoundsTaskCount > 0 || data.tightenTaskCount > 0 || data.runtimeUnusedTaskCount > 0 || data.vexExpiredTaskCount > 0 || data.vexExpiringSoonTaskCount > 0) && (
+      {(data.outOfBoundsTaskCount > 0 || data.tightenTaskCount > 0 || data.runtimeUnusedTaskCount > 0 || data.vexExpiredTaskCount > 0 || data.vexExpiringSoonTaskCount > 0 || data.inactiveVEXStatements > 0) && (
         <div className="bg-bg-primary border border-border rounded-xl p-4 space-y-3">
           <div className="flex items-center gap-2">
             <ClipboardList className="w-4 h-4 text-accent" />
             <h2 className="text-sm font-semibold">Task Notifications</h2>
           </div>
           <div className="space-y-2">
+            {data.inactiveVEXStatements > 0 && (
+              <Link
+                to="/tasks"
+                className="flex items-center justify-between gap-3 rounded-lg border border-warning/30 bg-warning-bg px-3 py-2 text-sm text-warning hover:brightness-95 transition"
+              >
+                <span>
+                  {data.inactiveVEXStatements} VEX {data.inactiveVEXStatements === 1 ? 'statement is' : 'statements are'} inactive and should be reviewed.
+                </span>
+                <TriangleAlert className="w-4 h-4 flex-shrink-0" />
+              </Link>
+            )}
             {data.vexExpiredTaskCount > 0 && (
               <Link
                 to="/tasks"
