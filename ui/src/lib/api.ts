@@ -282,6 +282,7 @@ export interface Repository {
   PolicyStatus?: string;
   VulnerabilityCount: VulnCount;
   RuntimeUsed?: boolean;
+  Whitelisted?: boolean;
 }
 
 export interface RepositoriesResponse {
@@ -304,6 +305,7 @@ export interface RepositoryTag {
   VulnerabilityCount: VulnCount;
   RuntimeUsed?: boolean;
   Runtime?: RuntimeInventory;
+  Whitelisted?: boolean;
 }
 
 export interface RepositoryDetailResponse {

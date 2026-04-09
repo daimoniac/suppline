@@ -59,23 +59,32 @@ export default function RepositoriesPage() {
     setSearchParams,
   });
 
-  const sortMap: Record<string, string> = {
-    name: sortDir === 'asc' ? 'name_asc' : 'name_desc',
-    artifactCount: sortDir === 'asc' ? 'artifacts_asc' : 'artifacts_desc',
-    lastScanTime: sortDir === 'asc' ? 'age_asc' : 'age_desc',
-    status: sortDir === 'asc' ? 'status_asc' : 'status_desc',
-  };
-
   const load = useCallback(async () => {
     setLoading(true);
     setError('');
     try {
+      let sortBy = 'age_desc';
+      switch (sortCol) {
+        case 'name':
+          sortBy = sortDir === 'asc' ? 'name_asc' : 'name_desc';
+          break;
+        case 'artifactCount':
+          sortBy = sortDir === 'asc' ? 'artifacts_asc' : 'artifacts_desc';
+          break;
+        case 'lastScanTime':
+          sortBy = sortDir === 'asc' ? 'age_asc' : 'age_desc';
+          break;
+        case 'status':
+          sortBy = sortDir === 'asc' ? 'status_asc' : 'status_desc';
+          break;
+      }
+
       const resp = await apiClient.getRepositories({
         limit: pageSize, offset,
         ...(repository && { search: repository }),
         ...(inUseQuery !== undefined && { in_use: inUseQuery }),
         ...(policyFilter !== 'all' && { policy_status: policyFilter }),
-        sort_by: sortMap[sortCol] || 'age_desc',
+        sort_by: sortBy,
       });
       if (resp && resp.Repositories) {
         setRepos(resp.Repositories);
@@ -146,7 +155,7 @@ export default function RepositoriesPage() {
                     <td className="px-4 py-3">
                       <div className="flex items-center gap-2 flex-wrap">
                         <StatusBadge passed={r.PolicyPassed} status={r.PolicyStatus} />
-                        <RuntimeUsageBadge inUse={!!r.RuntimeUsed} />
+                        <RuntimeUsageBadge inUse={!!r.RuntimeUsed} whitelisted={!!r.Whitelisted} />
                       </div>
                     </td>
                     <td className="px-4 py-3">

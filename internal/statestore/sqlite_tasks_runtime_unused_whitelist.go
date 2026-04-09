@@ -2,6 +2,7 @@ package statestore
 
 import (
 	"context"
+	"database/sql"
 	"strings"
 
 	"github.com/daimoniac/suppline/internal/errors"
@@ -65,4 +66,45 @@ func (s *SQLiteStore) RemoveRuntimeUnusedRepositoryWhitelist(ctx context.Context
 	}
 
 	return nil
+}
+
+func (s *SQLiteStore) runtimeUnusedRepositoryWhitelistSet(ctx context.Context) (map[string]struct{}, error) {
+	entries, err := s.ListRuntimeUnusedRepositoryWhitelist(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	whitelist := make(map[string]struct{}, len(entries))
+	for _, entry := range entries {
+		repository := strings.TrimSpace(entry.Repository)
+		if repository == "" {
+			continue
+		}
+		whitelist[repository] = struct{}{}
+	}
+
+	return whitelist, nil
+}
+
+func (s *SQLiteStore) isRuntimeUnusedRepositoryWhitelisted(ctx context.Context, repository string) (bool, error) {
+	repository = strings.TrimSpace(repository)
+	if repository == "" {
+		return false, nil
+	}
+
+	var marker int
+	err := s.db.QueryRowContext(ctx, `
+		SELECT 1
+		FROM runtime_unused_repository_whitelist
+		WHERE repository = ?
+		LIMIT 1
+	`, repository).Scan(&marker)
+	if err == nil {
+		return true, nil
+	}
+	if err == sql.ErrNoRows {
+		return false, nil
+	}
+
+	return false, errors.NewTransientf("failed to query runtime-unused repository whitelist membership: %w", err)
 }

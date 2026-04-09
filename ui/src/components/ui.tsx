@@ -100,8 +100,13 @@ export function DigestLinkWithCopy({ digest, to, showAsCode = false, wrap = fals
   return <div className={`flex items-center gap-1 ${wrap ? 'flex-wrap' : ''}`}>{digestNode}<button className="text-text-muted hover:text-text-primary p-0.5" onClick={() => { copyToClipboard(digest).then(ok => toast(ok ? 'Copied!' : 'Failed to copy', ok ? 'success' : 'error')); }}><Copy className="w-3 h-3" /></button></div>;
 }
 
-export function RuntimeUsageBadge({ inUse, runtime, showWhenNotInUse = false, showClusterCount = false }: { inUse: boolean; runtime?: RuntimeInventory; showWhenNotInUse?: boolean; showClusterCount?: boolean }) {
+export function RuntimeUsageBadge({ inUse, runtime, showWhenNotInUse = false, showClusterCount = false, whitelisted = false }: { inUse: boolean; runtime?: RuntimeInventory; showWhenNotInUse?: boolean; showClusterCount?: boolean; whitelisted?: boolean }) {
+  if (whitelisted) {
+    return <span className="px-1.5 py-0.5 rounded text-[10px] font-semibold bg-bg-tertiary text-white" title="Included due to housekeeping whitelist">Whitelisted</span>;
+  }
+
   if (!inUse && !showWhenNotInUse) return null;
+
   const clusterNames = getRuntimeClusterNames(runtime);
   const label = inUse ? (showClusterCount ? `In use on ${getRuntimeClusterCount(runtime)} cluster(s)` : 'In use') : 'Not in use';
   const title = inUse && clusterNames.length ? `Running on: ${clusterNames.join(', ')}` : label;
@@ -125,7 +130,7 @@ export function FilterSelect({ value, onChange, options }: { value: string; onCh
   );
 }
 
-export const POLICY_STATUS_OPTIONS = [
+const POLICY_STATUS_OPTIONS = [
   { value: 'all', label: 'All Statuses' },
   { value: 'passed', label: 'Passed' },
   { value: 'failed', label: 'Failed' },

@@ -189,8 +189,14 @@ func (s *SQLiteStore) ListRepositories(ctx context.Context, filter RepositoryFil
 		return nil, err
 	}
 
+	whitelistSet, err := s.runtimeUnusedRepositoryWhitelistSet(ctx)
+	if err != nil {
+		return nil, err
+	}
+
 	for i, repoID := range repoIDs {
 		repositories[i].RuntimeUsed = runtimeUsedByRepoID[repoID]
+		_, repositories[i].Whitelisted = whitelistSet[repositories[i].Name]
 	}
 
 	if filter.InUse != nil || filter.PolicyStatus != "" {
@@ -209,7 +215,10 @@ func (s *SQLiteStore) ListRepositories(ctx context.Context, filter RepositoryFil
 		if filter.InUse != nil {
 			result := make([]RepositoryInfo, 0, len(filtered))
 			for _, repo := range filtered {
-				if repo.RuntimeUsed == *filter.InUse {
+				matchesInUse := repo.RuntimeUsed || repo.Whitelisted
+				// Whitelisted repositories should appear in both in-use and not-in-use
+				// filtered views so operators can always discover and manage them.
+				if repo.Whitelisted || matchesInUse == *filter.InUse {
 					result = append(result, repo)
 				}
 			}
@@ -336,6 +345,13 @@ func (s *SQLiteStore) repositoryRuntimeUsageByID(ctx context.Context, repoNamesB
 
 // GetRepository returns a repository with all its tags
 func (s *SQLiteStore) GetRepository(ctx context.Context, name string, filter RepositoryTagFilter) (*RepositoryDetail, error) {
+	isWhitelisted, err := s.isRuntimeUnusedRepositoryWhitelisted(ctx, name)
+	if err != nil {
+		return nil, err
+	}
+
+	effectiveInUseOnly := filter.InUseOnly && !isWhitelisted
+
 	// First, get total count of unique tags for this repository
 	countQuery := `
 		SELECT COUNT(DISTINCT a.tag)
@@ -356,7 +372,7 @@ func (s *SQLiteStore) GetRepository(ctx context.Context, name string, filter Rep
 	}
 
 	var total int
-	err := s.db.QueryRowContext(ctx, countQuery, countArgs...).Scan(&total)
+	err = s.db.QueryRowContext(ctx, countQuery, countArgs...).Scan(&total)
 	if err != nil {
 		return nil, errors.NewTransientf("failed to count tags: %w", err)
 	}
@@ -409,12 +425,12 @@ func (s *SQLiteStore) GetRepository(ctx context.Context, name string, filter Rep
 
 	query += " ORDER BY a.tag ASC"
 
-	if !filter.InUseOnly && filter.Limit > 0 {
+	if !effectiveInUseOnly && filter.Limit > 0 {
 		query += " LIMIT ?"
 		args = append(args, filter.Limit)
 	}
 
-	if !filter.InUseOnly && filter.Offset > 0 {
+	if !effectiveInUseOnly && filter.Offset > 0 {
 		query += " OFFSET ?"
 		args = append(args, filter.Offset)
 	}
@@ -466,6 +482,7 @@ func (s *SQLiteStore) GetRepository(ctx context.Context, name string, filter Rep
 		}
 
 		tag.PolicyPassed = policyPassed == 1
+		tag.Whitelisted = isWhitelisted
 		if tag.PolicyStatus == "" {
 			if tag.PolicyPassed {
 				tag.PolicyStatus = "passed"
@@ -481,7 +498,7 @@ func (s *SQLiteStore) GetRepository(ctx context.Context, name string, filter Rep
 		return nil, errors.NewTransientf("error iterating tag rows: %w", err)
 	}
 
-	if filter.InUseOnly {
+	if effectiveInUseOnly {
 		lookups := make([]RuntimeLookupInput, 0, len(detail.Tags))
 		for _, tag := range detail.Tags {
 			lookups = append(lookups, RuntimeLookupInput{

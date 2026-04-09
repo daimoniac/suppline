@@ -156,6 +156,7 @@ type RepositoryInfo struct {
 	PolicyPassed       bool
 	PolicyStatus       string
 	RuntimeUsed        bool
+	Whitelisted        bool
 }
 
 // VulnerabilityCountSummary represents aggregated vulnerability counts
@@ -190,6 +191,7 @@ type TagInfo struct {
 	ScanError                string // Non-empty when the last scan failed with an error
 	RuntimeUsed              bool
 	Runtime                  RuntimeInventory
+	Whitelisted              bool
 }
 
 // TagRef represents a repository+tag combination pointing to a digest

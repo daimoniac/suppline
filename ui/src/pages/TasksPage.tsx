@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import { useAuth } from '../lib/auth';
 import { useToast } from '../lib/toast';
-import { copyToClipboard } from '../lib/utils';
+import { copyToClipboard, loadAllRuntimeUnusedRepositories, summarizeRuntimeUnusedRepositories } from '../lib/utils';
 import { LoadingState, ErrorState, PageHeader, EmptyState } from '../components/ui';
 import type {
   RepositoriesResponse,
@@ -313,9 +313,7 @@ function RuntimeUnusedRepositoryTask({
     }
   }, [apiClient]);
 
-  const whitelistSet = new Set(whitelist);
-  const actionableRepositories = data.Repositories.filter(entry => !whitelistSet.has(entry.Name));
-  const hiddenByWhitelistCount = data.Repositories.length - actionableRepositories.length;
+  const { whitelistSet, actionableRepositories, hiddenByWhitelistCount } = summarizeRuntimeUnusedRepositories(data.Repositories, whitelist);
   const displayedRepositories = showAll ? data.Repositories : actionableRepositories;
 
   if (data.Repositories.length === 0) {
@@ -410,7 +408,7 @@ function RuntimeUnusedRepositoryTask({
             </tr>
           </thead>
           <tbody>
-            {displayedRepositories.map((entry, idx) => {
+            {displayedRepositories.map((entry: RepositoriesResponse['Repositories'][number], idx: number) => {
               const isWhitelisted = whitelistSet.has(entry.Name);
               return (
               <tr key={idx} className={`border-b border-border/50 last:border-0 ${isWhitelisted ? 'bg-bg-secondary/45' : ''}`}>
@@ -680,17 +678,9 @@ export default function TasksPage() {
     setLoading(true);
     setError('');
     try {
-      const pageSize = 100;
-      const firstUnused = await apiClient.getRepositories({ in_use: false, sort_by: 'age_desc', limit: pageSize, offset: 0 });
-      let allUnused = firstUnused.Repositories;
-      for (let offset = allUnused.length; offset < firstUnused.Total; offset += pageSize) {
-        const page = await apiClient.getRepositories({ in_use: false, sort_by: 'age_desc', limit: pageSize, offset });
-        allUnused = allUnused.concat(page.Repositories);
-      }
-
       const [semverResult, runtimeUnusedResult, vexExpiryResult, inactiveVEXResult] = await Promise.all([
         apiClient.getSemverUpdateTasks(),
-        Promise.resolve<RepositoriesResponse>({ Repositories: allUnused, Total: firstUnused.Total }),
+        loadAllRuntimeUnusedRepositories(apiClient),
         apiClient.getVEXExpiryTasks(),
         apiClient.getInactiveVEXStatements(),
       ]);

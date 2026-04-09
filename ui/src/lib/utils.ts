@@ -1,4 +1,4 @@
-import type { RuntimeImage, RuntimeInventory } from './api';
+import type { APIClient, RepositoriesResponse, RuntimeImage, RuntimeInventory } from './api';
 
 export function escapeHtml(s: string): string {
   return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#039;');
@@ -198,4 +198,43 @@ export function compareTagNames(left: string, right: string): number {
   }
 
   return left.localeCompare(right, undefined, { numeric: true, sensitivity: 'base' });
+}
+
+export async function loadAllRuntimeUnusedRepositories(apiClient: APIClient, pageSize = 100): Promise<RepositoriesResponse> {
+  const firstPage = await apiClient.getRepositories({
+    in_use: false,
+    sort_by: 'age_desc',
+    limit: pageSize,
+    offset: 0,
+  });
+
+  let repositories = firstPage.Repositories;
+  for (let offset = repositories.length; offset < firstPage.Total; offset += pageSize) {
+    const page = await apiClient.getRepositories({
+      in_use: false,
+      sort_by: 'age_desc',
+      limit: pageSize,
+      offset,
+    });
+    repositories = repositories.concat(page.Repositories);
+  }
+
+  return {
+    Repositories: repositories,
+    Total: firstPage.Total,
+  };
+}
+
+export function summarizeRuntimeUnusedRepositories(
+  repositories: RepositoriesResponse['Repositories'],
+  whitelist: string[],
+) {
+  const whitelistSet = new Set(whitelist.map(entry => entry.trim()).filter(Boolean));
+  const actionableRepositories = repositories.filter(entry => !whitelistSet.has(entry.Name));
+
+  return {
+    whitelistSet,
+    actionableRepositories,
+    hiddenByWhitelistCount: repositories.length - actionableRepositories.length,
+  };
 }

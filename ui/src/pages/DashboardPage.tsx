@@ -1,10 +1,10 @@
 import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { useAuth } from '../lib/auth';
-import { formatRelativeTime } from '../lib/utils';
+import { formatRelativeTime, loadAllRuntimeUnusedRepositories, summarizeRuntimeUnusedRepositories } from '../lib/utils';
 import { useImageUsageFilter } from '../lib/imageUsageFilter';
 import { LoadingState, ErrorState, StatusBadge, SeverityBadge, VulnCounts, DigestLinkWithCopy } from '../components/ui';
-import type { RepositoriesResponse, Scan, SemverUpdateTasksResponse, VEXExpiryTasksResponse } from '../lib/api';
+import type { Scan, SemverUpdateTasksResponse, VEXExpiryTasksResponse } from '../lib/api';
 import { ShieldAlert, ShieldCheck, Clock, Clock3, ArrowRight, ClipboardList, Sparkles, Trash2, TriangleAlert } from 'lucide-react';
 
 interface DashboardData {
@@ -34,14 +34,15 @@ export default function DashboardPage() {
     setLoading(true);
     setError('');
     try {
-      const [recentScans, nonPassedScans, allVEXStatements, inactiveVEXStatements, vulnStats, semverTasksResult, runtimeUnusedReposResult, vexExpiryTasksResult] = await Promise.all([
+      const [recentScans, nonPassedScans, allVEXStatements, inactiveVEXStatements, vulnStats, semverTasksResult, runtimeUnusedReposResult, runtimeUnusedWhitelistResult, vexExpiryTasksResult] = await Promise.all([
         apiClient.getScans({ limit: 20, ...(inUseQuery !== undefined && { in_use: inUseQuery }) }),
         apiClient.getScans({ policy_passed: false, ...(inUseQuery !== undefined && { in_use: inUseQuery }) }),
         apiClient.getVEXStatements({}),
         apiClient.getInactiveVEXStatements(),
         apiClient.getVulnerabilityStats(),
         apiClient.getSemverUpdateTasks().catch(() => null as SemverUpdateTasksResponse | null),
-        apiClient.getRepositories({ in_use: false, limit: 1, offset: 0 }).catch(() => null as RepositoriesResponse | null),
+        loadAllRuntimeUnusedRepositories(apiClient).catch(() => null),
+        apiClient.getRuntimeUnusedWhitelist().catch(() => ({ repositories: [] })),
         apiClient.getVEXExpiryTasks().catch(() => null as VEXExpiryTasksResponse | null),
       ]);
 
@@ -54,9 +55,11 @@ export default function DashboardPage() {
         else acc[repo].failed += 1;
         return acc;
       }, {});
+      const runtimeUnusedTaskCount = runtimeUnusedReposResult
+        ? summarizeRuntimeUnusedRepositories(runtimeUnusedReposResult.Repositories, runtimeUnusedWhitelistResult.repositories).actionableRepositories.length
+        : 0;
       const outOfBoundsTaskCount = semverTasksResult?.entries?.filter(entry => entry.status === 'out_of_bounds').length ?? 0;
       const tightenTaskCount = semverTasksResult?.entries?.filter(entry => entry.status === 'tighten').length ?? 0;
-      const runtimeUnusedTaskCount = runtimeUnusedReposResult?.Total ?? 0;
       const vexExpiredTaskCount = vexExpiryTasksResult?.entries?.filter(entry => entry.status === 'expired').length ?? 0;
       const vexExpiringSoonTaskCount = vexExpiryTasksResult?.entries?.filter(entry => entry.status === 'expiring_soon').length ?? 0;
 
