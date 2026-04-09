@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react';
+import { type ReactNode, useCallback, useEffect, useState } from 'react';
 import { useLocation } from 'react-router-dom';
 import { useAuth } from '../lib/auth';
 import { useToast } from '../lib/toast';
@@ -74,6 +74,74 @@ function RuntimeVersionsCell({ entry }: { entry: SemverUpdateEntry }) {
   );
 }
 
+function TaskPromptCard({ hint, onCopy }: { hint: string; onCopy: () => void }) {
+  return (
+    <div className="relative overflow-hidden rounded-xl border border-accent/35 bg-gradient-to-r from-accent/15 via-bg-secondary to-warning/10 p-4">
+      <div className="absolute -top-10 -right-10 w-24 h-24 rounded-full bg-accent/20 blur-2xl pointer-events-none" />
+      <div className="relative flex flex-col gap-3">
+        <div className="flex items-center gap-2">
+          <span className="inline-flex items-center justify-center w-7 h-7 rounded-lg bg-accent/20 text-accent">
+            <Sparkles className="w-4 h-4" />
+          </span>
+          <div>
+            <h3 className="text-sm font-semibold text-text-primary">AI Agent Prompt</h3>
+            <p className="text-xs text-text-secondary">{hint}</p>
+          </div>
+        </div>
+        <button
+          onClick={onCopy}
+          className="inline-flex items-center justify-center gap-1.5 px-3 py-2 text-xs rounded-lg border border-accent/30 text-text-primary bg-bg-primary/70 hover:bg-bg-primary transition-colors"
+        >
+          <Copy className="w-3 h-3" />
+          Copy prompt to clipboard
+        </button>
+      </div>
+    </div>
+  );
+}
+
+function TaskSection({
+  anchor,
+  active,
+  icon,
+  title,
+  subtitle,
+  loading,
+  loadingMessage,
+  error,
+  onRetry,
+  children,
+}: {
+  anchor: string;
+  active: boolean;
+  icon: ReactNode;
+  title: string;
+  subtitle: ReactNode;
+  loading: boolean;
+  loadingMessage: string;
+  error: string;
+  onRetry: () => void;
+  children: ReactNode;
+}) {
+  return (
+    <section
+      id={anchor}
+      className={`bg-bg-primary border rounded-xl overflow-hidden scroll-mt-24 ${active ? 'border-accent shadow-[0_0_0_1px_rgba(62,207,142,0.35)]' : 'border-border'}`}
+    >
+      <div className="flex items-center justify-between px-5 py-4 border-b border-border">
+        <div className="flex items-center gap-2">
+          {icon}
+          <h2 className="text-sm font-semibold">{title}</h2>
+        </div>
+        <p className="text-xs text-text-muted">{subtitle}</p>
+      </div>
+      <div className="p-4">
+        {loading ? <LoadingState message={loadingMessage} /> : error ? <ErrorState message={error} onRetry={onRetry} /> : children}
+      </div>
+    </section>
+  );
+}
+
 // ─── semver update task card ──────────────────────────────────────────────────
 
 function SemverUpdateTask({ data }: { data: SemverUpdateTasksResponse }) {
@@ -131,31 +199,14 @@ function SemverUpdateTask({ data }: { data: SemverUpdateTasksResponse }) {
           </div>
 
           {hasUpdates && (
-            <div className="relative overflow-hidden rounded-xl border border-accent/35 bg-gradient-to-r from-accent/15 via-bg-secondary to-warning/10 p-4">
-              <div className="absolute -top-10 -right-10 w-24 h-24 rounded-full bg-accent/20 blur-2xl pointer-events-none" />
-              <div className="relative flex flex-col gap-3">
-                <div className="flex items-center gap-2">
-                  <span className="inline-flex items-center justify-center w-7 h-7 rounded-lg bg-accent/20 text-accent">
-                    <Sparkles className="w-4 h-4" />
-                  </span>
-                  <div>
-                    <h3 className="text-sm font-semibold text-text-primary">AI Agent Prompt</h3>
-                    <p className="text-xs text-text-secondary">Ready to apply semverRange updates.</p>
-                  </div>
-                </div>
-                <button
-                  onClick={() => {
-                    copyToClipboard(data.ai_agent_prompt).then(ok =>
-                      toast(ok ? 'Prompt copied to clipboard!' : 'Failed to copy', ok ? 'success' : 'error')
-                    );
-                  }}
-                  className="inline-flex items-center justify-center gap-1.5 px-3 py-2 text-xs rounded-lg border border-accent/30 text-text-primary bg-bg-primary/70 hover:bg-bg-primary transition-colors"
-                >
-                  <Copy className="w-3 h-3" />
-                  Copy prompt to clipboard
-                </button>
-              </div>
-            </div>
+            <TaskPromptCard
+              hint="Ready to apply semverRange updates."
+              onCopy={() => {
+                copyToClipboard(data.ai_agent_prompt).then(ok =>
+                  toast(ok ? 'Prompt copied to clipboard!' : 'Failed to copy', ok ? 'success' : 'error')
+                );
+              }}
+            />
           )}
         </div>
       )}
@@ -356,31 +407,14 @@ function RuntimeUnusedRepositoryTask({
           </div>
 
           {hasUpdates && (
-            <div className="relative overflow-hidden rounded-xl border border-accent/35 bg-gradient-to-r from-accent/15 via-bg-secondary to-warning/10 p-4">
-              <div className="absolute -top-10 -right-10 w-24 h-24 rounded-full bg-accent/20 blur-2xl pointer-events-none" />
-              <div className="relative flex flex-col gap-3">
-                <div className="flex items-center gap-2">
-                  <span className="inline-flex items-center justify-center w-7 h-7 rounded-lg bg-accent/20 text-accent">
-                    <Sparkles className="w-4 h-4" />
-                  </span>
-                  <div>
-                    <h3 className="text-sm font-semibold text-text-primary">AI Agent Prompt</h3>
-                    <p className="text-xs text-text-secondary">Ready to remove or disable unused sync targets.</p>
-                  </div>
-                </div>
-                <button
-                  onClick={() => {
-                    copyToClipboard(aiAgentPrompt).then(ok =>
-                      toast(ok ? 'Prompt copied to clipboard!' : 'Failed to copy', ok ? 'success' : 'error')
-                    );
-                  }}
-                  className="inline-flex items-center justify-center gap-1.5 px-3 py-2 text-xs rounded-lg border border-accent/30 text-text-primary bg-bg-primary/70 hover:bg-bg-primary transition-colors"
-                >
-                  <Copy className="w-3 h-3" />
-                  Copy prompt to clipboard
-                </button>
-              </div>
-            </div>
+            <TaskPromptCard
+              hint="Ready to remove or disable unused sync targets."
+              onCopy={() => {
+                copyToClipboard(aiAgentPrompt).then(ok =>
+                  toast(ok ? 'Prompt copied to clipboard!' : 'Failed to copy', ok ? 'success' : 'error')
+                );
+              }}
+            />
           )}
         </div>
       )}
@@ -552,31 +586,14 @@ function VEXExpiryTask({ data, inactiveEntries }: { data: VEXExpiryTasksResponse
         </div>
 
         {hasUpdates && (
-          <div className="relative overflow-hidden rounded-xl border border-accent/35 bg-gradient-to-r from-accent/15 via-bg-secondary to-warning/10 p-4">
-            <div className="absolute -top-10 -right-10 w-24 h-24 rounded-full bg-accent/20 blur-2xl pointer-events-none" />
-            <div className="relative flex flex-col gap-3">
-              <div className="flex items-center gap-2">
-                <span className="inline-flex items-center justify-center w-7 h-7 rounded-lg bg-accent/20 text-accent">
-                  <Sparkles className="w-4 h-4" />
-                </span>
-                <div>
-                  <h3 className="text-sm font-semibold text-text-primary">AI Agent Prompt</h3>
-                  <p className="text-xs text-text-secondary">{showPromptHint}</p>
-                </div>
-              </div>
-              <button
-                onClick={() => {
-                  copyToClipboard(combinedPrompt).then(ok =>
-                    toast(ok ? 'Prompt copied to clipboard!' : 'Failed to copy', ok ? 'success' : 'error')
-                  );
-                }}
-                className="inline-flex items-center justify-center gap-1.5 px-3 py-2 text-xs rounded-lg border border-accent/30 text-text-primary bg-bg-primary/70 hover:bg-bg-primary transition-colors"
-              >
-                <Copy className="w-3 h-3" />
-                Copy prompt to clipboard
-              </button>
-            </div>
-          </div>
+          <TaskPromptCard
+            hint={showPromptHint}
+            onCopy={() => {
+              copyToClipboard(combinedPrompt).then(ok =>
+                toast(ok ? 'Prompt copied to clipboard!' : 'Failed to copy', ok ? 'success' : 'error')
+              );
+            }}
+          />
         )}
       </div>
 
@@ -714,9 +731,6 @@ export default function TasksPage() {
   }, [location.hash, loading]);
 
   const activeAnchor = location.hash.slice(1);
-  const sectionClassName = (anchor: string) => (
-    `bg-bg-primary border rounded-xl overflow-hidden scroll-mt-24 ${activeAnchor === anchor ? 'border-accent shadow-[0_0_0_1px_rgba(62,207,142,0.35)]' : 'border-border'}`
-  );
 
   return (
     <div className="space-y-6">
@@ -737,70 +751,49 @@ export default function TasksPage() {
       </div>
 
       {/* SemVer Range Updates */}
-      <section id="semver-range-updates" className={sectionClassName('semver-range-updates')}>
-        <div className="flex items-center justify-between px-5 py-4 border-b border-border">
-          <div className="flex items-center gap-2">
-            <Tag className="w-4 h-4 text-accent" />
-            <h2 className="text-sm font-semibold">SemVer Range Updates</h2>
-          </div>
-          <p className="text-xs text-text-muted">
-            Sync entries with <code className="bg-bg-tertiary px-1 rounded">tags.semverRange</code> compared against runtime versions
-          </p>
-        </div>
-        <div className="p-4">
-          {loading ? (
-            <LoadingState message="Checking runtime versions..." />
-          ) : error ? (
-            <ErrorState message={error} onRetry={load} />
-          ) : semverData ? (
-            <SemverUpdateTask data={semverData} />
-          ) : null}
-        </div>
-      </section>
+      <TaskSection
+        anchor="semver-range-updates"
+        active={activeAnchor === 'semver-range-updates'}
+        icon={<Tag className="w-4 h-4 text-accent" />}
+        title="SemVer Range Updates"
+        subtitle={<>Sync entries with <code className="bg-bg-tertiary px-1 rounded">tags.semverRange</code> compared against runtime versions</>}
+        loading={loading}
+        loadingMessage="Checking runtime versions..."
+        error={error}
+        onRetry={load}
+      >
+        {semverData ? <SemverUpdateTask data={semverData} /> : null}
+      </TaskSection>
 
       {/* Runtime Unused Repositories */}
-      <section id="unused-sync-repositories" className={sectionClassName('unused-sync-repositories')}>
-        <div className="flex items-center justify-between px-5 py-4 border-b border-border">
-          <div className="flex items-center gap-2">
-            <Trash2 className="w-4 h-4 text-warning" />
-            <h2 className="text-sm font-semibold">Unused Sync Repositories</h2>
-          </div>
-          <p className="text-xs text-text-muted">
-            Derived from <code className="bg-bg-tertiary px-1 rounded">/api/v1/repositories?in_use=false</code>
-          </p>
-        </div>
-        <div className="p-4">
-          {loading ? (
-            <LoadingState message="Checking runtime repository usage..." />
-          ) : error ? (
-            <ErrorState message={error} onRetry={load} />
-          ) : runtimeUnusedData ? (
-            <RuntimeUnusedRepositoryTask data={runtimeUnusedData} />
-          ) : null}
-        </div>
-      </section>
+      <TaskSection
+        anchor="unused-sync-repositories"
+        active={activeAnchor === 'unused-sync-repositories'}
+        icon={<Trash2 className="w-4 h-4 text-warning" />}
+        title="Unused Sync Repositories"
+        subtitle={<>Derived from <code className="bg-bg-tertiary px-1 rounded">/api/v1/repositories?in_use=false</code></>}
+        loading={loading}
+        loadingMessage="Checking runtime repository usage..."
+        error={error}
+        onRetry={load}
+      >
+        {runtimeUnusedData ? <RuntimeUnusedRepositoryTask data={runtimeUnusedData} /> : null}
+      </TaskSection>
 
       {/* VEX Review Tasks */}
-      <section id="vex-review" className={sectionClassName('vex-review')}>
-        <div className="flex items-center justify-between px-5 py-4 border-b border-border">
-          <div className="flex items-center gap-2">
-            <Clock3 className="w-4 h-4 text-danger" />
-            <h2 className="text-sm font-semibold">VEX Review</h2>
-          </div>
-          <p className="text-xs text-text-muted">
-            VEX statements from <code className="bg-bg-tertiary px-1 rounded">x-vex</code> that are inactive, expired, or expiring within 7 days
-          </p>
-        </div>
-        <div className="p-4">
-          {loading ? (
-            <LoadingState message="Checking VEX review tasks..." />
-          ) : error ? (
-            <ErrorState message={error} onRetry={load} />
-          ) : vexExpiryData ? (
-            <VEXExpiryTask data={vexExpiryData} inactiveEntries={inactiveVEXData} />
-          ) : null}
-        </div>
-      </section>
+      <TaskSection
+        anchor="vex-review"
+        active={activeAnchor === 'vex-review'}
+        icon={<Clock3 className="w-4 h-4 text-danger" />}
+        title="VEX Review"
+        subtitle={<>VEX statements from <code className="bg-bg-tertiary px-1 rounded">x-vex</code> that are inactive, expired, or expiring within 7 days</>}
+        loading={loading}
+        loadingMessage="Checking VEX review tasks..."
+        error={error}
+        onRetry={load}
+      >
+        {vexExpiryData ? <VEXExpiryTask data={vexExpiryData} inactiveEntries={inactiveVEXData} /> : null}
+      </TaskSection>
     </div>
   );
 }
