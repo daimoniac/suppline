@@ -178,6 +178,18 @@ func (m *mockStateStore) GetRuntimeUsageForScan(ctx context.Context, digest, rep
 	return &statestore.RuntimeUsage{}, nil
 }
 
+func (m *mockStateStore) ListRuntimeUnusedRepositoryWhitelist(ctx context.Context) ([]statestore.RuntimeUnusedRepositoryWhitelistEntry, error) {
+	return []statestore.RuntimeUnusedRepositoryWhitelistEntry{}, nil
+}
+
+func (m *mockStateStore) AddRuntimeUnusedRepositoryWhitelist(ctx context.Context, repository string) error {
+	return nil
+}
+
+func (m *mockStateStore) RemoveRuntimeUnusedRepositoryWhitelist(ctx context.Context, repository string) error {
+	return nil
+}
+
 func TestNewAPIServer(t *testing.T) {
 	cfg := &config.APIConfig{
 		Enabled:  true,

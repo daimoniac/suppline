@@ -1,6 +1,8 @@
 package api
 
 import (
+	"bytes"
+	"context"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
@@ -915,5 +917,97 @@ func TestHandleGetVEXExpiryTasks_EmptyWhenNoExpiringEntries(t *testing.T) {
 	}
 	if resp.AIAgentPrompt != "" {
 		t.Fatalf("expected empty ai_agent_prompt, got %q", resp.AIAgentPrompt)
+	}
+}
+
+type mockRuntimeUnusedWhitelistStore struct {
+	mockStateStore
+	whitelist map[string]struct{}
+}
+
+func (m *mockRuntimeUnusedWhitelistStore) ListRuntimeUnusedRepositoryWhitelist(ctx context.Context) ([]statestore.RuntimeUnusedRepositoryWhitelistEntry, error) {
+	_ = ctx
+	entries := make([]statestore.RuntimeUnusedRepositoryWhitelistEntry, 0, len(m.whitelist))
+	for repository := range m.whitelist {
+		entries = append(entries, statestore.RuntimeUnusedRepositoryWhitelistEntry{Repository: repository})
+	}
+	return entries, nil
+}
+
+func (m *mockRuntimeUnusedWhitelistStore) AddRuntimeUnusedRepositoryWhitelist(ctx context.Context, repository string) error {
+	_ = ctx
+	m.whitelist[strings.TrimSpace(repository)] = struct{}{}
+	return nil
+}
+
+func (m *mockRuntimeUnusedWhitelistStore) RemoveRuntimeUnusedRepositoryWhitelist(ctx context.Context, repository string) error {
+	_ = ctx
+	delete(m.whitelist, strings.TrimSpace(repository))
+	return nil
+}
+
+func TestHandleRuntimeUnusedWhitelist_GetPostDeleteFlow(t *testing.T) {
+	store := &mockRuntimeUnusedWhitelistStore{whitelist: map[string]struct{}{}}
+	server := tasksTestServer(t, store, mockRegsyncConfig())
+
+	addReq := httptest.NewRequest(http.MethodPost, "/api/v1/tasks/runtime-unused-whitelist", bytes.NewBufferString(`{"repository":"registry.example.com/legacy/app"}`))
+	addW := httptest.NewRecorder()
+	server.router.ServeHTTP(addW, addReq)
+	if addW.Code != http.StatusOK {
+		t.Fatalf("expected 200 from POST, got %d: %s", addW.Code, addW.Body.String())
+	}
+
+	getReq := httptest.NewRequest(http.MethodGet, "/api/v1/tasks/runtime-unused-whitelist", nil)
+	getW := httptest.NewRecorder()
+	server.router.ServeHTTP(getW, getReq)
+	if getW.Code != http.StatusOK {
+		t.Fatalf("expected 200 from GET, got %d: %s", getW.Code, getW.Body.String())
+	}
+
+	var getResp RuntimeUnusedWhitelistResponse
+	if err := json.NewDecoder(getW.Body).Decode(&getResp); err != nil {
+		t.Fatalf("decode GET response: %v", err)
+	}
+	if len(getResp.Repositories) != 1 || getResp.Repositories[0] != "registry.example.com/legacy/app" {
+		t.Fatalf("expected repository in whitelist, got %v", getResp.Repositories)
+	}
+
+	deleteReq := httptest.NewRequest(http.MethodDelete, "/api/v1/tasks/runtime-unused-whitelist", bytes.NewBufferString(`{"repository":"registry.example.com/legacy/app"}`))
+	deleteW := httptest.NewRecorder()
+	server.router.ServeHTTP(deleteW, deleteReq)
+	if deleteW.Code != http.StatusOK {
+		t.Fatalf("expected 200 from DELETE, got %d: %s", deleteW.Code, deleteW.Body.String())
+	}
+
+	getAfterDeleteReq := httptest.NewRequest(http.MethodGet, "/api/v1/tasks/runtime-unused-whitelist", nil)
+	getAfterDeleteW := httptest.NewRecorder()
+	server.router.ServeHTTP(getAfterDeleteW, getAfterDeleteReq)
+
+	var getAfterDeleteResp RuntimeUnusedWhitelistResponse
+	if err := json.NewDecoder(getAfterDeleteW.Body).Decode(&getAfterDeleteResp); err != nil {
+		t.Fatalf("decode GET response after delete: %v", err)
+	}
+	if len(getAfterDeleteResp.Repositories) != 0 {
+		t.Fatalf("expected empty whitelist after delete, got %v", getAfterDeleteResp.Repositories)
+	}
+}
+
+func TestHandleRuntimeUnusedWhitelist_RejectsWritesInReadOnlyMode(t *testing.T) {
+	store := &mockRuntimeUnusedWhitelistStore{whitelist: map[string]struct{}{}}
+	cfg := &config.APIConfig{Enabled: true, Port: 8080, APIKey: "", ReadOnly: true}
+	server := NewAPIServer(cfg, mockAttestationConfig(), store, queue.NewInMemoryQueue(100), mockRegsyncConfig(), observability.NewLogger("error"))
+
+	postReq := httptest.NewRequest(http.MethodPost, "/api/v1/tasks/runtime-unused-whitelist", bytes.NewBufferString(`{"repository":"registry.example.com/legacy/app"}`))
+	postW := httptest.NewRecorder()
+	server.router.ServeHTTP(postW, postReq)
+	if postW.Code != http.StatusForbidden {
+		t.Fatalf("expected 403 for POST in read-only mode, got %d", postW.Code)
+	}
+
+	deleteReq := httptest.NewRequest(http.MethodDelete, "/api/v1/tasks/runtime-unused-whitelist", bytes.NewBufferString(`{"repository":"registry.example.com/legacy/app"}`))
+	deleteW := httptest.NewRecorder()
+	server.router.ServeHTTP(deleteW, deleteReq)
+	if deleteW.Code != http.StatusForbidden {
+		t.Fatalf("expected 403 for DELETE in read-only mode, got %d", deleteW.Code)
 	}
 }

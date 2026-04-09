@@ -256,10 +256,25 @@ function buildRuntimeUnusedPrompt(entries: RepositoriesResponse['Repositories'])
   ].join('\n');
 }
 
-function RuntimeUnusedRepositoryTask({ data }: { data: RepositoriesResponse }) {
+function RuntimeUnusedRepositoryTask({
+  data,
+  whitelist,
+  busyKey,
+  onWhitelist,
+  onRemoveWhitelist,
+}: {
+  data: RepositoriesResponse;
+  whitelist: Set<string>;
+  busyKey: string | null;
+  onWhitelist: (repository: string) => Promise<void>;
+  onRemoveWhitelist: (repository: string) => Promise<void>;
+}) {
   const { toast } = useToast();
+  const visibleRepositories = data.Repositories.filter(entry => !whitelist.has(entry.Name));
+  const hiddenByWhitelistCount = data.Repositories.length - visibleRepositories.length;
+  const whitelistedRepositories = Array.from(whitelist).sort((a, b) => a.localeCompare(b));
 
-  if (data.Repositories.length === 0) {
+  if (visibleRepositories.length === 0 && whitelistedRepositories.length === 0) {
     return (
       <EmptyState
         icon={<Tag className="w-12 h-12 mb-4 opacity-30" />}
@@ -269,8 +284,8 @@ function RuntimeUnusedRepositoryTask({ data }: { data: RepositoriesResponse }) {
     );
   }
 
-  const unusedCount = data.Total;
-  const aiAgentPrompt = buildRuntimeUnusedPrompt(data.Repositories);
+  const unusedCount = visibleRepositories.length;
+  const aiAgentPrompt = buildRuntimeUnusedPrompt(visibleRepositories);
   const hasUpdates = aiAgentPrompt.trim().length > 0;
 
   return (
@@ -283,6 +298,15 @@ function RuntimeUnusedRepositoryTask({ data }: { data: RepositoriesResponse }) {
                 <TriangleAlert className="w-4 h-4 flex-shrink-0" />
                 <span>
                   {unusedCount} {unusedCount === 1 ? 'repository is' : 'repositories are'} not observed in runtime inventory.
+                </span>
+              </div>
+            )}
+
+            {hiddenByWhitelistCount > 0 && (
+              <div className="flex items-center gap-2 px-4 py-3 rounded-lg bg-bg-secondary border border-border text-sm text-text-secondary">
+                <CheckCircle2 className="w-4 h-4 flex-shrink-0 text-accent" />
+                <span>
+                  {hiddenByWhitelistCount} {hiddenByWhitelistCount === 1 ? 'repository is' : 'repositories are'} hidden by whitelist.
                 </span>
               </div>
             )}
@@ -318,7 +342,7 @@ function RuntimeUnusedRepositoryTask({ data }: { data: RepositoriesResponse }) {
         </div>
       )}
 
-      <p className="text-xs text-text-muted">Showing {data.Repositories.length} of {data.Total} repositories</p>
+      <p className="text-xs text-text-muted">Showing {visibleRepositories.length} of {data.Repositories.length} unused repositories</p>
 
       <div className="overflow-x-auto">
         <table className="min-w-full text-sm">
@@ -327,10 +351,11 @@ function RuntimeUnusedRepositoryTask({ data }: { data: RepositoriesResponse }) {
               <th className="px-3 py-2 text-left text-xs font-semibold text-text-muted uppercase tracking-wide">Repository</th>
               <th className="px-3 py-2 text-left text-xs font-semibold text-text-muted uppercase tracking-wide">Artifacts</th>
               <th className="px-3 py-2 text-left text-xs font-semibold text-text-muted uppercase tracking-wide">Status</th>
+              <th className="px-3 py-2 text-right text-xs font-semibold text-text-muted uppercase tracking-wide">Action</th>
             </tr>
           </thead>
           <tbody>
-            {data.Repositories.map((entry, idx) => (
+            {visibleRepositories.map((entry, idx) => (
               <tr key={idx} className="border-b border-border/50 last:border-0">
                 <td className="px-3 py-3">
                   <span className="text-xs font-mono text-text-primary max-w-[24rem] inline-block truncate" title={entry.Name}>{entry.Name}</span>
@@ -341,18 +366,67 @@ function RuntimeUnusedRepositoryTask({ data }: { data: RepositoriesResponse }) {
                 <td className="px-3 py-3">
                   <RuntimeUnusedRepoStatusBadge />
                 </td>
+                <td className="px-3 py-3 text-right">
+                  <button
+                    onClick={() => {
+                      onWhitelist(entry.Name)
+                        .then(() => toast(`Whitelisted ${entry.Name}`, 'success'))
+                        .catch(() => undefined);
+                    }}
+                    disabled={busyKey === `add:${entry.Name}`}
+                    className="px-2.5 py-1 text-xs rounded-lg border border-border text-text-secondary hover:bg-bg-tertiary disabled:opacity-40 transition-colors"
+                  >
+                    Whitelist
+                  </button>
+                </td>
               </tr>
             ))}
-            {data.Repositories.length === 0 && (
+            {visibleRepositories.length === 0 && (
               <tr>
-                <td colSpan={3} className="px-3 py-8 text-center text-xs text-text-muted">
-                  No unused repositories right now.
+                <td colSpan={4} className="px-3 py-8 text-center text-xs text-text-muted">
+                  No housekeeping repositories remain after whitelist filtering.
                 </td>
               </tr>
             )}
           </tbody>
         </table>
       </div>
+
+      {whitelistedRepositories.length > 0 && (
+        <div className="space-y-2">
+          <p className="text-xs font-medium text-text-secondary uppercase tracking-wide">Whitelisted repositories</p>
+          <div className="border border-border rounded-lg overflow-hidden">
+            <table className="min-w-full text-sm">
+              <thead>
+                <tr className="border-b border-border bg-bg-secondary/40">
+                  <th className="px-3 py-2 text-left text-xs font-semibold text-text-muted uppercase tracking-wide">Repository</th>
+                  <th className="px-3 py-2 text-right text-xs font-semibold text-text-muted uppercase tracking-wide">Action</th>
+                </tr>
+              </thead>
+              <tbody>
+                {whitelistedRepositories.map(repository => (
+                  <tr key={repository} className="border-b border-border/50 last:border-0">
+                    <td className="px-3 py-3 text-xs font-mono text-text-secondary">{repository}</td>
+                    <td className="px-3 py-3 text-right">
+                      <button
+                        onClick={() => {
+                          onRemoveWhitelist(repository)
+                            .then(() => toast(`Removed ${repository} from whitelist`, 'success'))
+                            .catch(() => undefined);
+                        }}
+                        disabled={busyKey === `remove:${repository}`}
+                        className="px-2.5 py-1 text-xs rounded-lg border border-border text-text-secondary hover:bg-bg-tertiary disabled:opacity-40 transition-colors"
+                      >
+                        Remove
+                      </button>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
@@ -568,10 +642,13 @@ function VEXExpiryTask({ data, inactiveEntries }: { data: VEXExpiryTasksResponse
 
 export default function TasksPage() {
   const { apiClient } = useAuth();
+  const { toast } = useToast();
   const [semverData, setSemverData] = useState<SemverUpdateTasksResponse | null>(null);
   const [runtimeUnusedData, setRuntimeUnusedData] = useState<RepositoriesResponse | null>(null);
   const [vexExpiryData, setVexExpiryData] = useState<VEXExpiryTasksResponse | null>(null);
   const [inactiveVEXData, setInactiveVEXData] = useState<VEXSummary[]>([]);
+  const [runtimeUnusedWhitelist, setRuntimeUnusedWhitelist] = useState<string[]>([]);
+  const [runtimeUnusedWhitelistBusyKey, setRuntimeUnusedWhitelistBusyKey] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
 
@@ -587,22 +664,67 @@ export default function TasksPage() {
         allUnused = allUnused.concat(page.Repositories);
       }
 
-      const [semverResult, runtimeUnusedResult, vexExpiryResult, inactiveVEXResult] = await Promise.all([
+      const [semverResult, runtimeUnusedResult, vexExpiryResult, inactiveVEXResult, whitelistResult] = await Promise.all([
         apiClient.getSemverUpdateTasks(),
         Promise.resolve<RepositoriesResponse>({ Repositories: allUnused, Total: firstUnused.Total }),
         apiClient.getVEXExpiryTasks(),
         apiClient.getInactiveVEXStatements(),
+        apiClient.getRuntimeUnusedWhitelist(),
       ]);
       setSemverData(semverResult);
       setRuntimeUnusedData(runtimeUnusedResult);
       setVexExpiryData(vexExpiryResult);
       setInactiveVEXData(inactiveVEXResult);
+      setRuntimeUnusedWhitelist((whitelistResult.repositories || []).slice().sort((a, b) => a.localeCompare(b)));
     } catch (e: unknown) {
       setError(e instanceof Error ? e.message : 'Failed to load tasks');
     } finally {
       setLoading(false);
     }
   }, [apiClient]);
+
+  const addRuntimeUnusedWhitelist = useCallback(async (repository: string) => {
+    const trimmed = repository.trim();
+    if (!trimmed) {
+      return;
+    }
+
+    setRuntimeUnusedWhitelistBusyKey(`add:${trimmed}`);
+    try {
+      await apiClient.addRuntimeUnusedWhitelist(trimmed);
+      setRuntimeUnusedWhitelist(prev => {
+        if (prev.includes(trimmed)) {
+          return prev;
+        }
+        return [...prev, trimmed].sort((a, b) => a.localeCompare(b));
+      });
+    } catch (e: unknown) {
+      const message = e instanceof Error ? e.message : 'Failed to update whitelist';
+      toast(message, 'error');
+      throw e;
+    } finally {
+      setRuntimeUnusedWhitelistBusyKey(null);
+    }
+  }, [apiClient, toast]);
+
+  const removeRuntimeUnusedWhitelist = useCallback(async (repository: string) => {
+    const trimmed = repository.trim();
+    if (!trimmed) {
+      return;
+    }
+
+    setRuntimeUnusedWhitelistBusyKey(`remove:${trimmed}`);
+    try {
+      await apiClient.removeRuntimeUnusedWhitelist(trimmed);
+      setRuntimeUnusedWhitelist(prev => prev.filter(r => r !== trimmed));
+    } catch (e: unknown) {
+      const message = e instanceof Error ? e.message : 'Failed to update whitelist';
+      toast(message, 'error');
+      throw e;
+    } finally {
+      setRuntimeUnusedWhitelistBusyKey(null);
+    }
+  }, [apiClient, toast]);
 
   useEffect(() => { load(); }, [load]);
 
@@ -663,7 +785,13 @@ export default function TasksPage() {
           ) : error ? (
             <ErrorState message={error} onRetry={load} />
           ) : runtimeUnusedData ? (
-            <RuntimeUnusedRepositoryTask data={runtimeUnusedData} />
+            <RuntimeUnusedRepositoryTask
+              data={runtimeUnusedData}
+              whitelist={new Set(runtimeUnusedWhitelist)}
+              busyKey={runtimeUnusedWhitelistBusyKey}
+              onWhitelist={addRuntimeUnusedWhitelist}
+              onRemoveWhitelist={removeRuntimeUnusedWhitelist}
+            />
           ) : null}
         </div>
       </div>

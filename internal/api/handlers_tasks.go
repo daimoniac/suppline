@@ -1,6 +1,7 @@
 package api
 
 import (
+	"encoding/json"
 	"fmt"
 	"net/http"
 	"regexp"
@@ -47,6 +48,14 @@ type VEXExpiryTaskEntry struct {
 type VEXExpiryTasksResponse struct {
 	Entries       []VEXExpiryTaskEntry `json:"entries"`
 	AIAgentPrompt string               `json:"ai_agent_prompt"`
+}
+
+type RuntimeUnusedWhitelistResponse struct {
+	Repositories []string `json:"repositories"`
+}
+
+type RuntimeUnusedWhitelistRequest struct {
+	Repository string `json:"repository"`
 }
 
 // internalSemverEntry carries both the public data and the original sync index
@@ -308,6 +317,87 @@ func (s *APIServer) handleGetVEXExpiryTasks(w http.ResponseWriter, r *http.Reque
 		Entries:       entries,
 		AIAgentPrompt: buildVEXExpiryPrompt(entries),
 	})
+}
+
+func (s *APIServer) handleRuntimeUnusedWhitelistRouter(w http.ResponseWriter, r *http.Request) {
+	switch r.Method {
+	case http.MethodGet:
+		s.handleGetRuntimeUnusedWhitelist(w, r)
+		return
+	case http.MethodPost:
+		if s.config.ReadOnly {
+			s.respondError(w, http.StatusForbidden, "API is in read-only mode")
+			return
+		}
+		s.handleAddRuntimeUnusedWhitelist(w, r)
+		return
+	case http.MethodDelete:
+		if s.config.ReadOnly {
+			s.respondError(w, http.StatusForbidden, "API is in read-only mode")
+			return
+		}
+		s.handleRemoveRuntimeUnusedWhitelist(w, r)
+		return
+	default:
+		s.respondError(w, http.StatusMethodNotAllowed, "Method not allowed")
+	}
+}
+
+func (s *APIServer) handleGetRuntimeUnusedWhitelist(w http.ResponseWriter, r *http.Request) {
+	entries, err := s.stateStore.ListRuntimeUnusedRepositoryWhitelist(r.Context())
+	if err != nil {
+		s.respondError(w, http.StatusInternalServerError, fmt.Sprintf("Failed to list runtime-unused whitelist: %v", err))
+		return
+	}
+
+	repositories := make([]string, 0, len(entries))
+	for _, entry := range entries {
+		repositories = append(repositories, entry.Repository)
+	}
+
+	s.respondJSON(w, http.StatusOK, RuntimeUnusedWhitelistResponse{Repositories: repositories})
+}
+
+func (s *APIServer) handleAddRuntimeUnusedWhitelist(w http.ResponseWriter, r *http.Request) {
+	var req RuntimeUnusedWhitelistRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		s.respondError(w, http.StatusBadRequest, fmt.Sprintf("Invalid request body: %v", err))
+		return
+	}
+
+	repository := strings.TrimSpace(req.Repository)
+	if repository == "" {
+		s.respondError(w, http.StatusBadRequest, "repository is required")
+		return
+	}
+
+	if err := s.stateStore.AddRuntimeUnusedRepositoryWhitelist(r.Context(), repository); err != nil {
+		s.respondError(w, http.StatusInternalServerError, fmt.Sprintf("Failed to add runtime-unused whitelist entry: %v", err))
+		return
+	}
+
+	s.respondJSON(w, http.StatusOK, map[string]string{"status": "ok"})
+}
+
+func (s *APIServer) handleRemoveRuntimeUnusedWhitelist(w http.ResponseWriter, r *http.Request) {
+	var req RuntimeUnusedWhitelistRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		s.respondError(w, http.StatusBadRequest, fmt.Sprintf("Invalid request body: %v", err))
+		return
+	}
+
+	repository := strings.TrimSpace(req.Repository)
+	if repository == "" {
+		s.respondError(w, http.StatusBadRequest, "repository is required")
+		return
+	}
+
+	if err := s.stateStore.RemoveRuntimeUnusedRepositoryWhitelist(r.Context(), repository); err != nil {
+		s.respondError(w, http.StatusInternalServerError, fmt.Sprintf("Failed to remove runtime-unused whitelist entry: %v", err))
+		return
+	}
+
+	s.respondJSON(w, http.StatusOK, map[string]string{"status": "ok"})
 }
 
 var lowerOnlyRangeRe = regexp.MustCompile(`^>=\s*(\S+)\s*$`)

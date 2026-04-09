@@ -168,6 +168,21 @@ export class APIClient {
   async getVEXExpiryTasks(): Promise<VEXExpiryTasksResponse> {
     return this.request<VEXExpiryTasksResponse>('/api/v1/tasks/vex-expiry');
   }
+  async getRuntimeUnusedWhitelist(): Promise<RuntimeUnusedWhitelistResponse> {
+    return this.request<RuntimeUnusedWhitelistResponse>('/api/v1/tasks/runtime-unused-whitelist');
+  }
+  async addRuntimeUnusedWhitelist(repository: string): Promise<void> {
+    await this.request('/api/v1/tasks/runtime-unused-whitelist', {
+      method: 'POST',
+      body: JSON.stringify({ repository }),
+    });
+  }
+  async removeRuntimeUnusedWhitelist(repository: string): Promise<void> {
+    await this.request('/api/v1/tasks/runtime-unused-whitelist', {
+      method: 'DELETE',
+      body: JSON.stringify({ repository }),
+    });
+  }
 
   // Health
   async getHealth() { return this.request<Record<string, unknown>>('/health'); }
@@ -355,4 +370,8 @@ export interface VEXExpiryTaskEntry {
 export interface VEXExpiryTasksResponse {
   entries: VEXExpiryTaskEntry[];
   ai_agent_prompt: string;
+}
+
+export interface RuntimeUnusedWhitelistResponse {
+  repositories: string[];
 }

@@ -181,6 +181,11 @@ func (s *SQLiteStore) initSchema() error {
 		UNIQUE(cluster_id, namespace, image_ref, tag, digest)
 	);
 
+	CREATE TABLE IF NOT EXISTS runtime_unused_repository_whitelist (
+		repository TEXT PRIMARY KEY,
+		created_at INTEGER NOT NULL DEFAULT (cast(strftime('%s', 'now') as integer))
+	);
+
 	CREATE INDEX IF NOT EXISTS idx_artifacts_repository ON artifacts(repository_id);
 	CREATE INDEX IF NOT EXISTS idx_artifacts_digest ON artifacts(digest);
 	CREATE INDEX IF NOT EXISTS idx_artifacts_next_scan ON artifacts(next_scan_at);
@@ -200,6 +205,7 @@ func (s *SQLiteStore) initSchema() error {
 	CREATE INDEX IF NOT EXISTS idx_cluster_images_seen_digest ON cluster_images_seen(digest);
 	CREATE INDEX IF NOT EXISTS idx_cluster_images_seen_image_ref_tag ON cluster_images_seen(image_ref, tag);
 	CREATE INDEX IF NOT EXISTS idx_cluster_images_seen_last_seen_at ON cluster_images_seen(last_seen_at);
+	CREATE INDEX IF NOT EXISTS idx_runtime_unused_repo_whitelist_created_at ON runtime_unused_repository_whitelist(created_at);
 	`
 
 	_, err := s.db.Exec(schema)

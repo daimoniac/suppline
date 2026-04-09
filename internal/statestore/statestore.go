@@ -265,6 +265,18 @@ type StateStoreQuery interface {
 
 	// GetRuntimeUsageForScan returns runtime usage for a single image detail endpoint.
 	GetRuntimeUsageForScan(ctx context.Context, digest, repository, tag string) (*RuntimeUsage, error)
+
+	// ListRuntimeUnusedRepositoryWhitelist returns repositories excluded from
+	// runtime-unused housekeeping tasks.
+	ListRuntimeUnusedRepositoryWhitelist(ctx context.Context) ([]RuntimeUnusedRepositoryWhitelistEntry, error)
+
+	// AddRuntimeUnusedRepositoryWhitelist adds one repository to the runtime-unused
+	// housekeeping whitelist.
+	AddRuntimeUnusedRepositoryWhitelist(ctx context.Context, repository string) error
+
+	// RemoveRuntimeUnusedRepositoryWhitelist removes one repository from the
+	// runtime-unused housekeeping whitelist.
+	RemoveRuntimeUnusedRepositoryWhitelist(ctx context.Context, repository string) error
 }
 
 // RepositoryFilter defines criteria for listing repositories
@@ -282,6 +294,13 @@ type RepositoryFilter struct {
 type RepositoriesListResponse struct {
 	Repositories []RepositoryInfo
 	Total        int
+}
+
+// RuntimeUnusedRepositoryWhitelistEntry represents one repository exempted
+// from runtime-unused housekeeping tasks.
+type RuntimeUnusedRepositoryWhitelistEntry struct {
+	Repository string
+	CreatedAt  int64 // Unix timestamp in seconds
 }
 
 // RepositoryTagFilter defines criteria for listing tags in a repository
