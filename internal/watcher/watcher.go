@@ -101,24 +101,6 @@ func (w *watcherImpl) Discover(ctx context.Context) error {
 	w.logger.Info("discovered target repositories",
 		"count", len(repositories))
 
-	cleanupTargets := make(map[string]string, len(repositories))
-	for _, repo := range repositories {
-		cleanupTargets[repo] = repo
-
-		if cosignStorageRepo := w.regsyncConfig.ResolveCosignStorageRepositoryForTarget(repo); cosignStorageRepo != "" {
-			cleanupTargets[cosignStorageRepo] = repo
-		}
-	}
-
-	for storageRepo, subjectRepo := range cleanupTargets {
-		if err := w.registryClient.CleanupLegacyCosignTags(ctx, storageRepo, subjectRepo); err != nil {
-			w.logger.Warn("failed to cleanup orphaned legacy attachment tags",
-				"storage_repo", storageRepo,
-				"subject_repo", subjectRepo,
-				"error", err)
-		}
-	}
-
 	// Process each repository
 	// Note: Rescan interval checking is handled within processTag's shouldScanImage logic
 	for _, repo := range repositories {

@@ -17,7 +17,6 @@ creds:
 defaults:
   parallel: 4
   interval: 60m
-  x-cosignRepository: myprivateregistry/suppline-cosign  # Optional: store cosign artifacts in a dedicated repository namespace
   cleanupTags: true
   cleanupTagsExclude:
   - ".*\\.sig$"

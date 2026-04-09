@@ -101,7 +101,6 @@ type RegistryCredential struct {
 // Defaults contains default configuration values
 type Defaults struct {
 	Parallel              int                  `yaml:"parallel"`
-	CosignRepository      string               `yaml:"x-cosignRepository,omitempty"`
 	RescanInterval        string               `yaml:"x-rescanInterval,omitempty"`
 	RuntimeInUseWindow    string               `yaml:"x-runtimeInUseWindow,omitempty"`
 	WorkerPollInterval    string               `yaml:"x-worker-poll-interval,omitempty"`

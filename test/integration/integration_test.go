@@ -1991,18 +1991,6 @@ func (m *mockWorkerRegistry) GetManifest(ctx context.Context, repository, digest
 	}, nil
 }
 
-func (m *mockWorkerRegistry) VerifyTagExists(ctx context.Context, repo, tag string) error {
-	return nil
-}
-
-func (m *mockWorkerRegistry) GetManifestWithTagVerification(ctx context.Context, repo, tag, digest string) (*registry.Manifest, error) {
-	return m.GetManifest(ctx, repo, digest)
-}
-
-func (m *mockWorkerRegistry) CleanupLegacyCosignTags(ctx context.Context, storageRepo, subjectRepo string) error {
-	return nil
-}
-
 type mockWorkerScanner struct {
 	sbomError error
 	vulnError error
