@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState } from 'react';
+import { useLocation } from 'react-router-dom';
 import { useAuth } from '../lib/auth';
 import { useToast } from '../lib/toast';
 import { copyToClipboard, loadAllRuntimeUnusedRepositories, summarizeRuntimeUnusedRepositories } from '../lib/utils';
@@ -667,6 +668,7 @@ function VEXExpiryTask({ data, inactiveEntries }: { data: VEXExpiryTasksResponse
 
 export default function TasksPage() {
   const { apiClient } = useAuth();
+  const location = useLocation();
   const [semverData, setSemverData] = useState<SemverUpdateTasksResponse | null>(null);
   const [runtimeUnusedData, setRuntimeUnusedData] = useState<RepositoriesResponse | null>(null);
   const [vexExpiryData, setVexExpiryData] = useState<VEXExpiryTasksResponse | null>(null);
@@ -697,6 +699,25 @@ export default function TasksPage() {
 
   useEffect(() => { load(); }, [load]);
 
+  useEffect(() => {
+    if (!location.hash || loading) {
+      return;
+    }
+
+    const id = location.hash.slice(1);
+    const target = document.getElementById(id);
+    if (!target) {
+      return;
+    }
+
+    target.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  }, [location.hash, loading]);
+
+  const activeAnchor = location.hash.slice(1);
+  const sectionClassName = (anchor: string) => (
+    `bg-bg-primary border rounded-xl overflow-hidden scroll-mt-24 ${activeAnchor === anchor ? 'border-accent shadow-[0_0_0_1px_rgba(62,207,142,0.35)]' : 'border-border'}`
+  );
+
   return (
     <div className="space-y-6">
       <div className="flex items-start justify-between">
@@ -716,7 +737,7 @@ export default function TasksPage() {
       </div>
 
       {/* SemVer Range Updates */}
-      <div className="bg-bg-primary border border-border rounded-xl overflow-hidden">
+      <section id="semver-range-updates" className={sectionClassName('semver-range-updates')}>
         <div className="flex items-center justify-between px-5 py-4 border-b border-border">
           <div className="flex items-center gap-2">
             <Tag className="w-4 h-4 text-accent" />
@@ -735,10 +756,10 @@ export default function TasksPage() {
             <SemverUpdateTask data={semverData} />
           ) : null}
         </div>
-      </div>
+      </section>
 
       {/* Runtime Unused Repositories */}
-      <div className="bg-bg-primary border border-border rounded-xl overflow-hidden">
+      <section id="unused-sync-repositories" className={sectionClassName('unused-sync-repositories')}>
         <div className="flex items-center justify-between px-5 py-4 border-b border-border">
           <div className="flex items-center gap-2">
             <Trash2 className="w-4 h-4 text-warning" />
@@ -757,10 +778,10 @@ export default function TasksPage() {
             <RuntimeUnusedRepositoryTask data={runtimeUnusedData} />
           ) : null}
         </div>
-      </div>
+      </section>
 
       {/* VEX Review Tasks */}
-      <div className="bg-bg-primary border border-border rounded-xl overflow-hidden">
+      <section id="vex-review" className={sectionClassName('vex-review')}>
         <div className="flex items-center justify-between px-5 py-4 border-b border-border">
           <div className="flex items-center gap-2">
             <Clock3 className="w-4 h-4 text-danger" />
@@ -779,7 +800,7 @@ export default function TasksPage() {
             <VEXExpiryTask data={vexExpiryData} inactiveEntries={inactiveVEXData} />
           ) : null}
         </div>
-      </div>
+      </section>
     </div>
   );
 }

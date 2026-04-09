@@ -130,7 +130,7 @@ export default function DashboardPage() {
           <div className="space-y-2">
             {data.inactiveVEXStatements > 0 && (
               <Link
-                to="/tasks"
+                to="/tasks#vex-review"
                 className="flex items-center justify-between gap-3 rounded-lg border border-warning/30 bg-warning-bg px-3 py-2 text-sm text-warning hover:brightness-95 transition"
               >
                 <span>
@@ -141,7 +141,7 @@ export default function DashboardPage() {
             )}
             {data.vexExpiredTaskCount > 0 && (
               <Link
-                to="/tasks"
+                to="/tasks#vex-review"
                 className="flex items-center justify-between gap-3 rounded-lg border border-danger/30 bg-danger-bg px-3 py-2 text-sm text-danger hover:brightness-95 transition"
               >
                 <span>
@@ -152,7 +152,7 @@ export default function DashboardPage() {
             )}
             {data.vexExpiringSoonTaskCount > 0 && (
               <Link
-                to="/tasks"
+                to="/tasks#vex-review"
                 className="flex items-center justify-between gap-3 rounded-lg border border-warning/30 bg-warning-bg px-3 py-2 text-sm text-warning hover:brightness-95 transition"
               >
                 <span>
@@ -163,7 +163,7 @@ export default function DashboardPage() {
             )}
             {data.runtimeUnusedTaskCount > 0 && (
               <Link
-                to="/tasks"
+                to="/tasks#unused-sync-repositories"
                 className="flex items-center justify-between gap-3 rounded-lg border border-warning/30 bg-warning-bg px-3 py-2 text-sm text-warning hover:brightness-95 transition"
               >
                 <span>
@@ -174,7 +174,7 @@ export default function DashboardPage() {
             )}
             {data.outOfBoundsTaskCount > 0 && (
               <Link
-                to="/tasks"
+                to="/tasks#semver-range-updates"
                 className="flex items-center justify-between gap-3 rounded-lg border border-warning/30 bg-warning-bg px-3 py-2 text-sm text-warning hover:brightness-95 transition"
               >
                 <span>
@@ -185,7 +185,7 @@ export default function DashboardPage() {
             )}
             {data.tightenTaskCount > 0 && (
               <Link
-                to="/tasks"
+                to="/tasks#semver-range-updates"
                 className="flex items-center justify-between gap-3 rounded-lg border border-accent/20 bg-bg-secondary px-3 py-2 text-sm text-text-secondary hover:bg-bg-tertiary transition"
               >
                 <span>
