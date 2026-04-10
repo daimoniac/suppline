@@ -21,6 +21,20 @@ type SigstoreAttestor struct {
 	cleanup func() // Cleanup function to remove temp key file
 }
 
+func (a *SigstoreAttestor) buildCosignAttestArgs(predicateType, predicatePath, imageRef string) []string {
+	return []string{
+		"attest",
+		"--key", a.keyPath,
+		"--type", predicateType,
+		"--predicate", predicatePath,
+		"--replace=true",
+		"--new-bundle-format",
+		"--yes",
+		"--tlog-upload=false",
+		imageRef,
+	}
+}
+
 // NewSigstoreAttestor creates a new Sigstore attestor
 // Note: Registry authentication should be handled separately during initialization
 func NewSigstoreAttestor(config AttestationConfig, logger *slog.Logger) (*SigstoreAttestor, error) {
@@ -101,15 +115,7 @@ func (a *SigstoreAttestor) AttestSBOM(ctx context.Context, imageRef string, sbom
 	tmpFile.Close()
 
 	// Use cosign CLI to attest
-	cmd := exec.CommandContext(ctx, "cosign", "attest",
-		"--key", a.keyPath,
-		"--type", "https://cyclonedx.org/bom",
-		"--predicate", tmpFile.Name(),
-		"--replace=true",
-		"--yes",
-		"--tlog-upload=false",
-		imageRef,
-	)
+	cmd := exec.CommandContext(ctx, "cosign", a.buildCosignAttestArgs("https://cyclonedx.org/bom", tmpFile.Name(), imageRef)...)
 	cmd.Env = os.Environ()
 	// Ensure COSIGN_PASSWORD is set from ATTESTATION_KEY_PASSWORD if available
 	if password := os.Getenv("ATTESTATION_KEY_PASSWORD"); password != "" {
@@ -159,15 +165,7 @@ func (a *SigstoreAttestor) AttestVulnerabilities(ctx context.Context, imageRef s
 	tmpFile.Close()
 
 	// Use cosign CLI to attest
-	cmd := exec.CommandContext(ctx, "cosign", "attest",
-		"--key", a.keyPath,
-		"--type", "vuln",
-		"--predicate", tmpFile.Name(),
-		"--replace=true",
-		"--yes",
-		"--tlog-upload=false",
-		imageRef,
-	)
+	cmd := exec.CommandContext(ctx, "cosign", a.buildCosignAttestArgs("vuln", tmpFile.Name(), imageRef)...)
 	cmd.Env = os.Environ()
 	// Ensure COSIGN_PASSWORD is set from ATTESTATION_KEY_PASSWORD if available
 	if password := os.Getenv("ATTESTATION_KEY_PASSWORD"); password != "" {
@@ -247,15 +245,7 @@ func (a *SigstoreAttestor) AttestVEX(ctx context.Context, imageRef string, state
 	tmpFile.Close()
 
 	// Use cosign CLI to attest with CycloneDX VEX type
-	cmd := exec.CommandContext(ctx, "cosign", "attest",
-		"--key", a.keyPath,
-		"--type", "https://cyclonedx.org/vex",
-		"--predicate", tmpFile.Name(),
-		"--replace=true",
-		"--yes",
-		"--tlog-upload=false",
-		imageRef,
-	)
+	cmd := exec.CommandContext(ctx, "cosign", a.buildCosignAttestArgs("https://cyclonedx.org/vex", tmpFile.Name(), imageRef)...)
 	cmd.Env = os.Environ()
 	if password := os.Getenv("ATTESTATION_KEY_PASSWORD"); password != "" {
 		cmd.Env = append(cmd.Env, "COSIGN_PASSWORD="+password)
@@ -306,15 +296,7 @@ func (a *SigstoreAttestor) AttestSCAI(ctx context.Context, imageRef string, scai
 	tmpFile.Close()
 
 	// Use cosign CLI to attest
-	cmd := exec.CommandContext(ctx, "cosign", "attest",
-		"--key", a.keyPath,
-		"--type", "https://in-toto.io/attestation/scai/attribute-report/v0.3",
-		"--predicate", tmpFile.Name(),
-		"--replace=true",
-		"--yes",
-		"--tlog-upload=false",
-		imageRef,
-	)
+	cmd := exec.CommandContext(ctx, "cosign", a.buildCosignAttestArgs("https://in-toto.io/attestation/scai/attribute-report/v0.3", tmpFile.Name(), imageRef)...)
 	cmd.Env = os.Environ()
 	// Ensure COSIGN_PASSWORD is set from ATTESTATION_KEY_PASSWORD if available
 	if password := os.Getenv("ATTESTATION_KEY_PASSWORD"); password != "" {

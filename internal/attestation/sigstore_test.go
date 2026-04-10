@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/base64"
 	"encoding/json"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -193,5 +194,44 @@ func TestAttestSBOM_CosignCommandConstruction(t *testing.T) {
 			t.Errorf("unexpected validation error: %v", err)
 		}
 		// Expected: "failed to attest SBOM with cosign" or similar execution error
+	}
+}
+
+func TestBuildCosignAttestArgs_UsesOCISigstoreBundleFormat(t *testing.T) {
+	config := AttestationConfig{
+		KeyBased: KeyBasedConfig{
+			Key: base64.StdEncoding.EncodeToString([]byte("test-key-content")),
+		},
+	}
+
+	attestor, err := NewSigstoreAttestor(config, nil)
+	if err != nil {
+		t.Fatalf("failed to create attestor: %v", err)
+	}
+
+	args := attestor.buildCosignAttestArgs("https://cyclonedx.org/bom", "/tmp/predicate.json", "registry.example.com/repo@sha256:abc")
+
+	if len(args) == 0 || args[0] != "attest" {
+		t.Fatalf("expected first arg to be attest, got %v", args)
+	}
+
+	if !slices.Contains(args, "--new-bundle-format") {
+		t.Fatalf("expected --new-bundle-format in args, got %v", args)
+	}
+
+	if !slices.Contains(args, "--replace=true") {
+		t.Fatalf("expected --replace=true in args, got %v", args)
+	}
+
+	if !slices.Contains(args, "--tlog-upload=false") {
+		t.Fatalf("expected --tlog-upload=false in args, got %v", args)
+	}
+
+	if !slices.Contains(args, "https://cyclonedx.org/bom") {
+		t.Fatalf("expected predicate type in args, got %v", args)
+	}
+
+	if !slices.Contains(args, "/tmp/predicate.json") {
+		t.Fatalf("expected predicate path in args, got %v", args)
 	}
 }

@@ -6,6 +6,7 @@ This directory contains integration tests that verify the components work togeth
 
 - Docker and Docker Compose installed
 - Go 1.21 or later
+- ORAS CLI (optional but recommended for referrer validation checks)
 - Make (optional, but recommended)
 
 ## Running Integration Tests
@@ -53,7 +54,8 @@ The integration tests cover:
 - **End-to-End Flow**: Complete workflow with SBOM and vulnerability attestations using only 2 Trivy invocations
 - **Digest Resolution**: Automatically resolves image tags to digests to avoid cosign warnings
 - **Local Registry Integration**: Uses local test registry (localhost:5000) for complete end-to-end attestation testing
-- **Attestation Verification**: Verifies created attestations using cosign with the public key
+- **Attestation Verification**: Verifies created attestations using cosign with `--new-bundle-format`
+- **Referrer Validation**: Confirms `oras discover` returns Sigstore bundle referrers for newly attested digests
 
 ### 1. Trivy Scanner Integration
 - Health check connectivity

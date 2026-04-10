@@ -22,7 +22,7 @@ Cloud native, one service, no SaaS dependency — air-gap compatible by design.
 - **Continuous Registry Mirroring** - Syncs images from public registries to your local mirror
 - **Vulnerability Scanning** - Runs Trivy to identify vulnerabilities and generate SBOMs
 - **Policy Engine** - CEL-based policies with VEX exemption support
-- **Sigstore Attestations** - Creates signed attestations via Cosign
+- **Sigstore Attestations** - Creates signed attestations via Cosign as OCI Sigstore bundle referrers
 - **State Persistence** - SQLite-based scan history and vulnerability tracking
 - **REST API** - Query results, trigger rescans, manage policies
 - **Observability** - Prometheus metrics, structured JSON logs, health checks
