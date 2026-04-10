@@ -5,6 +5,7 @@ import (
 	"time"
 
 	"github.com/daimoniac/suppline/internal/types"
+	"gopkg.in/yaml.v3"
 )
 
 // Config represents the complete application configuration
@@ -127,7 +128,27 @@ type SyncEntry struct {
 	SCAIValidityExtension string               `yaml:"x-scaiValidityExtension,omitempty"`
 	Policy                *PolicyConfig        `yaml:"x-policy,omitempty"`
 	VEXRepo               *bool                `yaml:"x-vex-repo,omitempty"`
-	Ignore                bool                 `yaml:"x-supplineIgnore,omitempty"` // If true, suppline skips this entry entirely
+	Ignore                bool                 `yaml:"-"` // If true, suppline skips this entry entirely
+}
+
+// UnmarshalYAML supports both x-suppline-ignore and the legacy x-supplineIgnore field names.
+func (s *SyncEntry) UnmarshalYAML(value *yaml.Node) error {
+	type syncEntryAlias SyncEntry
+
+	var aux struct {
+		syncEntryAlias `yaml:",inline"`
+		IgnoreLegacy   bool `yaml:"x-supplineIgnore,omitempty"`
+		IgnoreKebab    bool `yaml:"x-suppline-ignore,omitempty"`
+	}
+
+	if err := value.Decode(&aux); err != nil {
+		return err
+	}
+
+	*s = SyncEntry(aux.syncEntryAlias)
+	s.Ignore = aux.IgnoreLegacy || aux.IgnoreKebab
+
+	return nil
 }
 
 // TagFilter defines tag filtering rules

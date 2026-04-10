@@ -25,6 +25,8 @@ func ParseRegsync(path string) (*RegsyncConfig, error) {
 		return nil, errors.NewPermanentf("failed to parse regsync YAML: %w", err)
 	}
 
+	filterIgnoredSyncEntries(&config)
+
 	// Expand environment variables throughout the configuration
 	if err := expandConfig(&config); err != nil {
 		return nil, errors.NewPermanentf("failed to expand configuration: %w", err)
@@ -36,6 +38,22 @@ func ParseRegsync(path string) (*RegsyncConfig, error) {
 	}
 
 	return &config, nil
+}
+
+func filterIgnoredSyncEntries(config *RegsyncConfig) {
+	if len(config.Sync) == 0 {
+		return
+	}
+
+	filtered := config.Sync[:0]
+	for _, sync := range config.Sync {
+		if sync.IsIgnored() {
+			continue
+		}
+		filtered = append(filtered, sync)
+	}
+
+	config.Sync = filtered
 }
 
 // expandConfig processes all configuration fields and expands Go template expressions
@@ -123,14 +141,14 @@ func (c *RegsyncConfig) GetCredentialForRegistry(registry string) *RegistryCrede
 	return nil
 }
 
-// IsIgnored returns true if the sync entry has x-supplineIgnore set to true.
+// IsIgnored returns true if the sync entry has x-suppline-ignore set to true.
 func (s *SyncEntry) IsIgnored() bool {
 	return s.Ignore
 }
 
 // GetTargetRepositories returns all target repositories from sync entries
 // For type=image entries, strips the tag to return just the repository name
-// Entries with x-supplineIgnore: true are excluded.
+// Entries with x-suppline-ignore: true are excluded.
 func (c *RegsyncConfig) GetTargetRepositories() []string {
 	seen := make(map[string]bool)
 	targets := make([]string, 0, len(c.Sync))

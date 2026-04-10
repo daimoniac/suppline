@@ -525,28 +525,34 @@ func TestSupplineIgnore_IsIgnored(t *testing.T) {
 	ignored := SyncEntry{Source: "alpine", Target: "registry/alpine", Type: "repository", Ignore: true}
 
 	if active.IsIgnored() {
-		t.Error("expected IsIgnored() = false for entry without x-supplineIgnore")
+		t.Error("expected IsIgnored() = false for entry without x-suppline-ignore")
 	}
 	if !ignored.IsIgnored() {
-		t.Error("expected IsIgnored() = true for entry with x-supplineIgnore: true")
+		t.Error("expected IsIgnored() = true for entry with x-suppline-ignore: true")
 	}
 }
 
 func TestSupplineIgnore_ParseYAML(t *testing.T) {
-	content := `version: 1
-sync:
-  - source: nginx
-    target: myregistry/nginx
-    type: repository
-  - source: alpine
-    target: myregistry/alpine
-    type: repository
-    x-supplineIgnore: true
-  - source: redis
-    target: myregistry/redis
-    type: repository
-    x-supplineIgnore: false
-`
+	content := strings.Join([]string{
+		"version: 1",
+		"sync:",
+		"  - source: nginx",
+		"    target: myregistry/nginx",
+		"    type: repository",
+		"  - source: alpine",
+		"    target: myregistry/alpine",
+		"    type: repository",
+		"    x-suppline-ignore: true",
+		"  - source: redis",
+		"    target: myregistry/redis",
+		"    type: repository",
+		"    x-suppline-ignore: false",
+		"  - source: busybox",
+		"    target: myregistry/busybox",
+		"    type: repository",
+		"    x-supplineIgnore: true",
+		"",
+	}, "\n")
 	tmpfile, err := os.CreateTemp("", "regsync-*.yml")
 	if err != nil {
 		t.Fatal(err)
@@ -565,14 +571,15 @@ sync:
 		t.Fatalf("ParseRegsync failed: %v", err)
 	}
 
-	if cfg.Sync[0].Ignore {
-		t.Error("nginx entry: expected Ignore=false (default), got true")
+	if len(cfg.Sync) != 2 {
+		t.Fatalf("expected 2 non-ignored sync entries after parsing, got %d", len(cfg.Sync))
 	}
-	if !cfg.Sync[1].Ignore {
-		t.Error("alpine entry: expected Ignore=true, got false")
+
+	if cfg.Sync[0].Source != "nginx" {
+		t.Errorf("expected first retained entry to be nginx, got %q", cfg.Sync[0].Source)
 	}
-	if cfg.Sync[2].Ignore {
-		t.Error("redis entry: expected Ignore=false (explicit), got true")
+	if cfg.Sync[1].Source != "redis" {
+		t.Errorf("expected second retained entry to be redis, got %q", cfg.Sync[1].Source)
 	}
 }
 

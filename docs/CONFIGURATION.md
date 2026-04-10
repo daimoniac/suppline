@@ -116,7 +116,7 @@ sync:
     target: string            # Target repository
     type: string              # Type: "image" or "repository"
     schedule: string          # Cron schedule (optional)
-    x-supplineIgnore: bool    # If true, suppline skips this entry entirely (default: false)
+    x-suppline-ignore: bool   # If true, suppline skips this entry entirely (default: false)
     x-rescanInterval: string  # Rescan interval override (optional)
     x-policy:                 # Policy override (optional)
       expression: string
@@ -199,15 +199,15 @@ sync:
   - source: legacy-app
     target: myregistry.example.com/legacy-app
     type: repository
-    x-supplineIgnore: true
+    x-suppline-ignore: true
 ```
 
 ### Ignoring Sync Entries
 
-The `x-supplineIgnore` field lets you temporarily disable a sync entry without deleting it from `suppline.yml`.
+The `x-suppline-ignore` field lets you temporarily disable a sync entry without deleting it from `suppline.yml`.
 
 **Behaviour:**
-- When `true`, suppline skips the entry in all processing: no scanning, no attestation, and the target is excluded from `GetTargetRepositories` results (API, metrics, watcher).
+- When `true`, the entry is discarded while reading `suppline.yml`, so it is excluded from all downstream processing.
 - When `false` (default), the entry is processed normally.
 - The field is per-entry only; there is no defaults-level equivalent.
 
@@ -224,13 +224,13 @@ sync:
   - source: legacy-app
     target: myregistry.example.com/legacy-app
     type: repository
-    x-supplineIgnore: true
+    x-suppline-ignore: true
 
   # Explicit false — same as omitting the field
   - source: alpine
     target: myregistry.example.com/alpine
     type: repository
-    x-supplineIgnore: false
+    x-suppline-ignore: false
 ```
 
 ### Rescan Interval Configuration
