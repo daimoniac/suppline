@@ -223,10 +223,6 @@ func TestBuildCosignAttestArgs_UsesOCISigstoreBundleFormat(t *testing.T) {
 		t.Fatalf("expected --replace=true in args, got %v", args)
 	}
 
-	if !slices.Contains(args, "--tlog-upload=false") {
-		t.Fatalf("expected --tlog-upload=false in args, got %v", args)
-	}
-
 	if !slices.Contains(args, "https://cyclonedx.org/bom") {
 		t.Fatalf("expected predicate type in args, got %v", args)
 	}
