@@ -1,6 +1,6 @@
 # Multi-stage Dockerfile for suppline
 # Stage 1: Build the Go binary
-FROM golang:1.26.1-alpine AS builder
+FROM golang:1.26.2-alpine AS builder
 
 # Install build dependencies
 RUN apk add --no-cache git ca-certificates gcc musl-dev sqlite-dev

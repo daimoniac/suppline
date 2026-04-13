@@ -1,5 +1,5 @@
 # ---- Builder ----
-FROM golang:1.25-alpine AS builder
+FROM golang:1.26.2-alpine AS builder
 
 WORKDIR /build
 
@@ -14,7 +14,7 @@ RUN CGO_ENABLED=0 GOOS=linux go build \
     .
 
 # ---- Runtime ----
-FROM alpine:3.21
+FROM alpine:3.23.4
 
 # ca-certificates required for TLS connections to the suppline webhook
 RUN apk add --no-cache ca-certificates
