@@ -24,6 +24,7 @@ type DatabaseCollector struct {
 	vulnerabilitiesFoundDesc *prometheus.Desc
 	policyFailedDesc         *prometheus.Desc
 	policyPendingDesc        *prometheus.Desc
+	clusterLastSyncDesc      *prometheus.Desc
 }
 
 // NewDatabaseCollector creates a new database metrics collector
@@ -49,6 +50,12 @@ func NewDatabaseCollector(store statestore.StateStore, logger *slog.Logger) *Dat
 			[]string{"source"},
 			nil,
 		),
+		clusterLastSyncDesc: prometheus.NewDesc(
+			"suppline_cluster_last_sync_timestamp_seconds",
+			"Unix timestamp of the last successful cluster inventory sync, labelled by cluster name",
+			[]string{"cluster"},
+			nil,
+		),
 	}
 }
 
@@ -66,12 +73,17 @@ func (c *DatabaseCollector) Describe(ch chan<- *prometheus.Desc) {
 	ch <- c.vulnerabilitiesFoundDesc
 	ch <- c.policyFailedDesc
 	ch <- c.policyPendingDesc
+	ch <- c.clusterLastSyncDesc
 }
 
 // Collect queries the database and sends current metrics to the provided channel
 func (c *DatabaseCollector) Collect(ch chan<- prometheus.Metric) {
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 	defer cancel()
+
+	if clusterStore, ok := c.store.(statestore.ClusterInventoryStore); ok {
+		c.collectClusterLastSync(ctx, clusterStore, ch)
+	}
 
 	queryStore, ok := c.store.(statestore.StateStoreQuery)
 	if !ok {
@@ -84,6 +96,30 @@ func (c *DatabaseCollector) Collect(ch chan<- prometheus.Metric) {
 
 	// Collect vulnerability metrics
 	c.collectVulnerabilities(ctx, queryStore, ch)
+}
+
+func (c *DatabaseCollector) collectClusterLastSync(ctx context.Context, store statestore.ClusterInventoryStore, ch chan<- prometheus.Metric) {
+	summaries, err := store.ListClusterSummaries(ctx)
+	if err != nil {
+		if ctx.Err() != nil {
+			c.logger.Debug("cluster sync metric collection timed out", "error", err)
+		} else {
+			c.logger.Error("failed to collect cluster sync metrics", "error", err)
+		}
+		return
+	}
+
+	for _, summary := range summaries {
+		if summary.LastReported == nil {
+			continue
+		}
+		ch <- prometheus.MustNewConstMetric(
+			c.clusterLastSyncDesc,
+			prometheus.GaugeValue,
+			float64(*summary.LastReported),
+			summary.Name,
+		)
+	}
 }
 
 func (c *DatabaseCollector) collectPolicyOutcomes(ctx context.Context, store statestore.StateStoreQuery, ch chan<- prometheus.Metric) {

@@ -7,7 +7,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/daimoniac/suppline/internal/observability"
 	"github.com/daimoniac/suppline/internal/statestore"
 )
 
@@ -108,8 +107,6 @@ func (s *APIServer) handleClusterInventory(w http.ResponseWriter, r *http.Reques
 		s.respondError(w, http.StatusInternalServerError, "failed to record cluster inventory")
 		return
 	}
-
-	observability.GetMetrics().ClusterLastSync.WithLabelValues(clusterName).Set(float64(time.Now().Unix()))
 
 	s.respondJSON(w, http.StatusOK, map[string]interface{}{
 		"status":          "ok",

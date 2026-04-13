@@ -6,6 +6,7 @@ import (
 	"log/slog"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/daimoniac/suppline/internal/statestore"
 	"github.com/prometheus/client_golang/prometheus"
@@ -16,8 +17,25 @@ import (
 type mockStateStore struct {
 	statestore.StateStoreQuery
 
-	scans  []*statestore.ScanRecord
-	counts map[string]int
+	scans     []*statestore.ScanRecord
+	counts    map[string]int
+	summaries []statestore.ClusterSummary
+}
+
+func (m *mockStateStore) ListClusterSummaries(ctx context.Context) ([]statestore.ClusterSummary, error) {
+	return m.summaries, nil
+}
+
+func (m *mockStateStore) RecordClusterInventory(ctx context.Context, clusterName string, images []statestore.ClusterImageEntry, reportedAt time.Time) error {
+	return nil
+}
+
+func (m *mockStateStore) ListClusterImages(ctx context.Context, clusterName string) ([]statestore.ClusterImageSummary, error) {
+	return nil, nil
+}
+
+func (m *mockStateStore) DeleteClusterInventory(ctx context.Context, clusterName string) error {
+	return nil
 }
 
 func (m *mockStateStore) GetRuntimeUsageForScans(ctx context.Context, scans []statestore.RuntimeLookupInput) (map[string]statestore.RuntimeUsage, error) {
@@ -67,9 +85,16 @@ func TestDatabaseCollector(t *testing.T) {
 		{Digest: "jkl", PolicyPassed: false, RuntimeUsed: false, PolicyStatus: "pending"},
 	}
 
+	ts1 := int64(1710000000)
+	ts2 := int64(1710001234)
+
 	store := &mockStateStore{
 		counts: counts,
 		scans:  scans,
+		summaries: []statestore.ClusterSummary{
+			{Name: "cluster-a", LastReported: &ts1, ImageCount: 3},
+			{Name: "cluster-b", LastReported: &ts2, ImageCount: 1},
+		},
 	}
 
 	// NewDatabaseCollector takes statestore.StateStore
@@ -78,10 +103,9 @@ func TestDatabaseCollector(t *testing.T) {
 	reg := prometheus.NewRegistry()
 	reg.MustRegister(collector)
 
-	// Use CollectAndCount
 	count := testutil.CollectAndCount(collector)
-	if count != 8 { // 2 policy failed source labels + 2 policy pending source labels + 4 vuln severities
-		t.Errorf("Expected 8 metrics, got %d", count)
+	if count != 10 { // 2 policy failed source labels + 2 policy pending source labels + 4 vuln severities + 2 cluster sync
+		t.Errorf("Expected 10 metrics, got %d", count)
 	}
 
 	// Verify specific values
@@ -118,5 +142,16 @@ func TestDatabaseCollector(t *testing.T) {
 
 	if err := testutil.GatherAndCompare(reg, strings.NewReader(expectedPolicyPending), "suppline_policy_pending_current"); err != nil {
 		t.Errorf("Unexpected policy pending metrics: %v", err)
+	}
+
+	expectedClusterSync := `
+		# HELP suppline_cluster_last_sync_timestamp_seconds Unix timestamp of the last successful cluster inventory sync, labelled by cluster name
+		# TYPE suppline_cluster_last_sync_timestamp_seconds gauge
+		suppline_cluster_last_sync_timestamp_seconds{cluster="cluster-a"} 1.71e+09
+		suppline_cluster_last_sync_timestamp_seconds{cluster="cluster-b"} 1.710001234e+09
+	`
+
+	if err := testutil.GatherAndCompare(reg, strings.NewReader(expectedClusterSync), "suppline_cluster_last_sync_timestamp_seconds"); err != nil {
+		t.Errorf("Unexpected cluster sync metrics: %v", err)
 	}
 }

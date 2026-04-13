@@ -34,9 +34,6 @@ type Metrics struct {
 	// Worker metrics
 	WorkerTasksProcessed prometheus.Counter
 	WorkerErrors         prometheus.Counter
-
-	// Cluster metrics
-	ClusterLastSync *prometheus.GaugeVec
 }
 
 var (
@@ -122,15 +119,6 @@ func GetMetrics() *Metrics {
 				Name: "suppline_worker_errors_total",
 				Help: "Total number of worker errors",
 			}),
-
-			// Cluster metrics
-			ClusterLastSync: promauto.NewGaugeVec(
-				prometheus.GaugeOpts{
-					Name: "suppline_cluster_last_sync_timestamp_seconds",
-					Help: "Unix timestamp of the last successful cluster inventory sync, labelled by cluster name",
-				},
-				[]string{"cluster"},
-			),
 		}
 	})
 	return metricsInstance
