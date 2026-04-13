@@ -13,6 +13,7 @@ import (
 	"github.com/daimoniac/suppline/internal/observability"
 	"github.com/daimoniac/suppline/internal/queue"
 	"github.com/daimoniac/suppline/internal/statestore"
+	"github.com/prometheus/client_golang/prometheus/testutil"
 )
 
 type mockClusterInventoryStore struct {
@@ -247,5 +248,35 @@ func TestHandleGetKubernetesClusterImages(t *testing.T) {
 	}
 	if resp[0].Namespace != "default" || resp[0].ImageRef != "nginx:1.25" {
 		t.Fatalf("Unexpected first cluster image row: %+v", resp[0])
+	}
+}
+
+func TestHandleClusterInventory_SetsLastSyncMetric(t *testing.T) {
+	store := &mockClusterInventoryStore{mockStateStore: &mockStateStore{}}
+	server := webhookTestServer(t, store)
+
+	before := time.Now().Unix()
+
+	body := `{"cluster":"metric-test-cluster","images":[{"namespace":"default","image_ref":"nginx:1.25"}]}`
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/webhook/cluster-inventory", strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+
+	server.router.ServeHTTP(w, req)
+	if w.Code != http.StatusOK {
+		t.Fatalf("Expected status %d, got %d body=%s", http.StatusOK, w.Code, w.Body.String())
+	}
+
+	after := time.Now().Unix()
+
+	m := observability.GetMetrics()
+	gauge, err := m.ClusterLastSync.GetMetricWithLabelValues("metric-test-cluster")
+	if err != nil {
+		t.Fatalf("failed to get ClusterLastSync metric: %v", err)
+	}
+
+	got := int64(testutil.ToFloat64(gauge))
+	if got < before || got > after {
+		t.Fatalf("ClusterLastSync metric value %d not in expected range [%d, %d]", got, before, after)
 	}
 }
