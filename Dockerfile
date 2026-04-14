@@ -41,23 +41,12 @@ RUN mkdir -p /build/data /build/config
 # Stage 2: Create minimal runtime image
 FROM alpine:3.23.3
 
-ARG COSIGN_VERSION=v2.4.1
-ARG TRIVY_VERSION=0.69.3
-ARG TARGETARCH
-
 # Install runtime dependencies including trivy client
-RUN apk add --no-cache ca-certificates sqlite-libs wget && \
-        case "${TARGETARCH}" in \
-            amd64) COSIGN_ARCH=amd64; TRIVY_ARCH=64bit ;; \
-            arm64) COSIGN_ARCH=arm64; TRIVY_ARCH=ARM64 ;; \
-            *) echo "unsupported TARGETARCH: ${TARGETARCH}" >&2; exit 1 ;; \
-        esac && \
-        wget -O /usr/local/bin/cosign "https://github.com/sigstore/cosign/releases/download/${COSIGN_VERSION}/cosign-linux-${COSIGN_ARCH}" && \
-    chmod +x /usr/local/bin/cosign && \
-        wget "https://github.com/aquasecurity/trivy/releases/download/v${TRIVY_VERSION}/trivy_${TRIVY_VERSION}_Linux-${TRIVY_ARCH}.tar.gz" && \
-        tar zxvf "trivy_${TRIVY_VERSION}_Linux-${TRIVY_ARCH}.tar.gz" trivy && \
+RUN apk add --no-cache ca-certificates sqlite-libs wget cosign && \
+    wget https://github.com/aquasecurity/trivy/releases/download/v0.69.3/trivy_0.69.3_Linux-64bit.tar.gz && \
+    tar zxvf trivy_0.69.3_Linux-64bit.tar.gz trivy && \
     mv trivy /usr/local/bin/ && \
-        rm "trivy_${TRIVY_VERSION}_Linux-${TRIVY_ARCH}.tar.gz"
+    rm trivy_0.69.3_Linux-64bit.tar.gz
 
 # Create non-root user
 RUN addgroup -g 1000 suppline && \

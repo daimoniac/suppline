@@ -40,8 +40,6 @@ jobs:
 
       - name: Install cosign
         uses: sigstore/cosign-installer@v3.7.0
-        with:
-          cosign-release: 'v2.4.1'
 
       - name: Run unit tests
         run: go test -v -race -coverprofile=coverage.txt -covermode=atomic ./internal/...
@@ -91,69 +89,3 @@ jobs:
           
       - name: Run golangci-lint
         run: golangci-lint run --timeout=5m
-
-  sigstore-bundle-referrer-validation:
-    name: Sigstore Bundle Referrer Validation
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-
-      - name: Install cosign
-        uses: sigstore/cosign-installer@v3.7.0
-        with:
-          cosign-release: 'v2.4.1'
-
-      - name: Install ORAS CLI
-        uses: oras-project/setup-oras@v1
-        with:
-          version: 1.2.2
-
-      - name: Set up Go
-        uses: actions/setup-go@v5
-        with:
-          go-version: '1.24'
-
-      - name: Install crane
-        run: go install github.com/google/go-containerregistry/cmd/crane@v0.20.3
-
-      - name: Validate OCI Sigstore bundle referrers
-        env:
-          COSIGN_PASSWORD: test-password
-        run: |
-          set -euo pipefail
-
-          REGISTRY_PORT=5001
-          IMAGE_REPO="localhost:${REGISTRY_PORT}/suppline/attestation-test"
-          IMAGE_TAG="bundle-validation"
-          IMAGE_REF="${IMAGE_REPO}:${IMAGE_TAG}"
-
-          docker run -d --rm --name test-registry -p "${REGISTRY_PORT}:5000" registry:2
-          trap 'docker rm -f test-registry >/dev/null 2>&1 || true' EXIT
-
-          docker pull alpine:3.22
-          docker tag alpine:3.22 "${IMAGE_REF}"
-          docker push "${IMAGE_REF}"
-
-          cat > predicate.json <<'EOF'
-          {"build":"suppline-ci","type":"bundle-validation"}
-          EOF
-
-          cosign generate-key-pair
-
-          cosign attest \
-            --key cosign.key \
-            --type https://cyclonedx.org/bom \
-            --predicate predicate.json \
-            --new-bundle-format \
-            --allow-insecure-registry \
-            --tlog-upload=false \
-            --yes \
-            "${IMAGE_REF}"
-
-          DIGEST="$(crane digest --insecure "${IMAGE_REF}")"
-          DISCOVER_REF="${IMAGE_REPO}@${DIGEST}"
-
-          oras discover --plain-http --format json "${DISCOVER_REF}" | tee discover.json
-
-          jq -e '.. | strings | select(test("sigstore\\.bundle"))' discover.json >/dev/null

@@ -9,7 +9,6 @@ import (
 	"log/slog"
 	"os"
 	"os/exec"
-	"strings"
 	"testing"
 	"time"
 
@@ -114,11 +113,6 @@ func getEnv(key, defaultValue string) string {
 		return value
 	}
 	return defaultValue
-}
-
-func containsSigstoreBundleMediaType(output []byte) bool {
-	s := string(output)
-	return strings.Contains(s, "application/vnd.dev.sigstore.bundle") || strings.Contains(s, "sigstore.bundle")
 }
 
 // getImageDigest resolves an image tag to its digest using docker/crane
@@ -1267,7 +1261,6 @@ func TestOptimizedAttestationFlow(t *testing.T) {
 			verifyCmd := exec.CommandContext(ctx, "cosign", "verify-attestation",
 				"--key", pubKeyPath,
 				"--type", "https://cyclonedx.org/bom",
-				"--new-bundle-format",
 				"--insecure-ignore-tlog",
 				imageRef,
 			)
@@ -1284,20 +1277,6 @@ func TestOptimizedAttestationFlow(t *testing.T) {
 					t.Error("Expected attestation output, got empty")
 				} else {
 					t.Logf("Attestation output size: %d bytes", len(verifyOutput))
-				}
-
-				if _, lookPathErr := exec.LookPath("oras"); lookPathErr != nil {
-					t.Logf("Skipping oras discover validation: oras not found: %v", lookPathErr)
-				} else {
-					discoverCmd := exec.CommandContext(ctx, "oras", "discover", "--plain-http", "--format", "json", imageRef)
-					discoverOutput, discoverErr := discoverCmd.CombinedOutput()
-					if discoverErr != nil {
-						t.Errorf("oras discover failed: %v (output: %s)", discoverErr, string(discoverOutput))
-					} else if !containsSigstoreBundleMediaType(discoverOutput) {
-						t.Errorf("expected oras discover output to include Sigstore bundle referrer media type, got: %s", string(discoverOutput))
-					} else {
-						t.Log("oras discover confirmed Sigstore bundle referrer")
-					}
 				}
 			}
 		}
