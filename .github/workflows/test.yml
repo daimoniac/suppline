@@ -41,7 +41,7 @@ jobs:
       - name: Install cosign
         uses: sigstore/cosign-installer@v3.7.0
         with:
-          cosign-release: 'v3.0.6'
+          cosign-release: 'v2.4.1'
 
       - name: Run unit tests
         run: go test -v -race -coverprofile=coverage.txt -covermode=atomic ./internal/...
@@ -102,7 +102,7 @@ jobs:
       - name: Install cosign
         uses: sigstore/cosign-installer@v3.7.0
         with:
-          cosign-release: 'v3.0.6'
+          cosign-release: 'v2.4.1'
 
       - name: Install ORAS CLI
         uses: oras-project/setup-oras@v1
@@ -147,6 +147,7 @@ jobs:
             --predicate predicate.json \
             --new-bundle-format \
             --allow-insecure-registry \
+            --tlog-upload=false \
             --yes \
             "${IMAGE_REF}"
 

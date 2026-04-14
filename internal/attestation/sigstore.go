@@ -7,7 +7,6 @@ import (
 	"log/slog"
 	"os"
 	"os/exec"
-	"strings"
 	"time"
 
 	"github.com/daimoniac/suppline/internal/errors"
@@ -22,20 +21,6 @@ type SigstoreAttestor struct {
 	cleanup func() // Cleanup function to remove temp key file
 }
 
-func ensureCosignSupportsNewBundleFormat() error {
-	helpCmd := exec.Command("cosign", "attest", "--help")
-	output, err := helpCmd.CombinedOutput()
-	if err != nil {
-		return errors.NewPermanentf("failed to check cosign attest capabilities: %w (output: %s)", err, string(output))
-	}
-
-	if !strings.Contains(string(output), "--new-bundle-format") {
-		return errors.NewPermanentf("cosign attest does not support --new-bundle-format; install cosign v3.0.6 or newer")
-	}
-
-	return nil
-}
-
 func (a *SigstoreAttestor) buildCosignAttestArgs(predicateType, predicatePath, imageRef string) []string {
 	return []string{
 		"attest",
@@ -45,6 +30,7 @@ func (a *SigstoreAttestor) buildCosignAttestArgs(predicateType, predicatePath, i
 		"--replace=true",
 		"--new-bundle-format",
 		"--yes",
+		"--tlog-upload=false",
 		imageRef,
 	}
 }
@@ -54,10 +40,6 @@ func (a *SigstoreAttestor) buildCosignAttestArgs(predicateType, predicatePath, i
 func NewSigstoreAttestor(config AttestationConfig, logger *slog.Logger) (*SigstoreAttestor, error) {
 	if logger == nil {
 		logger = slog.Default()
-	}
-
-	if err := ensureCosignSupportsNewBundleFormat(); err != nil {
-		return nil, err
 	}
 
 	// Validate configuration

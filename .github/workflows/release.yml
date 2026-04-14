@@ -83,7 +83,7 @@ jobs:
         with:
           context: .
           file: ./Dockerfile
-          platforms: linux/amd64
+          platforms: linux/amd64,linux/arm64
           push: true
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
@@ -127,7 +127,7 @@ jobs:
         with:
           context: ./ui
           file: ./ui/Dockerfile
-          platforms: linux/amd64
+          platforms: linux/amd64,linux/arm64
           push: true
           tags: ${{ steps.meta-ui.outputs.tags }}
           labels: ${{ steps.meta-ui.outputs.labels }}
@@ -171,7 +171,7 @@ jobs:
         with:
           context: .
           file: ./Dockerfile.trivy
-          platforms: linux/amd64
+          platforms: linux/amd64,linux/arm64
           push: true
           tags: ${{ steps.meta-trivy.outputs.tags }}
           labels: ${{ steps.meta-trivy.outputs.labels }}
