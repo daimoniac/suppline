@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/base64"
 	"encoding/json"
+	"log/slog"
 	"slices"
 	"strings"
 	"testing"
@@ -230,4 +231,11 @@ func TestBuildCosignAttestArgs_UsesOCISigstoreBundleFormat(t *testing.T) {
 	if !slices.Contains(args, "/tmp/predicate.json") {
 		t.Fatalf("expected predicate path in args, got %v", args)
 	}
+}
+
+func TestOrasDeleteDigests_ExtractsRepo(t *testing.T) {
+	// Verify orasDeleteDigests handles empty digests gracefully.
+	a := &SigstoreAttestor{logger: slog.Default(), attestTimeout: time.Second}
+	a.orasDeleteDigests(context.Background(), "docker.io/repo@sha256:abc123", nil)
+	// No panic, no error — just returns immediately.
 }

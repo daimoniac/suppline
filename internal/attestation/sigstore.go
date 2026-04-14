@@ -58,6 +58,90 @@ func resolveCosignAttestTimeout(logger *slog.Logger) time.Duration {
 	return timeout
 }
 
+// normalizeForOras ensures the image ref includes a registry hostname.
+// oras (unlike cosign) doesn't default bare namespace/repo to docker.io.
+func normalizeForOras(ref string) string {
+	// Strip digest/tag to inspect the repo portion
+	repo := ref
+	if idx := strings.Index(repo, "@"); idx != -1 {
+		repo = repo[:idx]
+	} else if idx := strings.LastIndex(repo, ":"); idx != -1 {
+		repo = repo[:idx]
+	}
+	// If the first path component contains a dot or colon it's already a registry host.
+	firstSlash := strings.Index(repo, "/")
+	if firstSlash == -1 {
+		return "docker.io/library/" + ref
+	}
+	first := repo[:firstSlash]
+	if strings.ContainsAny(first, ".:") || first == "localhost" {
+		return ref
+	}
+	// Bare namespace/repo like "hostingmaloonde/curlimages_curl" → needs docker.io prefix.
+	return "docker.io/" + ref
+}
+
+// orasDiscoverDigests returns all referrer digests for the given image using oras CLI.
+func orasDiscoverDigests(ctx context.Context, imageRef string, timeout time.Duration) ([]string, error) {
+	discoverCtx, cancel := context.WithTimeout(ctx, timeout)
+	defer cancel()
+
+	orasRef := normalizeForOras(imageRef)
+	cmd := exec.CommandContext(discoverCtx, "oras", "discover", orasRef, "--format", "json")
+	cmd.Env = os.Environ()
+	output, err := cmd.CombinedOutput()
+	if err != nil {
+		return nil, apperrors.NewTransientf("oras discover failed for %s: %w (output: %s)", imageRef, err, string(output))
+	}
+
+	var result struct {
+		Referrers []struct {
+			Digest string `json:"digest"`
+		} `json:"referrers"`
+	}
+	if err := json.Unmarshal(output, &result); err != nil {
+		return nil, apperrors.NewTransientf("failed to parse oras discover output for %s: %w", imageRef, err)
+	}
+
+	digests := make([]string, len(result.Referrers))
+	for i, m := range result.Referrers {
+		digests[i] = m.Digest
+	}
+	return digests, nil
+}
+
+// orasDeleteDigests deletes the given referrer digests from the registry using oras CLI.
+func (a *SigstoreAttestor) orasDeleteDigests(ctx context.Context, imageRef string, digests []string) {
+	if len(digests) == 0 {
+		return
+	}
+
+	// Normalize and extract repository from imageRef (strip tag or digest suffix)
+	repo := normalizeForOras(imageRef)
+	if idx := strings.LastIndex(repo, "@"); idx != -1 {
+		repo = repo[:idx]
+	} else if idx := strings.LastIndex(repo, ":"); idx != -1 {
+		repo = repo[:idx]
+	}
+
+	for _, digest := range digests {
+		deleteCtx, cancel := context.WithTimeout(ctx, a.attestTimeout)
+		ref := repo + "@" + digest
+		cmd := exec.CommandContext(deleteCtx, "oras", "manifest", "delete", ref, "--force")
+		cmd.Env = os.Environ()
+		output, err := cmd.CombinedOutput()
+		cancel()
+		if err != nil {
+			a.logger.Warn("failed to delete old attestation referrer",
+				"ref", ref,
+				"error", err,
+				"output", string(output))
+			continue
+		}
+		a.logger.Debug("deleted old attestation referrer", "ref", ref)
+	}
+}
+
 func (a *SigstoreAttestor) buildCosignAttestArgs(predicateType, predicatePath, imageRef string) []string {
 	return []string{
 		"attest",
@@ -176,6 +260,12 @@ func (a *SigstoreAttestor) AttestSBOM(ctx context.Context, imageRef string, sbom
 	}
 	tmpFile.Close()
 
+	// Snapshot existing referrer digests before creating a new attestation.
+	oldDigests, err := orasDiscoverDigests(ctx, imageRef, a.attestTimeout)
+	if err != nil {
+		a.logger.Warn("could not snapshot existing referrers for SBOM cleanup", "image_ref", imageRef, "error", err)
+	}
+
 	// Use cosign CLI to attest
 	_, err = a.runCosignAttest(ctx, "attest SBOM", a.buildCosignAttestArgs("https://cyclonedx.org/bom", tmpFile.Name(), imageRef))
 	if err != nil {
@@ -184,6 +274,9 @@ func (a *SigstoreAttestor) AttestSBOM(ctx context.Context, imageRef string, sbom
 			"error", err)
 		return err
 	}
+
+	// Delete old referrers that existed before the new attestation.
+	a.orasDeleteDigests(ctx, imageRef, oldDigests)
 
 	a.logger.Debug("SBOM attestation completed",
 		"image_ref", imageRef,
@@ -218,6 +311,12 @@ func (a *SigstoreAttestor) AttestVulnerabilities(ctx context.Context, imageRef s
 	}
 	tmpFile.Close()
 
+	// Snapshot existing referrer digests before creating a new attestation.
+	oldDigests, err := orasDiscoverDigests(ctx, imageRef, a.attestTimeout)
+	if err != nil {
+		a.logger.Warn("could not snapshot existing referrers for vuln cleanup", "image_ref", imageRef, "error", err)
+	}
+
 	// Use cosign CLI to attest
 	_, err = a.runCosignAttest(ctx, "attest vulnerabilities", a.buildCosignAttestArgs("vuln", tmpFile.Name(), imageRef))
 	if err != nil {
@@ -226,6 +325,9 @@ func (a *SigstoreAttestor) AttestVulnerabilities(ctx context.Context, imageRef s
 			"error", err)
 		return err
 	}
+
+	// Delete old referrers that existed before the new attestation.
+	a.orasDeleteDigests(ctx, imageRef, oldDigests)
 
 	a.logger.Debug("vulnerability attestation completed",
 		"image_ref", imageRef,
@@ -290,6 +392,12 @@ func (a *SigstoreAttestor) AttestVEX(ctx context.Context, imageRef string, state
 	}
 	tmpFile.Close()
 
+	// Snapshot existing referrer digests before creating a new attestation.
+	oldDigests, err := orasDiscoverDigests(ctx, imageRef, a.attestTimeout)
+	if err != nil {
+		a.logger.Warn("could not snapshot existing referrers for VEX cleanup", "image_ref", imageRef, "error", err)
+	}
+
 	// Use cosign CLI to attest with CycloneDX VEX type
 	_, err = a.runCosignAttest(ctx, "attest VEX", a.buildCosignAttestArgs("https://cyclonedx.org/vex", tmpFile.Name(), imageRef))
 	if err != nil {
@@ -298,6 +406,9 @@ func (a *SigstoreAttestor) AttestVEX(ctx context.Context, imageRef string, state
 			"error", err)
 		return err
 	}
+
+	// Delete old referrers that existed before the new attestation.
+	a.orasDeleteDigests(ctx, imageRef, oldDigests)
 
 	a.logger.Info("VEX attestation completed",
 		"image_ref", imageRef,
@@ -335,6 +446,12 @@ func (a *SigstoreAttestor) AttestSCAI(ctx context.Context, imageRef string, scai
 	}
 	tmpFile.Close()
 
+	// Snapshot existing referrer digests before creating a new attestation.
+	oldDigests, err := orasDiscoverDigests(ctx, imageRef, a.attestTimeout)
+	if err != nil {
+		a.logger.Warn("could not snapshot existing referrers for SCAI cleanup", "image_ref", imageRef, "error", err)
+	}
+
 	// Use cosign CLI to attest
 	_, err = a.runCosignAttest(ctx, "attest SCAI", a.buildCosignAttestArgs("https://in-toto.io/attestation/scai/attribute-report/v0.3", tmpFile.Name(), imageRef))
 	if err != nil {
@@ -343,6 +460,9 @@ func (a *SigstoreAttestor) AttestSCAI(ctx context.Context, imageRef string, scai
 			"error", err)
 		return err
 	}
+
+	// Delete old referrers that existed before the new attestation.
+	a.orasDeleteDigests(ctx, imageRef, oldDigests)
 
 	a.logger.Info("SCAI attestation completed",
 		"image_ref", imageRef,
