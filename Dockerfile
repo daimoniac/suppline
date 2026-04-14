@@ -43,7 +43,6 @@ FROM alpine:3.23.3
 
 ARG COSIGN_VERSION=v3.0.6
 ARG TRIVY_VERSION=0.69.3
-ARG ORAS_VERSION=1.3.1
 
 # Install runtime dependencies including trivy client
 RUN apk add --no-cache ca-certificates sqlite-libs && \
@@ -52,11 +51,7 @@ RUN apk add --no-cache ca-certificates sqlite-libs && \
     wget "https://github.com/aquasecurity/trivy/releases/download/v${TRIVY_VERSION}/trivy_${TRIVY_VERSION}_Linux-64bit.tar.gz" && \
     tar zxf "trivy_${TRIVY_VERSION}_Linux-64bit.tar.gz" trivy && \
     mv trivy /usr/local/bin/ && \
-    rm "trivy_${TRIVY_VERSION}_Linux-64bit.tar.gz" && \
-    wget "https://github.com/oras-project/oras/releases/download/v${ORAS_VERSION}/oras_${ORAS_VERSION}_linux_amd64.tar.gz" && \
-    tar zxf "oras_${ORAS_VERSION}_linux_amd64.tar.gz" oras && \
-    mv oras /usr/local/bin/ && \
-    rm "oras_${ORAS_VERSION}_linux_amd64.tar.gz"
+    rm "trivy_${TRIVY_VERSION}_Linux-64bit.tar.gz"
 
 # Create non-root user
 RUN addgroup -g 1000 suppline && \
