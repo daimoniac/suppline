@@ -60,7 +60,6 @@ spec:
     verifyImages:
     - imageReferences:
       - "*"
-      type: SigstoreBundle
       verifyDigest: false
       mutateDigest: false
       attestations:
@@ -82,6 +81,4 @@ spec:
               rekor:
                 ignoreTlog: true
                 url: https://rekor.sigstore.dev
-              ctlog:
-                ignoreSCT: true
 `
