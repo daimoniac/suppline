@@ -152,7 +152,6 @@ curl http://localhost:8080/api/v1/scans
 | `WORKER_RETRY_ATTEMPTS` | `3` | Max retries for transient failures |
 | `TRIVY_SERVER_ADDR` | `localhost:4954` | Trivy server address |
 | `TRIVY_TIMEOUT` | `5m` | Scan timeout |
-| `ATTESTATION_COMMAND_TIMEOUT` | `2m` | Timeout per `cosign attest` invocation |
 | `SQLITE_PATH` | `suppline.db` | Database file path |
 | `ATTESTATION_KEY_PATH` | `/keys/cosign.key` | Cosign private key |
 | `API_PORT` | `8080` | API server port |

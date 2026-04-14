@@ -60,7 +60,6 @@ Configuration is loaded from multiple sources in this priority order:
 | `ATTESTATION_KEY_PATH` | string | `` | Path to Cosign private key (required) |
 | `ATTESTATION_KEY_PASSWORD` | string | `` | Password for encrypted private key |
 | `FULCIO_URL` | string | `https://fulcio.sigstore.dev` | Fulcio certificate authority URL |
-| `ATTESTATION_COMMAND_TIMEOUT` | duration | `2m` | Timeout per Cosign attestation command |
 
 ### API Server
 
