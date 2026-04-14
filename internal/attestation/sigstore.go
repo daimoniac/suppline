@@ -20,10 +20,10 @@ const defaultCosignAttestTimeout = 2 * time.Minute
 
 // SigstoreAttestor implements the Attestor interface using cosign CLI
 type SigstoreAttestor struct {
-	keyPath       string // Path to temporary key file
-	logger        *slog.Logger
-	cleanup       func() // Cleanup function to remove temp key file
-	attestTimeout time.Duration
+	keyPath          string // Path to temporary key file
+	logger           *slog.Logger
+	cleanup          func() // Cleanup function to remove temp key file
+	attestTimeout    time.Duration
 }
 
 func ensureCosignSupportsNewBundleFormat() error {
