@@ -4,9 +4,11 @@ import (
 	"context"
 	"encoding/base64"
 	"encoding/json"
+	stderrors "errors"
 	"log/slog"
 	"os"
 	"os/exec"
+	"strings"
 	"time"
 
 	"github.com/daimoniac/suppline/internal/errors"
@@ -14,11 +16,53 @@ import (
 	"github.com/daimoniac/suppline/internal/types"
 )
 
+const defaultCosignAttestTimeout = 2 * time.Minute
+
 // SigstoreAttestor implements the Attestor interface using cosign CLI
 type SigstoreAttestor struct {
-	keyPath string // Path to temporary key file
-	logger  *slog.Logger
-	cleanup func() // Cleanup function to remove temp key file
+	keyPath       string // Path to temporary key file
+	logger        *slog.Logger
+	cleanup       func() // Cleanup function to remove temp key file
+	attestTimeout time.Duration
+}
+
+func resolveCosignAttestTimeout(logger *slog.Logger) time.Duration {
+	timeoutStr := strings.TrimSpace(os.Getenv("ATTESTATION_COMMAND_TIMEOUT"))
+	if timeoutStr == "" {
+		return defaultCosignAttestTimeout
+	}
+
+	timeout, err := time.ParseDuration(timeoutStr)
+	if err != nil || timeout <= 0 {
+		logger.Warn("invalid ATTESTATION_COMMAND_TIMEOUT, using default",
+			"value", timeoutStr,
+			"default", defaultCosignAttestTimeout,
+			"error", err)
+		return defaultCosignAttestTimeout
+	}
+
+	return timeout
+}
+
+func (a *SigstoreAttestor) runCosignAttest(ctx context.Context, operation string, args ...string) ([]byte, error) {
+	attestCtx, cancel := context.WithTimeout(ctx, a.attestTimeout)
+	defer cancel()
+
+	cmd := exec.CommandContext(attestCtx, "cosign", args...)
+	cmd.Env = os.Environ()
+	if password := os.Getenv("ATTESTATION_KEY_PASSWORD"); password != "" {
+		cmd.Env = append(cmd.Env, "COSIGN_PASSWORD="+password)
+	}
+
+	output, err := cmd.CombinedOutput()
+	if err != nil {
+		if stderrors.Is(attestCtx.Err(), context.DeadlineExceeded) {
+			return nil, errors.NewTransientf("%s timed out after %s: %w (output: %s)", operation, a.attestTimeout, err, string(output))
+		}
+		return nil, errors.NewTransientf("failed to %s: %w (output: %s)", operation, err, string(output))
+	}
+
+	return output, nil
 }
 
 // NewSigstoreAttestor creates a new Sigstore attestor
@@ -61,8 +105,9 @@ func NewSigstoreAttestor(config AttestationConfig, logger *slog.Logger) (*Sigsto
 	logger.Debug("created temporary key file", "path", tmpFile.Name())
 
 	return &SigstoreAttestor{
-		keyPath: tmpFile.Name(),
-		logger:  logger,
+		keyPath:       tmpFile.Name(),
+		logger:        logger,
+		attestTimeout: resolveCosignAttestTimeout(logger),
 		cleanup: func() {
 			os.Remove(tmpFile.Name())
 		},
@@ -101,7 +146,8 @@ func (a *SigstoreAttestor) AttestSBOM(ctx context.Context, imageRef string, sbom
 	tmpFile.Close()
 
 	// Use cosign CLI to attest
-	cmd := exec.CommandContext(ctx, "cosign", "attest",
+	_, err = a.runCosignAttest(ctx, "attest SBOM",
+		"attest",
 		"--key", a.keyPath,
 		"--type", "https://cyclonedx.org/bom",
 		"--predicate", tmpFile.Name(),
@@ -110,19 +156,11 @@ func (a *SigstoreAttestor) AttestSBOM(ctx context.Context, imageRef string, sbom
 		"--tlog-upload=false",
 		imageRef,
 	)
-	cmd.Env = os.Environ()
-	// Ensure COSIGN_PASSWORD is set from ATTESTATION_KEY_PASSWORD if available
-	if password := os.Getenv("ATTESTATION_KEY_PASSWORD"); password != "" {
-		cmd.Env = append(cmd.Env, "COSIGN_PASSWORD="+password)
-	}
-
-	output, err := cmd.CombinedOutput()
 	if err != nil {
 		a.logger.Error("cosign SBOM attestation failed",
 			"image_ref", imageRef,
 			"error", err)
-		// Cosign failures are typically transient (network, registry issues)
-		return errors.NewTransientf("failed to attest SBOM: %w (output: %s)", err, string(output))
+		return err
 	}
 
 	a.logger.Debug("SBOM attestation completed",
@@ -159,7 +197,8 @@ func (a *SigstoreAttestor) AttestVulnerabilities(ctx context.Context, imageRef s
 	tmpFile.Close()
 
 	// Use cosign CLI to attest
-	cmd := exec.CommandContext(ctx, "cosign", "attest",
+	_, err = a.runCosignAttest(ctx, "attest vulnerabilities",
+		"attest",
 		"--key", a.keyPath,
 		"--type", "vuln",
 		"--predicate", tmpFile.Name(),
@@ -168,19 +207,11 @@ func (a *SigstoreAttestor) AttestVulnerabilities(ctx context.Context, imageRef s
 		"--tlog-upload=false",
 		imageRef,
 	)
-	cmd.Env = os.Environ()
-	// Ensure COSIGN_PASSWORD is set from ATTESTATION_KEY_PASSWORD if available
-	if password := os.Getenv("ATTESTATION_KEY_PASSWORD"); password != "" {
-		cmd.Env = append(cmd.Env, "COSIGN_PASSWORD="+password)
-	}
-
-	output, err := cmd.CombinedOutput()
 	if err != nil {
 		a.logger.Error("cosign vulnerability attestation failed",
 			"image_ref", imageRef,
 			"error", err)
-		// Cosign failures are typically transient (network, registry issues)
-		return errors.NewTransientf("failed to attest vulnerabilities: %w (output: %s)", err, string(output))
+		return err
 	}
 
 	a.logger.Debug("vulnerability attestation completed",
@@ -247,7 +278,8 @@ func (a *SigstoreAttestor) AttestVEX(ctx context.Context, imageRef string, state
 	tmpFile.Close()
 
 	// Use cosign CLI to attest with CycloneDX VEX type
-	cmd := exec.CommandContext(ctx, "cosign", "attest",
+	_, err = a.runCosignAttest(ctx, "attest VEX",
+		"attest",
 		"--key", a.keyPath,
 		"--type", "https://cyclonedx.org/vex",
 		"--predicate", tmpFile.Name(),
@@ -256,17 +288,11 @@ func (a *SigstoreAttestor) AttestVEX(ctx context.Context, imageRef string, state
 		"--tlog-upload=false",
 		imageRef,
 	)
-	cmd.Env = os.Environ()
-	if password := os.Getenv("ATTESTATION_KEY_PASSWORD"); password != "" {
-		cmd.Env = append(cmd.Env, "COSIGN_PASSWORD="+password)
-	}
-
-	output, err := cmd.CombinedOutput()
 	if err != nil {
 		a.logger.Error("cosign VEX attestation failed",
 			"image_ref", imageRef,
 			"error", err)
-		return errors.NewTransientf("failed to attest VEX: %w (output: %s)", err, string(output))
+		return err
 	}
 
 	a.logger.Info("VEX attestation completed",
@@ -306,7 +332,8 @@ func (a *SigstoreAttestor) AttestSCAI(ctx context.Context, imageRef string, scai
 	tmpFile.Close()
 
 	// Use cosign CLI to attest
-	cmd := exec.CommandContext(ctx, "cosign", "attest",
+	_, err = a.runCosignAttest(ctx, "attest SCAI",
+		"attest",
 		"--key", a.keyPath,
 		"--type", "https://in-toto.io/attestation/scai/attribute-report/v0.3",
 		"--predicate", tmpFile.Name(),
@@ -315,19 +342,11 @@ func (a *SigstoreAttestor) AttestSCAI(ctx context.Context, imageRef string, scai
 		"--tlog-upload=false",
 		imageRef,
 	)
-	cmd.Env = os.Environ()
-	// Ensure COSIGN_PASSWORD is set from ATTESTATION_KEY_PASSWORD if available
-	if password := os.Getenv("ATTESTATION_KEY_PASSWORD"); password != "" {
-		cmd.Env = append(cmd.Env, "COSIGN_PASSWORD="+password)
-	}
-
-	output, err := cmd.CombinedOutput()
 	if err != nil {
 		a.logger.Error("cosign SCAI attestation failed",
 			"image_ref", imageRef,
 			"error", err)
-		// Cosign failures are typically transient (network, registry issues)
-		return errors.NewTransientf("failed to attest SCAI: %w (output: %s)", err, string(output))
+		return err
 	}
 
 	a.logger.Info("SCAI attestation completed",

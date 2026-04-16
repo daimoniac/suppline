@@ -4,12 +4,32 @@ import (
 	"context"
 	"encoding/base64"
 	"encoding/json"
+	"io"
+	"log/slog"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
 
 	"github.com/daimoniac/suppline/internal/scanner"
 )
+
+func testLogger() *slog.Logger {
+	return slog.New(slog.NewTextHandler(io.Discard, nil))
+}
+
+func writeFakeCosign(t *testing.T, script string) string {
+	t.Helper()
+
+	tempDir := t.TempDir()
+	cosignPath := filepath.Join(tempDir, "cosign")
+	if err := os.WriteFile(cosignPath, []byte(script), 0755); err != nil {
+		t.Fatalf("failed to write fake cosign: %v", err)
+	}
+
+	return tempDir
+}
 
 func TestNewSigstoreAttestor_MissingKeyPath(t *testing.T) {
 	config := AttestationConfig{
@@ -21,6 +41,23 @@ func TestNewSigstoreAttestor_MissingKeyPath(t *testing.T) {
 	_, err := NewSigstoreAttestor(config, nil)
 	if err == nil {
 		t.Fatal("expected error for missing key")
+	}
+}
+
+func TestResolveCosignAttestTimeout_DefaultAndInvalid(t *testing.T) {
+	t.Setenv("ATTESTATION_COMMAND_TIMEOUT", "")
+	if timeout := resolveCosignAttestTimeout(testLogger()); timeout != defaultCosignAttestTimeout {
+		t.Fatalf("expected default timeout %s, got %s", defaultCosignAttestTimeout, timeout)
+	}
+
+	t.Setenv("ATTESTATION_COMMAND_TIMEOUT", "not-a-duration")
+	if timeout := resolveCosignAttestTimeout(testLogger()); timeout != defaultCosignAttestTimeout {
+		t.Fatalf("expected default timeout for invalid value, got %s", timeout)
+	}
+
+	t.Setenv("ATTESTATION_COMMAND_TIMEOUT", "250ms")
+	if timeout := resolveCosignAttestTimeout(testLogger()); timeout != 250*time.Millisecond {
+		t.Fatalf("expected parsed timeout 250ms, got %s", timeout)
 	}
 }
 
@@ -193,5 +230,42 @@ func TestAttestSBOM_CosignCommandConstruction(t *testing.T) {
 			t.Errorf("unexpected validation error: %v", err)
 		}
 		// Expected: "failed to attest SBOM with cosign" or similar execution error
+	}
+}
+
+func TestAttestSBOM_TimesOutCosignCommand(t *testing.T) {
+	fakeBinDir := writeFakeCosign(t, "#!/bin/sh\nsleep 5\n")
+	t.Setenv("PATH", fakeBinDir+string(os.PathListSeparator)+os.Getenv("PATH"))
+	t.Setenv("ATTESTATION_COMMAND_TIMEOUT", "20ms")
+
+	sbomJSON, err := json.Marshal(map[string]any{
+		"bomFormat":   "CycloneDX",
+		"specVersion": "1.5",
+		"version":     1,
+	})
+	if err != nil {
+		t.Fatalf("failed to marshal test SBOM: %v", err)
+	}
+
+	attestor, err := NewSigstoreAttestor(AttestationConfig{
+		KeyBased: KeyBasedConfig{
+			Key: base64.StdEncoding.EncodeToString([]byte("test-key-content")),
+		},
+	}, testLogger())
+	if err != nil {
+		t.Fatalf("failed to create attestor: %v", err)
+	}
+
+	err = attestor.AttestSBOM(context.Background(), "test-image:latest", &scanner.SBOM{
+		Format:  "cyclonedx",
+		Version: "1.5",
+		Data:    sbomJSON,
+		Created: time.Now(),
+	})
+	if err == nil {
+		t.Fatal("expected timeout error, got nil")
+	}
+	if !strings.Contains(err.Error(), "timed out after 20ms") {
+		t.Fatalf("expected timeout error, got %v", err)
 	}
 }
