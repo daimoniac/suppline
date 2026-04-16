@@ -249,3 +249,29 @@ func TestHandleGetKubernetesClusterImages(t *testing.T) {
 		t.Fatalf("Unexpected first cluster image row: %+v", resp[0])
 	}
 }
+
+func TestHandleClusterInventory_PassesReportedAtToStore(t *testing.T) {
+	store := &mockClusterInventoryStore{mockStateStore: &mockStateStore{}}
+	server := webhookTestServer(t, store)
+
+	before := time.Now().Unix()
+
+	body := `{"cluster":"metric-test-cluster","images":[{"namespace":"default","image_ref":"nginx:1.25"}]}`
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/webhook/cluster-inventory", strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+
+	server.router.ServeHTTP(w, req)
+	if w.Code != http.StatusOK {
+		t.Fatalf("Expected status %d, got %d body=%s", http.StatusOK, w.Code, w.Body.String())
+	}
+	if store.reportedAt.IsZero() {
+		t.Fatal("expected reportedAt to be passed to store")
+	}
+
+	after := time.Now().Unix()
+	got := store.reportedAt.Unix()
+	if got < before || got > after {
+		t.Fatalf("reportedAt value %d not in expected range [%d, %d]", got, before, after)
+	}
+}

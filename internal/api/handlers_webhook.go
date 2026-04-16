@@ -100,7 +100,8 @@ func (s *APIServer) handleClusterInventory(w http.ResponseWriter, r *http.Reques
 		})
 	}
 
-	if err := s.clusterInventory.RecordClusterInventory(r.Context(), clusterName, images, time.Now().UTC()); err != nil {
+	reportedAt := time.Now().UTC()
+	if err := s.clusterInventory.RecordClusterInventory(r.Context(), clusterName, images, reportedAt); err != nil {
 		s.logger.Error("failed to record cluster inventory",
 			"cluster", clusterName,
 			"error", err.Error())
