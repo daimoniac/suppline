@@ -47,8 +47,8 @@ sync:
 	if cfg.Queue.BufferSize != 1000 {
 		t.Errorf("Expected buffer size 1000, got %d", cfg.Queue.BufferSize)
 	}
-	if cfg.StateStore.RuntimeInUseWindow != 7*24*time.Hour {
-		t.Errorf("Expected runtime in-use window 7d, got %v", cfg.StateStore.RuntimeInUseWindow)
+	if cfg.StateStore.RuntimeInUseWindow != 60*time.Minute {
+		t.Errorf("Expected runtime in-use window 60m, got %v", cfg.StateStore.RuntimeInUseWindow)
 	}
 
 	if cfg.Worker.RetryAttempts != 3 {

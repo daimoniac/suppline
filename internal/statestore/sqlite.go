@@ -15,7 +15,7 @@ type SQLiteStore struct {
 	runtimeInUseWindow time.Duration
 }
 
-const defaultRuntimeInUseWindow = 7 * 24 * time.Hour
+const defaultRuntimeInUseWindow = 60 * time.Minute
 
 type clusterImageIdentity struct {
 	namespace string

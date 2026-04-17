@@ -96,6 +96,7 @@ creds:
 defaults:
   parallel: 2
   x-rescanInterval: 7d
+  x-runtimeInUseWindow: 60m
   x-policy:
     expression: "criticalCount == 0"
     failureMessage: "critical vulnerabilities found"
@@ -177,6 +178,7 @@ creds:
 defaults:
   parallel: 2
   x-rescanInterval: 7d
+  x-runtimeInUseWindow: 60m
   x-policy:
     expression: "criticalCount == 0"
     failureMessage: "critical vulnerabilities found"
@@ -206,6 +208,7 @@ sync:
 - `target` - Target location in your local registry
 - `type` - `repository` (all tags) or `image` (specific tag)
 - `x-rescanInterval` - How often to rescan unchanged images (default: 24h)
+- `x-runtimeInUseWindow` - Runtime image is considered in use when `last_seen_at` is within this window, or when it was present in the most recent cluster sync (default: 60m)
 - `x-policy` - CEL-based security policy for this mirror
 - `x-vex` - VEX statements with analysis state, justification, and expiry (merged with defaults)
 

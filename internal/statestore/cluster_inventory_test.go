@@ -692,7 +692,7 @@ func TestListRepositories_RuntimeUsageFallbackRepositoryTag(t *testing.T) {
 	}
 }
 
-func TestGetRuntimeUsageForScan_RespectsRuntimeInUseWindow(t *testing.T) {
+func TestGetRuntimeUsageForScan_RespectsRuntimeInUseWindowAndLatestSync(t *testing.T) {
 	dbPath := "test_cluster_runtime_window_" + t.Name() + ".db"
 	_ = os.Remove(dbPath)
 	defer os.Remove(dbPath)
@@ -702,7 +702,7 @@ func TestGetRuntimeUsageForScan_RespectsRuntimeInUseWindow(t *testing.T) {
 		t.Fatalf("Failed to create SQLite store: %v", err)
 	}
 	defer store.Close()
-	store.SetRuntimeInUseWindow(7 * 24 * time.Hour)
+	store.SetRuntimeInUseWindow(60 * time.Minute)
 
 	ctx := context.Background()
 	record := &ScanRecord{
@@ -720,40 +720,34 @@ func TestGetRuntimeUsageForScan_RespectsRuntimeInUseWindow(t *testing.T) {
 		t.Fatalf("RecordScan failed: %v", err)
 	}
 
-	staleSeenAt := time.Now().UTC().Add(-8 * 24 * time.Hour)
-	if err := store.RecordClusterInventory(ctx, "cluster-old", []ClusterImageEntry{{
+	staleSeenAt := time.Now().UTC().Add(-2 * time.Hour)
+	if err := store.RecordClusterInventory(ctx, "cluster-a", []ClusterImageEntry{{
 		Namespace: "default",
 		ImageRef:  "docker.io/library/nginx",
 		Tag:       "1.25",
 		Digest:    "sha256:window-digest",
 	}}, staleSeenAt); err != nil {
-		t.Fatalf("RecordClusterInventory(stale) failed: %v", err)
+		t.Fatalf("RecordClusterInventory(initial stale) failed: %v", err)
 	}
 
 	usage, err := store.GetRuntimeUsageForScan(ctx, record.Digest, record.Repository, record.Tag)
 	if err != nil {
-		t.Fatalf("GetRuntimeUsageForScan(stale) failed: %v", err)
+		t.Fatalf("GetRuntimeUsageForScan(after initial sync) failed: %v", err)
 	}
-	if usage.RuntimeUsed {
-		t.Fatalf("expected stale runtime match to be excluded by in-use window")
+	if !usage.RuntimeUsed {
+		t.Fatalf("expected image to be in use when it was present in the most recent cluster sync")
 	}
 
-	recentSeenAt := time.Now().UTC().Add(-2 * 24 * time.Hour)
-	if err := store.RecordClusterInventory(ctx, "cluster-recent", []ClusterImageEntry{{
-		Namespace: "default",
-		ImageRef:  "docker.io/library/nginx",
-		Tag:       "1.25",
-		Digest:    "sha256:window-digest",
-	}}, recentSeenAt); err != nil {
-		t.Fatalf("RecordClusterInventory(recent) failed: %v", err)
+	if err := store.RecordClusterInventory(ctx, "cluster-a", []ClusterImageEntry{}, time.Now().UTC()); err != nil {
+		t.Fatalf("RecordClusterInventory(fresh sync without image) failed: %v", err)
 	}
 
 	usage, err = store.GetRuntimeUsageForScan(ctx, record.Digest, record.Repository, record.Tag)
 	if err != nil {
-		t.Fatalf("GetRuntimeUsageForScan(recent) failed: %v", err)
+		t.Fatalf("GetRuntimeUsageForScan(after image omitted) failed: %v", err)
 	}
-	if !usage.RuntimeUsed {
-		t.Fatalf("expected recent runtime match to be in use")
+	if usage.RuntimeUsed {
+		t.Fatalf("expected image to be not in use after latest sync omitted it and it is older than the runtime window")
 	}
 }
 

@@ -373,7 +373,10 @@ func (s *SQLiteStore) queryRuntimeUsageByDigests(ctx context.Context, digests []
 		SELECT ci.digest, ci.image_ref, COALESCE(ci.tag, ''), c.name, ci.namespace
 		FROM cluster_images_seen ci
 		JOIN clusters c ON c.id = ci.cluster_id
-		WHERE ci.last_seen_at >= ?
+		WHERE (
+			ci.last_seen_at >= ?
+			OR ci.last_seen_at >= COALESCE(c.last_reported_at, 0)
+		)
 		  AND ci.digest IN (` + placeholders + `)
 	`
 
@@ -428,7 +431,10 @@ func (s *SQLiteStore) queryRuntimeUsageByRepoTag(ctx context.Context, repository
 		SELECT ci.image_ref, COALESCE(ci.tag, ''), COALESCE(ci.digest, ''), c.name, ci.namespace
 		FROM cluster_images_seen ci
 		JOIN clusters c ON c.id = ci.cluster_id
-		WHERE ci.last_seen_at >= ?
+		WHERE (
+			ci.last_seen_at >= ?
+			OR ci.last_seen_at >= COALESCE(c.last_reported_at, 0)
+		)
 		  AND COALESCE(ci.tag, '') = ?
 	`, cutoffUnix, tag)
 	if err != nil {
@@ -478,7 +484,10 @@ func (s *SQLiteStore) queryRuntimeUsageByRepository(ctx context.Context, reposit
 		SELECT ci.image_ref, COALESCE(ci.tag, ''), COALESCE(ci.digest, ''), c.name, ci.namespace
 		FROM cluster_images_seen ci
 		JOIN clusters c ON c.id = ci.cluster_id
-		WHERE ci.last_seen_at >= ?
+		WHERE (
+			ci.last_seen_at >= ?
+			OR ci.last_seen_at >= COALESCE(c.last_reported_at, 0)
+		)
 	`, cutoffUnix)
 	if err != nil {
 		return RuntimeUsage{}, errors.NewTransientf("failed to query runtime repository usage: %w", err)

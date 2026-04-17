@@ -60,7 +60,7 @@ func Load() (*Config, error) {
 		queueBufferSize = 1000
 	}
 	if runtimeInUseWindow == 0 {
-		runtimeInUseWindow = 7 * 24 * time.Hour
+		runtimeInUseWindow = 60 * time.Minute
 	}
 
 	cfg := &Config{
