@@ -1,6 +1,9 @@
 # How often buffered observations are POSTed.
 watchFlushInterval: "30s"
 
+# Maximum interval between successful inventory submissions, even without changes.
+watchHeartbeatInterval: "60m"
+
 # Deployment replica count.
 replicaCount: 1
 

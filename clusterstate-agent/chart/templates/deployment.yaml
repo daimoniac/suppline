@@ -48,6 +48,8 @@ spec:
           value: {{ .Values.logLevel | quote }}
         - name: WATCH_FLUSH_INTERVAL
           value: {{ .Values.watchFlushInterval | quote }}
+        - name: WATCH_HEARTBEAT_INTERVAL
+          value: {{ .Values.watchHeartbeatInterval | quote }}
         {{- if .Values.suppline.apiKey }}
         - name: SUPPLINE_API_KEY
           valueFrom:

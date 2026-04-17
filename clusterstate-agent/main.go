@@ -243,6 +243,11 @@ func runWatch(
 		return fmt.Errorf("WATCH_RETRY_INTERVAL/WATCH_FLUSH_INTERVAL must be > 0")
 	}
 
+	heartbeatInterval := parseDurationEnv("WATCH_HEARTBEAT_INTERVAL", 60*time.Minute, logger)
+	if heartbeatInterval <= 0 {
+		return fmt.Errorf("WATCH_HEARTBEAT_INTERVAL must be > 0")
+	}
+
 	refreshInterval := parseDurationEnv("WATCH_REFRESH_INTERVAL", 24*time.Hour, logger)
 	if refreshInterval <= 0 {
 		return fmt.Errorf("WATCH_REFRESH_INTERVAL must be > 0")
@@ -321,9 +326,9 @@ func runWatch(
 		return fmt.Errorf("failed to sync informer caches")
 	}
 
-	attemptSend := func() error {
+	attemptSend := func(force bool) error {
 		images := buffer.Snapshot()
-		if len(images) == 0 {
+		if len(images) == 0 && !force {
 			logger.Info("skipping inventory send because snapshot is empty")
 			return nil
 		}
@@ -337,24 +342,28 @@ func runWatch(
 	}
 
 	pendingSend := true
-	if err := attemptSend(); err != nil {
+	pendingForceSend := false
+	if err := attemptSend(false); err != nil {
 		logger.Warn("failed to send initial watched inventory snapshot", "error", err)
 	} else {
 		pendingSend = false
+		pendingForceSend = false
 	}
 
 	refreshTicker := time.NewTicker(refreshInterval)
 	defer refreshTicker.Stop()
+	heartbeatTicker := time.NewTicker(heartbeatInterval)
+	defer heartbeatTicker.Stop()
 	retryTicker := time.NewTicker(retryInterval)
 	defer retryTicker.Stop()
 
-	logger.Info("watch mode started", "refresh_interval", refreshInterval.String(), "retry_interval", retryInterval.String(), "stale_ttl", staleTTL.String())
+	logger.Info("watch mode started", "refresh_interval", refreshInterval.String(), "retry_interval", retryInterval.String(), "heartbeat_interval", heartbeatInterval.String(), "stale_ttl", staleTTL.String())
 
 	for {
 		select {
 		case <-ctx.Done():
 			if pendingSend {
-				if err := attemptSend(); err != nil {
+				if err := attemptSend(pendingForceSend); err != nil {
 					logger.Warn("failed to send final watched inventory snapshot", "error", err)
 				}
 			}
@@ -362,20 +371,32 @@ func runWatch(
 			return nil
 		case <-changeCh:
 			pendingSend = true
-			if err := attemptSend(); err != nil {
+			pendingForceSend = false
+			if err := attemptSend(false); err != nil {
 				logger.Warn("failed to send changed inventory snapshot; will retry", "error", err)
 				continue
 			}
 			pendingSend = false
+			pendingForceSend = false
+		case <-heartbeatTicker.C:
+			pendingSend = true
+			pendingForceSend = true
+			if err := attemptSend(true); err != nil {
+				logger.Warn("failed to send heartbeat inventory snapshot; will retry", "error", err)
+				continue
+			}
+			pendingSend = false
+			pendingForceSend = false
 		case <-retryTicker.C:
 			if !pendingSend {
 				continue
 			}
-			if err := attemptSend(); err != nil {
+			if err := attemptSend(pendingForceSend); err != nil {
 				logger.Warn("failed to retry watched inventory snapshot", "error", err)
 				continue
 			}
 			pendingSend = false
+			pendingForceSend = false
 		case <-refreshTicker.C:
 			changed, err := refreshInventoryBuffer(ctx, kubeClient, excludedNS, buffer, staleTTL, logger)
 			if err != nil {
@@ -390,11 +411,13 @@ func runWatch(
 			}
 
 			pendingSend = true
-			if err := attemptSend(); err != nil {
+			pendingForceSend = false
+			if err := attemptSend(false); err != nil {
 				logger.Warn("failed to send refreshed inventory snapshot; will retry", "error", err)
 				continue
 			}
 			pendingSend = false
+			pendingForceSend = false
 		}
 	}
 }

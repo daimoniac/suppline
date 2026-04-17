@@ -51,6 +51,7 @@ The agent loads configuration from a `.env` file (if present) before checking en
 | `SUPPLINE_API_KEY` | no | — | If set, sent as `Authorization: Bearer <key>` |
 | `WATCH_FLUSH_INTERVAL` | no | `30s` | Interval for retrying failed inventory uploads (legacy name; maps to retry interval) |
 | `WATCH_RETRY_INTERVAL` | no | `30s` | Interval for retrying failed inventory uploads |
+| `WATCH_HEARTBEAT_INTERVAL` | no | `60m` | Maximum interval between inventory uploads, even when no observations changed |
 | `WATCH_REFRESH_INTERVAL` | no | `24h` | Interval for full inventory refresh from pods/workloads |
 | `EXCLUDED_NAMESPACES` | no | `kube-system,kube-public,kube-node-lease` | Comma-separated namespaces to skip |
 | `LOG_LEVEL` | no | `info` | `debug` / `info` / `warn` / `error` |
@@ -62,6 +63,7 @@ The agent loads configuration from a `.env` file (if present) before checking en
 | Key | Default | Description |
 |---|---|---|
 | `watchFlushInterval` | `"30s"` | Interval for retrying failed inventory uploads (maps to `WATCH_FLUSH_INTERVAL`) |
+| `watchHeartbeatInterval` | `"60m"` | Maximum interval between inventory uploads, even when no observations changed |
 | `replicaCount` | `1` | Deployment replica count |
 | `clusterName` | `""` | **Required** |
 | `suppline.url` | `""` | **Required** |
