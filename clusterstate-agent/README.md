@@ -121,7 +121,7 @@ From repo root, you can use Docker Compose release/deploy helpers:
 
 ```bash
 # Build + push image
-CLUSTERSTATE_AGENT_IMAGE=daimoniac/suppline-clusterstate-agent:latest \
+CLUSTERSTATE_AGENT_IMAGE=daimon666/suppline-clusterstate-agent:latest \
   docker compose --profile release build --push clusterstate-agent-image
 
 # Helm upgrade/install using the compose deploy helper

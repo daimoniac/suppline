@@ -11,7 +11,7 @@ backend:
   secrets: {}
 
   image:
-    repository: daimoniac/suppline
+    repository: daimon666/suppline
     pullPolicy: Always
     tag: "latest"
 
@@ -112,7 +112,7 @@ regsync:
   replicaCount: 1
 
   image:
-    repository: daimoniac/regsync
+    repository: daimon666/regsync
     tag: "latest"
     pullPolicy: Always
 
@@ -141,7 +141,7 @@ frontend:
   replicaCount: 1
 
   image:
-    repository: daimoniac/suppline-ui
+    repository: daimon666/suppline-ui
     tag: "latest"
     pullPolicy: Always
 

@@ -1,7 +1,7 @@
 services:
   # Main application
   suppline:
-    image: daimoniac/suppline
+    image: daimon666/suppline
     build:
       context: .
       dockerfile: Dockerfile
@@ -46,7 +46,7 @@ services:
 
   # Web UI
   ui:
-    image: daimoniac/suppline-ui
+    image: daimon666/suppline-ui
     build:
       context: ui
       dockerfile: Dockerfile
@@ -90,7 +90,7 @@ services:
 
   # Regsync - Registry synchronization
   regsync:
-    image: daimoniac/regsync:latest
+    image: daimon666/regsync:latest
     container_name: regsync
     command: [ "server", "-c", "/config/suppline.yml" ]
     env_file:
@@ -103,13 +103,13 @@ services:
 
   # Release helper: build/push clusterstate-agent image via docker compose.
   # Usage:
-  #   CLUSTERSTATE_AGENT_IMAGE=daimoniac/suppline-clusterstate-agent:0.1.0 \
+  #   CLUSTERSTATE_AGENT_IMAGE=daimon666/suppline-clusterstate-agent:0.1.0 \
   #     docker compose --profile release build clusterstate-agent-image
-  #   CLUSTERSTATE_AGENT_IMAGE=daimoniac/suppline-clusterstate-agent:0.1.0 \
+  #   CLUSTERSTATE_AGENT_IMAGE=daimon666/suppline-clusterstate-agent:0.1.0 \
   #     docker compose --profile release push clusterstate-agent-image
   clusterstate-agent-image:
     profiles: ["release"]
-    image: ${CLUSTERSTATE_AGENT_IMAGE:-daimoniac/suppline-clusterstate-agent:latest}
+    image: ${CLUSTERSTATE_AGENT_IMAGE:-daimon666/suppline-clusterstate-agent:latest}
     build:
       context: ./clusterstate-agent
       dockerfile: Dockerfile
@@ -134,7 +134,7 @@ services:
       - HELM_RELEASE_NAME=${HELM_RELEASE_NAME:-clusterstate-agent}
       - HELM_NAMESPACE=${HELM_NAMESPACE:-suppline}
       - WATCH_FLUSH_INTERVAL=${WATCH_FLUSH_INTERVAL:-15s}
-      - CLUSTERSTATE_AGENT_IMAGE_REPOSITORY=${CLUSTERSTATE_AGENT_IMAGE_REPOSITORY:-daimoniac/suppline-clusterstate-agent}
+      - CLUSTERSTATE_AGENT_IMAGE_REPOSITORY=${CLUSTERSTATE_AGENT_IMAGE_REPOSITORY:-daimon666/suppline-clusterstate-agent}
       - CLUSTERSTATE_AGENT_IMAGE_TAG=${CLUSTERSTATE_AGENT_IMAGE_TAG:-latest}
       - CLUSTER_NAME=${CLUSTER_NAME:-}
       - SUPPLINE_URL=${SUPPLINE_URL:-}
