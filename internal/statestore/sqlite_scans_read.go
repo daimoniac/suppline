@@ -13,11 +13,12 @@ import (
 func (s *SQLiteStore) GetLastScan(ctx context.Context, digest string) (*ScanRecord, error) {
 	var record ScanRecord
 	var vexJSON sql.NullString
+	var failureFindingsJSON sql.NullString
 
 	err := s.db.QueryRowContext(ctx, `
 		SELECT sr.id, sr.artifact_id, sr.scan_duration_ms,
 			sr.critical_vuln_count, sr.high_vuln_count, sr.medium_vuln_count, sr.low_vuln_count,
-			sr.policy_passed, sr.policy_status, sr.policy_reason, sr.release_age_seconds, sr.minimum_release_age_seconds, sr.release_age_source,
+			sr.policy_passed, sr.policy_status, sr.policy_reason, sr.policy_failure_findings_json, sr.release_age_seconds, sr.minimum_release_age_seconds, sr.release_age_source,
 			sr.sbom_attested, sr.vuln_attested, sr.scai_attested, COALESCE(sr.vex_attested, 0), sr.error_message, sr.created_at,
 			COALESCE(a.image_created_at, 0) as image_created_at,
 			a.digest, a.tag, r.name,
@@ -31,7 +32,7 @@ func (s *SQLiteStore) GetLastScan(ctx context.Context, digest string) (*ScanReco
 	`, digest).Scan(
 		&record.ID, &record.ArtifactID, &record.ScanDurationMs,
 		&record.CriticalVulnCount, &record.HighVulnCount, &record.MediumVulnCount, &record.LowVulnCount,
-		&record.PolicyPassed, &record.PolicyStatus, &record.PolicyReason, &record.ReleaseAgeSeconds, &record.MinimumReleaseAgeSeconds, &record.ReleaseAgeSource,
+		&record.PolicyPassed, &record.PolicyStatus, &record.PolicyReason, &failureFindingsJSON, &record.ReleaseAgeSeconds, &record.MinimumReleaseAgeSeconds, &record.ReleaseAgeSource,
 		&record.SBOMAttested, &record.VulnAttested, &record.SCAIAttested, &record.VEXAttested, &record.ErrorMessage, &record.CreatedAt,
 		&record.ImageCreatedAt,
 		&record.Digest, &record.Tag, &record.Repository,
@@ -52,6 +53,9 @@ func (s *SQLiteStore) GetLastScan(ctx context.Context, digest string) (*ScanReco
 	record.Vulnerabilities = vulns
 
 	if err := applyStoredExemptions(&record, vexJSON); err != nil {
+		return nil, err
+	}
+	if err := applyStoredPolicyFailureFindings(&record, failureFindingsJSON); err != nil {
 		return nil, err
 	}
 
@@ -123,7 +127,7 @@ func (s *SQLiteStore) GetFailedArtifacts(ctx context.Context) ([]*ScanRecord, er
 	query := `
 		SELECT sr.id, sr.artifact_id, sr.scan_duration_ms,
 			sr.critical_vuln_count, sr.high_vuln_count, sr.medium_vuln_count, sr.low_vuln_count,
-			sr.policy_passed, sr.policy_status, sr.policy_reason, sr.release_age_seconds, sr.minimum_release_age_seconds, sr.release_age_source,
+			sr.policy_passed, sr.policy_status, sr.policy_reason, sr.policy_failure_findings_json, sr.release_age_seconds, sr.minimum_release_age_seconds, sr.release_age_source,
 			sr.sbom_attested, sr.vuln_attested, sr.scai_attested, sr.error_message, sr.created_at,
 			COALESCE(a.image_created_at, 0) as image_created_at,
 			a.digest, a.tag, r.name
@@ -144,17 +148,21 @@ func (s *SQLiteStore) GetFailedArtifacts(ctx context.Context) ([]*ScanRecord, er
 	records := make([]*ScanRecord, 0)
 	for rows.Next() {
 		var record ScanRecord
+		var failureFindingsJSON sql.NullString
 
 		err := rows.Scan(
 			&record.ID, &record.ArtifactID, &record.ScanDurationMs,
 			&record.CriticalVulnCount, &record.HighVulnCount, &record.MediumVulnCount, &record.LowVulnCount,
-			&record.PolicyPassed, &record.PolicyStatus, &record.PolicyReason, &record.ReleaseAgeSeconds, &record.MinimumReleaseAgeSeconds, &record.ReleaseAgeSource,
+			&record.PolicyPassed, &record.PolicyStatus, &record.PolicyReason, &failureFindingsJSON, &record.ReleaseAgeSeconds, &record.MinimumReleaseAgeSeconds, &record.ReleaseAgeSource,
 			&record.SBOMAttested, &record.VulnAttested, &record.SCAIAttested, &record.ErrorMessage, &record.CreatedAt,
 			&record.ImageCreatedAt,
 			&record.Digest, &record.Tag, &record.Repository,
 		)
 		if err != nil {
 			return nil, errors.NewTransientf("failed to scan row: %w", err)
+		}
+		if err := applyStoredPolicyFailureFindings(&record, failureFindingsJSON); err != nil {
+			return nil, err
 		}
 
 		records = append(records, &record)
@@ -172,7 +180,7 @@ func (s *SQLiteStore) GetScanHistory(ctx context.Context, digest string, limit i
 	query := `
 		SELECT sr.id, sr.artifact_id, sr.scan_duration_ms,
 			sr.critical_vuln_count, sr.high_vuln_count, sr.medium_vuln_count, sr.low_vuln_count,
-			sr.policy_passed, sr.policy_status, sr.policy_reason, sr.release_age_seconds, sr.minimum_release_age_seconds, sr.release_age_source,
+			sr.policy_passed, sr.policy_status, sr.policy_reason, sr.policy_failure_findings_json, sr.release_age_seconds, sr.minimum_release_age_seconds, sr.release_age_source,
 			sr.sbom_attested, sr.vuln_attested, sr.scai_attested, COALESCE(sr.vex_attested, 0), sr.error_message, sr.created_at,
 			COALESCE(a.image_created_at, 0) as image_created_at,
 			a.digest, a.tag, r.name,
@@ -197,11 +205,12 @@ func (s *SQLiteStore) GetScanHistory(ctx context.Context, digest string, limit i
 	for rows.Next() {
 		var record ScanRecord
 		var vexJSON sql.NullString
+		var failureFindingsJSON sql.NullString
 
 		err := rows.Scan(
 			&record.ID, &record.ArtifactID, &record.ScanDurationMs,
 			&record.CriticalVulnCount, &record.HighVulnCount, &record.MediumVulnCount, &record.LowVulnCount,
-			&record.PolicyPassed, &record.PolicyStatus, &record.PolicyReason, &record.ReleaseAgeSeconds, &record.MinimumReleaseAgeSeconds, &record.ReleaseAgeSource,
+			&record.PolicyPassed, &record.PolicyStatus, &record.PolicyReason, &failureFindingsJSON, &record.ReleaseAgeSeconds, &record.MinimumReleaseAgeSeconds, &record.ReleaseAgeSource,
 			&record.SBOMAttested, &record.VulnAttested, &record.SCAIAttested, &record.VEXAttested, &record.ErrorMessage, &record.CreatedAt,
 			&record.ImageCreatedAt,
 			&record.Digest, &record.Tag, &record.Repository,
@@ -219,6 +228,9 @@ func (s *SQLiteStore) GetScanHistory(ctx context.Context, digest string, limit i
 		record.Vulnerabilities = vulns
 
 		if err := applyStoredExemptions(&record, vexJSON); err != nil {
+			return nil, err
+		}
+		if err := applyStoredPolicyFailureFindings(&record, failureFindingsJSON); err != nil {
 			return nil, err
 		}
 
@@ -351,7 +363,7 @@ func (s *SQLiteStore) ListScans(ctx context.Context, filter ScanFilter) ([]*Scan
 	query := `
 		SELECT sr.id, sr.artifact_id, sr.scan_duration_ms,
 			sr.critical_vuln_count, sr.high_vuln_count, sr.medium_vuln_count, sr.low_vuln_count,
-			sr.policy_passed, sr.policy_status, sr.policy_reason, sr.release_age_seconds, sr.minimum_release_age_seconds, sr.release_age_source,
+			sr.policy_passed, sr.policy_status, sr.policy_reason, sr.policy_failure_findings_json, sr.release_age_seconds, sr.minimum_release_age_seconds, sr.release_age_source,
 			sr.sbom_attested, sr.vuln_attested, sr.scai_attested, sr.error_message, sr.created_at,
 			COALESCE(a.image_created_at, 0) as image_created_at,
 			a.digest, a.tag, r.name
@@ -409,11 +421,12 @@ func (s *SQLiteStore) ListScans(ctx context.Context, filter ScanFilter) ([]*Scan
 	var records []*ScanRecord
 	for rows.Next() {
 		var record ScanRecord
+		var failureFindingsJSON sql.NullString
 
 		err := rows.Scan(
 			&record.ID, &record.ArtifactID, &record.ScanDurationMs,
 			&record.CriticalVulnCount, &record.HighVulnCount, &record.MediumVulnCount, &record.LowVulnCount,
-			&record.PolicyPassed, &record.PolicyStatus, &record.PolicyReason, &record.ReleaseAgeSeconds, &record.MinimumReleaseAgeSeconds, &record.ReleaseAgeSource,
+			&record.PolicyPassed, &record.PolicyStatus, &record.PolicyReason, &failureFindingsJSON, &record.ReleaseAgeSeconds, &record.MinimumReleaseAgeSeconds, &record.ReleaseAgeSource,
 			&record.SBOMAttested, &record.VulnAttested, &record.SCAIAttested, &record.ErrorMessage, &record.CreatedAt,
 			&record.ImageCreatedAt,
 			&record.Digest, &record.Tag, &record.Repository,
@@ -425,6 +438,9 @@ func (s *SQLiteStore) ListScans(ctx context.Context, filter ScanFilter) ([]*Scan
 		// Don't load vulnerabilities or applied VEX statements for list operations.
 		// These are only needed for detail views, which use GetLastScan directly
 		// This keeps list responses lightweight and fast
+		if err := applyStoredPolicyFailureFindings(&record, failureFindingsJSON); err != nil {
+			return nil, err
+		}
 
 		records = append(records, &record)
 	}

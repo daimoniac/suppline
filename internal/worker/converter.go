@@ -86,6 +86,7 @@ func buildScanRecord(
 		SCAIAttested:             false, // Will be set by pipeline if SCAI attestation succeeds
 		Vulnerabilities:          vulnerabilityRecords,
 		AppliedVEXStatements:     appliedVEX,
+		PolicyFailureFindings:    policyDecision.PolicyFailureFindings,
 		ErrorMessage:             "",
 	}
 }

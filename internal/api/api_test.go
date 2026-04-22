@@ -406,6 +406,70 @@ func TestListScans_EmptyResultReturnsJSONArray(t *testing.T) {
 	}
 }
 
+type mockScansWithFindingsStore struct {
+	mockStateStore
+}
+
+func (m *mockScansWithFindingsStore) ListScans(ctx context.Context, filter statestore.ScanFilter) ([]*statestore.ScanRecord, error) {
+	_ = ctx
+	_ = filter
+	return []*statestore.ScanRecord{
+		{
+			Digest:       "sha256:test",
+			Repository:   "registry.example.com/app",
+			Tag:          "1.2.3",
+			PolicyPassed: false,
+			PolicyStatus: "failed",
+			PolicyFailureFindings: []types.PolicyFailureFinding{
+				{CVEID: "CVE-2024-21538", PackageName: "libstdc"},
+			},
+		},
+	}, nil
+}
+
+func (m *mockScansWithFindingsStore) CountScans(ctx context.Context, filter statestore.ScanFilter) (int, error) {
+	_ = ctx
+	_ = filter
+	return 1, nil
+}
+
+func TestListScans_IncludesPolicyFailureFindings(t *testing.T) {
+	cfg := &config.APIConfig{Enabled: true, Port: 8080, APIKey: "", ReadOnly: false}
+	server := NewAPIServer(cfg, mockAttestationConfig(), &mockScansWithFindingsStore{}, queue.NewInMemoryQueue(100), mockRegsyncConfig(), observability.NewLogger("error"))
+
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/scans", nil)
+	w := httptest.NewRecorder()
+	server.router.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected status 200, got %d", w.Code)
+	}
+
+	var scans []map[string]any
+	if err := json.Unmarshal(w.Body.Bytes(), &scans); err != nil {
+		t.Fatalf("failed to decode scans response: %v", err)
+	}
+	if len(scans) != 1 {
+		t.Fatalf("expected one scan record, got %d", len(scans))
+	}
+
+	findingsRaw, ok := scans[0]["PolicyFailureFindings"]
+	if !ok {
+		t.Fatalf("expected PolicyFailureFindings in response: %s", w.Body.String())
+	}
+	findings, ok := findingsRaw.([]any)
+	if !ok || len(findings) != 1 {
+		t.Fatalf("expected one finding entry, got %#v", findingsRaw)
+	}
+	entry, ok := findings[0].(map[string]any)
+	if !ok {
+		t.Fatalf("expected finding object, got %#v", findings[0])
+	}
+	if entry["CVEID"] != "CVE-2024-21538" || entry["PackageName"] != "libstdc" {
+		t.Fatalf("unexpected finding entry: %#v", entry)
+	}
+}
+
 func TestRoutes_QueryEndpoints(t *testing.T) {
 	cfg := &config.APIConfig{
 		Enabled:  true,

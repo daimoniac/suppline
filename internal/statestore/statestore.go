@@ -342,6 +342,7 @@ type ScanRecord struct {
 	Tags                 []TagRef                    // All tags pointing to this digest (loaded separately)
 	Vulnerabilities      []types.VulnerabilityRecord // Using canonical type
 	AppliedVEXStatements []types.AppliedVEXStatement // VEX statements applied during this scan
+	PolicyFailureFindings []types.PolicyFailureFinding
 	VEXAttested          bool
 	RuntimeUsed          bool
 	Runtime              RuntimeInventory

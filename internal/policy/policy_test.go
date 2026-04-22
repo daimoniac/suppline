@@ -516,6 +516,65 @@ func TestEngine_CEL_BlockHighAndCritical(t *testing.T) {
 	}
 }
 
+func TestEngine_CEL_PolicyFailureFindings_ByExpressionMatch(t *testing.T) {
+	engine, err := NewEngine(slog.Default(), PolicyConfig{
+		Expression: `vulnerabilities.filter(v, v.id == "CVE-2024-7777" && v.packageName == "openssl" && !v.exempted).size() == 0`,
+	})
+	if err != nil {
+		t.Fatalf("failed to create engine: %v", err)
+	}
+
+	result := &scanner.ScanResult{
+		ImageRef: "test/image:v1",
+		Vulnerabilities: []types.Vulnerability{
+			{ID: "CVE-2024-7777", Severity: "HIGH", PackageName: "openssl"},
+			{ID: "CVE-2024-1111", Severity: "LOW", PackageName: "zlib"},
+		},
+	}
+
+	decision, err := engine.Evaluate(context.Background(), "test/image:v1", result, nil)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if decision.Passed {
+		t.Fatal("expected policy failure")
+	}
+	if len(decision.PolicyFailureFindings) != 1 {
+		t.Fatalf("expected exactly one finding, got %d", len(decision.PolicyFailureFindings))
+	}
+	if decision.PolicyFailureFindings[0].CVEID != "CVE-2024-7777" || decision.PolicyFailureFindings[0].PackageName != "openssl" {
+		t.Fatalf("unexpected finding: %+v", decision.PolicyFailureFindings[0])
+	}
+}
+
+func TestEngine_CEL_PolicyFailureFindings_CooperativeContributors(t *testing.T) {
+	engine, err := NewEngine(slog.Default(), PolicyConfig{
+		Expression: "highCount == 0",
+	})
+	if err != nil {
+		t.Fatalf("failed to create engine: %v", err)
+	}
+
+	result := &scanner.ScanResult{
+		ImageRef: "test/image:v1",
+		Vulnerabilities: []types.Vulnerability{
+			{ID: "CVE-2024-0001", Severity: "HIGH", PackageName: "pkg1"},
+			{ID: "CVE-2024-0002", Severity: "HIGH", PackageName: "pkg2"},
+		},
+	}
+
+	decision, err := engine.Evaluate(context.Background(), "test/image:v1", result, nil)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if decision.Passed {
+		t.Fatal("expected policy failure")
+	}
+	if len(decision.PolicyFailureFindings) != 2 {
+		t.Fatalf("expected two cooperative contributors, got %+v", decision.PolicyFailureFindings)
+	}
+}
+
 func TestEngine_CEL_BlockMediumAndAbove(t *testing.T) {
 	engine, err := NewEngine(slog.Default(), PolicyConfig{
 		Expression: "criticalCount == 0 && highCount == 0 && mediumCount == 0",

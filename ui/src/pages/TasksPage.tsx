@@ -3,7 +3,10 @@ import { useLocation } from 'react-router-dom';
 import { useAuth } from '../lib/auth';
 import { useToast } from '../lib/toast';
 import { copyToClipboard, loadAllRuntimeUnusedRepositories, summarizeRuntimeUnusedRepositories } from '../lib/utils';
+import { useImageUsageFilter } from '../lib/imageUsageFilter';
+import { fetchPolicyComplianceData, type PolicyComplianceSnapshot } from '../lib/policyComplianceData';
 import { LoadingState, ErrorState, PageHeader, EmptyState } from '../components/ui';
+import { PolicyCompliancePanel } from '../components/PolicyCompliancePanel';
 import type {
   RepositoriesResponse,
   SemverUpdateEntry,
@@ -12,7 +15,7 @@ import type {
   VEXExpiryTaskEntry,
   VEXExpiryTasksResponse,
 } from '../lib/api';
-import { CheckCircle2, Clock3, Copy, RefreshCw, Server, Sparkles, Tag, TriangleAlert, Trash2 } from 'lucide-react';
+import { CheckCircle2, Clock3, Copy, RefreshCw, Server, ShieldAlert, Sparkles, Tag, TriangleAlert, Trash2 } from 'lucide-react';
 
 // ─── status badge ─────────────────────────────────────────────────────────────
 
@@ -689,11 +692,13 @@ function VEXExpiryTask({ data, inactiveEntries }: { data: VEXExpiryTasksResponse
 
 export default function TasksPage() {
   const { apiClient } = useAuth();
+  const { inUseQuery } = useImageUsageFilter();
   const location = useLocation();
   const [semverData, setSemverData] = useState<SemverUpdateTasksResponse | null>(null);
   const [runtimeUnusedData, setRuntimeUnusedData] = useState<RepositoriesResponse | null>(null);
   const [vexExpiryData, setVexExpiryData] = useState<VEXExpiryTasksResponse | null>(null);
   const [inactiveVEXData, setInactiveVEXData] = useState<VEXSummary[]>([]);
+  const [policyCompliance, setPolicyCompliance] = useState<PolicyComplianceSnapshot | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
 
@@ -701,22 +706,24 @@ export default function TasksPage() {
     setLoading(true);
     setError('');
     try {
-      const [semverResult, runtimeUnusedResult, vexExpiryResult, inactiveVEXResult] = await Promise.all([
+      const [semverResult, runtimeUnusedResult, vexExpiryResult, inactiveVEXResult, policySnap] = await Promise.all([
         apiClient.getSemverUpdateTasks(),
         loadAllRuntimeUnusedRepositories(apiClient),
         apiClient.getVEXExpiryTasks(),
         apiClient.getInactiveVEXStatements(),
+        fetchPolicyComplianceData(apiClient, inUseQuery),
       ]);
       setSemverData(semverResult);
       setRuntimeUnusedData(runtimeUnusedResult);
       setVexExpiryData(vexExpiryResult);
       setInactiveVEXData(inactiveVEXResult);
+      setPolicyCompliance(policySnap);
     } catch (e: unknown) {
       setError(e instanceof Error ? e.message : 'Failed to load tasks');
     } finally {
       setLoading(false);
     }
-  }, [apiClient]);
+  }, [apiClient, inUseQuery]);
 
   useEffect(() => { load(); }, [load]);
 
@@ -742,7 +749,7 @@ export default function TasksPage() {
         <PageHeader
           title="Tasks"
           subtitle="Action items requiring human review"
-          showImageUsage={false}
+          showImageUsage
         />
         <button
           onClick={load}
@@ -753,6 +760,28 @@ export default function TasksPage() {
           Refresh
         </button>
       </div>
+
+      {/* Policy compliance (same as dashboard) */}
+      <TaskSection
+        anchor="policy-compliance"
+        active={activeAnchor === 'policy-compliance'}
+        icon={<ShieldAlert className="w-4 h-4 text-danger" />}
+        title="Policy Compliance Status"
+        subtitle="Repositories with the most non-passing policy evaluations (top 5). Respects the image usage filter."
+        loading={loading}
+        loadingMessage="Loading policy compliance…"
+        error={error}
+        onRetry={load}
+      >
+        {policyCompliance ? (
+          <PolicyCompliancePanel
+            embedded
+            showCardHeading={false}
+            policyByRepo={policyCompliance.policyByRepo}
+            failedScans={policyCompliance.failedScans}
+          />
+        ) : null}
+      </TaskSection>
 
       {/* SemVer Range Updates */}
       <TaskSection

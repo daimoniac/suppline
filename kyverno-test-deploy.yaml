@@ -1,0 +1,22 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: curl-deployment
+  labels:
+    app: curl
+spec:
+  replicas: 3
+  selector:
+    matchLabels:
+      app: curl
+  template:
+    metadata:
+      labels:
+        app: curl
+    spec:
+      containers:
+      - name: curl
+        image: hostingmaloonde/nginx:1.29.7
+        ports:
+        - containerPort: 80
+

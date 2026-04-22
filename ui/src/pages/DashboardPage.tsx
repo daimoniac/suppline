@@ -3,19 +3,21 @@ import { Link } from 'react-router-dom';
 import { useAuth } from '../lib/auth';
 import { formatRelativeTime, loadAllRuntimeUnusedRepositories, summarizeRuntimeUnusedRepositories } from '../lib/utils';
 import { useImageUsageFilter } from '../lib/imageUsageFilter';
+import { fetchPolicyComplianceData, type PolicyComplianceSnapshot } from '../lib/policyComplianceData';
 import { LoadingState, ErrorState, StatusBadge, SeverityBadge, VulnCounts, DigestLinkWithCopy } from '../components/ui';
+import { PolicyCompliancePanel } from '../components/PolicyCompliancePanel';
 import type { Scan, SemverUpdateTasksResponse, VEXExpiryTasksResponse } from '../lib/api';
 import { ShieldAlert, ShieldCheck, Clock, Clock3, ArrowRight, ClipboardList, Sparkles, Trash2, TriangleAlert } from 'lucide-react';
 
 interface DashboardData {
   recentScans: Scan[];
+  policy: PolicyComplianceSnapshot;
   failedCount: number;
   failedInUseCount: number;
   pendingCount: number;
   activeVEXStatements: number;
   inactiveVEXStatements: number;
   vulnBreakdown: { critical: number; high: number; medium: number; low: number };
-  policyByRepo: Record<string, { failed: number; pending: number }>;
   outOfBoundsTaskCount: number;
   tightenTaskCount: number;
   runtimeUnusedTaskCount: number;
@@ -34,9 +36,9 @@ export default function DashboardPage() {
     setLoading(true);
     setError('');
     try {
-      const [recentScans, nonPassedScans, allVEXStatements, inactiveVEXStatements, vulnStats, semverTasksResult, runtimeUnusedReposResult, runtimeUnusedWhitelistResult, vexExpiryTasksResult] = await Promise.all([
+      const [recentScans, policySnap, allVEXStatements, inactiveVEXStatements, vulnStats, semverTasksResult, runtimeUnusedReposResult, runtimeUnusedWhitelistResult, vexExpiryTasksResult] = await Promise.all([
         apiClient.getScans({ limit: 20, ...(inUseQuery !== undefined && { in_use: inUseQuery }) }),
-        apiClient.getScans({ policy_passed: false, ...(inUseQuery !== undefined && { in_use: inUseQuery }) }),
+        fetchPolicyComplianceData(apiClient, inUseQuery),
         apiClient.getVEXStatements({}),
         apiClient.getInactiveVEXStatements(),
         apiClient.getVulnerabilityStats(),
@@ -46,15 +48,6 @@ export default function DashboardPage() {
         apiClient.getVEXExpiryTasks().catch(() => null as VEXExpiryTasksResponse | null),
       ]);
 
-      const failedScans = nonPassedScans.filter(s => s.PolicyStatus !== 'pending');
-      const pendingScans = nonPassedScans.filter(s => s.PolicyStatus === 'pending');
-      const policyByRepo = nonPassedScans.reduce<Record<string, { failed: number; pending: number }>>((acc, scan) => {
-        const repo = scan.Repository || 'unknown';
-        acc[repo] ||= { failed: 0, pending: 0 };
-        if (scan.PolicyStatus === 'pending') acc[repo].pending += 1;
-        else acc[repo].failed += 1;
-        return acc;
-      }, {});
       const runtimeUnusedTaskCount = runtimeUnusedReposResult
         ? summarizeRuntimeUnusedRepositories(runtimeUnusedReposResult.Repositories, runtimeUnusedWhitelistResult.repositories).actionableRepositories.length
         : 0;
@@ -65,9 +58,10 @@ export default function DashboardPage() {
 
       setData({
         recentScans,
-        failedCount: failedScans.length,
-        failedInUseCount: failedScans.filter(s => !!s.RuntimeUsed).length,
-        pendingCount: pendingScans.length,
+        policy: policySnap,
+        failedCount: policySnap.failedCount,
+        failedInUseCount: policySnap.failedInUseCount,
+        pendingCount: policySnap.pendingCount,
         activeVEXStatements: allVEXStatements.length,
         inactiveVEXStatements: inactiveVEXStatements.length,
         vulnBreakdown: {
@@ -76,7 +70,6 @@ export default function DashboardPage() {
           medium: vulnStats?.MEDIUM || 0,
           low: vulnStats?.LOW || 0,
         },
-        policyByRepo,
         outOfBoundsTaskCount,
         tightenTaskCount,
         runtimeUnusedTaskCount,
@@ -97,9 +90,6 @@ export default function DashboardPage() {
   if (!data) return null;
 
   const totalVulns = data.vulnBreakdown.critical + data.vulnBreakdown.high + data.vulnBreakdown.medium + data.vulnBreakdown.low;
-  const topPolicyRepos = Object.entries(data.policyByRepo)
-    .sort((a, b) => (b[1].failed + b[1].pending) - (a[1].failed + a[1].pending))
-    .slice(0, 5);
 
   return (
     <div className="space-y-6">
@@ -198,39 +188,7 @@ export default function DashboardPage() {
         </div>
       )}
 
-      <div className="bg-bg-primary border border-border rounded-xl p-5">
-        <h2 className="text-sm font-semibold mb-4">Policy Compliance Status</h2>
-        {Object.keys(data.policyByRepo).length === 0 ? (
-          <div className="text-center py-8">
-            <div className="text-3xl mb-2">🎆</div>
-            <h3 className="font-semibold text-accent">All Compliant</h3>
-            <p className="text-sm text-text-secondary">All images pass policy evaluation</p>
-          </div>
-        ) : (
-          <div className="space-y-2">
-            {topPolicyRepos.map(([repo, counts]) => {
-              const max = Math.max(...Object.values(data.policyByRepo).map(v => v.failed + v.pending));
-              const total = counts.failed + counts.pending;
-              const failedWidth = total > 0 ? (counts.failed / total) * 100 : 0;
-              const pendingWidth = total > 0 ? (counts.pending / total) * 100 : 0;
-              return (
-                <Link key={repo} to={`/repositories/${encodeURIComponent(repo)}`} className="flex items-center gap-3 hover:bg-bg-secondary rounded px-2 py-1 transition-colors">
-                  <span className="text-sm text-text-primary truncate w-48 flex-shrink-0">{repo}</span>
-                  <div className="flex-1 h-2 bg-bg-tertiary rounded-full overflow-hidden">
-                    <div className="h-full flex transition-all" style={{ width: `${(total / max) * 100}%` }}>
-                      {counts.failed > 0 && <div className="h-full bg-danger" style={{ width: `${failedWidth}%` }} />}
-                      {counts.pending > 0 && <div className="h-full bg-warning" style={{ width: `${pendingWidth}%` }} />}
-                    </div>
-                  </div>
-                  <span className="text-xs font-medium text-text-secondary w-20 text-right">
-                    F {counts.failed} / P {counts.pending}
-                  </span>
-                </Link>
-              );
-            })}
-          </div>
-        )}
-      </div>
+      <PolicyCompliancePanel policyByRepo={data.policy.policyByRepo} failedScans={data.policy.failedScans} />
 
       {totalVulns > 0 && (
         <div className="bg-bg-primary border border-border rounded-xl p-5">

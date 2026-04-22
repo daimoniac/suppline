@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"math/rand"
 	"time"
 
 	"github.com/daimoniac/suppline/internal/errors"
@@ -56,6 +57,7 @@ type PolicyDecision struct {
 	ExemptedVulnCount        int
 	UnfixedVulnCount         int
 	ExemptedCVEs             []string
+	PolicyFailureFindings    []types.PolicyFailureFinding
 	ExpiringVEXStatements    []ExpiringVEXStatement
 	ReleaseAgeSeconds        int64
 	MinimumReleaseAgeSeconds int64
@@ -138,6 +140,7 @@ func (e *Engine) Evaluate(ctx context.Context, imageRef string, result *scanner.
 		ShouldAttest:          true, // Always create attestations
 		Status:                PolicyStatusPassed,
 		ExemptedCVEs:          make([]string, 0),
+		PolicyFailureFindings: make([]types.PolicyFailureFinding, 0),
 		ExpiringVEXStatements: make([]ExpiringVEXStatement, 0),
 	}
 
@@ -235,6 +238,8 @@ func (e *Engine) Evaluate(ctx context.Context, imageRef string, result *scanner.
 	}
 
 	enrichedVulns := make([]map[string]interface{}, 0, len(result.Vulnerabilities))
+	nonExemptedIndexes := make([]int, 0, len(result.Vulnerabilities))
+	nonExemptedVulns := make([]types.Vulnerability, 0, len(result.Vulnerabilities))
 	criticalCount := 0
 	highCount := 0
 	mediumCount := 0
@@ -272,6 +277,8 @@ func (e *Engine) Evaluate(ctx context.Context, imageRef string, result *scanner.
 				"package", vuln.PackageName,
 				"image", imageRef)
 		} else {
+			nonExemptedIndexes = append(nonExemptedIndexes, len(enrichedVulns))
+			nonExemptedVulns = append(nonExemptedVulns, vuln)
 			switch vuln.Severity {
 			case "CRITICAL":
 				criticalCount++
@@ -320,6 +327,7 @@ func (e *Engine) Evaluate(ctx context.Context, imageRef string, result *scanner.
 		decision.Status = PolicyStatusPassed
 	} else {
 		decision.Status = PolicyStatusFailed
+		decision.PolicyFailureFindings = e.findPolicyFailureFindings(imageRef, enrichedVulns, nonExemptedIndexes, nonExemptedVulns)
 	}
 
 	if passed {
@@ -373,6 +381,175 @@ func (e *Engine) Evaluate(ctx context.Context, imageRef string, result *scanner.
 	}
 
 	return decision, nil
+}
+
+func (e *Engine) findPolicyFailureFindings(imageRef string, enrichedVulns []map[string]interface{}, candidateIndexes []int, candidateVulns []types.Vulnerability) []types.PolicyFailureFinding {
+	if len(enrichedVulns) == 0 || len(candidateIndexes) == 0 || len(candidateVulns) == 0 {
+		return nil
+	}
+
+	contributor := make([]bool, len(candidateIndexes))
+
+	// Direct contributors: removing this vulnerability alone flips fail -> pass.
+	for i, idx := range candidateIndexes {
+		passed, err := e.evaluateSubset(imageRef, enrichedVulns, candidateIndexes, func(pos int, originalIdx int) bool {
+			return originalIdx != idx
+		})
+		if err != nil {
+			e.logger.Warn("failed to evaluate direct CEL contributor",
+				"image", imageRef,
+				"index", idx,
+				"error", err)
+			continue
+		}
+		if passed {
+			contributor[i] = true
+		}
+	}
+
+	// Cooperative contributors: in sampled permutations, vulnerability acts as
+	// the pivot where evaluation transitions from pass -> fail when added.
+	contributor = e.markCooperativeContributors(imageRef, enrichedVulns, candidateIndexes, contributor)
+
+	findings := make([]types.PolicyFailureFinding, 0, len(candidateIndexes))
+	seen := make(map[string]struct{})
+	for i, isContributor := range contributor {
+		if !isContributor {
+			continue
+		}
+		key := candidateVulns[i].ID + "|" + candidateVulns[i].PackageName
+		if _, ok := seen[key]; ok {
+			continue
+		}
+		seen[key] = struct{}{}
+		findings = append(findings, types.PolicyFailureFinding{
+			CVEID:       candidateVulns[i].ID,
+			PackageName: candidateVulns[i].PackageName,
+		})
+	}
+
+	return findings
+}
+
+func (e *Engine) markCooperativeContributors(imageRef string, enrichedVulns []map[string]interface{}, candidateIndexes []int, contributor []bool) []bool {
+	n := len(candidateIndexes)
+	if n == 0 {
+		return contributor
+	}
+
+	trials := 24
+	if n > 24 {
+		trials = 40
+	}
+	if n > 60 {
+		trials = 64
+	}
+
+	rng := rand.New(rand.NewSource(42))
+	baseOrder := make([]int, n)
+	for i := range baseOrder {
+		baseOrder[i] = i
+	}
+
+	for t := 0; t < trials; t++ {
+		order := append([]int(nil), baseOrder...)
+		rng.Shuffle(len(order), func(i, j int) {
+			order[i], order[j] = order[j], order[i]
+		})
+
+		included := make([]bool, n)
+		prevPassed, err := e.evaluateSubset(imageRef, enrichedVulns, candidateIndexes, func(pos int, originalIdx int) bool {
+			return included[pos]
+		})
+		if err != nil {
+			e.logger.Warn("failed to evaluate CEL permutation baseline", "image", imageRef, "error", err)
+			continue
+		}
+		if !prevPassed {
+			continue
+		}
+
+		for _, candidatePos := range order {
+			included[candidatePos] = true
+			nextPassed, err := e.evaluateSubset(imageRef, enrichedVulns, candidateIndexes, func(pos int, originalIdx int) bool {
+				return included[pos]
+			})
+			if err != nil {
+				e.logger.Warn("failed to evaluate CEL permutation step", "image", imageRef, "error", err)
+				break
+			}
+			if prevPassed && !nextPassed {
+				contributor[candidatePos] = true
+			}
+			prevPassed = nextPassed
+		}
+	}
+
+	return contributor
+}
+
+func (e *Engine) evaluateSubset(imageRef string, enrichedVulns []map[string]interface{}, candidateIndexes []int, include func(candidatePos int, originalIdx int) bool) (bool, error) {
+	counterfactual := make([]map[string]interface{}, 0, len(enrichedVulns))
+	candidatePosByIndex := make(map[int]int, len(candidateIndexes))
+	for pos, idx := range candidateIndexes {
+		candidatePosByIndex[idx] = pos
+	}
+
+	for idx, vuln := range enrichedVulns {
+		pos, isCandidate := candidatePosByIndex[idx]
+		if isCandidate && !include(pos, idx) {
+			continue
+		}
+		counterfactual = append(counterfactual, vuln)
+	}
+
+	criticalCount := 0
+	highCount := 0
+	mediumCount := 0
+	lowCount := 0
+	exemptedCount := 0
+
+	for _, vuln := range counterfactual {
+		exempted, _ := vuln["exempted"].(bool)
+		if exempted {
+			exemptedCount++
+			continue
+		}
+
+		severity, _ := vuln["severity"].(string)
+		switch severity {
+		case "CRITICAL":
+			criticalCount++
+		case "HIGH":
+			highCount++
+		case "MEDIUM":
+			mediumCount++
+		case "LOW":
+			lowCount++
+		}
+	}
+
+	celInput := map[string]interface{}{
+		"vulnerabilities": counterfactual,
+		"imageRef":        imageRef,
+		"criticalCount":   criticalCount,
+		"highCount":       highCount,
+		"mediumCount":     mediumCount,
+		"lowCount":        lowCount,
+		"exemptedCount":   exemptedCount,
+	}
+
+	out, _, err := e.celProgram.Eval(celInput)
+	if err != nil {
+		return false, errors.NewTransientf("failed to evaluate subset policy: %w", err)
+	}
+
+	passed, ok := out.Value().(bool)
+	if !ok {
+		return false, errors.NewTransientf("subset policy expression did not return bool: %v", out.Value())
+	}
+
+	return passed, nil
 }
 
 // SetExpiryWarningWindow sets the duration before expiry to trigger warnings

@@ -56,3 +56,29 @@ func extractAppliedCVEIDs(vexJSON sql.NullString) []string {
 
 	return ids
 }
+
+func decodeStoredPolicyFailureFindingsStrict(findingsJSON sql.NullString) ([]types.PolicyFailureFinding, error) {
+	if !findingsJSON.Valid || findingsJSON.String == "" {
+		return []types.PolicyFailureFinding{}, nil
+	}
+
+	var findings []types.PolicyFailureFinding
+	if err := json.Unmarshal([]byte(findingsJSON.String), &findings); err != nil {
+		return nil, errors.NewTransientf("failed to unmarshal policy failure findings: %w", err)
+	}
+	if findings == nil {
+		return []types.PolicyFailureFinding{}, nil
+	}
+
+	return findings, nil
+}
+
+func applyStoredPolicyFailureFindings(record *ScanRecord, findingsJSON sql.NullString) error {
+	findings, err := decodeStoredPolicyFailureFindingsStrict(findingsJSON)
+	if err != nil {
+		return err
+	}
+
+	record.PolicyFailureFindings = findings
+	return nil
+}

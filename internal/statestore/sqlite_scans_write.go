@@ -93,19 +93,27 @@ func (s *SQLiteStore) RecordScan(ctx context.Context, record *ScanRecord) error 
 		}
 		vexJSON = string(jsonBytes)
 	}
+	failureFindingsJSON := "[]"
+	if len(record.PolicyFailureFindings) > 0 {
+		jsonBytes, err := json.Marshal(record.PolicyFailureFindings)
+		if err != nil {
+			return errors.NewTransientf("failed to marshal policy failure findings: %w", err)
+		}
+		failureFindingsJSON = string(jsonBytes)
+	}
 
 	result, err := tx.ExecContext(ctx, `
 		INSERT INTO scan_records (
 			artifact_id, scan_duration_ms,
 			critical_vuln_count, high_vuln_count, medium_vuln_count, low_vuln_count,
-			policy_passed, policy_status, policy_reason, release_age_seconds, minimum_release_age_seconds, release_age_source,
+			policy_passed, policy_status, policy_reason, policy_failure_findings_json, release_age_seconds, minimum_release_age_seconds, release_age_source,
 			sbom_attested, vuln_attested, scai_attested, vex_attested, error_message,
 			vex_statements_json
-		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 	`,
 		artifactID, record.ScanDurationMs,
 		record.CriticalVulnCount, record.HighVulnCount, record.MediumVulnCount, record.LowVulnCount,
-		record.PolicyPassed, record.PolicyStatus, record.PolicyReason, record.ReleaseAgeSeconds, record.MinimumReleaseAgeSeconds, record.ReleaseAgeSource,
+		record.PolicyPassed, record.PolicyStatus, record.PolicyReason, failureFindingsJSON, record.ReleaseAgeSeconds, record.MinimumReleaseAgeSeconds, record.ReleaseAgeSource,
 		record.SBOMAttested, record.VulnAttested, record.SCAIAttested, record.VEXAttested, record.ErrorMessage,
 		vexJSON,
 	)

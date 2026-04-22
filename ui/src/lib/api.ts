@@ -195,6 +195,11 @@ export interface RuntimeImage {
   Digest: string;
 }
 
+export interface PolicyFailureFinding {
+  CVEID: string;
+  PackageName: string;
+}
+
 export type RuntimeInventory = Record<string, Record<string, RuntimeImage[]>>;
 
 export interface Scan {
@@ -217,6 +222,7 @@ export interface Scan {
   VulnAttested: boolean;
   RuntimeUsed?: boolean;
   Runtime?: RuntimeInventory;
+  PolicyFailureFindings?: PolicyFailureFinding[];
 }
 
 export interface Vulnerability {
