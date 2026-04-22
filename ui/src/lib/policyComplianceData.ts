@@ -64,7 +64,7 @@ export function buildPolicyFixPromptRows(
   }
 
   return Array.from(grouped.values())
-    .sort((a, b) => a.image.localeCompare(b.image) || a.cve.localeCompare(b.cve) || a.component.localeCompare(b.component))
+    .sort((a, b) => a.cve.localeCompare(b.cve) || a.image.localeCompare(b.image) || a.component.localeCompare(b.component))
     .map(entry => ({
       image: entry.image,
       cve: entry.cve,
@@ -73,6 +73,74 @@ export function buildPolicyFixPromptRows(
     }));
 }
 
+const CVE_VEX_TRIAGE_WORKFLOW_PROMPT = `## CVE VEX Triage workflow description
+Use this skill to triage vulnerabilities against deployed reality in this repo and write image-level VEX statements in \`values/common/suppline.yaml\`.
+
+0. locate suppline.yaml and get to know the infrastructure context.
+this repository is a gitops repo and should contain an AGENTS.md.
+it should also contain a suppline.yml or suppline.yaml to which all changes will apply.
+this should give you enough context on infrastructure topology to make educated decisions for vulnerability triage.
+
+1. Build and enrich the working set.
+Start from the incoming table:
+
+| CVE | Image | Affected tags |
+|---|---|---|
+
+Then enrich each row with package, fixed version, and authoritative advisory source.
+
+2. Group before deep triage.
+Group by vulnerable package, then by image family/base-image lineage.
+Analyze advisory details once per group, but keep final decisions per image.
+
+3. Map each finding to this repo.
+Identify which release is enabled, which mirrored image is used, and which routes/features are exposed. Check if network policies or ingress routes make the vulnerable code inaccessible from outside.
+
+4. Decide exploitability by reachability.
+Do not mark not affected based only on transitive presence.
+Assess whether the vulnerable code path is reachable in this deployment.
+Assign a state: \`not_affected\`, \`affected\`
+Assign a justification: one of
+  - \`code_not_present\`
+  - \`code_not_reachable\`
+  - \`requires_configuration\`
+  - \`requires_dependency\`
+  - \`requires_environment\`
+  - \`protected_by_compiler\`
+  - \`protected_at_runtime\`
+  - \`protected_at_perimeter\`
+  - \`protected_by_mitigations\`
+For x-vex.detail: Prefer concrete wording tied to exploit preconditions and repo configuration.
+Good style examples:
+- \`Not practically vulnerable: ... requires attacker-controlled ...\`
+- \`... does not expose any feature that ...\`
+- \`... is only present through fixed internal dependency stacks ...\`
+Avoid vague phrasing such as \`not used by us\` or \`safe in our setup\`.
+
+5. clearance
+
+If you are not sure about a CVE's details or how to assess reachability, flag it for human review rather than guessing. It's better to have an open question than an inaccurate VEX statement.
+
+6. Record per-image decisions using this matrix:
+
+| CVE | Suppline image key | Deployment path | Reachable code path | VEX status | Justification summary |
+|---|---|---|---|---|---|
+
+7. Apply VEX edits safely and validate.
+Append statements to the nearest \`x-vex\` block under the exact affected image entry in \`values/common/suppline.yaml\`.
+If missing, create \`x-vex\` only for that image entry.
+Do not overwrite sibling entries and do not merge statements across images.
+After edits, validate YAML and ensure every CVE-image pair has one clear disposition.
+
+## Done Criteria
+- Advisory details verified from authoritative source(s)
+- Affected Suppline image entries identified
+- Reachability assessed from actual repo config
+- VEX statements added/updated per image
+- YAML formatting validated
+
+Please use the described workflow to triage and fix policy violations for the following vulnerabilities:`;
+
 export function buildPolicyFixPrompt(
   rows: Array<{ image: string; cve: string; component: string; affectedTags: string }>
 ): string {
@@ -80,12 +148,12 @@ export function buildPolicyFixPrompt(
     return '';
   }
 
-  const lines = rows.map(row => `| ${row.image} | ${row.cve} | ${row.component} | ${row.affectedTags} |`).join('\n');
+  const lines = rows.map(row => `| ${row.cve} | ${row.image} | ${row.affectedTags} |`).join('\n');
   return [
-    'Please use the "cve-vex-triage" skill to triage and fix policy violations for the following vulnerabilities. Use the "Batch Triage Template" from the skill for processing these multiple findings:',
+    CVE_VEX_TRIAGE_WORKFLOW_PROMPT,
     '',
-    '| Image | CVE | Affected component | Affected tags |',
-    '|---|---|---|---|',
+    '| CVE | Image | Affected tags |',
+    '|---|---|---|',
     lines,
   ].join('\n');
 }
