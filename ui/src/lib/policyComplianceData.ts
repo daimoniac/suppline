@@ -84,9 +84,6 @@ export function buildPolicyFixPrompt(
   return [
     'Please use the "cve-vex-triage" skill to triage and fix policy violations for the following vulnerabilities. Use the "Batch Triage Template" from the skill for processing these multiple findings:',
     '',
-    '1. Build the working set.',
-    'Create a short table with one row per finding:',
-    '',
     '| Image | CVE | Affected component | Affected tags |',
     '|---|---|---|---|',
     lines,
