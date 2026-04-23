@@ -1,0 +1,67 @@
+# Kyverno verifyImages (SCAI) gate — runs on Kubernetes or Docker GitLab runners with no DinD.
+#
+# ghcr.io/kyverno/kyverno-cli is distroless (no shell), so this job uses Alpine and the same
+# official CLI binary published for release v${KYVERNO_VERSION}.
+#
+# Required CI/CD variables (masked where noted):
+#   IMAGE_UNDER_TEST   — full image ref, e.g. ghcr.io/org/app@sha256:... or :tag
+#   REGISTRY_PASSWORD  — registry token or PAT (masked)
+#
+# Optional (defaults match scripts/cd-gate/docker-compose.yml):
+#   REGISTRY_SERVER, REGISTRY_USERNAME, REGISTRY_AUTH_HOST, KYVERNO_VERSION
+
+stages:
+  - cd-gate
+
+variables:
+  KYVERNO_VERSION: "1.17.1"
+  REGISTRY_SERVER: "docker.io"
+  REGISTRY_USERNAME: "hostingmaloonde"
+  POLICY_PATH: scripts/cd-gate/policy.yaml
+
+kyverno-image-policy:
+  stage: cd-gate
+  image: alpine:3.20
+  rules:
+    - if: $IMAGE_UNDER_TEST
+  before_script:
+    - set -eu
+    - apk add --no-cache curl tar ca-certificates
+    - |
+      curl -fsSL -o /tmp/kyverno.tar.gz \
+        "https://github.com/kyverno/kyverno/releases/download/v${KYVERNO_VERSION}/kyverno-cli_v${KYVERNO_VERSION}_linux_x86_64.tar.gz"
+    - tar -xzf /tmp/kyverno.tar.gz -C /usr/local/bin kyverno
+    - chmod +x /usr/local/bin/kyverno
+    - |
+      if [ -z "${REGISTRY_PASSWORD:-}" ]; then
+        echo "REGISTRY_PASSWORD must be set in CI/CD variables." >&2
+        exit 1
+      fi
+    - |
+      AUTH_B64=$(printf '%s:%s' "$REGISTRY_USERNAME" "$REGISTRY_PASSWORD" | base64 | tr -d '\n')
+      mkdir -p ~/.docker
+      if [ -n "${REGISTRY_AUTH_HOST:-}" ]; then
+        REGISTRY_KEY="$REGISTRY_AUTH_HOST"
+      elif [ "$REGISTRY_SERVER" = "docker.io" ]; then
+        REGISTRY_KEY="https://index.docker.io/v1/"
+      else
+        REGISTRY_KEY="$REGISTRY_SERVER"
+      fi
+      printf '{"auths":{"%s":{"auth":"%s"}}}\n' "$REGISTRY_KEY" "$AUTH_B64" > ~/.docker/config.json
+  script:
+    - kyverno version
+    - |
+      cat > /tmp/resource.yaml <<EOF
+      apiVersion: v1
+      kind: Pod
+      metadata:
+        name: image-policy-test
+        namespace: local-test
+      spec:
+        containers:
+        - name: app
+          image: ${IMAGE_UNDER_TEST}
+        restartPolicy: Never
+      EOF
+    - kyverno apply "$POLICY_PATH" --resource /tmp/resource.yaml --registry --remove-color
+    - 'echo "RESULT: PASS"'

@@ -1,0 +1,52 @@
+apiVersion: kyverno.io/v1
+kind: ClusterPolicy
+metadata:
+  name: suppline-policy
+spec:
+  validationFailureAction: Enforce
+  background: false
+  webhookTimeoutSeconds: 30
+  failurePolicy: Fail
+  rules:
+  - name: verify-scai-attestation
+    match:
+      any:
+      - resources:
+          kinds:
+          - Pod
+    exclude:
+      any:
+      - resources:
+          namespaces:
+          - kube-system
+          - cattle-fleet-system
+          - cattle-system
+          - kyverno
+          - suppline
+    verifyImages:
+    - imageReferences:
+      - "*"
+      verifyDigest: false
+      mutateDigest: false
+      attestations:
+      - type: https://in-toto.io/attestation/scai/attribute-report/v0.3
+        conditions:
+        - all:
+          - key: '{{ time_since('''',''{{ evidence.validUntil }}'', '''') }}'
+            operator: LessThan
+            value: 0h
+          - key: "{{ evidence.scanStatus }}"
+            operator: AnyIn
+            value: ["passed", "passed-with-exceptions"]
+        attestors:
+        - count: 1
+          entries:
+          - keys:
+              publicKeys: |
+                -----BEGIN PUBLIC KEY-----
+                MFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAE2iduY9FdiovJPSArSCb7f/5D7fN7
+                fuV0k23QLFyWxWW/tHwek7+esHU+tjtCUTNBLAlXLcKgWQQNEKPcNqn5Og==
+                -----END PUBLIC KEY-----
+              rekor:
+                ignoreTlog: true
+                url: https://rekor.sigstore.dev
