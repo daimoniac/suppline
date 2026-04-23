@@ -3,6 +3,7 @@ package observability
 import (
 	"context"
 	"log/slog"
+	"strings"
 	"sync"
 	"time"
 
@@ -150,15 +151,26 @@ func (c *DatabaseCollector) collectPolicyOutcomes(ctx context.Context, store sta
 	registryPendingCount := len(pendingScans)
 	runtimeFailedCount := 0
 	runtimePendingCount := 0
+	runtimeNewerFailedCount := 0
+	runtimeNewerPendingCount := 0
 
 	if len(scans) > 0 {
 		runtimeInputs := make([]statestore.RuntimeLookupInput, 0, len(scans))
+		reposSeen := make(map[string]struct{}, len(scans))
+		var distinctRepos []string
 		for _, scan := range scans {
 			runtimeInputs = append(runtimeInputs, statestore.RuntimeLookupInput{
 				Digest:     scan.Digest,
 				Repository: scan.Repository,
 				Tag:        scan.Tag,
 			})
+			repo := strings.TrimSpace(scan.Repository)
+			if repo != "" {
+				if _, ok := reposSeen[repo]; !ok {
+					reposSeen[repo] = struct{}{}
+					distinctRepos = append(distinctRepos, repo)
+				}
+			}
 		}
 
 		runtimeUsageByDigest, err := store.GetRuntimeUsageForScans(ctx, runtimeInputs)
@@ -171,17 +183,35 @@ func (c *DatabaseCollector) collectPolicyOutcomes(ctx context.Context, store sta
 			return
 		}
 
+		maxInUseByRepo, err := store.GetMaxInUseImageTagByRepositories(ctx, distinctRepos)
+		if err != nil {
+			if ctx.Err() != nil {
+				c.logger.Debug("in-use+newer policy metric collection timed out", "error", err)
+			} else {
+				c.logger.Error("failed to collect in-use+newer policy metrics", "error", err)
+			}
+			return
+		}
+
 		for _, scan := range failedScans {
 			usage := runtimeUsageByDigest[scan.Digest]
-			if usage.RuntimeUsed {
+			used := usage.RuntimeUsed
+			if used {
 				runtimeFailedCount++
+			}
+			if statestore.PolicyArtifactMatchesInUseOrNewer(used, scan.Repository, scan.Tag, maxInUseByRepo) {
+				runtimeNewerFailedCount++
 			}
 		}
 
 		for _, scan := range pendingScans {
 			usage := runtimeUsageByDigest[scan.Digest]
-			if usage.RuntimeUsed {
+			used := usage.RuntimeUsed
+			if used {
 				runtimePendingCount++
+			}
+			if statestore.PolicyArtifactMatchesInUseOrNewer(used, scan.Repository, scan.Tag, maxInUseByRepo) {
+				runtimeNewerPendingCount++
 			}
 		}
 	}
@@ -201,6 +231,13 @@ func (c *DatabaseCollector) collectPolicyOutcomes(ctx context.Context, store sta
 	)
 
 	ch <- prometheus.MustNewConstMetric(
+		c.policyFailedDesc,
+		prometheus.GaugeValue,
+		float64(runtimeNewerFailedCount),
+		"runtime+newer",
+	)
+
+	ch <- prometheus.MustNewConstMetric(
 		c.policyPendingDesc,
 		prometheus.GaugeValue,
 		float64(registryPendingCount),
@@ -212,6 +249,13 @@ func (c *DatabaseCollector) collectPolicyOutcomes(ctx context.Context, store sta
 		prometheus.GaugeValue,
 		float64(runtimePendingCount),
 		"runtime",
+	)
+
+	ch <- prometheus.MustNewConstMetric(
+		c.policyPendingDesc,
+		prometheus.GaugeValue,
+		float64(runtimeNewerPendingCount),
+		"runtime+newer",
 	)
 }
 

@@ -174,6 +174,10 @@ func (m *mockStateStore) GetRuntimeUsageForScans(ctx context.Context, scans []st
 	return map[string]statestore.RuntimeUsage{}, nil
 }
 
+func (m *mockStateStore) GetMaxInUseImageTagByRepositories(ctx context.Context, repositories []string) (map[string]string, error) {
+	return map[string]string{}, nil
+}
+
 func (m *mockStateStore) GetRuntimeUsageForScan(ctx context.Context, digest, repository, tag string) (*statestore.RuntimeUsage, error) {
 	return &statestore.RuntimeUsage{}, nil
 }
@@ -852,11 +856,11 @@ func TestHandleGetRepository_WithInUseFilterAndNoMatches(t *testing.T) {
 		ReadOnly: false,
 	}
 
-	// Reuse empty repository mock: when in_use=true this should be a valid empty result, not 404.
+	// Reuse empty repository mock: in_use mode with no matching tags is 200 with empty tags, not 404.
 	mockStore := &emptyRepositoryMockStore{mockStateStore: &mockStateStore{}}
 	server := NewAPIServer(cfg, mockAttestationConfig(), mockStore, queue.NewInMemoryQueue(100), mockRegsyncConfig(), observability.NewLogger("error"))
 
-	req := httptest.NewRequest(http.MethodGet, "/api/v1/repositories/test-repo?in_use=true", nil)
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/repositories/test-repo?in_use_mode=in_use", nil)
 	w := httptest.NewRecorder()
 
 	server.router.ServeHTTP(w, req)

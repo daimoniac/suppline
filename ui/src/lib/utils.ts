@@ -202,7 +202,7 @@ export function compareTagNames(left: string, right: string): number {
 
 export async function loadAllRuntimeUnusedRepositories(apiClient: APIClient, pageSize = 100): Promise<RepositoriesResponse> {
   const firstPage = await apiClient.getRepositories({
-    in_use: false,
+    in_use_mode: 'not_in_use',
     sort_by: 'age_desc',
     limit: pageSize,
     offset: 0,
@@ -211,7 +211,7 @@ export async function loadAllRuntimeUnusedRepositories(apiClient: APIClient, pag
   let repositories = firstPage.Repositories;
   for (let offset = repositories.length; offset < firstPage.Total; offset += pageSize) {
     const page = await apiClient.getRepositories({
-      in_use: false,
+      in_use_mode: 'not_in_use',
       sort_by: 'age_desc',
       limit: pageSize,
       offset,

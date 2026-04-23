@@ -570,8 +570,7 @@ func TestListScans_InUseFilter_UsesCanonicalRepositoryTagFallback(t *testing.T) 
 		t.Fatalf("RecordClusterInventory failed: %v", err)
 	}
 
-	inUse := true
-	inUseScans, err := store.ListScans(ctx, ScanFilter{InUse: &inUse, Limit: 100, Offset: 0})
+	inUseScans, err := store.ListScans(ctx, ScanFilter{ImageUsage: ImageUsageInUse, Limit: 100, Offset: 0})
 	if err != nil {
 		t.Fatalf("ListScans(in_use=true) failed: %v", err)
 	}
@@ -579,7 +578,7 @@ func TestListScans_InUseFilter_UsesCanonicalRepositoryTagFallback(t *testing.T) 
 		t.Fatalf("expected one in-use scan for %s, got %+v", record.Digest, inUseScans)
 	}
 
-	inUseCount, err := store.CountScans(ctx, ScanFilter{InUse: &inUse})
+	inUseCount, err := store.CountScans(ctx, ScanFilter{ImageUsage: ImageUsageInUse})
 	if err != nil {
 		t.Fatalf("CountScans(in_use=true) failed: %v", err)
 	}
@@ -587,8 +586,7 @@ func TestListScans_InUseFilter_UsesCanonicalRepositoryTagFallback(t *testing.T) 
 		t.Fatalf("expected CountScans(in_use=true)=1, got %d", inUseCount)
 	}
 
-	notInUse := false
-	notInUseScans, err := store.ListScans(ctx, ScanFilter{InUse: &notInUse, Limit: 100, Offset: 0})
+	notInUseScans, err := store.ListScans(ctx, ScanFilter{ImageUsage: ImageUsageNotInUse, Limit: 100, Offset: 0})
 	if err != nil {
 		t.Fatalf("ListScans(in_use=false) failed: %v", err)
 	}
@@ -630,8 +628,7 @@ func TestListScans_InUseOrNewerSemver(t *testing.T) {
 		t.Fatalf("RecordClusterInventory: %v", err)
 	}
 
-	onlyInUse := true
-	strict, err := store.ListScans(ctx, ScanFilter{InUse: &onlyInUse, Limit: 100, Offset: 0})
+	strict, err := store.ListScans(ctx, ScanFilter{ImageUsage: ImageUsageInUse, Limit: 100, Offset: 0})
 	if err != nil {
 		t.Fatalf("ListScans strict: %v", err)
 	}
@@ -639,7 +636,7 @@ func TestListScans_InUseOrNewerSemver(t *testing.T) {
 		t.Fatalf("in_use only: want one row 1.0.0, got %+v", strict)
 	}
 
-	newer, err := store.ListScans(ctx, ScanFilter{InUseImage: InUseImageFilterInUseOrNewerSemver, Limit: 100, Offset: 0})
+	newer, err := store.ListScans(ctx, ScanFilter{ImageUsage: ImageUsageInUseOrNewerSemver, Limit: 100, Offset: 0})
 	if err != nil {
 		t.Fatalf("ListScans in_use_newer: %v", err)
 	}
@@ -660,7 +657,7 @@ func TestListScans_InUseOrNewerSemver(t *testing.T) {
 		t.Fatal("did not expect 0.9.0 in in_use+newer list (older than in-use 1.0.0)")
 	}
 
-	n, err := store.CountScans(ctx, ScanFilter{InUseImage: InUseImageFilterInUseOrNewerSemver})
+	n, err := store.CountScans(ctx, ScanFilter{ImageUsage: ImageUsageInUseOrNewerSemver})
 	if err != nil {
 		t.Fatalf("CountScans: %v", err)
 	}
@@ -748,8 +745,7 @@ func TestListRepositories_RuntimeUsageFallbackRepositoryTag(t *testing.T) {
 		t.Fatalf("Expected busybox RuntimeUsed=false")
 	}
 
-	inUseOnly := true
-	inUseResp, err := store.ListRepositories(ctx, RepositoryFilter{InUse: &inUseOnly, Limit: 100, Offset: 0})
+	inUseResp, err := store.ListRepositories(ctx, RepositoryFilter{ImageUsage: ImageUsageInUse, Limit: 100, Offset: 0})
 	if err != nil {
 		t.Fatalf("ListRepositories(in_use=true) failed: %v", err)
 	}
@@ -760,8 +756,7 @@ func TestListRepositories_RuntimeUsageFallbackRepositoryTag(t *testing.T) {
 		t.Fatalf("Expected only nginx repository for in_use=true, got %+v", inUseResp.Repositories)
 	}
 
-	notInUseOnly := false
-	notInUseResp, err := store.ListRepositories(ctx, RepositoryFilter{InUse: &notInUseOnly, Limit: 100, Offset: 0})
+	notInUseResp, err := store.ListRepositories(ctx, RepositoryFilter{ImageUsage: ImageUsageNotInUse, Limit: 100, Offset: 0})
 	if err != nil {
 		t.Fatalf("ListRepositories(in_use=false) failed: %v", err)
 	}
@@ -887,8 +882,7 @@ func TestListRepositories_RuntimeUsedWhenRepositorySeenWithDifferentTag(t *testi
 		t.Fatalf("expected RuntimeUsed=true when repository was seen recently with a different tag")
 	}
 
-	notInUse := false
-	notInUseResp, err := store.ListRepositories(ctx, RepositoryFilter{InUse: &notInUse, Limit: 100, Offset: 0})
+	notInUseResp, err := store.ListRepositories(ctx, RepositoryFilter{ImageUsage: ImageUsageNotInUse, Limit: 100, Offset: 0})
 	if err != nil {
 		t.Fatalf("ListRepositories(in_use=false) failed: %v", err)
 	}

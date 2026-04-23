@@ -102,7 +102,7 @@ func (s *SQLiteStore) ListRepositories(ctx context.Context, filter RepositoryFil
 		query += " ORDER BY r.name ASC"
 	}
 
-	needsPostFilter := filter.InUse != nil || filter.PolicyStatus != "" || inUseImageFilterApplies(filter.InUseImage)
+	needsPostFilter := filter.ImageUsage != ImageUsageAll || filter.PolicyStatus != ""
 
 	if !needsPostFilter && filter.Limit > 0 {
 		query += " LIMIT ?"
@@ -199,7 +199,7 @@ func (s *SQLiteStore) ListRepositories(ctx context.Context, filter RepositoryFil
 		_, repositories[i].Whitelisted = whitelistSet[repositories[i].Name]
 	}
 
-	if filter.InUse != nil || filter.PolicyStatus != "" || inUseImageFilterApplies(filter.InUseImage) {
+	if filter.ImageUsage != ImageUsageAll || filter.PolicyStatus != "" {
 		filtered := repositories
 
 		if filter.PolicyStatus != "" {
@@ -212,18 +212,28 @@ func (s *SQLiteStore) ListRepositories(ctx context.Context, filter RepositoryFil
 			filtered = result
 		}
 
-		if filter.InUse != nil {
+		switch filter.ImageUsage {
+		case ImageUsageInUse:
 			result := make([]RepositoryInfo, 0, len(filtered))
 			for _, repo := range filtered {
 				matchesInUse := repo.RuntimeUsed || repo.Whitelisted
 				// Whitelisted repositories should appear in both in-use and not-in-use
 				// filtered views so operators can always discover and manage them.
-				if repo.Whitelisted || matchesInUse == *filter.InUse {
+				if repo.Whitelisted || matchesInUse {
 					result = append(result, repo)
 				}
 			}
 			filtered = result
-		} else if inUseImageFilterApplies(filter.InUseImage) {
+		case ImageUsageNotInUse:
+			result := make([]RepositoryInfo, 0, len(filtered))
+			for _, repo := range filtered {
+				matchesInUse := repo.RuntimeUsed || repo.Whitelisted
+				if repo.Whitelisted || !matchesInUse {
+					result = append(result, repo)
+				}
+			}
+			filtered = result
+		case ImageUsageInUseOrNewerSemver:
 			repoHasVisible, err := s.repositoryNamesWithInUseOrNewerSemver(ctx)
 			if err != nil {
 				return nil, err
@@ -236,6 +246,8 @@ func (s *SQLiteStore) ListRepositories(ctx context.Context, filter RepositoryFil
 				}
 			}
 			filtered = result
+		case ImageUsageAll:
+			// policy-only filter already applied
 		}
 
 		total = len(filtered)
@@ -363,7 +375,7 @@ func (s *SQLiteStore) GetRepository(ctx context.Context, name string, filter Rep
 		return nil, err
 	}
 
-	effectiveTagFilter := (filter.InUseOnly || inUseImageFilterApplies(filter.InUseImage)) && !isWhitelisted
+	effectiveTagFilter := (filter.ImageUsage == ImageUsageInUse || filter.ImageUsage == ImageUsageInUseOrNewerSemver) && !isWhitelisted
 
 	// First, get total count of unique tags for this repository
 	countQuery := `
@@ -532,20 +544,14 @@ func (s *SQLiteStore) GetRepository(ctx context.Context, name string, filter Rep
 			used := ok && usage.RuntimeUsed
 			inUseRows = append(inUseRows, inUseTagRow{repository: name, tag: tag.Name, used: used})
 		}
-		maxByRepo := maxInUseSemverByRepository(inUseRows)
+		maxTagByRepo := maxInUseImageTagByRepository(inUseRows)
 
 		filtered := make([]TagInfo, 0, len(detail.Tags))
 		for _, tag := range detail.Tags {
 			usage, ok := runtimeUsageByDigest[tag.Digest]
 			used := ok && usage.RuntimeUsed
-			if inUseImageFilterApplies(filter.InUseImage) {
-				if !recordPassesInUseImageFilter(used, name, tag.Name, nil, filter.InUseImage, maxByRepo) {
-					continue
-				}
-			} else {
-				if !used {
-					continue
-				}
+			if !recordPassesImageUsage(used, name, tag.Name, filter.ImageUsage, maxTagByRepo) {
+				continue
 			}
 			tag.RuntimeUsed = used
 			if used {
@@ -639,13 +645,13 @@ func (s *SQLiteStore) repositoryNamesWithInUseOrNewerSemver(ctx context.Context)
 		used := ok && u.RuntimeUsed
 		inUseRows = append(inUseRows, inUseTagRow{repository: row.repo, tag: row.tag, used: used})
 	}
-	maxBy := maxInUseSemverByRepository(inUseRows)
+	maxTagByRepo := maxInUseImageTagByRepository(inUseRows)
 
 	visible := make(map[string]bool)
 	for _, row := range rows {
 		u, ok := usageByDigest[row.digest]
 		used := ok && u.RuntimeUsed
-		if recordPassesInUseImageFilter(used, row.repo, row.tag, nil, InUseImageFilterInUseOrNewerSemver, maxBy) {
+		if recordPassesImageUsage(used, row.repo, row.tag, ImageUsageInUseOrNewerSemver, maxTagByRepo) {
 			visible[row.repo] = true
 		}
 	}

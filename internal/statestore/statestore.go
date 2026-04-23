@@ -265,6 +265,11 @@ type StateStoreQuery interface {
 	// GetRuntimeUsageForScans returns runtime usage keyed by digest for a list endpoint.
 	GetRuntimeUsageForScans(ctx context.Context, scans []RuntimeLookupInput) (map[string]RuntimeUsage, error)
 
+	// GetMaxInUseImageTagByRepositories returns the maximum in-use image tag per repository (cluster
+	// inventory; same ordering as the "in use + newer" filter). Repositories with no in-use image
+	// are omitted from the map.
+	GetMaxInUseImageTagByRepositories(ctx context.Context, repositories []string) (map[string]string, error)
+
 	// GetRuntimeUsageForScan returns runtime usage for a single image detail endpoint.
 	GetRuntimeUsageForScan(ctx context.Context, digest, repository, tag string) (*RuntimeUsage, error)
 
@@ -286,8 +291,7 @@ type RepositoryFilter struct {
 	Search       string
 	PolicyStatus string // "passed", "failed", or "pending"; empty = no filter
 	MaxAge       int    // Maximum age of last scan in seconds (0 = no limit)
-	InUse        *bool  // nil = all, true = only in use, false = only not in use (see InUseImage)
-	InUseImage   InUseImageFilter
+	ImageUsage   ImageUsage
 	SortBy       string // Sorting option: "age_desc" (default), "name_asc", "name_desc"
 	Limit        int
 	Offset       int
@@ -310,9 +314,7 @@ type RuntimeUnusedRepositoryWhitelistEntry struct {
 type RepositoryTagFilter struct {
 	Search     string
 	ExactMatch bool // use exact equality instead of prefix match (used for rescan lookups)
-	InUseOnly  bool
-	// InUseImage extends InUseOnly when set to InUseImageFilterInUseOrNewerSemver (in use or semver-newer than max in use).
-	InUseImage InUseImageFilter
+	ImageUsage ImageUsage
 	Limit      int
 	Offset     int
 }
@@ -365,9 +367,8 @@ type ScanFilter struct {
 	Repository   string
 	PolicyPassed *bool  // kept for backward-compat callers; PolicyStatus takes precedence when set
 	PolicyStatus string // "passed", "failed", or "pending"; empty = no filter
-	InUse        *bool  // nil = all, true = only in use, false = only not in use (see InUseImage)
-	InUseImage   InUseImageFilter
-	MaxAge       int    // Maximum age of scans in seconds (0 = no limit)
+	ImageUsage   ImageUsage
+	MaxAge       int // Maximum age of scans in seconds (0 = no limit)
 	SortBy       string // Sorting option: "age_desc" (default)
 	Limit        int
 	Offset       int

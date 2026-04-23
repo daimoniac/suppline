@@ -93,8 +93,7 @@ func (s *APIServer) handleGetScan(w http.ResponseWriter, r *http.Request) {
 // @Accept json
 // @Produce json
 // @Param repository query string false "Filter by repository name"
-// @Param in_use query bool false "Filter by runtime in-use; omit for all. Ignored when in_use_mode is set."
-// @Param in_use_mode query string false "Takes precedence over in_use: all, in_use, not_in_use, in_use_newer" Enums(all,in_use,not_in_use,in_use_newer)
+// @Param in_use_mode query string false "Image usage: all (default), in_use, not_in_use, in_use_newer" Enums(all,in_use,not_in_use,in_use_newer)
 // @Param policy_passed query boolean false "Filter by policy status"
 // @Param max_age query int false "Maximum age of scans in seconds (e.g., 86400 for last 24 hours)"
 // @Param sort_by query string false "Sort order: scanned_at_desc (default), scanned_at_asc, repository_asc, repository_desc, tag_asc, tag_desc, digest_asc, digest_desc, policy_passed_asc, policy_passed_desc" Enums(scanned_at_desc,scanned_at_asc,repository_asc,repository_desc,tag_asc,tag_desc,digest_asc,digest_desc,policy_passed_asc,policy_passed_desc)
@@ -112,15 +111,14 @@ func (s *APIServer) handleListScans(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Parse query parameters
-	inUse, inUseImage := parseListImageUsage(r)
+	imageUsage := parseImageUsageQuery(r)
 
 	// policy_status ("passed","failed","pending") takes precedence over legacy policy_passed boolean
 	policyStatus := parseQueryParam(r, "policy_status")
 	filter := statestore.ScanFilter{
 		Repository:   parseQueryParam(r, "repository"),
 		PolicyStatus: policyStatus,
-		InUse:        inUse,
-		InUseImage:   inUseImage,
+		ImageUsage:   imageUsage,
 		MaxAge:       parseQueryParamInt(r, "max_age", 0),
 		SortBy:       parseQueryParam(r, "sort_by"),
 		Limit:        parseQueryParamInt(r, "limit", 100),
@@ -1093,8 +1091,7 @@ func (s *APIServer) handleGenerateKyvernoPolicy(w http.ResponseWriter, r *http.R
 // @Accept json
 // @Produce json
 // @Param search query string false "Filter by repository name"
-// @Param in_use query bool false "Filter by runtime in-use; omit for all. Ignored when in_use_mode is set."
-// @Param in_use_mode query string false "Takes precedence over in_use: all, in_use, not_in_use, in_use_newer" Enums(all,in_use,not_in_use,in_use_newer)
+// @Param in_use_mode query string false "Image usage: all (default), in_use, not_in_use, in_use_newer" Enums(all,in_use,not_in_use,in_use_newer)
 // @Param max_age query int false "Maximum age of last scan in seconds (e.g., 86400 for last 24 hours)"
 // @Param sort_by query string false "Sort order: age_desc (default), age_asc, name_asc, name_desc, status_asc, status_desc" Enums(age_desc,age_asc,name_asc,name_desc,status_asc,status_desc)
 // @Param limit query int false "Maximum number of results" default(100)
@@ -1111,13 +1108,12 @@ func (s *APIServer) handleListRepositories(w http.ResponseWriter, r *http.Reques
 	}
 
 	// Parse query parameters
-	inUse, inUseImage := parseListImageUsage(r)
+	imageUsage := parseImageUsageQuery(r)
 	filter := statestore.RepositoryFilter{
 		Search:       parseQueryParam(r, "search"),
 		PolicyStatus: parseQueryParam(r, "policy_status"),
 		MaxAge:       parseQueryParamInt(r, "max_age", 0),
-		InUse:        inUse,
-		InUseImage:   inUseImage,
+		ImageUsage:   imageUsage,
 		SortBy:       parseQueryParam(r, "sort_by"),
 		Limit:        parseQueryParamInt(r, "limit", 100),
 		Offset:       parseQueryParamInt(r, "offset", 0),
@@ -1141,8 +1137,7 @@ func (s *APIServer) handleListRepositories(w http.ResponseWriter, r *http.Reques
 // @Produce json
 // @Param name path string true "Repository name"
 // @Param search query string false "Filter by tag name"
-// @Param in_use query bool false "When true, restrict to tags in runtime use. Ignored when in_use_mode is set (see in_use_mode)."
-// @Param in_use_mode query string false "Takes precedence over in_use: all, not_in_use, in_use, in_use_newer" Enums(all,not_in_use,in_use,in_use_newer)
+// @Param in_use_mode query string false "Tag list: all / not_in_use (show all tags), in_use, in_use_newer" Enums(all,not_in_use,in_use,in_use_newer)
 // @Param limit query int false "Maximum number of results" default(100)
 // @Param offset query int false "Pagination offset" default(0)
 // @Success 200 {object} statestore.RepositoryDetail
@@ -1173,12 +1168,11 @@ func (s *APIServer) handleGetRepository(w http.ResponseWriter, r *http.Request) 
 	}
 
 	// Parse query parameters
-	repoInUseOnly, inUseImage := parseRepositoryDetailInUse(r)
+	imageUsage := parseImageUsageQuery(r)
 
 	filter := statestore.RepositoryTagFilter{
 		Search:     parseQueryParam(r, "search"),
-		InUseOnly:  repoInUseOnly,
-		InUseImage: inUseImage,
+		ImageUsage: imageUsage,
 		Limit:      parseQueryParamInt(r, "limit", 100),
 		Offset:     parseQueryParamInt(r, "offset", 0),
 	}
@@ -1193,7 +1187,7 @@ func (s *APIServer) handleGetRepository(w http.ResponseWriter, r *http.Request) 
 	// Only 404 when the repository genuinely doesn't exist.
 	// If a search filter is active and returned zero results that is still a
 	// valid (empty) response — the repository exists, just no tags matched.
-	if detail.Total == 0 && filter.Search == "" && !filter.InUseOnly && filter.InUseImage != statestore.InUseImageFilterInUseOrNewerSemver {
+	if detail.Total == 0 && filter.Search == "" && (filter.ImageUsage == statestore.ImageUsageAll || filter.ImageUsage == statestore.ImageUsageNotInUse) {
 		s.respondError(w, http.StatusNotFound, "Repository not found")
 		return
 	}

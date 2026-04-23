@@ -68,6 +68,10 @@ func (m *mockStateStore) GetUniqueVulnerabilityCounts(ctx context.Context) (map[
 	return m.counts, nil
 }
 
+func (m *mockStateStore) GetMaxInUseImageTagByRepositories(ctx context.Context, repositories []string) (map[string]string, error) {
+	return map[string]string{"r": "1.0.0"}, nil
+}
+
 func TestDatabaseCollector(t *testing.T) {
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
 
@@ -80,9 +84,10 @@ func TestDatabaseCollector(t *testing.T) {
 
 	scans := []*statestore.ScanRecord{
 		{Digest: "abc", PolicyPassed: true, RuntimeUsed: true, PolicyStatus: "passed"},
-		{Digest: "def", PolicyPassed: false, RuntimeUsed: true, PolicyStatus: "failed"},
-		{Digest: "ghi", PolicyPassed: false, RuntimeUsed: false, PolicyStatus: "failed"},
-		{Digest: "jkl", PolicyPassed: false, RuntimeUsed: false, PolicyStatus: "pending"},
+		{Digest: "def", PolicyPassed: false, RuntimeUsed: true, PolicyStatus: "failed", Repository: "a", Tag: "1.0.0"},
+		{Digest: "ghi", PolicyPassed: false, RuntimeUsed: false, PolicyStatus: "failed", Repository: "b", Tag: "1.0.0"},
+		{Digest: "jkl", PolicyPassed: false, RuntimeUsed: false, PolicyStatus: "pending", Repository: "b", Tag: "1.0.0"},
+		{Digest: "mno", PolicyPassed: false, RuntimeUsed: false, PolicyStatus: "failed", Repository: "r", Tag: "2.0.0"},
 	}
 
 	ts1 := int64(1710000000)
@@ -104,8 +109,8 @@ func TestDatabaseCollector(t *testing.T) {
 	reg.MustRegister(collector)
 
 	count := testutil.CollectAndCount(collector)
-	if count != 10 { // 2 policy failed source labels + 2 policy pending source labels + 4 vuln severities + 2 cluster sync
-		t.Errorf("Expected 10 metrics, got %d", count)
+	if count != 12 { // 3 policy failed source labels + 3 policy pending source labels + 4 vuln severities + 2 cluster sync
+		t.Errorf("Expected 12 metrics, got %d", count)
 	}
 
 	// Verify specific values
@@ -125,8 +130,9 @@ func TestDatabaseCollector(t *testing.T) {
 	expectedPolicyFailed := `
 		# HELP suppline_policy_failed_current Current number of artifacts that failed policy evaluation by source
 		# TYPE suppline_policy_failed_current gauge
-		suppline_policy_failed_current{source="registry"} 2
+		suppline_policy_failed_current{source="registry"} 3
 		suppline_policy_failed_current{source="runtime"} 1
+		suppline_policy_failed_current{source="runtime+newer"} 2
 	`
 
 	if err := testutil.GatherAndCompare(reg, strings.NewReader(expectedPolicyFailed), "suppline_policy_failed_current"); err != nil {
@@ -138,6 +144,7 @@ func TestDatabaseCollector(t *testing.T) {
 		# TYPE suppline_policy_pending_current gauge
 		suppline_policy_pending_current{source="registry"} 1
 		suppline_policy_pending_current{source="runtime"} 0
+		suppline_policy_pending_current{source="runtime+newer"} 0
 	`
 
 	if err := testutil.GatherAndCompare(reg, strings.NewReader(expectedPolicyPending), "suppline_policy_pending_current"); err != nil {

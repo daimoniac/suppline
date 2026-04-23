@@ -41,9 +41,9 @@ export function imageUsageToRequestParams(filter: ImageUsageFilter): Record<stri
 
 export function ImageUsageFilterProvider({ children }: { children: React.ReactNode }) {
   const [filter, setFilter] = useState<ImageUsageFilter>(() => {
-    if (typeof window === 'undefined') return 'in-use';
+    if (typeof window === 'undefined') return 'in-use-newer';
     const stored = window.localStorage.getItem(STORAGE_KEY);
-    return isValidFilter(stored) ? stored : 'in-use';
+    return isValidFilter(stored) ? stored : 'in-use-newer';
   });
 
   useEffect(() => {

@@ -54,8 +54,7 @@ func TestListRepositories_InUseFilterIncludesWhitelistedInBothModes(t *testing.T
 		t.Fatalf("failed to add whitelist entry: %v", err)
 	}
 
-	trueVal := true
-	inUseResp, err := store.ListRepositories(ctx, RepositoryFilter{InUse: &trueVal, Limit: 100})
+	inUseResp, err := store.ListRepositories(ctx, RepositoryFilter{ImageUsage: ImageUsageInUse, Limit: 100})
 	if err != nil {
 		t.Fatalf("failed to list repositories (in_use=true): %v", err)
 	}
@@ -69,8 +68,7 @@ func TestListRepositories_InUseFilterIncludesWhitelistedInBothModes(t *testing.T
 		t.Fatalf("expected Whitelisted=true for %s", whitelistedRepo)
 	}
 
-	falseVal := false
-	notInUseResp, err := store.ListRepositories(ctx, RepositoryFilter{InUse: &falseVal, Limit: 100})
+	notInUseResp, err := store.ListRepositories(ctx, RepositoryFilter{ImageUsage: ImageUsageNotInUse, Limit: 100})
 	if err != nil {
 		t.Fatalf("failed to list repositories (in_use=false): %v", err)
 	}

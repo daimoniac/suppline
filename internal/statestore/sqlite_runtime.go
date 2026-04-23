@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/daimoniac/suppline/internal/errors"
+	"github.com/daimoniac/suppline/internal/semverutil"
 )
 
 func (s *SQLiteStore) RecordClusterInventory(ctx context.Context, clusterName string, images []ClusterImageEntry, reportedAt time.Time) error {
@@ -358,6 +359,60 @@ func (s *SQLiteStore) GetRuntimeUsageForScan(ctx context.Context, digest, reposi
 	}
 
 	return &usage, nil
+}
+
+// GetMaxInUseImageTagByRepositories returns the maximum in-use image tag per repository name using
+// cluster inventory (same tag ordering as the "in use + newer" filter). Repositories with no
+// in-use image are omitted from the result.
+func (s *SQLiteStore) GetMaxInUseImageTagByRepositories(ctx context.Context, repositories []string) (map[string]string, error) {
+	if len(repositories) == 0 {
+		return map[string]string{}, nil
+	}
+	seen := make(map[string]struct{}, len(repositories))
+	out := make(map[string]string)
+	for _, raw := range repositories {
+		repo := strings.TrimSpace(raw)
+		if repo == "" {
+			continue
+		}
+		if _, ok := seen[repo]; ok {
+			continue
+		}
+		seen[repo] = struct{}{}
+		usage, err := s.queryRuntimeUsageByRepository(ctx, repo)
+		if err != nil {
+			return nil, err
+		}
+		if !usage.RuntimeUsed {
+			continue
+		}
+		tags := uniqueTagsFromRuntimeUsage(usage)
+		if m := semverutil.MaxImageTagInList(tags); m != "" {
+			out[repo] = m
+		}
+	}
+	return out, nil
+}
+
+func uniqueTagsFromRuntimeUsage(usage RuntimeUsage) []string {
+	seen := make(map[string]struct{})
+	var out []string
+	for _, ns := range usage.Runtime {
+		for _, images := range ns {
+			for _, img := range images {
+				t := strings.TrimSpace(img.Tag)
+				if t == "" {
+					continue
+				}
+				if _, ok := seen[t]; ok {
+					continue
+				}
+				seen[t] = struct{}{}
+				out = append(out, t)
+			}
+		}
+	}
+	return out
 }
 
 func (s *SQLiteStore) queryRuntimeUsageByDigests(ctx context.Context, digests []string) (map[string]RuntimeUsage, error) {
