@@ -9,6 +9,12 @@
 #
 # Optional (defaults match scripts/cd-gate/docker-compose.yml):
 #   REGISTRY_SERVER, REGISTRY_USERNAME, REGISTRY_AUTH_HOST, KYVERNO_VERSION
+#
+# gitlab-ci-local: the first positional arg is a job name, not a stage.
+#   From repo root: gitlab-ci-local --file scripts/cd-gate/.gitlab-ci.yml --stage cd-gate ...
+#   From this dir:  gitlab-ci-local --file .gitlab-ci.yml --stage cd-gate ...
+#   ... --variable IMAGE_UNDER_TEST=repo/image:tag --variable REGISTRY_PASSWORD=secret
+#   Or run one job:  ... kyverno-image-policy --variable ...
 
 stages:
   - cd-gate
@@ -17,7 +23,8 @@ variables:
   KYVERNO_VERSION: "1.17.1"
   REGISTRY_SERVER: "docker.io"
   REGISTRY_USERNAME: "hostingmaloonde"
-  POLICY_PATH: scripts/cd-gate/policy.yaml
+  # Optional override; default is ${CI_PROJECT_DIR}/scripts/cd-gate/policy.yaml (GitLab / gitlab-ci-local).
+  # KYVERNO_POLICY_PATH: ""
 
 kyverno-image-policy:
   stage: cd-gate
@@ -63,5 +70,13 @@ kyverno-image-policy:
           image: ${IMAGE_UNDER_TEST}
         restartPolicy: Never
       EOF
-    - kyverno apply "$POLICY_PATH" --resource /tmp/resource.yaml --registry --remove-color
+    - |
+      set -eu
+      POLICY_FILE="${KYVERNO_POLICY_PATH:-${CI_PROJECT_DIR:-.}/scripts/cd-gate/policy.yaml}"
+      if [ ! -f "$POLICY_FILE" ]; then
+        echo "Kyverno policy not found: $POLICY_FILE" >&2
+        echo "Add and commit scripts/cd-gate/policy.yaml, or set KYVERNO_POLICY_PATH." >&2
+        exit 1
+      fi
+      kyverno apply "$POLICY_FILE" --resource /tmp/resource.yaml --registry --remove-color
     - 'echo "RESULT: PASS"'
