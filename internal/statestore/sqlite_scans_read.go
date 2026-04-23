@@ -459,31 +459,9 @@ func (s *SQLiteStore) ListScans(ctx context.Context, filter ScanFilter) ([]*Scan
 			return nil, err
 		}
 
-		inUseRows := make([]inUseTagRow, 0, len(records))
-		for _, record := range records {
-			usage, ok := runtimeUsageByDigest[record.Digest]
-			used := ok && usage.RuntimeUsed
-			inUseRows = append(inUseRows, inUseTagRow{
-				repository: record.Repository,
-				tag:        record.Tag,
-				used:       used,
-			})
-		}
-		maxTagByRepo := maxInUseImageTagByRepository(inUseRows)
-
-		filtered := make([]*ScanRecord, 0, len(records))
-		for _, record := range records {
-			usage, ok := runtimeUsageByDigest[record.Digest]
-			used := ok && usage.RuntimeUsed
-			if !recordPassesImageUsage(used, record.Repository, record.Tag, filter.ImageUsage, maxTagByRepo) {
-				continue
-			}
-			record.RuntimeUsed = used
-			if used {
-				record.Runtime = usage.Runtime
-			}
-			filtered = append(filtered, record)
-		}
+		inUseRows := inUseTagRowsFromScanRecords(records, runtimeUsageByDigest)
+		minTagByRepo := minInUseImageTagByRepository(inUseRows)
+		filtered := filterScanRecordsByImageUsage(records, runtimeUsageByDigest, minTagByRepo, filter.ImageUsage)
 
 		start := originalOffset
 		if start < 0 {

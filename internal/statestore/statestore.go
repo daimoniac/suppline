@@ -265,10 +265,10 @@ type StateStoreQuery interface {
 	// GetRuntimeUsageForScans returns runtime usage keyed by digest for a list endpoint.
 	GetRuntimeUsageForScans(ctx context.Context, scans []RuntimeLookupInput) (map[string]RuntimeUsage, error)
 
-	// GetMaxInUseImageTagByRepositories returns the maximum in-use image tag per repository (cluster
-	// inventory; same ordering as the "in use + newer" filter). Repositories with no in-use image
+	// GetMinInUseImageTagByRepositories returns the minimum in-use image tag per repository (cluster
+	// inventory; same ordering as the "in use + newer" filter floor). Repositories with no in-use image
 	// are omitted from the map.
-	GetMaxInUseImageTagByRepositories(ctx context.Context, repositories []string) (map[string]string, error)
+	GetMinInUseImageTagByRepositories(ctx context.Context, repositories []string) (map[string]string, error)
 
 	// GetRuntimeUsageForScan returns runtime usage for a single image detail endpoint.
 	GetRuntimeUsageForScan(ctx context.Context, digest, repository, tag string) (*RuntimeUsage, error)

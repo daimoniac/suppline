@@ -25,6 +25,13 @@ func TestMaxImageTagInList_mixedInUse(t *testing.T) {
 	}
 }
 
+func TestMinImageTagInList(t *testing.T) {
+	tags := []string{"1.30", "1.29.8", "1.29.5", "1.29.7"}
+	if m := MinImageTagInList(tags); m != "1.29.5" {
+		t.Fatalf("expected 1.29.5, got %q", m)
+	}
+}
+
 func TestImageTagIsStrictlyGreater_fourPart(t *testing.T) {
 	if !ImageTagIsStrictlyGreater("16.0.0.0", "15.8.1.060") {
 		t.Fatal("16.0.0.0 should be > 15.8.1.060")

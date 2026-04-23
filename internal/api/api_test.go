@@ -174,7 +174,7 @@ func (m *mockStateStore) GetRuntimeUsageForScans(ctx context.Context, scans []st
 	return map[string]statestore.RuntimeUsage{}, nil
 }
 
-func (m *mockStateStore) GetMaxInUseImageTagByRepositories(ctx context.Context, repositories []string) (map[string]string, error) {
+func (m *mockStateStore) GetMinInUseImageTagByRepositories(ctx context.Context, repositories []string) (map[string]string, error) {
 	return map[string]string{}, nil
 }
 

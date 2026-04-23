@@ -651,7 +651,7 @@ func TestListScans_InUseOrNewerSemver(t *testing.T) {
 		t.Fatal("expected 1.0.0 in in_use+newer list")
 	}
 	if _, ok := tagSet["1.1.0"]; !ok {
-		t.Fatal("expected 1.1.0 in in_use+newer list (newer semver than max in use)")
+		t.Fatal("expected 1.1.0 in in_use+newer list (newer semver than min in-use floor)")
 	}
 	if _, ok := tagSet["0.9.0"]; ok {
 		t.Fatal("did not expect 0.9.0 in in_use+newer list (older than in-use 1.0.0)")
@@ -663,6 +663,72 @@ func TestListScans_InUseOrNewerSemver(t *testing.T) {
 	}
 	if n != 2 {
 		t.Fatalf("CountScans in_use+newer: want 2, got %d", n)
+	}
+}
+
+// When multiple tags are in use, "in use + newer" uses the minimum in-use tag as the floor so
+// intermediate versions (e.g. 1.1.0 between 1.0.0 and 1.2.0) are not hidden.
+func TestListScans_InUseOrNewerSemver_multiInUseFloor(t *testing.T) {
+	dbPath := "test_cluster_in_use_newer_multi_" + t.Name() + ".db"
+	_ = os.Remove(dbPath)
+	defer os.Remove(dbPath)
+
+	store, err := NewSQLiteStore(dbPath)
+	if err != nil {
+		t.Fatalf("Failed to create SQLite store: %v", err)
+	}
+	defer store.Close()
+
+	const repo = "docker.io/lib/multiapp"
+	ctx := context.Background()
+	digests := map[string]string{
+		"0.9.0": "sha256:m-090",
+		"1.0.0": "sha256:m-100",
+		"1.1.0": "sha256:m-110",
+		"1.2.0": "sha256:m-120",
+		"1.3.0": "sha256:m-130",
+	}
+	for tag, d := range digests {
+		r := &ScanRecord{
+			Repository: repo, Tag: tag, Digest: d, PolicyPassed: true,
+			SBOMAttested: true, VulnAttested: true, SCAIAttested: true,
+			Vulnerabilities: []types.VulnerabilityRecord{}, AppliedVEXStatements: []types.AppliedVEXStatement{},
+		}
+		if err := store.RecordScan(ctx, r); err != nil {
+			t.Fatalf("RecordScan %s: %v", tag, err)
+		}
+	}
+	if err := store.RecordClusterInventory(ctx, "c1", []ClusterImageEntry{
+		{Namespace: "ns", ImageRef: repo, Tag: "1.0.0", Digest: digests["1.0.0"]},
+		{Namespace: "ns", ImageRef: repo, Tag: "1.2.0", Digest: digests["1.2.0"]},
+	}, time.Now().UTC()); err != nil {
+		t.Fatalf("RecordClusterInventory: %v", err)
+	}
+
+	newer, err := store.ListScans(ctx, ScanFilter{ImageUsage: ImageUsageInUseOrNewerSemver, Limit: 100, Offset: 0})
+	if err != nil {
+		t.Fatalf("ListScans in_use_newer: %v", err)
+	}
+	tagSet := map[string]struct{}{}
+	for _, s := range newer {
+		tagSet[s.Tag] = struct{}{}
+	}
+	for _, want := range []string{"0.9.0", "1.0.0", "1.1.0", "1.2.0", "1.3.0"} {
+		_, has := tagSet[want]
+		switch want {
+		case "0.9.0":
+			if has {
+				t.Fatalf("did not want 0.9.0 (older than min in-use 1.0.0), got %+v", tagNames(newer))
+			}
+		case "1.1.0":
+			if !has {
+				t.Fatalf("want 1.1.0 between deployed 1.0.0 and 1.2.0, got %+v", tagNames(newer))
+			}
+		default:
+			if !has {
+				t.Fatalf("missing expected tag %q, got %+v", want, tagNames(newer))
+			}
+		}
 	}
 }
 

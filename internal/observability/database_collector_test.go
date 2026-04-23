@@ -68,7 +68,7 @@ func (m *mockStateStore) GetUniqueVulnerabilityCounts(ctx context.Context) (map[
 	return m.counts, nil
 }
 
-func (m *mockStateStore) GetMaxInUseImageTagByRepositories(ctx context.Context, repositories []string) (map[string]string, error) {
+func (m *mockStateStore) GetMinInUseImageTagByRepositories(ctx context.Context, repositories []string) (map[string]string, error) {
 	return map[string]string{"r": "1.0.0"}, nil
 }
 

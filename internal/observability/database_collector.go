@@ -183,7 +183,7 @@ func (c *DatabaseCollector) collectPolicyOutcomes(ctx context.Context, store sta
 			return
 		}
 
-		maxInUseByRepo, err := store.GetMaxInUseImageTagByRepositories(ctx, distinctRepos)
+		minInUseByRepo, err := store.GetMinInUseImageTagByRepositories(ctx, distinctRepos)
 		if err != nil {
 			if ctx.Err() != nil {
 				c.logger.Debug("in-use+newer policy metric collection timed out", "error", err)
@@ -199,7 +199,7 @@ func (c *DatabaseCollector) collectPolicyOutcomes(ctx context.Context, store sta
 			if used {
 				runtimeFailedCount++
 			}
-			if statestore.PolicyArtifactMatchesInUseOrNewer(used, scan.Repository, scan.Tag, maxInUseByRepo) {
+			if statestore.PolicyArtifactMatchesInUseOrNewer(used, scan.Repository, scan.Tag, minInUseByRepo) {
 				runtimeNewerFailedCount++
 			}
 		}
@@ -210,7 +210,7 @@ func (c *DatabaseCollector) collectPolicyOutcomes(ctx context.Context, store sta
 			if used {
 				runtimePendingCount++
 			}
-			if statestore.PolicyArtifactMatchesInUseOrNewer(used, scan.Repository, scan.Tag, maxInUseByRepo) {
+			if statestore.PolicyArtifactMatchesInUseOrNewer(used, scan.Repository, scan.Tag, minInUseByRepo) {
 				runtimeNewerPendingCount++
 			}
 		}

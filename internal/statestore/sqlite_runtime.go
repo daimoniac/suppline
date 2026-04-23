@@ -361,10 +361,10 @@ func (s *SQLiteStore) GetRuntimeUsageForScan(ctx context.Context, digest, reposi
 	return &usage, nil
 }
 
-// GetMaxInUseImageTagByRepositories returns the maximum in-use image tag per repository name using
-// cluster inventory (same tag ordering as the "in use + newer" filter). Repositories with no
+// GetMinInUseImageTagByRepositories returns the minimum in-use image tag per repository name using
+// cluster inventory (same tag ordering as the "in use + newer" filter floor). Repositories with no
 // in-use image are omitted from the result.
-func (s *SQLiteStore) GetMaxInUseImageTagByRepositories(ctx context.Context, repositories []string) (map[string]string, error) {
+func (s *SQLiteStore) GetMinInUseImageTagByRepositories(ctx context.Context, repositories []string) (map[string]string, error) {
 	if len(repositories) == 0 {
 		return map[string]string{}, nil
 	}
@@ -387,7 +387,7 @@ func (s *SQLiteStore) GetMaxInUseImageTagByRepositories(ctx context.Context, rep
 			continue
 		}
 		tags := uniqueTagsFromRuntimeUsage(usage)
-		if m := semverutil.MaxImageTagInList(tags); m != "" {
+		if m := semverutil.MinImageTagInList(tags); m != "" {
 			out[repo] = m
 		}
 	}

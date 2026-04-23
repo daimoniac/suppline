@@ -101,3 +101,18 @@ func MaxImageTagInList(tags []string) string {
 	}
 	return best
 }
+
+// MinImageTagInList returns the tag that sorts first under CompareImageTagOrder, or "" if the list is empty.
+func MinImageTagInList(tags []string) string {
+	if len(tags) == 0 {
+		return ""
+	}
+	best := tags[0]
+	for i := 1; i < len(tags); i++ {
+		t := tags[i]
+		if cmp, ok := CompareImageTagOrder(t, best); ok && cmp < 0 {
+			best = t
+		}
+	}
+	return best
+}

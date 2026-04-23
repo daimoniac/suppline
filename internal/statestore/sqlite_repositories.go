@@ -538,27 +538,9 @@ func (s *SQLiteStore) GetRepository(ctx context.Context, name string, filter Rep
 			return nil, err
 		}
 
-		inUseRows := make([]inUseTagRow, 0, len(detail.Tags))
-		for _, tag := range detail.Tags {
-			usage, ok := runtimeUsageByDigest[tag.Digest]
-			used := ok && usage.RuntimeUsed
-			inUseRows = append(inUseRows, inUseTagRow{repository: name, tag: tag.Name, used: used})
-		}
-		maxTagByRepo := maxInUseImageTagByRepository(inUseRows)
-
-		filtered := make([]TagInfo, 0, len(detail.Tags))
-		for _, tag := range detail.Tags {
-			usage, ok := runtimeUsageByDigest[tag.Digest]
-			used := ok && usage.RuntimeUsed
-			if !recordPassesImageUsage(used, name, tag.Name, filter.ImageUsage, maxTagByRepo) {
-				continue
-			}
-			tag.RuntimeUsed = used
-			if used {
-				tag.Runtime = usage.Runtime
-			}
-			filtered = append(filtered, tag)
-		}
+		inUseRows := inUseTagRowsFromRepositoryTags(name, detail.Tags, runtimeUsageByDigest)
+		minTagByRepo := minInUseImageTagByRepository(inUseRows)
+		filtered := filterTagInfoByImageUsage(detail.Tags, name, runtimeUsageByDigest, minTagByRepo, filter.ImageUsage)
 
 		detail.Total = len(filtered)
 
@@ -585,7 +567,7 @@ func (s *SQLiteStore) GetRepository(ctx context.Context, name string, filter Rep
 }
 
 // allLatestArtifactTagRows returns the newest artifact per (repository, tag) across the database.
-func (s *SQLiteStore) allLatestArtifactTagRows(ctx context.Context) ([]struct{ repo, tag, digest string }, error) {
+func (s *SQLiteStore) allLatestArtifactTagRows(ctx context.Context) ([]latestArtifactTagRow, error) {
 	query := `
 		SELECT r.name, a.tag, a.digest
 		FROM artifacts a
@@ -603,9 +585,9 @@ func (s *SQLiteStore) allLatestArtifactTagRows(ctx context.Context) ([]struct{ r
 	}
 	defer rows.Close()
 
-	var out []struct{ repo, tag, digest string }
+	var out []latestArtifactTagRow
 	for rows.Next() {
-		var row struct{ repo, tag, digest string }
+		var row latestArtifactTagRow
 		if err := rows.Scan(&row.repo, &row.tag, &row.digest); err != nil {
 			return nil, errors.NewTransientf("failed to scan artifact tag row: %w", err)
 		}
@@ -639,19 +621,13 @@ func (s *SQLiteStore) repositoryNamesWithInUseOrNewerSemver(ctx context.Context)
 	if err != nil {
 		return nil, err
 	}
-	inUseRows := make([]inUseTagRow, 0, len(rows))
-	for _, row := range rows {
-		u, ok := usageByDigest[row.digest]
-		used := ok && u.RuntimeUsed
-		inUseRows = append(inUseRows, inUseTagRow{repository: row.repo, tag: row.tag, used: used})
-	}
-	maxTagByRepo := maxInUseImageTagByRepository(inUseRows)
+	inUseRows := inUseTagRowsFromLatestArtifactRows(rows, usageByDigest)
+	minTagByRepo := minInUseImageTagByRepository(inUseRows)
 
 	visible := make(map[string]bool)
 	for _, row := range rows {
-		u, ok := usageByDigest[row.digest]
-		used := ok && u.RuntimeUsed
-		if recordPassesImageUsage(used, row.repo, row.tag, ImageUsageInUseOrNewerSemver, maxTagByRepo) {
+		used, _ := runtimeUseForDigest(usageByDigest, row.digest)
+		if matchesInUseOrNewer(used, row.repo, row.tag, minTagByRepo) {
 			visible[row.repo] = true
 		}
 	}

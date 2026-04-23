@@ -155,7 +155,12 @@ function LayoutContent() {
             >
               <option value="all">All images</option>
               <option value="in-use">In use</option>
-              <option value="in-use-newer">In use + newer</option>
+              <option
+                value="in-use-newer"
+                title="In-cluster images plus registry tags newer than the oldest deployed tag for this repository (includes intermediate versions)."
+              >
+                In use + newer
+              </option>
               <option value="not-in-use">Not in use</option>
             </select>
           </div>
