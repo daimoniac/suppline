@@ -1,6 +1,7 @@
 package statestore
 
 import (
+	"context"
 	"database/sql"
 	"fmt"
 	"time"
@@ -67,6 +68,11 @@ func NewSQLiteStore(dbPath string) (*SQLiteStore, error) {
 	if err := store.initSchema(); err != nil {
 		db.Close()
 		return nil, errors.NewPermanentf("failed to initialize schema: %w", err)
+	}
+
+	if err := store.ensureRepositorySummaries(context.Background()); err != nil {
+		db.Close()
+		return nil, errors.NewPermanentf("failed to ensure repository summaries: %w", err)
 	}
 
 	return store, nil
@@ -186,6 +192,31 @@ func (s *SQLiteStore) initSchema() error {
 		repository TEXT PRIMARY KEY,
 		created_at INTEGER NOT NULL DEFAULT (cast(strftime('%s', 'now') as integer))
 	);
+
+	CREATE TABLE IF NOT EXISTS repository_summary (
+		repository_id INTEGER PRIMARY KEY REFERENCES repositories(id) ON DELETE CASCADE,
+		artifact_count INTEGER NOT NULL DEFAULT 0,
+		last_scan_time INTEGER,
+		max_critical INTEGER NOT NULL DEFAULT 0,
+		max_high INTEGER NOT NULL DEFAULT 0,
+		max_medium INTEGER NOT NULL DEFAULT 0,
+		max_low INTEGER NOT NULL DEFAULT 0,
+		policy_passed INTEGER NOT NULL DEFAULT 1,
+		policy_status TEXT NOT NULL DEFAULT 'passed',
+		runtime_used INTEGER NOT NULL DEFAULT 0,
+		whitelisted INTEGER NOT NULL DEFAULT 0,
+		updated_at INTEGER NOT NULL DEFAULT 0
+	);
+
+	CREATE INDEX IF NOT EXISTS idx_repository_summary_last_scan ON repository_summary(last_scan_time);
+	CREATE INDEX IF NOT EXISTS idx_repository_summary_list ON repository_summary(runtime_used, whitelisted, last_scan_time);
+	CREATE INDEX IF NOT EXISTS idx_repository_summary_policy ON repository_summary(policy_status, last_scan_time);
+
+	CREATE TRIGGER IF NOT EXISTS tr_repositories_ai_repository_summary
+	AFTER INSERT ON repositories
+	BEGIN
+		INSERT OR IGNORE INTO repository_summary (repository_id) VALUES (NEW.id);
+	END;
 
 	CREATE INDEX IF NOT EXISTS idx_artifacts_repository ON artifacts(repository_id);
 	CREATE INDEX IF NOT EXISTS idx_artifacts_digest ON artifacts(digest);

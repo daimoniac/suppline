@@ -49,6 +49,10 @@ func (s *SQLiteStore) AddRuntimeUnusedRepositoryWhitelist(ctx context.Context, r
 		return errors.NewTransientf("failed to add runtime-unused repository whitelist entry: %w", err)
 	}
 
+	if err := s.refreshRepositorySummaryByName(ctx, repository); err != nil {
+		return err
+	}
+
 	return nil
 }
 
@@ -63,6 +67,10 @@ func (s *SQLiteStore) RemoveRuntimeUnusedRepositoryWhitelist(ctx context.Context
 		WHERE repository = ?
 	`, repository); err != nil {
 		return errors.NewTransientf("failed to remove runtime-unused repository whitelist entry: %w", err)
+	}
+
+	if err := s.refreshRepositorySummaryByName(ctx, repository); err != nil {
+		return err
 	}
 
 	return nil
