@@ -72,7 +72,7 @@ kyverno-image-policy:
       EOF
     - |
       set -eu
-      POLICY_FILE="${KYVERNO_POLICY_PATH:-${CI_PROJECT_DIR:-.}/scripts/cd-gate/policy.yaml}"
+      POLICY_FILE="${KYVERNO_POLICY_PATH:-${CI_PROJECT_DIR:-.}/policy.yaml}"
       if [ ! -f "$POLICY_FILE" ]; then
         echo "Kyverno policy not found: $POLICY_FILE" >&2
         echo "Add and commit scripts/cd-gate/policy.yaml, or set KYVERNO_POLICY_PATH." >&2
