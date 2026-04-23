@@ -27,7 +27,7 @@ interface DashboardData {
 
 export default function DashboardPage() {
   const { apiClient } = useAuth();
-  const { inUseQuery } = useImageUsageFilter();
+  const { inUseRequestParams } = useImageUsageFilter();
   const [data, setData] = useState<DashboardData | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
@@ -37,8 +37,8 @@ export default function DashboardPage() {
     setError('');
     try {
       const [recentScans, policySnap, allVEXStatements, inactiveVEXStatements, vulnStats, semverTasksResult, runtimeUnusedReposResult, runtimeUnusedWhitelistResult, vexExpiryTasksResult] = await Promise.all([
-        apiClient.getScans({ limit: 20, ...(inUseQuery !== undefined && { in_use: inUseQuery }) }),
-        fetchPolicyComplianceData(apiClient, inUseQuery),
+        apiClient.getScans({ limit: 20, ...(inUseRequestParams && inUseRequestParams) }),
+        fetchPolicyComplianceData(apiClient, inUseRequestParams),
         apiClient.getVEXStatements({}),
         apiClient.getInactiveVEXStatements(),
         apiClient.getVulnerabilityStats(),
@@ -83,7 +83,7 @@ export default function DashboardPage() {
     }
   };
 
-  useEffect(() => { load(); }, [inUseQuery]); // eslint-disable-line
+  useEffect(() => { load(); }, [inUseRequestParams]); // eslint-disable-line
 
   if (loading) return <LoadingState message="Loading dashboard…" />;
   if (error) return <ErrorState message={error} onRetry={load} />;

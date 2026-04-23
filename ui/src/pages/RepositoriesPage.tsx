@@ -13,7 +13,7 @@ import { useScanPageFilters } from '../lib/useScanPageFilters';
 export default function RepositoriesPage() {
   const { apiClient } = useAuth();
   const { toast } = useToast();
-  const { inUseQuery } = useImageUsageFilter();
+  const { inUseRequestParams } = useImageUsageFilter();
   const [searchParams, setSearchParams] = useSearchParams();
 
   const [repos, setRepos] = useState<Repository[]>([]);
@@ -82,7 +82,7 @@ export default function RepositoriesPage() {
       const resp = await apiClient.getRepositories({
         limit: pageSize, offset,
         ...(repository && { search: repository }),
-        ...(inUseQuery !== undefined && { in_use: inUseQuery }),
+        ...(inUseRequestParams && inUseRequestParams),
         ...(policyFilter !== 'all' && { policy_status: policyFilter }),
         sort_by: sortBy,
       });
@@ -98,7 +98,7 @@ export default function RepositoriesPage() {
     } finally {
       setLoading(false);
     }
-  }, [apiClient, inUseQuery, offset, pageSize, policyFilter, repository, sortCol, sortDir]);
+  }, [apiClient, inUseRequestParams, offset, pageSize, policyFilter, repository, sortCol, sortDir]);
 
   useEffect(() => { load(); }, [load]);
 

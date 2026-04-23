@@ -597,6 +597,87 @@ func TestListScans_InUseFilter_UsesCanonicalRepositoryTagFallback(t *testing.T) 
 	}
 }
 
+func TestListScans_InUseOrNewerSemver(t *testing.T) {
+	dbPath := "test_cluster_in_use_newer_" + t.Name() + ".db"
+	_ = os.Remove(dbPath)
+	defer os.Remove(dbPath)
+
+	store, err := NewSQLiteStore(dbPath)
+	if err != nil {
+		t.Fatalf("Failed to create SQLite store: %v", err)
+	}
+	defer store.Close()
+
+	const repo = "docker.io/lib/semverapp"
+	digV100 := "sha256:semver-100"
+	digV110 := "sha256:semver-110"
+	digV090 := "sha256:semver-090"
+	ctx := context.Background()
+
+	records := []*ScanRecord{
+		{Repository: repo, Tag: "1.0.0", Digest: digV100, PolicyPassed: true, SBOMAttested: true, VulnAttested: true, SCAIAttested: true, Vulnerabilities: []types.VulnerabilityRecord{}, AppliedVEXStatements: []types.AppliedVEXStatement{}},
+		{Repository: repo, Tag: "1.1.0", Digest: digV110, PolicyPassed: true, SBOMAttested: true, VulnAttested: true, SCAIAttested: true, Vulnerabilities: []types.VulnerabilityRecord{}, AppliedVEXStatements: []types.AppliedVEXStatement{}},
+		{Repository: repo, Tag: "0.9.0", Digest: digV090, PolicyPassed: true, SBOMAttested: true, VulnAttested: true, SCAIAttested: true, Vulnerabilities: []types.VulnerabilityRecord{}, AppliedVEXStatements: []types.AppliedVEXStatement{}},
+	}
+	for _, r := range records {
+		if err := store.RecordScan(ctx, r); err != nil {
+			t.Fatalf("RecordScan %s: %v", r.Tag, err)
+		}
+	}
+	if err := store.RecordClusterInventory(ctx, "c1", []ClusterImageEntry{{
+		Namespace: "default", ImageRef: repo, Tag: "1.0.0", Digest: digV100,
+	}}, time.Now().UTC()); err != nil {
+		t.Fatalf("RecordClusterInventory: %v", err)
+	}
+
+	onlyInUse := true
+	strict, err := store.ListScans(ctx, ScanFilter{InUse: &onlyInUse, Limit: 100, Offset: 0})
+	if err != nil {
+		t.Fatalf("ListScans strict: %v", err)
+	}
+	if len(strict) != 1 || strict[0].Tag != "1.0.0" {
+		t.Fatalf("in_use only: want one row 1.0.0, got %+v", strict)
+	}
+
+	newer, err := store.ListScans(ctx, ScanFilter{InUseImage: InUseImageFilterInUseOrNewerSemver, Limit: 100, Offset: 0})
+	if err != nil {
+		t.Fatalf("ListScans in_use_newer: %v", err)
+	}
+	if len(newer) != 2 {
+		t.Fatalf("in_use+newer: want 2 rows, got %d: %+v", len(newer), tagNames(newer))
+	}
+	tagSet := map[string]struct{}{}
+	for _, s := range newer {
+		tagSet[s.Tag] = struct{}{}
+	}
+	if _, ok := tagSet["1.0.0"]; !ok {
+		t.Fatal("expected 1.0.0 in in_use+newer list")
+	}
+	if _, ok := tagSet["1.1.0"]; !ok {
+		t.Fatal("expected 1.1.0 in in_use+newer list (newer semver than max in use)")
+	}
+	if _, ok := tagSet["0.9.0"]; ok {
+		t.Fatal("did not expect 0.9.0 in in_use+newer list (older than in-use 1.0.0)")
+	}
+
+	n, err := store.CountScans(ctx, ScanFilter{InUseImage: InUseImageFilterInUseOrNewerSemver})
+	if err != nil {
+		t.Fatalf("CountScans: %v", err)
+	}
+	if n != 2 {
+		t.Fatalf("CountScans in_use+newer: want 2, got %d", n)
+	}
+}
+
+func tagNames(scans []*ScanRecord) []string {
+	out := make([]string, 0, len(scans))
+	for _, s := range scans {
+		out = append(out, s.Tag)
+	}
+	sort.Strings(out)
+	return out
+}
+
 func TestListRepositories_RuntimeUsageFallbackRepositoryTag(t *testing.T) {
 	dbPath := "test_cluster_runtime_repo_list_fallback_" + t.Name() + ".db"
 	_ = os.Remove(dbPath)

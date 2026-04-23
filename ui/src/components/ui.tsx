@@ -83,7 +83,13 @@ export function ConfirmModal({ open, title, message, onConfirm, onCancel }: { op
 
 export function PageHeader({ title, subtitle, showImageUsage = true }: { title: string; subtitle: string; showImageUsage?: boolean }) {
   const { filter } = useImageUsageFilter();
-  const filterLabel = filter === 'all' ? 'All images' : filter === 'in-use' ? 'In use' : 'Not in use';
+  const filterLabel = filter === 'all'
+    ? 'All images'
+    : filter === 'in-use'
+      ? 'In use'
+      : filter === 'in-use-newer'
+        ? 'In use + newer'
+        : 'Not in use';
   return (
     <div className="mb-6">
       <h1 className="text-2xl font-bold">{title}</h1>

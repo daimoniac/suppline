@@ -692,7 +692,7 @@ function VEXExpiryTask({ data, inactiveEntries }: { data: VEXExpiryTasksResponse
 
 export default function TasksPage() {
   const { apiClient } = useAuth();
-  const { inUseQuery } = useImageUsageFilter();
+  const { inUseRequestParams } = useImageUsageFilter();
   const location = useLocation();
   const [semverData, setSemverData] = useState<SemverUpdateTasksResponse | null>(null);
   const [runtimeUnusedData, setRuntimeUnusedData] = useState<RepositoriesResponse | null>(null);
@@ -711,7 +711,7 @@ export default function TasksPage() {
         loadAllRuntimeUnusedRepositories(apiClient),
         apiClient.getVEXExpiryTasks(),
         apiClient.getInactiveVEXStatements(),
-        fetchPolicyComplianceData(apiClient, inUseQuery),
+        fetchPolicyComplianceData(apiClient, inUseRequestParams),
       ]);
       setSemverData(semverResult);
       setRuntimeUnusedData(runtimeUnusedResult);
@@ -723,7 +723,7 @@ export default function TasksPage() {
     } finally {
       setLoading(false);
     }
-  }, [apiClient, inUseQuery]);
+  }, [apiClient, inUseRequestParams]);
 
   useEffect(() => { load(); }, [load]);
 

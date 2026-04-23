@@ -14,7 +14,7 @@ export default function RepositoryDetailPage() {
   const decodedName = decodeURIComponent(name || '');
   const { apiClient } = useAuth();
   const { toast } = useToast();
-  const { inUseQuery } = useImageUsageFilter();
+  const { inUseRequestParams } = useImageUsageFilter();
   const [searchParams] = useSearchParams();
 
   const [allTags, setAllTags] = useState<RepositoryTag[]>([]);
@@ -49,7 +49,7 @@ export default function RepositoryDetailPage() {
           limit: fetchSize,
           offset,
           ...(search && { search }),
-          ...(inUseQuery !== undefined && { in_use: inUseQuery }),
+          ...(inUseRequestParams && inUseRequestParams),
         });
         const pageTags = resp?.Tags || [];
         expectedTotal = resp?.Total || 0;
@@ -66,7 +66,7 @@ export default function RepositoryDetailPage() {
     } finally {
       setLoading(false);
     }
-  }, [apiClient, decodedName, inUseQuery, search]);
+  }, [apiClient, decodedName, inUseRequestParams, search]);
 
   const filteredAndSortedTags = useMemo(() => {
     const colMap: Record<string, keyof RepositoryTag> = {

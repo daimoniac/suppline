@@ -10,6 +10,7 @@ import (
 	"time"
 
 	semver "github.com/Masterminds/semver/v3"
+	"github.com/daimoniac/suppline/internal/semverutil"
 	"github.com/daimoniac/suppline/internal/statestore"
 )
 
@@ -138,7 +139,7 @@ func (s *APIServer) handleGetSemverUpdateTasks(w http.ResponseWriter, r *http.Re
 					if img.Tag == "" || img.Tag == "latest" {
 						continue
 					}
-					if _, err := semver.NewVersion(img.Tag); err != nil {
+					if _, ok := semverutil.ParseVersion(img.Tag); !ok {
 						continue // not a semver tag
 					}
 
@@ -171,8 +172,11 @@ func (s *APIServer) handleGetSemverUpdateTasks(w http.ResponseWriter, r *http.Re
 					c.RuntimeVersions = append(c.RuntimeVersions, tag)
 				}
 				sort.Slice(c.RuntimeVersions, func(a, b int) bool {
-					va, _ := semver.NewVersion(c.RuntimeVersions[a])
-					vb, _ := semver.NewVersion(c.RuntimeVersions[b])
+					va, okA := semverutil.ParseVersion(c.RuntimeVersions[a])
+					vb, okB := semverutil.ParseVersion(c.RuntimeVersions[b])
+					if !okA || !okB {
+						return c.RuntimeVersions[a] < c.RuntimeVersions[b]
+					}
 					return va.LessThan(vb)
 				})
 			}
@@ -201,8 +205,8 @@ func (s *APIServer) handleGetSemverUpdateTasks(w http.ResponseWriter, r *http.Re
 		var outOfRange []*semver.Version
 		var allVersions []*semver.Version
 		for _, tag := range c.RuntimeVersions {
-			v, err := semver.NewVersion(tag)
-			if err != nil {
+			v, ok := semverutil.ParseVersion(tag)
+			if !ok {
 				continue
 			}
 			allVersions = append(allVersions, v)

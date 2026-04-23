@@ -10,11 +10,11 @@ export type PolicyComplianceSnapshot = {
 
 export async function fetchPolicyComplianceData(
   apiClient: APIClient,
-  inUseQuery: boolean | undefined
+  inUseRequestParams: Record<string, string> | undefined
 ): Promise<PolicyComplianceSnapshot> {
   const nonPassedScans = await apiClient.getScans({
     policy_passed: false,
-    ...(inUseQuery !== undefined && { in_use: inUseQuery }),
+    ...(inUseRequestParams && inUseRequestParams),
   });
 
   const failedScans = nonPassedScans.filter(s => s.PolicyStatus !== 'pending');

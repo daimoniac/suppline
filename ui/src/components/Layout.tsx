@@ -150,11 +150,12 @@ function LayoutContent() {
             <select
               id="global-image-usage-filter"
               value={filter}
-              onChange={e => setFilter(e.target.value as 'all' | 'in-use' | 'not-in-use')}
+              onChange={e => setFilter(e.target.value as 'all' | 'in-use' | 'in-use-newer' | 'not-in-use')}
               className="w-full px-2.5 py-2 bg-bg-secondary border border-border rounded-lg text-sm text-text-primary focus:outline-none focus:border-accent/50 transition-colors"
             >
               <option value="all">All images</option>
               <option value="in-use">In use</option>
+              <option value="in-use-newer">In use + newer</option>
               <option value="not-in-use">Not in use</option>
             </select>
           </div>

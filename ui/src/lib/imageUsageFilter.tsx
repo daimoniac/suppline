@@ -1,11 +1,15 @@
 import { createContext, useContext, useEffect, useMemo, useState } from 'react';
 
-export type ImageUsageFilter = 'all' | 'in-use' | 'not-in-use';
+export type ImageUsageFilter = 'all' | 'in-use' | 'in-use-newer' | 'not-in-use';
 
 interface ImageUsageFilterContextValue {
   filter: ImageUsageFilter;
   setFilter: (next: ImageUsageFilter) => void;
-  inUseQuery: boolean | undefined;
+  /**
+   * Query params for API requests (e.g. in_use_mode). Undefined when the filter is "all".
+   * Prefer this over the legacy in_use boolean.
+   */
+  inUseRequestParams: Record<string, string> | undefined;
 }
 
 const STORAGE_KEY = 'suppline:image-usage-filter';
@@ -13,12 +17,26 @@ const STORAGE_KEY = 'suppline:image-usage-filter';
 const ImageUsageFilterContext = createContext<ImageUsageFilterContextValue | null>(null);
 
 function isValidFilter(value: string | null): value is ImageUsageFilter {
-  return value === 'all' || value === 'in-use' || value === 'not-in-use';
+  return value === 'all' || value === 'in-use' || value === 'in-use-newer' || value === 'not-in-use';
 }
 
-function filterToInUseQuery(filter: ImageUsageFilter): boolean | undefined {
-  if (filter === 'all') return undefined;
-  return filter === 'in-use';
+/**
+ * Maps global image usage filter to query parameters understood by
+ * /api/v1 (see parseListImageUsage in the API). Omits params when "all".
+ */
+export function imageUsageToRequestParams(filter: ImageUsageFilter): Record<string, string> | undefined {
+  switch (filter) {
+    case 'all':
+      return undefined;
+    case 'in-use':
+      return { in_use_mode: 'in_use' };
+    case 'in-use-newer':
+      return { in_use_mode: 'in_use_newer' };
+    case 'not-in-use':
+      return { in_use_mode: 'not_in_use' };
+    default:
+      return undefined;
+  }
 }
 
 export function ImageUsageFilterProvider({ children }: { children: React.ReactNode }) {
@@ -35,7 +53,7 @@ export function ImageUsageFilterProvider({ children }: { children: React.ReactNo
   const value = useMemo<ImageUsageFilterContextValue>(() => ({
     filter,
     setFilter,
-    inUseQuery: filterToInUseQuery(filter),
+    inUseRequestParams: imageUsageToRequestParams(filter),
   }), [filter]);
 
   return <ImageUsageFilterContext.Provider value={value}>{children}</ImageUsageFilterContext.Provider>;

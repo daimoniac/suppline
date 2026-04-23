@@ -102,7 +102,7 @@ func (s *SQLiteStore) ListRepositories(ctx context.Context, filter RepositoryFil
 		query += " ORDER BY r.name ASC"
 	}
 
-	needsPostFilter := filter.InUse != nil || filter.PolicyStatus != ""
+	needsPostFilter := filter.InUse != nil || filter.PolicyStatus != "" || inUseImageFilterApplies(filter.InUseImage)
 
 	if !needsPostFilter && filter.Limit > 0 {
 		query += " LIMIT ?"
@@ -199,7 +199,7 @@ func (s *SQLiteStore) ListRepositories(ctx context.Context, filter RepositoryFil
 		_, repositories[i].Whitelisted = whitelistSet[repositories[i].Name]
 	}
 
-	if filter.InUse != nil || filter.PolicyStatus != "" {
+	if filter.InUse != nil || filter.PolicyStatus != "" || inUseImageFilterApplies(filter.InUseImage) {
 		filtered := repositories
 
 		if filter.PolicyStatus != "" {
@@ -219,6 +219,19 @@ func (s *SQLiteStore) ListRepositories(ctx context.Context, filter RepositoryFil
 				// Whitelisted repositories should appear in both in-use and not-in-use
 				// filtered views so operators can always discover and manage them.
 				if repo.Whitelisted || matchesInUse == *filter.InUse {
+					result = append(result, repo)
+				}
+			}
+			filtered = result
+		} else if inUseImageFilterApplies(filter.InUseImage) {
+			repoHasVisible, err := s.repositoryNamesWithInUseOrNewerSemver(ctx)
+			if err != nil {
+				return nil, err
+			}
+			result := make([]RepositoryInfo, 0, len(filtered))
+			for _, repo := range filtered {
+				matchesInUse := repo.RuntimeUsed || repo.Whitelisted
+				if matchesInUse || repoHasVisible[repo.Name] {
 					result = append(result, repo)
 				}
 			}
@@ -350,7 +363,7 @@ func (s *SQLiteStore) GetRepository(ctx context.Context, name string, filter Rep
 		return nil, err
 	}
 
-	effectiveInUseOnly := filter.InUseOnly && !isWhitelisted
+	effectiveTagFilter := (filter.InUseOnly || inUseImageFilterApplies(filter.InUseImage)) && !isWhitelisted
 
 	// First, get total count of unique tags for this repository
 	countQuery := `
@@ -425,12 +438,12 @@ func (s *SQLiteStore) GetRepository(ctx context.Context, name string, filter Rep
 
 	query += " ORDER BY a.tag ASC"
 
-	if !effectiveInUseOnly && filter.Limit > 0 {
+	if !effectiveTagFilter && filter.Limit > 0 {
 		query += " LIMIT ?"
 		args = append(args, filter.Limit)
 	}
 
-	if !effectiveInUseOnly && filter.Offset > 0 {
+	if !effectiveTagFilter && filter.Offset > 0 {
 		query += " OFFSET ?"
 		args = append(args, filter.Offset)
 	}
@@ -498,7 +511,7 @@ func (s *SQLiteStore) GetRepository(ctx context.Context, name string, filter Rep
 		return nil, errors.NewTransientf("error iterating tag rows: %w", err)
 	}
 
-	if effectiveInUseOnly {
+	if effectiveTagFilter {
 		lookups := make([]RuntimeLookupInput, 0, len(detail.Tags))
 		for _, tag := range detail.Tags {
 			lookups = append(lookups, RuntimeLookupInput{
@@ -513,14 +526,31 @@ func (s *SQLiteStore) GetRepository(ctx context.Context, name string, filter Rep
 			return nil, err
 		}
 
+		inUseRows := make([]inUseTagRow, 0, len(detail.Tags))
+		for _, tag := range detail.Tags {
+			usage, ok := runtimeUsageByDigest[tag.Digest]
+			used := ok && usage.RuntimeUsed
+			inUseRows = append(inUseRows, inUseTagRow{repository: name, tag: tag.Name, used: used})
+		}
+		maxByRepo := maxInUseSemverByRepository(inUseRows)
+
 		filtered := make([]TagInfo, 0, len(detail.Tags))
 		for _, tag := range detail.Tags {
 			usage, ok := runtimeUsageByDigest[tag.Digest]
-			if !ok || !usage.RuntimeUsed {
-				continue
+			used := ok && usage.RuntimeUsed
+			if inUseImageFilterApplies(filter.InUseImage) {
+				if !recordPassesInUseImageFilter(used, name, tag.Name, nil, filter.InUseImage, maxByRepo) {
+					continue
+				}
+			} else {
+				if !used {
+					continue
+				}
 			}
-			tag.RuntimeUsed = usage.RuntimeUsed
-			tag.Runtime = usage.Runtime
+			tag.RuntimeUsed = used
+			if used {
+				tag.Runtime = usage.Runtime
+			}
 			filtered = append(filtered, tag)
 		}
 
@@ -546,6 +576,80 @@ func (s *SQLiteStore) GetRepository(ctx context.Context, name string, filter Rep
 	}
 
 	return detail, nil
+}
+
+// allLatestArtifactTagRows returns the newest artifact per (repository, tag) across the database.
+func (s *SQLiteStore) allLatestArtifactTagRows(ctx context.Context) ([]struct{ repo, tag, digest string }, error) {
+	query := `
+		SELECT r.name, a.tag, a.digest
+		FROM artifacts a
+		JOIN repositories r ON a.repository_id = r.id
+		INNER JOIN (
+			SELECT a2.repository_id, a2.tag, MAX(a2.id) AS max_id
+			FROM artifacts a2
+			GROUP BY a2.repository_id, a2.tag
+		) latest ON a.repository_id = latest.repository_id AND a.tag = latest.tag AND a.id = latest.max_id
+		ORDER BY r.name, a.tag
+	`
+	rows, err := s.db.QueryContext(ctx, query)
+	if err != nil {
+		return nil, errors.NewTransientf("failed to list latest artifact tag rows: %w", err)
+	}
+	defer rows.Close()
+
+	var out []struct{ repo, tag, digest string }
+	for rows.Next() {
+		var row struct{ repo, tag, digest string }
+		if err := rows.Scan(&row.repo, &row.tag, &row.digest); err != nil {
+			return nil, errors.NewTransientf("failed to scan artifact tag row: %w", err)
+		}
+		out = append(out, row)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, errors.NewTransientf("error iterating artifact tag rows: %w", err)
+	}
+	return out, nil
+}
+
+// repositoryNamesWithInUseOrNewerSemver maps repository name -> true if that repo should appear
+// in the "in use or newer semver" repository list (any tag passes the scan list predicate for that mode).
+func (s *SQLiteStore) repositoryNamesWithInUseOrNewerSemver(ctx context.Context) (map[string]bool, error) {
+	rows, err := s.allLatestArtifactTagRows(ctx)
+	if err != nil {
+		return nil, err
+	}
+	if len(rows) == 0 {
+		return map[string]bool{}, nil
+	}
+	lookups := make([]RuntimeLookupInput, 0, len(rows))
+	for _, row := range rows {
+		lookups = append(lookups, RuntimeLookupInput{
+			Digest:     row.digest,
+			Repository: row.repo,
+			Tag:        row.tag,
+		})
+	}
+	usageByDigest, err := s.GetRuntimeUsageForScans(ctx, lookups)
+	if err != nil {
+		return nil, err
+	}
+	inUseRows := make([]inUseTagRow, 0, len(rows))
+	for _, row := range rows {
+		u, ok := usageByDigest[row.digest]
+		used := ok && u.RuntimeUsed
+		inUseRows = append(inUseRows, inUseTagRow{repository: row.repo, tag: row.tag, used: used})
+	}
+	maxBy := maxInUseSemverByRepository(inUseRows)
+
+	visible := make(map[string]bool)
+	for _, row := range rows {
+		u, ok := usageByDigest[row.digest]
+		used := ok && u.RuntimeUsed
+		if recordPassesInUseImageFilter(used, row.repo, row.tag, nil, InUseImageFilterInUseOrNewerSemver, maxBy) {
+			visible[row.repo] = true
+		}
+	}
+	return visible, nil
 }
 
 // CleanupArtifactScans removes all scan records for all artifacts with the given digest (MANIFEST_UNKNOWN case).

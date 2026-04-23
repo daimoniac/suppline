@@ -11,7 +11,7 @@ import { useScanPageFilters } from '../lib/useScanPageFilters';
 
 export default function FailedImagesPage() {
   const { apiClient } = useAuth();
-  const { inUseQuery } = useImageUsageFilter();
+  const { inUseRequestParams } = useImageUsageFilter();
   const [searchParams, setSearchParams] = useSearchParams();
 
   const [scans, setScans] = useState<Scan[]>([]);
@@ -68,7 +68,7 @@ export default function FailedImagesPage() {
       // Keep default behavior as "policy exceptions" (failed + pending).
       if (policyFilter === 'all') filters.policy_passed = false;
       else filters.policy_status = policyFilter;
-      if (inUseQuery !== undefined) filters.in_use = inUseQuery;
+      if (inUseRequestParams) Object.assign(filters, inUseRequestParams);
 
       const result = await apiClient.getScansPage(filters);
       setScans(result.scans);
@@ -78,7 +78,7 @@ export default function FailedImagesPage() {
     } finally {
       setLoading(false);
     }
-  }, [apiClient, inUseQuery, offset, pageSize, policyFilter, repository, sortCol, sortDir]);
+  }, [apiClient, inUseRequestParams, offset, pageSize, policyFilter, repository, sortCol, sortDir]);
 
   useEffect(() => { load(); }, [load]);
 

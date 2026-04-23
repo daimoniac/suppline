@@ -275,6 +275,55 @@ func parseQueryParamBool(r *http.Request, key string) *bool {
 	return &boolValue
 }
 
+// parseListImageUsage resolves in_use and optional in_use_mode for /scans and /repositories
+// list endpoints. When in_use_mode is non-empty, it takes precedence over in_use.
+func parseListImageUsage(r *http.Request) (inUse *bool, inImage statestore.InUseImageFilter) {
+	mode := strings.ToLower(strings.TrimSpace(parseQueryParam(r, "in_use_mode")))
+	legacy := parseQueryParamBool(r, "in_use")
+	if mode == "" {
+		return legacy, statestore.InUseImageFilterUnspecified
+	}
+	switch mode {
+	case "all":
+		return nil, statestore.InUseImageFilterUnspecified
+	case "in_use", "in-use":
+		t := true
+		return &t, statestore.InUseImageFilterUnspecified
+	case "not_in_use", "not-in-use", "out":
+		f := false
+		return &f, statestore.InUseImageFilterUnspecified
+	case "in_use_newer", "in-use-newer":
+		return nil, statestore.InUseImageFilterInUseOrNewerSemver
+	default:
+		return legacy, statestore.InUseImageFilterUnspecified
+	}
+}
+
+// parseRepositoryDetailInUse maps in_use and in_use_mode for GET /repositories/{name}.
+func parseRepositoryDetailInUse(r *http.Request) (inUseOnly bool, inImage statestore.InUseImageFilter) {
+	mode := strings.ToLower(strings.TrimSpace(parseQueryParam(r, "in_use_mode")))
+	legacy := parseQueryParamBool(r, "in_use")
+	if mode == "" {
+		if legacy == nil {
+			return false, statestore.InUseImageFilterUnspecified
+		}
+		return *legacy, statestore.InUseImageFilterUnspecified
+	}
+	switch mode {
+	case "all", "not_in_use", "not-in-use", "out", "false", "0":
+		return false, statestore.InUseImageFilterUnspecified
+	case "in_use", "in-use", "true", "1":
+		return true, statestore.InUseImageFilterUnspecified
+	case "in_use_newer", "in-use-newer":
+		return true, statestore.InUseImageFilterInUseOrNewerSemver
+	default:
+		if legacy == nil {
+			return false, statestore.InUseImageFilterUnspecified
+		}
+		return *legacy, statestore.InUseImageFilterUnspecified
+	}
+}
+
 // handleRootRedirect redirects / to /swagger/
 func (s *APIServer) handleRootRedirect(w http.ResponseWriter, r *http.Request) {
 	if r.URL.Path != "/" {

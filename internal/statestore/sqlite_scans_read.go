@@ -334,7 +334,7 @@ func buildScanFilterClause(filter ScanFilter) (string, []interface{}) {
 		}
 	}
 
-	if filter.InUse != nil {
+	if needsInUsePostFilter(filter.InUse, filter.InUseImage) {
 		// In-use filtering is applied after query via runtime usage lookups so
 		// digest and repository/tag fallback matching stay consistent.
 	}
@@ -355,7 +355,7 @@ func buildScanFilterClause(filter ScanFilter) (string, []interface{}) {
 func (s *SQLiteStore) ListScans(ctx context.Context, filter ScanFilter) ([]*ScanRecord, error) {
 	originalLimit := filter.Limit
 	originalOffset := filter.Offset
-	if filter.InUse != nil {
+	if needsInUsePostFilter(filter.InUse, filter.InUseImage) {
 		filter.Limit = 0
 		filter.Offset = 0
 	}
@@ -449,7 +449,7 @@ func (s *SQLiteStore) ListScans(ctx context.Context, filter ScanFilter) ([]*Scan
 		return nil, errors.NewTransientf("error iterating rows: %w", err)
 	}
 
-	if filter.InUse != nil {
+	if needsInUsePostFilter(filter.InUse, filter.InUseImage) {
 		lookups := make([]RuntimeLookupInput, 0, len(records))
 		for _, record := range records {
 			lookups = append(lookups, RuntimeLookupInput{
@@ -464,11 +464,23 @@ func (s *SQLiteStore) ListScans(ctx context.Context, filter ScanFilter) ([]*Scan
 			return nil, err
 		}
 
+		inUseRows := make([]inUseTagRow, 0, len(records))
+		for _, record := range records {
+			usage, ok := runtimeUsageByDigest[record.Digest]
+			used := ok && usage.RuntimeUsed
+			inUseRows = append(inUseRows, inUseTagRow{
+				repository: record.Repository,
+				tag:        record.Tag,
+				used:       used,
+			})
+		}
+		maxByRepo := maxInUseSemverByRepository(inUseRows)
+
 		filtered := make([]*ScanRecord, 0, len(records))
 		for _, record := range records {
 			usage, ok := runtimeUsageByDigest[record.Digest]
 			used := ok && usage.RuntimeUsed
-			if used != *filter.InUse {
+			if !recordPassesInUseImageFilter(used, record.Repository, record.Tag, filter.InUse, filter.InUseImage, maxByRepo) {
 				continue
 			}
 			record.RuntimeUsed = used
@@ -503,7 +515,7 @@ func (s *SQLiteStore) ListScans(ctx context.Context, filter ScanFilter) ([]*Scan
 // CountScans returns the total number of scan records that match the filters.
 // Pagination fields (Limit/Offset) are intentionally ignored.
 func (s *SQLiteStore) CountScans(ctx context.Context, filter ScanFilter) (int, error) {
-	if filter.InUse != nil {
+	if needsInUsePostFilter(filter.InUse, filter.InUseImage) {
 		fullFilter := filter
 		fullFilter.Limit = 0
 		fullFilter.Offset = 0

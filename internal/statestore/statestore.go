@@ -286,7 +286,8 @@ type RepositoryFilter struct {
 	Search       string
 	PolicyStatus string // "passed", "failed", or "pending"; empty = no filter
 	MaxAge       int    // Maximum age of last scan in seconds (0 = no limit)
-	InUse        *bool  // nil = all, true = only in use, false = only not in use
+	InUse        *bool  // nil = all, true = only in use, false = only not in use (see InUseImage)
+	InUseImage   InUseImageFilter
 	SortBy       string // Sorting option: "age_desc" (default), "name_asc", "name_desc"
 	Limit        int
 	Offset       int
@@ -310,6 +311,8 @@ type RepositoryTagFilter struct {
 	Search     string
 	ExactMatch bool // use exact equality instead of prefix match (used for rescan lookups)
 	InUseOnly  bool
+	// InUseImage extends InUseOnly when set to InUseImageFilterInUseOrNewerSemver (in use or semver-newer than max in use).
+	InUseImage InUseImageFilter
 	Limit      int
 	Offset     int
 }
@@ -362,7 +365,8 @@ type ScanFilter struct {
 	Repository   string
 	PolicyPassed *bool  // kept for backward-compat callers; PolicyStatus takes precedence when set
 	PolicyStatus string // "passed", "failed", or "pending"; empty = no filter
-	InUse        *bool  // nil = all, true = only in use, false = only not in use
+	InUse        *bool  // nil = all, true = only in use, false = only not in use (see InUseImage)
+	InUseImage   InUseImageFilter
 	MaxAge       int    // Maximum age of scans in seconds (0 = no limit)
 	SortBy       string // Sorting option: "age_desc" (default)
 	Limit        int
