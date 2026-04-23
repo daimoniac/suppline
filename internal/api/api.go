@@ -275,6 +275,28 @@ func parseQueryParamBool(r *http.Request, key string) *bool {
 	return &boolValue
 }
 
+// parseRepositoryListInUseQuery resolves the repository list in-use filter.
+// If "in_use" is present it wins; otherwise "in_use_mode" is used (legacy / UI compatibility).
+// For repository listing, in_use_newer is equivalent to in_use (semver applies to tag lists only).
+func parseRepositoryListInUseQuery(r *http.Request) *bool {
+	if _, ok := r.URL.Query()["in_use"]; ok {
+		return parseQueryParamBool(r, "in_use")
+	}
+	mode := strings.ToLower(strings.TrimSpace(parseQueryParam(r, "in_use_mode")))
+	switch mode {
+	case "", "all":
+		return nil
+	case "in_use", "in-use", "in_use_newer", "in-use-newer":
+		v := true
+		return &v
+	case "not_in_use", "not-in-use", "out":
+		v := false
+		return &v
+	default:
+		return nil
+	}
+}
+
 // handleRootRedirect redirects / to /swagger/
 func (s *APIServer) handleRootRedirect(w http.ResponseWriter, r *http.Request) {
 	if r.URL.Path != "/" {

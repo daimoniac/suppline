@@ -166,6 +166,10 @@ func (s *SQLiteStore) RecordScan(ctx context.Context, record *ScanRecord) error 
 		return errors.NewTransientf("failed to commit transaction: %w", err)
 	}
 
+	if err := s.refreshRepositorySummary(ctx, repositoryID); err != nil {
+		return err
+	}
+
 	return nil
 }
 

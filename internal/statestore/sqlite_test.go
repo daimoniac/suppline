@@ -870,7 +870,7 @@ func TestSchemaAndConstraints(t *testing.T) {
 
 	// Test 1: Verify all tables exist
 	t.Run("All tables are created", func(t *testing.T) {
-		tables := []string{"repositories", "artifacts", "scan_records", "vulnerabilities"}
+		tables := []string{"repositories", "artifacts", "scan_records", "vulnerabilities", "repository_summary"}
 		for _, table := range tables {
 			var count int
 			err := store.db.QueryRowContext(ctx, `

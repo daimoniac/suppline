@@ -102,6 +102,10 @@ func (s *SQLiteStore) RecordClusterInventory(ctx context.Context, clusterName st
 		return errors.NewTransientf("failed to commit cluster inventory transaction: %w", err)
 	}
 
+	if err := s.refreshRuntimeUsedAllRepositories(ctx); err != nil {
+		return err
+	}
+
 	return nil
 }
 
@@ -264,6 +268,10 @@ func (s *SQLiteStore) DeleteClusterInventory(ctx context.Context, clusterName st
 		DELETE FROM clusters WHERE name = ?
 	`, clusterName); err != nil {
 		return errors.NewTransientf("failed to delete cluster inventory: %w", err)
+	}
+
+	if err := s.refreshRuntimeUsedAllRepositories(ctx); err != nil {
+		return err
 	}
 
 	return nil

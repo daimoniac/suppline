@@ -10,240 +10,136 @@ import (
 )
 
 func (s *SQLiteStore) ListRepositories(ctx context.Context, filter RepositoryFilter) (*RepositoriesListResponse, error) {
-	// First, get total count
-	countQuery := `
-		SELECT COUNT(DISTINCT r.id)
-		FROM repositories r
-		LEFT JOIN artifacts a ON r.id = a.repository_id
-		LEFT JOIN scan_records sr ON a.last_scan_id = sr.id
-		WHERE 1=1
-	`
-	countArgs := []interface{}{}
+	// Repository list "in use" is a boolean filter from the API. Semver-based "newer than
+	// min in-use tag" applies only to per-repository tag lists (GetRepository), not here.
+
+	if err := s.repairRepositorySummariesForList(ctx); err != nil {
+		return nil, err
+	}
+
+	whereSQL := " WHERE 1=1"
+	args := make([]interface{}, 0)
 
 	if filter.Search != "" {
-		countQuery += " AND r.name LIKE ?"
-		countArgs = append(countArgs, "%"+filter.Search+"%")
-	}
-
-	if filter.MaxAge > 0 {
-		countQuery += " AND (SELECT MAX(sr2.created_at) FROM scan_records sr2 JOIN artifacts a2 ON sr2.artifact_id = a2.id WHERE a2.repository_id = r.id) >= ?"
-		countArgs = append(countArgs, time.Now().Unix()-int64(filter.MaxAge))
-	}
-
-	var total int
-	err := s.db.QueryRowContext(ctx, countQuery, countArgs...).Scan(&total)
-	if err != nil {
-		return nil, errors.NewTransientf("failed to count repositories: %w", err)
-	}
-
-	// Query repositories with aggregated data
-	query := `
-		SELECT 
-			r.id,
-			r.name,
-			COUNT(DISTINCT a.id) as artifact_count,
-			(SELECT MAX(sr2.created_at) FROM scan_records sr2 
-			 JOIN artifacts a2 ON sr2.artifact_id = a2.id 
-			 WHERE a2.repository_id = r.id) as last_scan_time,
-			MAX(sr.critical_vuln_count) as max_critical,
-			MAX(sr.high_vuln_count) as max_high,
-			MAX(sr.medium_vuln_count) as max_medium,
-			MAX(sr.low_vuln_count) as max_low,
-			CASE WHEN COUNT(CASE WHEN sr.policy_passed = 0 THEN 1 END) > 0 THEN 0 ELSE 1 END as policy_passed,
-			CASE
-				WHEN COUNT(CASE WHEN sr.policy_status = 'failed' THEN 1 END) > 0 THEN 'failed'
-				WHEN COUNT(CASE WHEN sr.policy_status = 'pending' THEN 1 END) > 0 THEN 'pending'
-				WHEN COUNT(CASE WHEN sr.policy_passed = 0 THEN 1 END) > 0 THEN 'failed'
-				ELSE 'passed'
-			END as policy_status,
-			CASE WHEN EXISTS (SELECT 1 FROM artifacts ai JOIN cluster_images ci ON ci.digest = ai.digest WHERE ai.repository_id = r.id) THEN 1 ELSE 0 END as runtime_used
-		FROM repositories r
-		LEFT JOIN artifacts a ON r.id = a.repository_id
-		LEFT JOIN scan_records sr ON a.last_scan_id = sr.id
-		WHERE 1=1
-	`
-	args := []interface{}{}
-
-	if filter.Search != "" {
-		query += " AND r.name LIKE ?"
+		whereSQL += " AND r.name LIKE ?"
 		args = append(args, "%"+filter.Search+"%")
 	}
 
 	if filter.MaxAge > 0 {
-		query += " AND (SELECT MAX(sr2.created_at) FROM scan_records sr2 JOIN artifacts a2 ON sr2.artifact_id = a2.id WHERE a2.repository_id = r.id) >= ?"
+		whereSQL += " AND rs.last_scan_time IS NOT NULL AND rs.last_scan_time >= ?"
 		args = append(args, time.Now().Unix()-int64(filter.MaxAge))
 	}
 
-	query += " GROUP BY r.id, r.name"
+	if filter.PolicyStatus != "" {
+		whereSQL += " AND rs.policy_status = ?"
+		args = append(args, filter.PolicyStatus)
+	}
 
-	// Add sorting
+	if filter.InUse != nil {
+		if *filter.InUse {
+			whereSQL += " AND (rs.runtime_used = 1 OR rs.whitelisted = 1)"
+		} else {
+			whereSQL += " AND (rs.runtime_used = 0 OR rs.whitelisted = 1)"
+		}
+	}
+
+	countQuery := `SELECT COUNT(*) FROM repositories r INNER JOIN repository_summary rs ON r.id = rs.repository_id` + whereSQL
+	var total int
+	if err := s.db.QueryRowContext(ctx, countQuery, args...).Scan(&total); err != nil {
+		return nil, errors.NewTransientf("failed to count repositories: %w", err)
+	}
+
+	query := `
+		SELECT
+			r.name,
+			rs.artifact_count,
+			rs.last_scan_time,
+			rs.max_critical,
+			rs.max_high,
+			rs.max_medium,
+			rs.max_low,
+			rs.policy_passed,
+			rs.policy_status,
+			rs.runtime_used,
+			rs.whitelisted
+		FROM repositories r
+		INNER JOIN repository_summary rs ON r.id = rs.repository_id
+	` + whereSQL
+
 	switch filter.SortBy {
 	case "name_asc":
 		query += " ORDER BY r.name ASC"
 	case "name_desc":
 		query += " ORDER BY r.name DESC"
 	case "artifacts_asc":
-		query += " ORDER BY artifact_count ASC, r.name ASC"
+		query += " ORDER BY rs.artifact_count ASC, r.name ASC"
 	case "artifacts_desc":
-		query += " ORDER BY artifact_count DESC, r.name ASC"
+		query += " ORDER BY rs.artifact_count DESC, r.name ASC"
 	case "age_desc", "":
-		// Default: most recently scanned first
-		query += " ORDER BY last_scan_time DESC NULLS LAST"
+		query += " ORDER BY rs.last_scan_time DESC NULLS LAST, r.name ASC"
 	case "age_asc":
-		// Oldest scanned first
-		query += " ORDER BY last_scan_time ASC NULLS FIRST"
+		query += " ORDER BY rs.last_scan_time ASC NULLS FIRST, r.name ASC"
 	case "status_asc":
-		// Failed first (0), then passed (1)
-		query += " ORDER BY policy_passed ASC, r.name ASC"
+		query += " ORDER BY rs.policy_passed ASC, r.name ASC"
 	case "status_desc":
-		// Passed first (1), then failed (0)
-		query += " ORDER BY policy_passed DESC, r.name ASC"
+		query += " ORDER BY rs.policy_passed DESC, r.name ASC"
 	default:
 		query += " ORDER BY r.name ASC"
 	}
 
-	needsPostFilter := filter.InUse != nil || filter.PolicyStatus != ""
-
-	if !needsPostFilter && filter.Limit > 0 {
+	listArgs := append([]interface{}{}, args...)
+	if filter.Limit > 0 {
 		query += " LIMIT ?"
-		args = append(args, filter.Limit)
+		listArgs = append(listArgs, filter.Limit)
 	}
-
-	if !needsPostFilter && filter.Offset > 0 {
+	if filter.Offset > 0 {
 		query += " OFFSET ?"
-		args = append(args, filter.Offset)
+		listArgs = append(listArgs, filter.Offset)
 	}
 
-	rows, err := s.db.QueryContext(ctx, query, args...)
+	rows, err := s.db.QueryContext(ctx, query, listArgs...)
 	if err != nil {
 		return nil, errors.NewTransientf("failed to list repositories: %w", err)
 	}
 	defer rows.Close()
 
 	var repositories []RepositoryInfo
-	repoNamesByID := make(map[int64]string)
-	repoIDs := make([]int64, 0)
 	for rows.Next() {
 		var repo RepositoryInfo
-		var repoID int64 // repository id (not needed in response, but must scan into something)
 		var lastScanTimeUnix sql.NullInt64
-		var maxCritical sql.NullInt64
-		var maxHigh sql.NullInt64
-		var maxMedium sql.NullInt64
-		var maxLow sql.NullInt64
 		var policyPassed int
-		var policyStatus string
 		var runtimeUsed int
+		var whitelisted int
 
-		err := rows.Scan(
-			&repoID, // repository id (not needed in response)
+		if err := rows.Scan(
 			&repo.Name,
 			&repo.ArtifactCount,
 			&lastScanTimeUnix,
-			&maxCritical,
-			&maxHigh,
-			&maxMedium,
-			&maxLow,
+			&repo.VulnerabilityCount.Critical,
+			&repo.VulnerabilityCount.High,
+			&repo.VulnerabilityCount.Medium,
+			&repo.VulnerabilityCount.Low,
 			&policyPassed,
-			&policyStatus,
+			&repo.PolicyStatus,
 			&runtimeUsed,
-		)
-		if err != nil {
+			&whitelisted,
+		); err != nil {
 			return nil, errors.NewTransientf("failed to scan repository row: %w", err)
 		}
 
-		// Store Unix timestamps directly
 		if lastScanTimeUnix.Valid {
 			repo.LastScanTime = &lastScanTimeUnix.Int64
 		}
 
-		// Aggregate vulnerability counts from most vulnerable artifact
-		if maxCritical.Valid {
-			repo.VulnerabilityCount.Critical = int(maxCritical.Int64)
-		}
-		if maxHigh.Valid {
-			repo.VulnerabilityCount.High = int(maxHigh.Int64)
-		}
-		if maxMedium.Valid {
-			repo.VulnerabilityCount.Medium = int(maxMedium.Int64)
-		}
-		if maxLow.Valid {
-			repo.VulnerabilityCount.Low = int(maxLow.Int64)
-		}
-
 		repo.PolicyPassed = policyPassed == 1
-		repo.PolicyStatus = policyStatus
 		repo.RuntimeUsed = runtimeUsed == 1
+		repo.Whitelisted = whitelisted == 1
 
 		repositories = append(repositories, repo)
-		repoNamesByID[repoID] = repo.Name
-		repoIDs = append(repoIDs, repoID)
 	}
 
 	if err := rows.Err(); err != nil {
 		return nil, errors.NewTransientf("error iterating repository rows: %w", err)
-	}
-
-	runtimeUsedByRepoID, err := s.repositoryRuntimeUsageByID(ctx, repoNamesByID)
-	if err != nil {
-		return nil, err
-	}
-
-	whitelistSet, err := s.runtimeUnusedRepositoryWhitelistSet(ctx)
-	if err != nil {
-		return nil, err
-	}
-
-	for i, repoID := range repoIDs {
-		repositories[i].RuntimeUsed = runtimeUsedByRepoID[repoID]
-		_, repositories[i].Whitelisted = whitelistSet[repositories[i].Name]
-	}
-
-	if filter.InUse != nil || filter.PolicyStatus != "" {
-		filtered := repositories
-
-		if filter.PolicyStatus != "" {
-			result := make([]RepositoryInfo, 0, len(filtered))
-			for _, repo := range filtered {
-				if repo.PolicyStatus == filter.PolicyStatus {
-					result = append(result, repo)
-				}
-			}
-			filtered = result
-		}
-
-		if filter.InUse != nil {
-			result := make([]RepositoryInfo, 0, len(filtered))
-			for _, repo := range filtered {
-				matchesInUse := repo.RuntimeUsed || repo.Whitelisted
-				// Whitelisted repositories should appear in both in-use and not-in-use
-				// filtered views so operators can always discover and manage them.
-				if repo.Whitelisted || matchesInUse == *filter.InUse {
-					result = append(result, repo)
-				}
-			}
-			filtered = result
-		}
-
-		total = len(filtered)
-
-		start := filter.Offset
-		if start < 0 {
-			start = 0
-		}
-		if start > len(filtered) {
-			start = len(filtered)
-		}
-
-		end := len(filtered)
-		if filter.Limit > 0 {
-			candidateEnd := start + filter.Limit
-			if candidateEnd < end {
-				end = candidateEnd
-			}
-		}
-
-		repositories = filtered[start:end]
 	}
 
 	return &RepositoriesListResponse{

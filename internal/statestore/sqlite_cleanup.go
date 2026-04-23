@@ -10,7 +10,10 @@ import (
 )
 
 func (s *SQLiteStore) CleanupArtifactScans(ctx context.Context, digest string) error {
-	return s.executeCleanup(ctx, func(tx *sql.Tx) error {
+	var repoIDsToRefresh []int64
+	seenRefresh := make(map[int64]struct{})
+
+	err := s.executeCleanup(ctx, func(tx *sql.Tx) error {
 		// First, get all artifact IDs and repository IDs for this digest
 		rows, err := tx.QueryContext(ctx, `
 			SELECT a.id, a.repository_id 
@@ -93,11 +96,25 @@ func (s *SQLiteStore) CleanupArtifactScans(ctx context.Context, digest string) e
 				if err != nil {
 					return errors.NewTransientf("failed to delete empty repository: %w", err)
 				}
+			} else {
+				if _, ok := seenRefresh[repositoryID]; !ok {
+					seenRefresh[repositoryID] = struct{}{}
+					repoIDsToRefresh = append(repoIDsToRefresh, repositoryID)
+				}
 			}
 		}
 
 		return nil
 	})
+	if err != nil {
+		return err
+	}
+	for _, id := range repoIDsToRefresh {
+		if err := s.refreshRepositorySummary(ctx, id); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 // executeCleanup is a helper method for transaction management in cleanup operations
@@ -180,7 +197,9 @@ func (s *SQLiteStore) CleanupExcessScans(ctx context.Context, digest string, max
 		return errors.NewPermanentf("maxScansToKeep must be positive, got %d", maxScansToKeep)
 	}
 
-	return s.executeCleanup(ctx, func(tx *sql.Tx) error {
+	repoSeen := make(map[int64]struct{})
+
+	err := s.executeCleanup(ctx, func(tx *sql.Tx) error {
 		// Get all artifact IDs for this digest
 		rows, err := tx.QueryContext(ctx, `
 			SELECT id FROM artifacts WHERE digest = ?
@@ -209,17 +228,35 @@ func (s *SQLiteStore) CleanupExcessScans(ctx context.Context, digest string, max
 
 		// Clean up excess scans for each artifact
 		for _, artifactID := range artifactIDs {
-			if err := s.cleanupExcessScansForArtifact(tx, ctx, artifactID, maxScansToKeep); err != nil {
+			changed, err := s.cleanupExcessScansForArtifact(tx, ctx, artifactID, maxScansToKeep)
+			if err != nil {
 				return err
+			}
+			if changed {
+				var repoID int64
+				if err := tx.QueryRowContext(ctx, `SELECT repository_id FROM artifacts WHERE id = ?`, artifactID).Scan(&repoID); err != nil {
+					return errors.NewTransientf("failed to read repository_id for artifact after excess scan cleanup: %w", err)
+				}
+				repoSeen[repoID] = struct{}{}
 			}
 		}
 
 		return nil
 	})
+	if err != nil {
+		return err
+	}
+	for id := range repoSeen {
+		if err := s.refreshRepositorySummary(ctx, id); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
-// cleanupExcessScansForArtifact is a helper to clean up scans for a single artifact
-func (s *SQLiteStore) cleanupExcessScansForArtifact(tx *sql.Tx, ctx context.Context, artifactID int64, maxScansToKeep int) error {
+// cleanupExcessScansForArtifact is a helper to clean up scans for a single artifact.
+// It returns whether any scan rows were deleted (last_scan_id may have changed).
+func (s *SQLiteStore) cleanupExcessScansForArtifact(tx *sql.Tx, ctx context.Context, artifactID int64, maxScansToKeep int) (bool, error) {
 	// Get scan IDs to keep (most recent N scans)
 	rows, err := tx.QueryContext(ctx, `
 		SELECT id FROM scan_records 
@@ -228,7 +265,7 @@ func (s *SQLiteStore) cleanupExcessScansForArtifact(tx *sql.Tx, ctx context.Cont
 		LIMIT ?
 	`, artifactID, maxScansToKeep)
 	if err != nil {
-		return errors.NewTransientf("failed to query scans to keep: %w", err)
+		return false, errors.NewTransientf("failed to query scans to keep: %w", err)
 	}
 	defer rows.Close()
 
@@ -236,18 +273,18 @@ func (s *SQLiteStore) cleanupExcessScansForArtifact(tx *sql.Tx, ctx context.Cont
 	for rows.Next() {
 		var scanID int64
 		if err := rows.Scan(&scanID); err != nil {
-			return errors.NewTransientf("failed to scan keep scan ID: %w", err)
+			return false, errors.NewTransientf("failed to scan keep scan ID: %w", err)
 		}
 		keepScanIDs = append(keepScanIDs, scanID)
 	}
 
 	if err := rows.Err(); err != nil {
-		return errors.NewTransientf("error iterating keep scan IDs: %w", err)
+		return false, errors.NewTransientf("error iterating keep scan IDs: %w", err)
 	}
 
 	// If we have fewer scans than the limit, nothing to clean up
 	if len(keepScanIDs) < maxScansToKeep {
-		return nil
+		return false, nil
 	}
 
 	// Build placeholders for the IN clause
@@ -267,12 +304,12 @@ func (s *SQLiteStore) cleanupExcessScansForArtifact(tx *sql.Tx, ctx context.Cont
 
 	result, err := tx.ExecContext(ctx, deleteQuery, args...)
 	if err != nil {
-		return errors.NewTransientf("failed to delete excess scan records: %w", err)
+		return false, errors.NewTransientf("failed to delete excess scan records: %w", err)
 	}
 
 	deletedCount, err := result.RowsAffected()
 	if err != nil {
-		return errors.NewTransientf("failed to get deleted rows count: %w", err)
+		return false, errors.NewTransientf("failed to get deleted rows count: %w", err)
 	}
 
 	if deletedCount > 0 {
@@ -284,10 +321,11 @@ func (s *SQLiteStore) cleanupExcessScansForArtifact(tx *sql.Tx, ctx context.Cont
 				WHERE id = ?
 			`, keepScanIDs[0], artifactID) // keepScanIDs[0] is the most recent
 			if err != nil {
-				return errors.NewTransientf("failed to update artifact last_scan_id: %w", err)
+				return false, errors.NewTransientf("failed to update artifact last_scan_id: %w", err)
 			}
 		}
+		return true, nil
 	}
 
-	return nil
+	return false, nil
 }
