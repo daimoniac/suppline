@@ -1,0 +1,111 @@
+services:
+  kyverno-apply-test:
+    image: alpine:3.20
+    container_name: kyverno-apply-test
+    working_dir: /work
+    environment:
+      IMAGE_UNDER_TEST: ${IMAGE_UNDER_TEST:?set IMAGE_UNDER_TEST, e.g. ghcr.io/acme/app:1.2.3 or ghcr.io/acme/app@sha256:...}
+      REGISTRY_SERVER: ${REGISTRY_SERVER:-docker.io}
+      REGISTRY_USERNAME: ${REGISTRY_USERNAME:-hostingmaloonde}
+      REGISTRY_PASSWORD: ${REGISTRY_PASSWORD:?set REGISTRY_PASSWORD or PAT}
+      KYVERNO_VERSION: ${KYVERNO_VERSION:-1.17.1}
+    command:
+      - /bin/sh
+      - -ec
+      - |
+        apk add --no-cache curl tar ca-certificates docker-cli
+
+        curl -fsSL -o /tmp/kyverno.tar.gz \
+          "https://github.com/kyverno/kyverno/releases/download/v$${KYVERNO_VERSION}/kyverno-cli_v$${KYVERNO_VERSION}_linux_x86_64.tar.gz"
+
+        tar -xzf /tmp/kyverno.tar.gz -C /usr/local/bin kyverno
+        chmod +x /usr/local/bin/kyverno
+
+        mkdir -p /work /root/.docker
+
+        echo "Logging into registry $${REGISTRY_SERVER}..."
+        echo "$${REGISTRY_PASSWORD}" | docker login "$${REGISTRY_SERVER}" \
+          --username "$${REGISTRY_USERNAME}" \
+          --password-stdin
+
+        cat > /work/policy.yaml <<'EOF'
+        apiVersion: kyverno.io/v1
+        kind: ClusterPolicy
+        metadata:
+          name: suppline-policy
+        spec:
+          validationFailureAction: Enforce
+          background: false
+          webhookTimeoutSeconds: 30
+          failurePolicy: Fail
+          rules:
+          - name: verify-scai-attestation
+            match:
+              any:
+              - resources:
+                  kinds:
+                  - Pod
+            exclude:
+              any:
+              - resources:
+                  namespaces:
+                  - kube-system
+                  - cattle-fleet-system
+                  - cattle-system
+                  - kyverno
+                  - suppline
+            verifyImages:
+            - imageReferences:
+              - "*"
+              verifyDigest: false
+              mutateDigest: false
+              attestations:
+              - type: https://in-toto.io/attestation/scai/attribute-report/v0.3
+                conditions:
+                - all:
+                  - key: '{{ time_since('''',''{{ evidence.validUntil }}'', '''') }}'
+                    operator: LessThan
+                    value: 0h
+                  - key: "{{ evidence.scanStatus }}"
+                    operator: AnyIn
+                    value: ["passed", "passed-with-exceptions"]
+                attestors:
+                - count: 1
+                  entries:
+                  - keys:
+                      publicKeys: |
+                        -----BEGIN PUBLIC KEY-----
+                        MFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAE2iduY9FdiovJPSArSCb7f/5D7fN7
+                        fuV0k23QLFyWxWW/tHwek7+esHU+tjtCUTNBLAlXLcKgWQQNEKPcNqn5Og==
+                        -----END PUBLIC KEY-----
+                      rekor:
+                        ignoreTlog: true
+                        url: https://rekor.sigstore.dev
+        EOF
+
+        cat > /work/resource.yaml <<EOF
+        apiVersion: v1
+        kind: Pod
+        metadata:
+          name: image-policy-test
+          namespace: local-test
+        spec:
+          containers:
+          - name: app
+            image: $${IMAGE_UNDER_TEST}
+          restartPolicy: Never
+        EOF
+
+        echo "Kyverno version:"
+        kyverno version
+        echo
+        echo "Testing image: $${IMAGE_UNDER_TEST}"
+        echo
+
+        kyverno apply /work/policy.yaml \
+          --resource /work/resource.yaml \
+          --registry \
+          --remove-color
+
+        echo
+        echo "RESULT: PASS"
