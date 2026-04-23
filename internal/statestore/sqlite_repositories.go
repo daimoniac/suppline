@@ -10,6 +10,9 @@ import (
 )
 
 func (s *SQLiteStore) ListRepositories(ctx context.Context, filter RepositoryFilter) (*RepositoriesListResponse, error) {
+	// Repository list "in use" is a boolean filter from the API. Semver-based "newer than
+	// min in-use tag" applies only to per-repository tag lists (GetRepository), not here.
+
 	// First, get total count
 	countQuery := `
 		SELECT COUNT(DISTINCT r.id)

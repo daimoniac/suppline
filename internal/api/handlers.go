@@ -1092,6 +1092,8 @@ func (s *APIServer) handleGenerateKyvernoPolicy(w http.ResponseWriter, r *http.R
 // @Param search query string false "Filter by repository name"
 // @Param max_age query int false "Maximum age of last scan in seconds (e.g., 86400 for last 24 hours)"
 // @Param sort_by query string false "Sort order: age_desc (default), age_asc, name_asc, name_desc, status_asc, status_desc" Enums(age_desc,age_asc,name_asc,name_desc,status_asc,status_desc)
+// @Param in_use query bool false "When set, filter by runtime in-use (true) or not in-use (false). Takes precedence over in_use_mode when both are sent."
+// @Param in_use_mode query string false "Legacy filter: all (default), in_use, not_in_use, in_use_newer. For this endpoint in_use_newer is treated like in_use (semver applies to tag lists only). Ignored when in_use is present." Enums(all,in_use,not_in_use,in_use_newer)
 // @Param limit query int false "Maximum number of results" default(100)
 // @Param offset query int false "Pagination offset" default(0)
 // @Success 200 {object} map[string]interface{} "List of repositories with aggregated data"
@@ -1106,7 +1108,7 @@ func (s *APIServer) handleListRepositories(w http.ResponseWriter, r *http.Reques
 	}
 
 	// Parse query parameters
-	inUse := parseQueryParamBool(r, "in_use")
+	inUse := parseRepositoryListInUseQuery(r)
 	filter := statestore.RepositoryFilter{
 		Search:       parseQueryParam(r, "search"),
 		PolicyStatus: parseQueryParam(r, "policy_status"),
