@@ -8,6 +8,7 @@ import (
 
 	"github.com/daimoniac/suppline/internal/errors"
 	"github.com/daimoniac/suppline/internal/types"
+	"github.com/daimoniac/suppline/internal/vulnurl"
 )
 
 func (s *SQLiteStore) GetLastScan(ctx context.Context, digest string) (*ScanRecord, error) {
@@ -301,6 +302,7 @@ func (s *SQLiteStore) loadVulnerabilitiesByScan(ctx context.Context, scanRecordI
 		if err != nil {
 			return nil, errors.NewTransientf("failed to scan vulnerability: %w", err)
 		}
+		vuln.PrimaryURL = vulnurl.NormalizeRefURL(vuln.PrimaryURL)
 		vulnerabilities = append(vulnerabilities, vuln)
 	}
 

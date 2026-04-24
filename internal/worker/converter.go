@@ -12,10 +12,13 @@ import (
 )
 
 // buildScanRecord constructs a ScanRecord from workflow results using canonical types.
+// attestResult may be nil when no attestation phase was run (e.g. error-record paths);
+// in that case the attestation flags default to false.
 func buildScanRecord(
 	task *queue.ScanTask,
 	scanResult *scanner.ScanResult,
 	policyDecision *policy.PolicyDecision,
+	attestResult *attestationResult,
 	scannedAt time.Time,
 ) *statestore.ScanRecord {
 	// Count vulnerabilities by severity and convert to records
@@ -64,6 +67,19 @@ func buildScanRecord(
 		scannedAtUnix,
 	)
 
+	// Attestation flags reflect the actual outcome of the attestation phase.
+	// SBOM and Vuln attestation failures abort the pipeline before persistence,
+	// so reaching here with ShouldAttest=true means those two succeeded. SCAI
+	// and VEX are optional/conditional, so we read their actual success from
+	// attestResult to avoid recording false negatives/positives.
+	sbomAttested := policyDecision.ShouldAttest
+	vulnAttested := policyDecision.ShouldAttest
+	var scaiAttested, vexAttested bool
+	if attestResult != nil {
+		scaiAttested = attestResult.SCAIAttested
+		vexAttested = attestResult.VEXAttested
+	}
+
 	return &statestore.ScanRecord{
 		Digest:                   task.Digest,
 		Repository:               task.Repository,
@@ -81,9 +97,10 @@ func buildScanRecord(
 		ReleaseAgeSeconds:        policyDecision.ReleaseAgeSeconds,
 		MinimumReleaseAgeSeconds: policyDecision.MinimumReleaseAgeSeconds,
 		ReleaseAgeSource:         policyDecision.ReleaseAgeSource,
-		SBOMAttested:             policyDecision.ShouldAttest,
-		VulnAttested:             policyDecision.ShouldAttest,
-		SCAIAttested:             false, // Will be set by pipeline if SCAI attestation succeeds
+		SBOMAttested:             sbomAttested,
+		VulnAttested:             vulnAttested,
+		SCAIAttested:             scaiAttested,
+		VEXAttested:              vexAttested,
 		Vulnerabilities:          vulnerabilityRecords,
 		AppliedVEXStatements:     appliedVEX,
 		PolicyFailureFindings:    policyDecision.PolicyFailureFindings,

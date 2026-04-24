@@ -86,7 +86,7 @@ func (p *Pipeline) Execute(ctx context.Context, task *queue.ScanTask) error {
 	}
 
 	// Phase 4: Persistence
-	if err := p.persistencePhase(ctx, task, scanResult, policyDecision, startTime); err != nil {
+	if err := p.persistencePhase(ctx, task, scanResult, policyDecision, attestResult, startTime); err != nil {
 		// Check if persistence or cleanup failed with transient error
 		if errors.IsTransient(err) {
 			// Return transient errors to allow retry
@@ -332,9 +332,9 @@ func (p *Pipeline) attestationPhase(ctx context.Context, task *queue.ScanTask, i
 }
 
 // persistencePhase records scan results to state store
-func (p *Pipeline) persistencePhase(ctx context.Context, task *queue.ScanTask, scanResult *scanner.ScanResult, policyDecision *policy.PolicyDecision, scannedAt time.Time) error {
+func (p *Pipeline) persistencePhase(ctx context.Context, task *queue.ScanTask, scanResult *scanner.ScanResult, policyDecision *policy.PolicyDecision, attestResult *attestationResult, scannedAt time.Time) error {
 	// Build scan record from workflow results
-	scanRecord := buildScanRecord(task, scanResult, policyDecision, scannedAt)
+	scanRecord := buildScanRecord(task, scanResult, policyDecision, attestResult, scannedAt)
 
 	// Calculate and update scan duration
 	scanDuration := time.Since(scannedAt)

@@ -13,6 +13,7 @@ import (
 	"github.com/daimoniac/suppline/internal/config"
 	"github.com/daimoniac/suppline/internal/errors"
 	"github.com/daimoniac/suppline/internal/types"
+	"github.com/daimoniac/suppline/internal/vulnurl"
 )
 
 // TrivyScanner implements Scanner using Trivy CLI in client-server mode
@@ -260,6 +261,7 @@ func (s *TrivyScanner) ScanVulnerabilities(ctx context.Context, imageRef string,
 			if primaryURL == "" && len(vuln.References) > 0 {
 				primaryURL = vuln.References[0]
 			}
+			primaryURL = vulnurl.NormalizeRefURL(primaryURL)
 
 			vulnerabilities = append(vulnerabilities, types.Vulnerability{
 				ID:           vuln.VulnerabilityID,
@@ -406,6 +408,7 @@ func (s *TrivyScanner) scanVulnerabilitiesLocal(ctx context.Context, imageRef st
 			if primaryURL == "" && len(vuln.References) > 0 {
 				primaryURL = vuln.References[0]
 			}
+			primaryURL = vulnurl.NormalizeRefURL(primaryURL)
 			vulnerabilities = append(vulnerabilities, types.Vulnerability{
 				ID:           vuln.VulnerabilityID,
 				Severity:     vuln.Severity,

@@ -7,6 +7,7 @@ import (
 
 	"github.com/daimoniac/suppline/internal/errors"
 	"github.com/daimoniac/suppline/internal/types"
+	"github.com/daimoniac/suppline/internal/vulnurl"
 )
 
 func (s *SQLiteStore) GetUniqueVulnerabilityCounts(ctx context.Context) (map[string]int, error) {
@@ -119,6 +120,7 @@ func (s *SQLiteStore) QueryVulnerabilities(ctx context.Context, filter VulnFilte
 		if err != nil {
 			return nil, errors.NewTransientf("failed to scan vulnerability: %w", err)
 		}
+		vuln.PrimaryURL = vulnurl.NormalizeRefURL(vuln.PrimaryURL)
 		vulnerabilities = append(vulnerabilities, &vuln)
 	}
 
@@ -311,6 +313,7 @@ func (s *SQLiteStore) QueryVulnerabilitiesByCVEIDs(ctx context.Context, filter V
 		if err != nil {
 			return nil, errors.NewTransientf("failed to scan vulnerability: %w", err)
 		}
+		vuln.PrimaryURL = vulnurl.NormalizeRefURL(vuln.PrimaryURL)
 		vulnerabilities = append(vulnerabilities, &vuln)
 	}
 
@@ -407,6 +410,7 @@ func (s *SQLiteStore) ListVulnerabilityGroupSummariesByCVEIDs(ctx context.Contex
 		if err != nil {
 			return nil, errors.NewTransientf("failed to scan vulnerability group summary: %w", err)
 		}
+		group.PrimaryURL = vulnurl.NormalizeRefURL(group.PrimaryURL)
 
 		group.Affected = []types.AffectedRepository{}
 		groups = append(groups, group)
