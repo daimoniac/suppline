@@ -4,8 +4,9 @@
 # Optional: build scripts/cd-gate/Dockerfile, set KYVERNO_GATE_IMAGE (see scripts/cd-gate/README.md).
 #
 # Required CI/CD variables (masked where noted):
-#   IMAGE_UNDER_TEST   — full image ref, e.g. ghcr.io/org/app@sha256:... or :tag
-#   REGISTRY_PASSWORD  — registry token or PAT (masked)
+#   KYVERNO_IMAGES_FILE — path to a text file (artifact): one full image ref per non-empty line
+#                         (# and rest of line treated as comment). Relative paths resolve under CI_PROJECT_DIR.
+#   REGISTRY_PASSWORD   — registry token or PAT (masked)
 #
 # Optional (defaults match scripts/cd-gate/docker-compose.yml):
 #   REGISTRY_SERVER, REGISTRY_USERNAME, REGISTRY_AUTH_HOST, KYVERNO_VERSION
@@ -13,7 +14,7 @@
 # gitlab-ci-local: the first positional arg is a job name, not a stage.
 #   From repo root: gitlab-ci-local --file scripts/cd-gate/.gitlab-ci.yml --stage cd-gate ...
 #   From this dir:  gitlab-ci-local --file .gitlab-ci.yml --stage cd-gate ...
-#   ... --variable IMAGE_UNDER_TEST=repo/image:tag --variable REGISTRY_PASSWORD=secret
+#   ... --variable KYVERNO_IMAGES_FILE=images.txt --variable REGISTRY_PASSWORD=secret
 #   Or run one job:  ... kyverno-image-policy --variable ...
 
 stages:
@@ -32,7 +33,7 @@ kyverno-image-policy:
   stage: cd-gate
   image: $KYVERNO_GATE_IMAGE
   rules:
-    - if: $IMAGE_UNDER_TEST
+    - if: $KYVERNO_IMAGES_FILE
   before_script:
     - set -eu
     - |
@@ -63,7 +64,39 @@ kyverno-image-policy:
   script:
     - kyverno version
     - |
-      cat > /tmp/resource.yaml <<EOF
+      set -eu
+      LIST="${KYVERNO_IMAGES_FILE:?set KYVERNO_IMAGES_FILE to the path of the image list file (one ref per line)}"
+      case "$LIST" in
+        /*) ;;
+        *) LIST="${CI_PROJECT_DIR:-.}/$LIST" ;;
+      esac
+      if [ ! -f "$LIST" ]; then
+        echo "=== Kyverno gate failed: images list file missing ===" >&2
+        echo "Expected file at: $LIST" >&2
+        exit 1
+      fi
+      if [ ! -s "$LIST" ]; then
+        echo "=== Kyverno gate failed: images list file is empty ===" >&2
+        echo "File: $LIST" >&2
+        exit 1
+      fi
+      POLICY_FILE="${KYVERNO_POLICY_PATH:-${CI_PROJECT_DIR:-.}/scripts/cd-gate/policy.yaml}"
+      if [ ! -f "$POLICY_FILE" ]; then
+        echo "=== Kyverno gate failed: policy file missing ===" >&2
+        echo "Expected policy at: $POLICY_FILE" >&2
+        echo "Images list file: $LIST" >&2
+        echo "Fix: add and commit policy.yaml, or set KYVERNO_POLICY_PATH." >&2
+        exit 1
+      fi
+      line_no=0
+      found=0
+      while IFS= read -r line || [ -n "$line" ]; do
+        line_no=$((line_no + 1))
+        img=$(printf '%s' "$line" | sed -e 's/#.*//' -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//')
+        [ -z "$img" ] && continue
+        found=$((found + 1))
+        echo "=== Kyverno gate: image (line $line_no): $img ==="
+        cat > /tmp/resource.yaml <<EOF
       apiVersion: v1
       kind: Pod
       metadata:
@@ -72,33 +105,30 @@ kyverno-image-policy:
       spec:
         containers:
         - name: app
-          image: ${IMAGE_UNDER_TEST}
+          image: $${img}
         restartPolicy: Never
       EOF
-    - |
-      set -eu
-      POLICY_FILE="${KYVERNO_POLICY_PATH:-${CI_PROJECT_DIR:-.}/policy.yaml}"
-      if [ ! -f "$POLICY_FILE" ]; then
-        echo "=== Kyverno gate failed: policy file missing ===" >&2
-        echo "Expected policy at: $POLICY_FILE" >&2
-        echo "Image under test: ${IMAGE_UNDER_TEST:-<unset>}" >&2
-        echo "Fix: add and commit policy.yaml, or set KYVERNO_POLICY_PATH." >&2
+        set +e
+        out=$(kyverno apply "$POLICY_FILE" --resource /tmp/resource.yaml --registry --remove-color --detailed-results 2>&1)
+        kyverno_ec=$?
+        set -e
+        printf '%s\n' "$out"
+        if printf '%s\n' "$out" | grep -qE 'pass:[[:space:]]*0,[[:space:]]*fail:[[:space:]]*0'; then
+          echo "=== Kyverno gate failed: no rule results (pass:0, fail:0) ===" >&2
+          echo "Kyverno did not apply any policy outcomes. Common causes: wrong or empty policy path in the job, policy not in the git clone, or CLI could not load rules." >&2
+          echo "Policy file: $POLICY_FILE" >&2
+          echo "Image: $img (line $line_no of $LIST)" >&2
+          exit 1
+        fi
+        if [ "$kyverno_ec" -ne 0 ]; then
+          echo "=== Kyverno gate failed: apply exited $kyverno_ec ===" >&2
+          echo "Image: $img (line $line_no of $LIST)" >&2
+          exit "$kyverno_ec"
+        fi
+      done < "$LIST"
+      if [ "$found" -eq 0 ]; then
+        echo "=== Kyverno gate failed: no image refs in file (only empty or comment lines?) ===" >&2
+        echo "File: $LIST" >&2
         exit 1
-      fi
-      set +e
-      out=$(kyverno apply "$POLICY_FILE" --resource /tmp/resource.yaml --registry --remove-color --detailed-results 2>&1)
-      kyverno_ec=$?
-      set -e
-      printf '%s\n' "$out"
-      if printf '%s\n' "$out" | grep -qE 'pass:[[:space:]]*0,[[:space:]]*fail:[[:space:]]*0'; then
-        echo "=== Kyverno gate failed: no rule results (pass:0, fail:0) ===" >&2
-        echo "Kyverno did not apply any policy outcomes. Common causes: wrong or empty policy path in the job, policy not in the git clone, or CLI could not load rules." >&2
-        echo "Policy file: $POLICY_FILE" >&2
-        echo "Image under test: ${IMAGE_UNDER_TEST:-<unset>}" >&2
-        exit 1
-      fi
-      if [ "$kyverno_ec" -ne 0 ]; then
-        echo "=== Kyverno gate failed: apply exited $kyverno_ec ===" >&2
-        exit "$kyverno_ec"
       fi
     - 'echo "RESULT: PASS"'

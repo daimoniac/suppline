@@ -15,8 +15,18 @@ This directory holds the **Kyverno `verifyImages` / SCAI attestation** check use
 
 From this directory:
 
+Create a text file with **one full image reference per line** (empty lines and `#` comments are ignored), for example `images.txt`:
+
+```text
+your.registry.example/org/app:1.2.3
+your.registry.example/other@sha256:abcd...
+```
+
+Then:
+
 ```bash
-export IMAGE_UNDER_TEST='your.registry.example/org/app:tag-or-digest'
+# Optional: host path to the list file (default ./images.txt next to this compose file)
+# export KYVERNO_IMAGES_FILE="$PWD/images.txt"
 export REGISTRY_PASSWORD='...'   # or PAT for the registry
 # optional overrides:
 # export REGISTRY_SERVER=docker.io
@@ -26,7 +36,7 @@ export REGISTRY_PASSWORD='...'   # or PAT for the registry
 docker compose run --rm kyverno-apply-test
 ```
 
-Compose bind-mounts `./policy.yaml` into the container. The script installs the Kyverno CLI for `linux_x86_64` (use an amd64 machine or adjust the tarball URL).
+Compose bind-mounts `./policy.yaml` and your image list (host path from `KYVERNO_IMAGES_FILE`, default `./images.txt` next to this file) into the container. The script installs the Kyverno CLI for `linux_x86_64` (use an amd64 machine or adjust the tarball URL).
 
 ## GitLab CI
 
@@ -41,13 +51,13 @@ include:
 
 - **Name:** `kyverno-image-policy`
 - **Stage:** `cd-gate`
-- **Runs when:** `IMAGE_UNDER_TEST` is set (typically from an upstream build job or CI variable).
+- **Runs when:** `KYVERNO_IMAGES_FILE` is set to the path of the image list file (usually produced by an upstream job as an **artifact**).
 
 ### Required CI/CD variables
 
 | Variable | Description |
 |----------|-------------|
-| `IMAGE_UNDER_TEST` | Full image reference (`registry/repo@sha256:…` or `:tag`). |
+| `KYVERNO_IMAGES_FILE` | Path to a text file in the job workspace: one image ref per line (`registry/repo@sha256:…` or `:tag`). Relative paths resolve under `CI_PROJECT_DIR`. Lines whose first non-blank character is `#`, and blank lines, are skipped. |
 | `REGISTRY_PASSWORD` | Registry token or PAT (**mask** in GitLab). |
 
 ### Optional variables
@@ -58,7 +68,7 @@ include:
 | `REGISTRY_USERNAME` | `hostingmaloonde` | Username for `~/.docker/config.json`. |
 | `REGISTRY_AUTH_HOST` | (derived) | Override JSON key under `auths` if needed for your registry. |
 | `KYVERNO_VERSION` | `1.17.1` | Kyverno CLI release to install when using the default Alpine image. |
-| `KYVERNO_POLICY_PATH` | `${CI_PROJECT_DIR}/scripts/cd-gate/policy.yaml` | Override path to the policy file. |
+| `KYVERNO_POLICY_PATH` | `${CI_PROJECT_DIR}/policy.yaml` | Override path to the policy file. |
 | `KYVERNO_GATE_IMAGE` | `alpine:3.20` | Job image; set to your prebuilt image (below) to skip CLI download. |
 
 ### Faster pipelines: prebuilt job image
@@ -66,10 +76,9 @@ include:
 Build and push once 
 
 ```bash
-docker build -f scripts/cd-gate/Dockerfile \
+docker build -f  \
   --build-arg KYVERNO_VERSION=1.17.1 \
-  -t "${CI_REGISTRY_IMAGE}/kyverno-gate:1.17.1" \
-  scripts/cd-gate
+  -t "${CI_REGISTRY_IMAGE}/kyverno-gate:1.17.1" 
 docker push "${CI_REGISTRY_IMAGE}/kyverno-gate:1.17.1"
 ```
 
@@ -87,12 +96,14 @@ The job skips installing Kyverno when the `kyverno` binary is already on `PATH`.
 From the repository root:
 
 ```bash
-gitlab-ci-local --file scripts/cd-gate/.gitlab-ci.yml kyverno-image-policy \
-  --variable IMAGE_UNDER_TEST=repo/image:tag \
+gitlab-ci-local kyverno-image-policy \
+  --variable KYVERNO_IMAGES_FILE=scripts/cd-gate/images.txt \
   --variable REGISTRY_PASSWORD=secret
 ```
 
+Ensure `images.txt` exists in the simulated workspace (tracked or created before the run), with one image reference per line.
+
 ## Troubleshooting
 
-- **`Applying 0 policy rule(s)...` and `pass: 0, fail: 0`:** Kyverno did not load any policy file (wrong or missing path, or file not in the repo). Ensure `scripts/cd-gate/policy.yaml` exists in the clone and `KYVERNO_POLICY_PATH` is correct. The GitLab job and Compose script **fail the step** if the summary line contains both `pass: 0` and `fail: 0`, so this cannot silently pass CI. On failure they print a short **reason block** (policy path, image ref); `kyverno apply` is run with **`--detailed-results`** so the lines above that block carry rule-level detail from Kyverno.
+- **`Applying 0 policy rule(s)...` and `pass: 0, fail: 0`:** Kyverno did not load any policy file (wrong or missing path, or file not in the repo). Ensure `policy.yaml` exists in the clone and `KYVERNO_POLICY_PATH` is correct. The GitLab job and Compose script **fail the step** if the summary line contains both `pass: 0` and `fail: 0`, so this cannot silently pass CI. On failure they print a short **reason block** (policy path, image ref); `kyverno apply` is run with **`--detailed-results`** so the lines above that block carry rule-level detail from Kyverno.
 - **YAML / `gitlab-ci-local`:** Lines like `echo "RESULT: PASS"` must be quoted in YAML so the colon is not parsed as a mapping.
