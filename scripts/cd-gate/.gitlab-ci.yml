@@ -1,150 +1,80 @@
-# Kyverno verifyImages (SCAI) gate — runs on Kubernetes or Docker GitLab runners with no DinD.
+# Kyverno verifyImages (SCAI) gate. All logic lives in scripts/cd-gate/kyverno-gate.sh
+# so CI and the local docker-compose harness stay in sync.
 #
-# ghcr.io/kyverno/kyverno-cli is distroless (no shell). Default: Alpine + CLI tarball each run.
-# Optional: build scripts/cd-gate/Dockerfile, set KYVERNO_GATE_IMAGE (see scripts/cd-gate/README.md).
+# Two jobs:
+#   * build-kyverno-gate-image : kaniko build+push of scripts/cd-gate/Dockerfile.
+#     Triggers on default-branch changes to that Dockerfile, plus manual on any
+#     pipeline. Only needed the first time (or when bumping KYVERNO_VERSION).
+#   * kyverno-image-policy     : the actual gate. Uses the prebuilt image when
+#     available; falls back to installing the CLI into a cached directory.
 #
-# Required CI/CD variables (masked where noted):
-#   KYVERNO_IMAGES_FILE — path to a text file (artifact): one full image ref per non-empty line
-#                         (# and rest of line treated as comment). Relative paths resolve under CI_PROJECT_DIR.
-#   REGISTRY_PASSWORD   — registry token or PAT (masked)
+# Required CI/CD variables (mask secrets):
+#   KYVERNO_IMAGES_FILE — text file with one image ref per line ('#' comments allowed).
+#                         Relative paths resolve under CI_PROJECT_DIR.
+#   REGISTRY_PASSWORD   — registry token or PAT (masked).
 #
-# Optional (defaults match scripts/cd-gate/docker-compose.yml):
-#   REGISTRY_SERVER, REGISTRY_USERNAME, REGISTRY_AUTH_HOST, KYVERNO_VERSION
+# Optional: REGISTRY_SERVER, REGISTRY_USERNAME, REGISTRY_AUTH_HOST,
+#           KYVERNO_VERSION, KYVERNO_POLICY_PATH, KYVERNO_GATE_IMAGE.
 #
-# gitlab-ci-local: the first positional arg is a job name, not a stage.
-#   From repo root: gitlab-ci-local --file scripts/cd-gate/.gitlab-ci.yml --stage cd-gate ...
-#   From this dir:  gitlab-ci-local --file .gitlab-ci.yml --stage cd-gate ...
-#   ... --variable KYVERNO_IMAGES_FILE=images.txt --variable REGISTRY_PASSWORD=secret
-#   Or run one job:  ... kyverno-image-policy --variable ...
+# gitlab-ci-local (CI_REGISTRY_IMAGE is not populated locally — override the image):
+#   gitlab-ci-local --file scripts/cd-gate/.gitlab-ci.yml kyverno-image-policy \
+#     --variable KYVERNO_GATE_IMAGE=alpine:3.20 \
+#     --variable KYVERNO_IMAGES_FILE=scripts/cd-gate/images.txt \
+#     --variable REGISTRY_PASSWORD=secret
 
 stages:
+  - cd-gate-build
   - cd-gate
 
 variables:
   KYVERNO_VERSION: "1.17.1"
   REGISTRY_SERVER: "docker.io"
   REGISTRY_USERNAME: "hostingmaloonde"
-  # alpine:3.20 = install CLI each job. Override with e.g. $CI_REGISTRY_IMAGE/kyverno-gate:$KYVERNO_VERSION
-  KYVERNO_GATE_IMAGE: alpine:3.20
-  # Optional override; default is ${CI_PROJECT_DIR}/scripts/cd-gate/policy.yaml (GitLab / gitlab-ci-local).
-  # KYVERNO_POLICY_PATH: ""
+  KYVERNO_GATE_IMAGE: "${CI_REGISTRY_IMAGE}/kyverno-gate:${KYVERNO_VERSION}"
+
+build-kyverno-gate-image:
+  stage: cd-gate-build
+  image:
+    name: gcr.io/kaniko-project/executor:v1.23.2-debug
+    entrypoint: [""]
+  rules:
+    - if: $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH
+      changes:
+        - scripts/cd-gate/Dockerfile
+    - when: manual
+      allow_failure: true
+  variables:
+    IMAGE_REF: "${CI_REGISTRY_IMAGE}/kyverno-gate:${KYVERNO_VERSION}"
+  script:
+    - |
+      mkdir -p /kaniko/.docker
+      AUTH=$(printf '%s:%s' "$CI_REGISTRY_USER" "$CI_REGISTRY_PASSWORD" | base64 | tr -d '\n')
+      printf '{"auths":{"%s":{"auth":"%s"}}}\n' "$CI_REGISTRY" "$AUTH" > /kaniko/.docker/config.json
+    - >
+      /kaniko/executor
+      --context "$CI_PROJECT_DIR/scripts/cd-gate"
+      --dockerfile "$CI_PROJECT_DIR/scripts/cd-gate/Dockerfile"
+      --build-arg "KYVERNO_VERSION=$KYVERNO_VERSION"
+      --destination "$IMAGE_REF"
 
 kyverno-image-policy:
   stage: cd-gate
   image: $KYVERNO_GATE_IMAGE
   rules:
     - if: $KYVERNO_IMAGES_FILE
-  before_script:
-    - set -eu
-    - |
-      if ! command -v kyverno >/dev/null 2>&1; then
-        apk add --no-cache curl tar ca-certificates
-        curl -fsSL -o /tmp/kyverno.tar.gz \
-          "https://github.com/kyverno/kyverno/releases/download/v${KYVERNO_VERSION}/kyverno-cli_v${KYVERNO_VERSION}_linux_x86_64.tar.gz"
-        tar -xzf /tmp/kyverno.tar.gz -C /usr/local/bin kyverno
-        chmod +x /usr/local/bin/kyverno
-        rm -f /tmp/kyverno.tar.gz
-      fi
-    - |
-      if [ -z "${REGISTRY_PASSWORD:-}" ]; then
-        echo "REGISTRY_PASSWORD must be set in CI/CD variables." >&2
-        exit 1
-      fi
-    - |
-      AUTH_B64=$(printf '%s:%s' "$REGISTRY_USERNAME" "$REGISTRY_PASSWORD" | base64 | tr -d '\n')
-      mkdir -p ~/.docker
-      if [ -n "${REGISTRY_AUTH_HOST:-}" ]; then
-        REGISTRY_KEY="$REGISTRY_AUTH_HOST"
-      elif [ "$REGISTRY_SERVER" = "docker.io" ]; then
-        REGISTRY_KEY="https://index.docker.io/v1/"
-      else
-        REGISTRY_KEY="$REGISTRY_SERVER"
-      fi
-      printf '{"auths":{"%s":{"auth":"%s"}}}\n' "$REGISTRY_KEY" "$AUTH_B64" > ~/.docker/config.json
+  variables:
+    KYVERNO_INSTALL_DIR: "$CI_PROJECT_DIR/.cache/kyverno-$KYVERNO_VERSION"
+    KYVERNO_JUNIT_OUTPUT: "$CI_PROJECT_DIR/kyverno-gate-junit.xml"
+  cache:
+    key: "kyverno-cli-$KYVERNO_VERSION"
+    paths:
+      - .cache/kyverno-$KYVERNO_VERSION/
+  artifacts:
+    when: always
+    expire_in: 1 week
+    reports:
+      junit: "$KYVERNO_JUNIT_OUTPUT"
+    paths:
+      - "$KYVERNO_JUNIT_OUTPUT"
   script:
-    - kyverno version
-    - |
-      set -eu
-      LIST="${KYVERNO_IMAGES_FILE:?set KYVERNO_IMAGES_FILE to the path of the image list file (one ref per line)}"
-      case "$LIST" in
-        /*) ;;
-        *) LIST="${CI_PROJECT_DIR:-.}/$LIST" ;;
-      esac
-      if [ ! -f "$LIST" ]; then
-        echo "=== Kyverno gate failed: images list file missing ===" >&2
-        echo "Expected file at: $LIST" >&2
-        exit 1
-      fi
-      if [ ! -s "$LIST" ]; then
-        echo "=== Kyverno gate failed: images list file is empty ===" >&2
-        echo "File: $LIST" >&2
-        exit 1
-      fi
-      if [ -n "${KYVERNO_POLICY_PATH:-}" ]; then
-        POLICY_FILE="$KYVERNO_POLICY_PATH"
-        case "$POLICY_FILE" in
-          /*) ;;
-          *) POLICY_FILE="${CI_PROJECT_DIR:-.}/$POLICY_FILE" ;;
-        esac
-      else
-        POLICY_FILE="${CI_PROJECT_DIR:-.}/scripts/cd-gate/policy.yaml"
-      fi
-      if [ ! -f "$POLICY_FILE" ]; then
-        echo "=== Kyverno gate failed: policy file missing ===" >&2
-        echo "Expected policy at: $POLICY_FILE" >&2
-        echo "Images list file: $LIST" >&2
-        echo "Fix: add scripts/cd-gate/policy.yaml to the repo, or set KYVERNO_POLICY_PATH to the policy file." >&2
-        exit 1
-      fi
-      line_no=0
-      found=0
-      while IFS= read -r line || [ -n "$line" ]; do
-        line_no=$((line_no + 1))
-        img=$(printf '%s' "$line" | sed -e 's/#.*//' -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//')
-        [ -z "$img" ] && continue
-        found=$((found + 1))
-        echo "=== Kyverno gate: image (line $line_no): $img ==="
-        # Quoted EOF: bash must not expand $$ (PID) in the heredoc. GitLab Runner rewrites
-        # $$ -> $ in .gitlab-ci.yml so $${img} works there; gitlab-ci-local does not, which
-        # produced image: "<pid>{img}" and Kyverno pass:0 fail:0. Inject the ref after write.
-        cat > /tmp/resource.yaml <<'EOF'
-      apiVersion: v1
-      kind: Pod
-      metadata:
-        name: image-policy-test
-        namespace: local-test
-      spec:
-        containers:
-        - name: app
-          image: __KYVERNO_GATE_IMAGE__
-        restartPolicy: Never
-      EOF
-        KYVERNO_IMG=$img
-        export KYVERNO_IMG
-        awk '{ gsub(/__KYVERNO_GATE_IMAGE__/, ENVIRON["KYVERNO_IMG"]); print }' /tmp/resource.yaml > /tmp/resource.yaml.tmp && mv /tmp/resource.yaml.tmp /tmp/resource.yaml
-        unset KYVERNO_IMG
-        set +e
-        out=$(kyverno apply "$POLICY_FILE" --resource /tmp/resource.yaml --registry --remove-color --detailed-results 2>&1)
-        kyverno_ec=$?
-        set -e
-        printf '%s\n' "$out"
-        if printf '%s\n' "$out" | grep -qE 'pass:[[:space:]]*0,[[:space:]]*fail:[[:space:]]*0'; then
-          echo "=== Kyverno gate failed: no rule results (pass:0, fail:0) ===" >&2
-          echo "Kyverno loaded policies but no rule produced pass/fail for the synthetic Pod. Typical causes: KYVERNO_POLICY_PATH points at the wrong file (not the gate verifyImages policy), rules do not match kind Pod, or exclude matches this Pod (namespace in the test manifest is local-test)." >&2
-          echo "Policy file: $POLICY_FILE" >&2
-          echo "Image: $img (line $line_no of $LIST)" >&2
-          echo "Fix: unset KYVERNO_POLICY_PATH to use scripts/cd-gate/policy.yaml, or set it to that path explicitly." >&2
-          exit 1
-        fi
-        if [ "$kyverno_ec" -ne 0 ]; then
-          echo "=== Kyverno gate failed: apply exited $kyverno_ec ===" >&2
-          echo "Image: $img (line $line_no of $LIST)" >&2
-          exit "$kyverno_ec"
-        fi
-      done < "$LIST"
-      if [ "$found" -eq 0 ]; then
-        echo "=== Kyverno gate failed: no image refs in file (only empty or comment lines?) ===" >&2
-        echo "File: $LIST" >&2
-        exit 1
-      fi
-    - 'echo "RESULT: PASS"'
+    - 'sh "$CI_PROJECT_DIR/scripts/cd-gate/kyverno-gate.sh"'

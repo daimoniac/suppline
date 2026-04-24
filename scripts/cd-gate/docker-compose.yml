@@ -1,90 +1,26 @@
+# Local harness for scripts/cd-gate/kyverno-gate.sh. The same script runs in CI;
+# see .gitlab-ci.yml. Bind-mount the gate directory so we do not have to rebuild
+# an image when the script or policy changes.
+#
+# Usage (from this directory):
+#   export REGISTRY_PASSWORD='...'                 # registry token / PAT
+#   # optional: export KYVERNO_IMAGES_FILE="$PWD/images.txt"
+#   docker compose run --rm kyverno-apply-test
+
 services:
   kyverno-apply-test:
     image: alpine:3.20
     container_name: kyverno-apply-test
     working_dir: /work
     volumes:
-      - ./policy.yaml:/work/policy.yaml:ro
+      - ./:/work/gate:ro
       - ${KYVERNO_IMAGES_FILE:-./images.txt}:/work/images.list:ro
     environment:
       REGISTRY_SERVER: ${REGISTRY_SERVER:-docker.io}
       REGISTRY_USERNAME: ${REGISTRY_USERNAME:-hostingmaloonde}
       REGISTRY_PASSWORD: ${REGISTRY_PASSWORD:?set REGISTRY_PASSWORD or PAT}
+      REGISTRY_AUTH_HOST: ${REGISTRY_AUTH_HOST:-}
       KYVERNO_VERSION: ${KYVERNO_VERSION:-1.17.1}
-    command:
-      - /bin/sh
-      - -ec
-      - |
-        apk add --no-cache curl tar ca-certificates docker-cli
-
-        curl -fsSL -o /tmp/kyverno.tar.gz \
-          "https://github.com/kyverno/kyverno/releases/download/v$${KYVERNO_VERSION}/kyverno-cli_v$${KYVERNO_VERSION}_linux_x86_64.tar.gz"
-
-        tar -xzf /tmp/kyverno.tar.gz -C /usr/local/bin kyverno
-        chmod +x /usr/local/bin/kyverno
-
-        mkdir -p /work /root/.docker
-
-        echo "Logging into registry $${REGISTRY_SERVER}..."
-        echo "$${REGISTRY_PASSWORD}" | docker login "$${REGISTRY_SERVER}" \
-          --username "$${REGISTRY_USERNAME}" \
-          --password-stdin
-
-        echo "Kyverno version:"
-        kyverno version
-        echo
-
-        if [ ! -s /work/images.list ]; then
-          echo "=== Kyverno gate failed: images list missing or empty at /work/images.list ===" >&2
-          exit 1
-        fi
-
-        line_no=0
-        found=0
-        while IFS= read -r line || [ -n "$$line" ]; do
-          line_no=$$((line_no + 1))
-          img=$$(printf '%s' "$$line" | sed -e 's/#.*//' -e 's/^[[:space:]]*//' | rev | sed -e 's/^[[:space:]]*//' | rev)
-          [ -z "$$img" ] && continue
-          found=$$((found + 1))
-          echo "=== Kyverno gate: image (line $$line_no): $$img ==="
-          cat > /work/resource.yaml <<EOF
-        apiVersion: v1
-        kind: Pod
-        metadata:
-          name: image-policy-test
-          namespace: local-test
-        spec:
-          containers:
-          - name: app
-            image: $$img
-          restartPolicy: Never
-        EOF
-          set +e
-          out=$$(kyverno apply /work/policy.yaml \
-            --resource /work/resource.yaml \
-            --registry \
-            --remove-color \
-            --detailed-results 2>&1)
-          kyverno_ec=$$?
-          set -e
-          printf '%s\n' "$$out"
-          if printf '%s\n' "$$out" | grep -qE 'pass:[[:space:]]*0,[[:space:]]*fail:[[:space:]]*0'; then
-            echo "=== Kyverno gate failed: no rule results (pass:0, fail:0) ===" >&2
-            echo "Kyverno did not apply any policy outcomes. Check that /work/policy.yaml is mounted and non-empty." >&2
-            echo "Image: $$img (line $$line_no of /work/images.list)" >&2
-            exit 1
-          fi
-          if [ "$$kyverno_ec" -ne 0 ]; then
-            echo "=== Kyverno gate failed: apply exited $$kyverno_ec ===" >&2
-            echo "See detailed engine output above (violations, attestation verification, registry auth, etc.)." >&2
-            echo "Policy: /work/policy.yaml | Image: $$img (line $$line_no of /work/images.list)" >&2
-            exit "$$kyverno_ec"
-          fi
-        done < /work/images.list
-        if [ "$$found" -eq 0 ]; then
-          echo "=== Kyverno gate failed: no image refs in /work/images.list ===" >&2
-          exit 1
-        fi
-
-        echo "Tested $$found image(s) from /work/images.list"
-        echo "RESULT: PASS"
+      KYVERNO_POLICY_PATH: /work/gate/policy.yaml
+      KYVERNO_IMAGES_FILE: /work/images.list
+    entrypoint: ["/work/gate/kyverno-gate.sh"]
