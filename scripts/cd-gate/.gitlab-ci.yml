@@ -2,11 +2,14 @@
 # so CI and the local docker-compose harness stay in sync.
 #
 # Two jobs:
-#   * build-kyverno-gate-image : kaniko build+push of scripts/cd-gate/Dockerfile.
-#     Triggers on default-branch changes to that Dockerfile, plus manual on any
-#     pipeline. Only needed the first time (or when bumping KYVERNO_VERSION).
-#   * kyverno-image-policy     : the actual gate. Uses the prebuilt image when
-#     available; falls back to installing the CLI into a cached directory.
+#   * build-kyverno-gate-image : optional kaniko build+push of the Dockerfile.
+#     Triggers on default-branch changes to the Dockerfile, plus manual on any
+#     pipeline. Produces a prebuilt image you can point KYVERNO_GATE_IMAGE at.
+#   * kyverno-image-policy     : the gate itself. Defaults to alpine:3.20 and
+#     installs the Kyverno CLI into a cached directory (fast on second run).
+#
+# Both jobs work whether CI_PROJECT_DIR is the repo root (GitLab) or the
+# scripts/cd-gate/ directory itself (local gitlab-ci-local runs from here).
 #
 # Required CI/CD variables (mask secrets):
 #   KYVERNO_IMAGES_FILE — text file with one image ref per line ('#' comments allowed).
@@ -16,10 +19,15 @@
 # Optional: REGISTRY_SERVER, REGISTRY_USERNAME, REGISTRY_AUTH_HOST,
 #           KYVERNO_VERSION, KYVERNO_POLICY_PATH, KYVERNO_GATE_IMAGE.
 #
-# gitlab-ci-local (CI_REGISTRY_IMAGE is not populated locally — override the image):
+# gitlab-ci-local from the repo root:
 #   gitlab-ci-local --file scripts/cd-gate/.gitlab-ci.yml kyverno-image-policy \
-#     --variable KYVERNO_GATE_IMAGE=alpine:3.20 \
 #     --variable KYVERNO_IMAGES_FILE=scripts/cd-gate/images.txt \
+#     --variable REGISTRY_PASSWORD=secret
+#
+# gitlab-ci-local from scripts/cd-gate/ (treats this dir as the project):
+#   cd scripts/cd-gate
+#   gitlab-ci-local kyverno-image-policy \
+#     --variable KYVERNO_IMAGES_FILE=images.txt \
 #     --variable REGISTRY_PASSWORD=secret
 
 stages:
@@ -30,7 +38,21 @@ variables:
   KYVERNO_VERSION: "1.17.1"
   REGISTRY_SERVER: "docker.io"
   REGISTRY_USERNAME: "hostingmaloonde"
-  KYVERNO_GATE_IMAGE: "${CI_REGISTRY_IMAGE}/kyverno-gate:${KYVERNO_VERSION}"
+  # Default: Alpine + cached CLI install. For the fast path, build once via the
+  # build-kyverno-gate-image job below, then set
+  #   KYVERNO_GATE_IMAGE=$CI_REGISTRY_IMAGE/kyverno-gate:$KYVERNO_VERSION
+  # in Settings > CI/CD > Variables (or here in this file).
+  KYVERNO_GATE_IMAGE: "alpine:3.20"
+
+# Locate the gate directory regardless of whether CI_PROJECT_DIR is the repo
+# root or scripts/cd-gate/. Run as the first script step.
+.resolve-gate-dir: &resolve_gate_dir |
+  if   [ -f "$CI_PROJECT_DIR/kyverno-gate.sh" ]; then GATE_DIR=$CI_PROJECT_DIR
+  elif [ -f "$CI_PROJECT_DIR/scripts/cd-gate/kyverno-gate.sh" ]; then GATE_DIR=$CI_PROJECT_DIR/scripts/cd-gate
+  else echo "kyverno-gate.sh not found under $CI_PROJECT_DIR" >&2; exit 1
+  fi
+  export GATE_DIR
+  echo "==> GATE_DIR=$GATE_DIR"
 
 build-kyverno-gate-image:
   stage: cd-gate-build
@@ -41,19 +63,21 @@ build-kyverno-gate-image:
     - if: $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH
       changes:
         - scripts/cd-gate/Dockerfile
+        - Dockerfile
     - when: manual
       allow_failure: true
   variables:
     IMAGE_REF: "${CI_REGISTRY_IMAGE}/kyverno-gate:${KYVERNO_VERSION}"
   script:
+    - *resolve_gate_dir
     - |
       mkdir -p /kaniko/.docker
       AUTH=$(printf '%s:%s' "$CI_REGISTRY_USER" "$CI_REGISTRY_PASSWORD" | base64 | tr -d '\n')
       printf '{"auths":{"%s":{"auth":"%s"}}}\n' "$CI_REGISTRY" "$AUTH" > /kaniko/.docker/config.json
     - >
       /kaniko/executor
-      --context "$CI_PROJECT_DIR/scripts/cd-gate"
-      --dockerfile "$CI_PROJECT_DIR/scripts/cd-gate/Dockerfile"
+      --context "$GATE_DIR"
+      --dockerfile "$GATE_DIR/Dockerfile"
       --build-arg "KYVERNO_VERSION=$KYVERNO_VERSION"
       --destination "$IMAGE_REF"
 
@@ -77,4 +101,5 @@ kyverno-image-policy:
     paths:
       - "$KYVERNO_JUNIT_OUTPUT"
   script:
-    - 'sh "$CI_PROJECT_DIR/scripts/cd-gate/kyverno-gate.sh"'
+    - *resolve_gate_dir
+    - sh "$GATE_DIR/kyverno-gate.sh"

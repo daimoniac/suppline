@@ -110,18 +110,28 @@ The script writes `kyverno-gate-junit.xml` with one `<testcase>` per image (pass
 
 ## gitlab-ci-local
 
-- Tracked files only: untracked `policy.yaml` will not appear in the simulated workspace; **commit** it.
+- Tracked files only: untracked `policy.yaml`, `images.txt`, or `kyverno-gate.sh` will not appear in the simulated workspace. **Commit** them (or at least `git add`) before running.
 - The first positional argument is a **job name**, not a stage. The job is **`kyverno-image-policy`**.
+- Pass `--mount-cache` to exercise the same CLI cache the real CI uses.
 
-From the repository root:
+The CI file auto-detects whether `CI_PROJECT_DIR` is the repo root or the `scripts/cd-gate/` directory itself, so either of the following works.
+
+### From the repository root
 
 ```bash
-gitlab-ci-local kyverno-image-policy \
+gitlab-ci-local --file scripts/cd-gate/.gitlab-ci.yml kyverno-image-policy \
   --variable KYVERNO_IMAGES_FILE=scripts/cd-gate/images.txt \
   --variable REGISTRY_PASSWORD=secret
 ```
 
-Ensure `images.txt` exists in the simulated workspace (tracked or created before the run), with one image reference per line.
+### From `scripts/cd-gate/` (treats this directory as the project)
+
+```bash
+cd scripts/cd-gate
+gitlab-ci-local kyverno-image-policy \
+  --variable KYVERNO_IMAGES_FILE=images.txt \
+  --variable REGISTRY_PASSWORD=secret
+```
 
 ## Troubleshooting
 
