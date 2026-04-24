@@ -80,12 +80,20 @@ kyverno-image-policy:
         echo "File: $LIST" >&2
         exit 1
       fi
-      POLICY_FILE="${KYVERNO_POLICY_PATH:-${CI_PROJECT_DIR:-.}/scripts/cd-gate/policy.yaml}"
+      if [ -n "${KYVERNO_POLICY_PATH:-}" ]; then
+        POLICY_FILE="$KYVERNO_POLICY_PATH"
+        case "$POLICY_FILE" in
+          /*) ;;
+          *) POLICY_FILE="${CI_PROJECT_DIR:-.}/$POLICY_FILE" ;;
+        esac
+      else
+        POLICY_FILE="${CI_PROJECT_DIR:-.}/scripts/cd-gate/policy.yaml"
+      fi
       if [ ! -f "$POLICY_FILE" ]; then
         echo "=== Kyverno gate failed: policy file missing ===" >&2
         echo "Expected policy at: $POLICY_FILE" >&2
         echo "Images list file: $LIST" >&2
-        echo "Fix: add and commit policy.yaml, or set KYVERNO_POLICY_PATH." >&2
+        echo "Fix: add scripts/cd-gate/policy.yaml to the repo, or set KYVERNO_POLICY_PATH to the policy file." >&2
         exit 1
       fi
       line_no=0
@@ -96,7 +104,10 @@ kyverno-image-policy:
         [ -z "$img" ] && continue
         found=$((found + 1))
         echo "=== Kyverno gate: image (line $line_no): $img ==="
-        cat > /tmp/resource.yaml <<EOF
+        # Quoted EOF: bash must not expand $$ (PID) in the heredoc. GitLab Runner rewrites
+        # $$ -> $ in .gitlab-ci.yml so $${img} works there; gitlab-ci-local does not, which
+        # produced image: "<pid>{img}" and Kyverno pass:0 fail:0. Inject the ref after write.
+        cat > /tmp/resource.yaml <<'EOF'
       apiVersion: v1
       kind: Pod
       metadata:
@@ -105,9 +116,13 @@ kyverno-image-policy:
       spec:
         containers:
         - name: app
-          image: $${img}
+          image: __KYVERNO_GATE_IMAGE__
         restartPolicy: Never
       EOF
+        KYVERNO_IMG=$img
+        export KYVERNO_IMG
+        awk '{ gsub(/__KYVERNO_GATE_IMAGE__/, ENVIRON["KYVERNO_IMG"]); print }' /tmp/resource.yaml > /tmp/resource.yaml.tmp && mv /tmp/resource.yaml.tmp /tmp/resource.yaml
+        unset KYVERNO_IMG
         set +e
         out=$(kyverno apply "$POLICY_FILE" --resource /tmp/resource.yaml --registry --remove-color --detailed-results 2>&1)
         kyverno_ec=$?
@@ -115,9 +130,10 @@ kyverno-image-policy:
         printf '%s\n' "$out"
         if printf '%s\n' "$out" | grep -qE 'pass:[[:space:]]*0,[[:space:]]*fail:[[:space:]]*0'; then
           echo "=== Kyverno gate failed: no rule results (pass:0, fail:0) ===" >&2
-          echo "Kyverno did not apply any policy outcomes. Common causes: wrong or empty policy path in the job, policy not in the git clone, or CLI could not load rules." >&2
+          echo "Kyverno loaded policies but no rule produced pass/fail for the synthetic Pod. Typical causes: KYVERNO_POLICY_PATH points at the wrong file (not the gate verifyImages policy), rules do not match kind Pod, or exclude matches this Pod (namespace in the test manifest is local-test)." >&2
           echo "Policy file: $POLICY_FILE" >&2
           echo "Image: $img (line $line_no of $LIST)" >&2
+          echo "Fix: unset KYVERNO_POLICY_PATH to use scripts/cd-gate/policy.yaml, or set it to that path explicitly." >&2
           exit 1
         fi
         if [ "$kyverno_ec" -ne 0 ]; then

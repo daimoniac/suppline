@@ -68,7 +68,7 @@ include:
 | `REGISTRY_USERNAME` | `hostingmaloonde` | Username for `~/.docker/config.json`. |
 | `REGISTRY_AUTH_HOST` | (derived) | Override JSON key under `auths` if needed for your registry. |
 | `KYVERNO_VERSION` | `1.17.1` | Kyverno CLI release to install when using the default Alpine image. |
-| `KYVERNO_POLICY_PATH` | `${CI_PROJECT_DIR}/policy.yaml` | Override path to the policy file. |
+| `KYVERNO_POLICY_PATH` | `${CI_PROJECT_DIR}/scripts/cd-gate/policy.yaml` | Override path to the policy file. Relative paths resolve under `CI_PROJECT_DIR` (same as `KYVERNO_IMAGES_FILE`). |
 | `KYVERNO_GATE_IMAGE` | `alpine:3.20` | Job image; set to your prebuilt image (below) to skip CLI download. |
 
 ### Faster pipelines: prebuilt job image
@@ -105,5 +105,6 @@ Ensure `images.txt` exists in the simulated workspace (tracked or created before
 
 ## Troubleshooting
 
-- **`Applying 0 policy rule(s)...` and `pass: 0, fail: 0`:** Kyverno did not load any policy file (wrong or missing path, or file not in the repo). Ensure `policy.yaml` exists in the clone and `KYVERNO_POLICY_PATH` is correct. The GitLab job and Compose script **fail the step** if the summary line contains both `pass: 0` and `fail: 0`, so this cannot silently pass CI. On failure they print a short **reason block** (policy path, image ref); `kyverno apply` is run with **`--detailed-results`** so the lines above that block carry rule-level detail from Kyverno.
+- **`Applying 0 policy rule(s)...`:** Kyverno did not load any rules (empty policy, parse error, or wrong path). Ensure the policy file exists in the clone and `KYVERNO_POLICY_PATH` points at the intended file.
+- **`Applying N policy rule(s)...` with `pass: 0, fail: 0` (N > 0):** Rules loaded but **none applied** to the synthetic `Pod` Kyverno evaluates (wrong file, `match`/`kinds` not including `Pod`, or `exclude` matching the test namespace `local-test`). Omit `KYVERNO_POLICY_PATH` or set it to `scripts/cd-gate/policy.yaml`. The job **fails** on that summary so CI cannot pass silently; run with **`--detailed-results`** (already in the job) for rule-level lines above the reason block.
 - **YAML / `gitlab-ci-local`:** Lines like `echo "RESULT: PASS"` must be quoted in YAML so the colon is not parsed as a mapping.
