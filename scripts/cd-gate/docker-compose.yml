@@ -49,10 +49,26 @@ services:
         echo "Testing image: $${IMAGE_UNDER_TEST}"
         echo
 
-        kyverno apply /work/policy.yaml \
+        set +e
+        out=$(kyverno apply /work/policy.yaml \
           --resource /work/resource.yaml \
           --registry \
-          --remove-color
-
+          --remove-color \
+          --detailed-results 2>&1)
+        kyverno_ec=$?
+        set -e
+        printf '%s\n' "$out"
+        if printf '%s\n' "$out" | grep -qE 'pass:[[:space:]]*0,[[:space:]]*fail:[[:space:]]*0'; then
+          echo "=== Kyverno gate failed: no rule results (pass:0, fail:0) ===" >&2
+          echo "Kyverno did not apply any policy outcomes. Check that /work/policy.yaml is mounted and non-empty." >&2
+          echo "Image under test: $${IMAGE_UNDER_TEST}" >&2
+          exit 1
+        fi
+        if [ "$kyverno_ec" -ne 0 ]; then
+          echo "=== Kyverno gate failed: apply exited $kyverno_ec ===" >&2
+          echo "See detailed engine output above (violations, attestation verification, registry auth, etc.)." >&2
+          echo "Policy: /work/policy.yaml | Image under test: $${IMAGE_UNDER_TEST}" >&2
+          exit "$kyverno_ec"
+        fi
         echo
         echo "RESULT: PASS"

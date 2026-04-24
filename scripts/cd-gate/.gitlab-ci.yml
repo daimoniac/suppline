@@ -1,7 +1,7 @@
 # Kyverno verifyImages (SCAI) gate — runs on Kubernetes or Docker GitLab runners with no DinD.
 #
-# ghcr.io/kyverno/kyverno-cli is distroless (no shell), so this job uses Alpine and the same
-# official CLI binary published for release v${KYVERNO_VERSION}.
+# ghcr.io/kyverno/kyverno-cli is distroless (no shell). Default: Alpine + CLI tarball each run.
+# Optional: build scripts/cd-gate/Dockerfile, set KYVERNO_GATE_IMAGE (see scripts/cd-gate/README.md).
 #
 # Required CI/CD variables (masked where noted):
 #   IMAGE_UNDER_TEST   — full image ref, e.g. ghcr.io/org/app@sha256:... or :tag
@@ -23,22 +23,27 @@ variables:
   KYVERNO_VERSION: "1.17.1"
   REGISTRY_SERVER: "docker.io"
   REGISTRY_USERNAME: "hostingmaloonde"
+  # alpine:3.20 = install CLI each job. Override with e.g. $CI_REGISTRY_IMAGE/kyverno-gate:$KYVERNO_VERSION
+  KYVERNO_GATE_IMAGE: alpine:3.20
   # Optional override; default is ${CI_PROJECT_DIR}/scripts/cd-gate/policy.yaml (GitLab / gitlab-ci-local).
   # KYVERNO_POLICY_PATH: ""
 
 kyverno-image-policy:
   stage: cd-gate
-  image: alpine:3.20
+  image: $KYVERNO_GATE_IMAGE
   rules:
     - if: $IMAGE_UNDER_TEST
   before_script:
     - set -eu
-    - apk add --no-cache curl tar ca-certificates
     - |
-      curl -fsSL -o /tmp/kyverno.tar.gz \
-        "https://github.com/kyverno/kyverno/releases/download/v${KYVERNO_VERSION}/kyverno-cli_v${KYVERNO_VERSION}_linux_x86_64.tar.gz"
-    - tar -xzf /tmp/kyverno.tar.gz -C /usr/local/bin kyverno
-    - chmod +x /usr/local/bin/kyverno
+      if ! command -v kyverno >/dev/null 2>&1; then
+        apk add --no-cache curl tar ca-certificates
+        curl -fsSL -o /tmp/kyverno.tar.gz \
+          "https://github.com/kyverno/kyverno/releases/download/v${KYVERNO_VERSION}/kyverno-cli_v${KYVERNO_VERSION}_linux_x86_64.tar.gz"
+        tar -xzf /tmp/kyverno.tar.gz -C /usr/local/bin kyverno
+        chmod +x /usr/local/bin/kyverno
+        rm -f /tmp/kyverno.tar.gz
+      fi
     - |
       if [ -z "${REGISTRY_PASSWORD:-}" ]; then
         echo "REGISTRY_PASSWORD must be set in CI/CD variables." >&2
@@ -74,9 +79,26 @@ kyverno-image-policy:
       set -eu
       POLICY_FILE="${KYVERNO_POLICY_PATH:-${CI_PROJECT_DIR:-.}/policy.yaml}"
       if [ ! -f "$POLICY_FILE" ]; then
-        echo "Kyverno policy not found: $POLICY_FILE" >&2
-        echo "Add and commit scripts/cd-gate/policy.yaml, or set KYVERNO_POLICY_PATH." >&2
+        echo "=== Kyverno gate failed: policy file missing ===" >&2
+        echo "Expected policy at: $POLICY_FILE" >&2
+        echo "Image under test: ${IMAGE_UNDER_TEST:-<unset>}" >&2
+        echo "Fix: add and commit policy.yaml, or set KYVERNO_POLICY_PATH." >&2
         exit 1
       fi
-      kyverno apply "$POLICY_FILE" --resource /tmp/resource.yaml --registry --remove-color
+      set +e
+      out=$(kyverno apply "$POLICY_FILE" --resource /tmp/resource.yaml --registry --remove-color --detailed-results 2>&1)
+      kyverno_ec=$?
+      set -e
+      printf '%s\n' "$out"
+      if printf '%s\n' "$out" | grep -qE 'pass:[[:space:]]*0,[[:space:]]*fail:[[:space:]]*0'; then
+        echo "=== Kyverno gate failed: no rule results (pass:0, fail:0) ===" >&2
+        echo "Kyverno did not apply any policy outcomes. Common causes: wrong or empty policy path in the job, policy not in the git clone, or CLI could not load rules." >&2
+        echo "Policy file: $POLICY_FILE" >&2
+        echo "Image under test: ${IMAGE_UNDER_TEST:-<unset>}" >&2
+        exit 1
+      fi
+      if [ "$kyverno_ec" -ne 0 ]; then
+        echo "=== Kyverno gate failed: apply exited $kyverno_ec ===" >&2
+        exit "$kyverno_ec"
+      fi
     - 'echo "RESULT: PASS"'
