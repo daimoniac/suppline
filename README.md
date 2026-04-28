@@ -489,7 +489,71 @@ export LOG_LEVEL=debug
 
 ## Integration
 
+### MCP server (LLM access)
 
+`suppline-mcp` is a [Model Context Protocol](https://modelcontextprotocol.io/)
+server that wraps the suppline REST API so LLM clients can answer supply-chain
+questions directly — e.g. *"tell me about policy failures for images currently
+deployed to runtime"* or *"are there any expired VEX statements?"*.
+
+Build the binary alongside the main service:
+
+```bash
+make build-mcp
+```
+
+Registered tools (all read-only by default):
+
+- `list_scans`, `get_scan`, `list_failed_images`
+- `list_vex_statements`, `list_inactive_vex`
+- `query_vulnerabilities`, `get_vulnerability`, `vulnerability_stats`
+- `list_repositories`, `get_repository`
+- `list_kubernetes_clusters`, `get_cluster_images`
+
+Pass `--allow-writes` to additionally expose `trigger_rescan` and
+`reevaluate_policy`.
+
+**Local use with Cursor / Claude Desktop (stdio transport)**
+
+Add an entry to your MCP client config (Cursor: `~/.cursor/mcp.json`,
+Claude Desktop: `claude_desktop_config.json`):
+
+```json
+{
+  "mcpServers": {
+    "suppline": {
+      "command": "/absolute/path/to/suppline-mcp",
+      "args": ["--transport", "stdio"],
+      "env": {
+        "SUPPLINE_URL": "http://localhost:8080",
+        "SUPPLINE_API_KEY": "dev-secret-key"
+      }
+    }
+  }
+}
+```
+
+The server logs to stderr (so the stdio JSON-RPC channel on stdout stays
+clean) and expects the suppline REST API to be reachable at `SUPPLINE_URL`.
+
+**Shared / remote use (Streamable HTTP transport)**
+
+```bash
+suppline-mcp \
+  --transport http \
+  --addr :8082 \
+  --mount /mcp \
+  --suppline-url http://suppline:8080 \
+  --suppline-api-key "$SUPPLINE_API_KEY"
+```
+
+The server exposes:
+
+- `POST /mcp` — Streamable HTTP MCP endpoint
+- `GET /healthz` — health probe
+
+Point an MCP-aware client (Cursor remote MCP, Claude Desktop Streamable HTTP,
+etc.) at `http://<host>:8082/mcp`.
 
 ## Documentation
 

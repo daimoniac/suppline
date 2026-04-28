@@ -1,4 +1,4 @@
-.PHONY: help test test-unit test-integration test-auth test-all docker-up docker-down docker-logs clean build
+.PHONY: help test test-unit test-integration test-auth test-all docker-up docker-down docker-logs clean build build-mcp release-build-mcp
 
 help: ## Show this help message
 	@echo 'Usage: make [target]'
@@ -9,14 +9,18 @@ help: ## Show this help message
 build: swagger ## Build the application
 	go build -o suppline ./cmd/suppline
 
+build-mcp: ## Build the suppline-mcp Model Context Protocol server
+	go build -o suppline-mcp ./cmd/suppline-mcp
+
 build-ui: ## Build the UI Docker image
 	@echo "Building UI Docker image..."
 	docker build -t suppline-ui:latest -f ui/Dockerfile ./ui
 	@echo "✅ UI image built successfully"
 
-build-all: ## Build all components (backend + UI)
+build-all: ## Build all components (backend + MCP + UI)
 	@echo "Building all components..."
 	@$(MAKE) build
+	@$(MAKE) build-mcp
 	@$(MAKE) build-ui
 	@echo "✅ All components built successfully"
 
@@ -47,6 +51,7 @@ docker-logs: ## Show Docker Compose logs
 
 clean: ## Clean build artifacts and test databases
 	rm -f suppline
+	rm -f suppline-mcp
 	rm -f *.db
 	rm -f coverage.txt
 	rm -rf test/*.db
@@ -153,6 +158,13 @@ release-build: ## Build release binaries for multiple platforms
 	GOOS=linux GOARCH=arm64 CGO_ENABLED=1 go build -o dist/suppline-linux-arm64 ./cmd/suppline
 	GOOS=darwin GOARCH=amd64 CGO_ENABLED=1 go build -o dist/suppline-darwin-amd64 ./cmd/suppline
 	GOOS=darwin GOARCH=arm64 CGO_ENABLED=1 go build -o dist/suppline-darwin-arm64 ./cmd/suppline
+
+release-build-mcp: ## Build suppline-mcp release binaries for multiple platforms
+	GOOS=linux GOARCH=amd64 CGO_ENABLED=0 go build -o dist/suppline-mcp-linux-amd64 ./cmd/suppline-mcp
+	GOOS=linux GOARCH=arm64 CGO_ENABLED=0 go build -o dist/suppline-mcp-linux-arm64 ./cmd/suppline-mcp
+	GOOS=darwin GOARCH=amd64 CGO_ENABLED=0 go build -o dist/suppline-mcp-darwin-amd64 ./cmd/suppline-mcp
+	GOOS=darwin GOARCH=arm64 CGO_ENABLED=0 go build -o dist/suppline-mcp-darwin-arm64 ./cmd/suppline-mcp
+	GOOS=windows GOARCH=amd64 CGO_ENABLED=0 go build -o dist/suppline-mcp-windows-amd64.exe ./cmd/suppline-mcp
 
 # API Documentation targets
 swagger: ## Generate Swagger/OpenAPI documentation
