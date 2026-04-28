@@ -1,6 +1,7 @@
 # Binaries
 /suppline
 /suppline-ui
+/suppline-mcp
 /clusterstate-agent/clusterstate-agent
 
 # Go workspace file
