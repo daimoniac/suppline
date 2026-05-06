@@ -180,6 +180,35 @@ append_junit_case() {
     } >> "$junit_cases"
 }
 
+# Reads kyverno apply stdout/stderr on stdin. Prints four ints: pass fail skip err.
+# Uses -1 for any field that could not be parsed (missing summary line or metric).
+parse_kyverno_apply_summary() {
+    awk '
+        /pass:[[:space:]]*[0-9]+/ &&
+        /fail:[[:space:]]*[0-9]+/ &&
+        /skip:[[:space:]]*[0-9]+/ { candidate = $0 }
+        END {
+            if (candidate == "") { print "-1 -1 -1 -1"; exit 0 }
+            pass = fail = skip = err = -1
+            n = split(candidate, parts, ",")
+            for (i = 1; i <= n; i++) {
+                gsub(/^[[:space:]]+|[[:space:]]+$/, "", parts[i])
+                if (parts[i] ~ /^pass:/) {
+                    sub(/^pass:[[:space:]]*/, "", parts[i]); pass = parts[i] + 0
+                } else if (parts[i] ~ /^fail:/) {
+                    sub(/^fail:[[:space:]]*/, "", parts[i]); fail = parts[i] + 0
+                } else if (parts[i] ~ /^skip:/) {
+                    sub(/^skip:[[:space:]]*/, "", parts[i]); skip = parts[i] + 0
+                } else if (parts[i] ~ /^error:/) {
+                    sub(/^error:[[:space:]]*/, "", parts[i]); err = parts[i] + 0
+                }
+            }
+            if (err < 0) err = 0
+            print pass, fail, skip, err
+        }
+    '
+}
+
 write_junit_report() {
     [ -n "$KYVERNO_JUNIT_OUTPUT" ] || return 0
     mkdir -p "$(dirname -- "$KYVERNO_JUNIT_OUTPUT")"
@@ -231,9 +260,39 @@ run_gate() {
         set -e
         printf '%s\n' "$out"
 
-        if printf '%s\n' "$out" | grep -qE 'pass:[[:space:]]*0,[[:space:]]*fail:[[:space:]]*0'; then
+        counts=$(printf '%s\n' "$out" | parse_kyverno_apply_summary)
+        # shellcheck disable=SC2086
+        set -- $counts
+        _pass=$1 _fail=$2 _skip=$3 _err=$4
+        [ -z "${_err:-}" ] && _err=0
+
+        if [ "$_pass" -lt 0 ] || [ "$_fail" -lt 0 ] || [ "$_skip" -lt 0 ]; then
             failures=$((failures + 1))
-            msg="no rule results (pass:0, fail:0) — policy did not apply to synthetic Pod"
+            msg="could not parse kyverno summary (expected pass/fail/skip counts)"
+            printf 'FAIL: %s\n' "$msg" >&2
+            append_junit_case "$img" fail "$msg" "$out"
+            continue
+        fi
+
+        if [ "$_fail" -gt 0 ]; then
+            failures=$((failures + 1))
+            msg="kyverno reported fail:${_fail} (pass:${_pass} skip:${_skip})"
+            printf 'FAIL: %s\n' "$msg" >&2
+            append_junit_case "$img" fail "$msg" "$out"
+            continue
+        fi
+
+        if [ "$_err" -gt 0 ]; then
+            failures=$((failures + 1))
+            msg="kyverno reported error:${_err} (pass:${_pass} skip:${_skip})"
+            printf 'FAIL: %s\n' "$msg" >&2
+            append_junit_case "$img" fail "$msg" "$out"
+            continue
+        fi
+
+        if [ "$_pass" -eq 0 ] && [ "$_skip" -eq 0 ]; then
+            failures=$((failures + 1))
+            msg="no policy rule results (pass:0, skip:0) — policy did not apply to synthetic Pod"
             printf 'FAIL: %s\n' "$msg" >&2
             append_junit_case "$img" fail "$msg" "$out"
             continue
