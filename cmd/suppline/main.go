@@ -354,10 +354,10 @@ func run() error {
 	return nil
 }
 
-// enqueueFailedArtifacts retrieves all failed artifacts from the state store and
-// enqueues them for immediate rescanning in the high-priority queue when starting up.
-// In-use failed digests are enqueued first, then the rest of policy-failed digests,
-// so they drain ahead of regular watcher scans.
+// enqueueFailedArtifacts retrieves failed artifacts from the state store and
+// enqueues in-use ones for immediate high-priority rescanning on startup.
+// Unused policy-failed digests are skipped so they are not prioritized over
+// regular watcher scans; they continue via normal interval/rescan scheduling.
 func enqueueFailedArtifacts(ctx context.Context, store statestore.StateStoreQuery, taskQueue queue.TaskQueue, regsyncCfg *config.RegsyncConfig, logger *slog.Logger) error {
 	failedArtifacts, err := store.GetFailedArtifacts(ctx)
 	if err != nil {
@@ -369,11 +369,7 @@ func enqueueFailedArtifacts(ctx context.Context, store statestore.StateStoreQuer
 		return nil
 	}
 
-	logger.Info("found failed artifacts to rescan", "count", len(failedArtifacts))
-
-	ordered := failedArtifacts
-	inUseCount := 0
-	notInUseCount := len(failedArtifacts)
+	logger.Info("found failed artifacts to consider for startup rescan", "count", len(failedArtifacts))
 
 	lookups := make([]statestore.RuntimeLookupInput, 0, len(failedArtifacts))
 	for _, artifact := range failedArtifacts {
@@ -386,19 +382,22 @@ func enqueueFailedArtifacts(ctx context.Context, store statestore.StateStoreQuer
 
 	usageByDigest, err := store.GetRuntimeUsageForScans(ctx, lookups)
 	if err != nil {
-		logger.Warn("failed to look up runtime usage for failed artifacts; enqueueing without in-use ordering",
-			"error", err)
-	} else {
-		inUse, notInUse := partitionFailedArtifactsByRuntimeUsage(failedArtifacts, usageByDigest)
-		ordered = make([]*statestore.ScanRecord, 0, len(failedArtifacts))
-		ordered = append(ordered, inUse...)
-		ordered = append(ordered, notInUse...)
-		inUseCount = len(inUse)
-		notInUseCount = len(notInUse)
+		logger.Warn("failed to look up runtime usage for failed artifacts; skipping startup rescan of unused-or-unknown digests",
+			"error", err,
+			"total", len(failedArtifacts))
+		return nil
+	}
+
+	inUse, notInUse := partitionFailedArtifactsByRuntimeUsage(failedArtifacts, usageByDigest)
+	if len(inUse) == 0 {
+		logger.Info("no in-use failed artifacts to rescan on startup",
+			"skipped_not_in_use", len(notInUse),
+			"total", len(failedArtifacts))
+		return nil
 	}
 
 	enqueuedCount := 0
-	for _, artifact := range ordered {
+	for _, artifact := range inUse {
 		vexStatements := regsyncCfg.GetVEXStatementsForTarget(artifact.Repository)
 
 		task := &queue.ScanTask{
@@ -423,7 +422,7 @@ func enqueueFailedArtifacts(ctx context.Context, store statestore.StateStoreQuer
 			continue
 		}
 
-		logger.Info("enqueued failed artifact for rescan",
+		logger.Info("enqueued in-use failed artifact for rescan",
 			"repository", artifact.Repository,
 			"digest", artifact.Digest,
 			"tag", artifact.Tag,
@@ -431,10 +430,10 @@ func enqueueFailedArtifacts(ctx context.Context, store statestore.StateStoreQuer
 		enqueuedCount++
 	}
 
-	logger.Info("finished enqueueing failed artifacts",
+	logger.Info("finished enqueueing in-use failed artifacts",
 		"enqueued", enqueuedCount,
-		"in_use", inUseCount,
-		"not_in_use", notInUseCount,
+		"in_use", len(inUse),
+		"skipped_not_in_use", len(notInUse),
 		"total", len(failedArtifacts))
 
 	return nil
