@@ -1,11 +1,8 @@
 import { Link } from 'react-router-dom';
-import { useToast } from '../lib/toast';
-import { copyToClipboard } from '../lib/utils';
-import { buildPolicyFixPrompt, buildPolicyFixPromptRows } from '../lib/policyComplianceData';
+import { PolicyAgentPromptCard } from './PolicyAgentPromptCard';
 import type { Scan } from '../lib/api';
-import { Copy, Sparkles } from 'lucide-react';
 
-const PROMPT_HINT = 'Copy a prompt to triage visible CEL policy failures with your coding agent.';
+const TOP_POLICY_DISPLAY_COUNT = 5;
 
 export function PolicyCompliancePanel({
   policyByRepo,
@@ -20,15 +17,12 @@ export function PolicyCompliancePanel({
   /** When true, skip the outer card shell (e.g. inside TaskSection which is already a card). */
   embedded?: boolean;
 }) {
-  const { toast } = useToast();
   const topPolicyRepos = Object.entries(policyByRepo)
     .sort((a, b) => (b[1].failed + b[1].pending) - (a[1].failed + a[1].pending))
-    .slice(0, 5);
-  const visibleRepoSet = new Set(topPolicyRepos.map(([repo]) => repo));
-  const visibleFailures = failedScans.filter(scan => visibleRepoSet.has(scan.Repository || 'unknown') && scan.PolicyStatus !== 'pending');
-  const promptRows = buildPolicyFixPromptRows(visibleFailures);
-  const policyFixPrompt = buildPolicyFixPrompt(promptRows);
-  const hasVisibleFailures = visibleFailures.length > 0;
+    .slice(0, TOP_POLICY_DISPLAY_COUNT);
+  const totalPolicyRepos = Object.keys(policyByRepo).length;
+  const hasMorePolicyRepos = totalPolicyRepos > TOP_POLICY_DISPLAY_COUNT;
+  const hasVisibleFailures = failedScans.some(scan => scan.PolicyStatus !== 'pending');
 
   const body = (
     <>
@@ -43,21 +37,15 @@ export function PolicyCompliancePanel({
                 <p className="text-sm text-text-secondary">All images pass policy evaluation</p>
               </div>
             ) : (
-              <PolicyRepoBarsList policyByRepo={policyByRepo} topPolicyRepos={topPolicyRepos} />
+              <PolicyRepoBarsList
+                policyByRepo={policyByRepo}
+                topPolicyRepos={topPolicyRepos}
+                hasMorePolicyRepos={hasMorePolicyRepos}
+                totalPolicyRepos={totalPolicyRepos}
+              />
             )}
           </div>
-          <PolicyFixPromptCard
-            hint={PROMPT_HINT}
-            onCopy={() => {
-              if (!policyFixPrompt) {
-                toast('No CEL policy failure findings available yet for these images. Re-scan to populate actionable findings.', 'warning');
-                return;
-              }
-              copyToClipboard(policyFixPrompt).then(ok =>
-                toast(ok ? 'Prompt copied to clipboard!' : 'Failed to copy', ok ? 'success' : 'error')
-              );
-            }}
-          />
+          <PolicyAgentPromptCard scans={failedScans} />
         </div>
       ) : (
         <>
@@ -69,7 +57,12 @@ export function PolicyCompliancePanel({
               <p className="text-sm text-text-secondary">All images pass policy evaluation</p>
             </div>
           ) : (
-            <PolicyRepoBarsList policyByRepo={policyByRepo} topPolicyRepos={topPolicyRepos} />
+            <PolicyRepoBarsList
+              policyByRepo={policyByRepo}
+              topPolicyRepos={topPolicyRepos}
+              hasMorePolicyRepos={hasMorePolicyRepos}
+              totalPolicyRepos={totalPolicyRepos}
+            />
           )}
         </>
       )}
@@ -90,9 +83,13 @@ export function PolicyCompliancePanel({
 function PolicyRepoBarsList({
   policyByRepo,
   topPolicyRepos,
+  hasMorePolicyRepos,
+  totalPolicyRepos,
 }: {
   policyByRepo: Record<string, { failed: number; pending: number }>;
   topPolicyRepos: [string, { failed: number; pending: number }][];
+  hasMorePolicyRepos: boolean;
+  totalPolicyRepos: number;
 }) {
   const max = Math.max(...Object.values(policyByRepo).map(v => v.failed + v.pending), 0);
   return (
@@ -116,33 +113,14 @@ function PolicyRepoBarsList({
           </Link>
         );
       })}
-    </div>
-  );
-}
-
-function PolicyFixPromptCard({ hint, onCopy }: { hint: string; onCopy: () => void }) {
-  return (
-    <div className="relative overflow-hidden rounded-xl border border-accent/35 bg-gradient-to-r from-accent/15 via-bg-secondary to-warning/10 p-4">
-      <div className="absolute -top-10 -right-10 w-24 h-24 rounded-full bg-accent/20 blur-2xl pointer-events-none" />
-      <div className="relative flex flex-col gap-3">
-        <div className="flex items-center gap-2">
-          <span className="inline-flex items-center justify-center w-7 h-7 rounded-lg bg-accent/20 text-accent">
-            <Sparkles className="w-4 h-4" />
-          </span>
-          <div>
-            <h3 className="text-sm font-semibold text-text-primary">AI Agent Prompt</h3>
-            <p className="text-xs text-text-secondary">{hint}</p>
-          </div>
-        </div>
-        <button
-          type="button"
-          onClick={onCopy}
-          className="inline-flex items-center justify-center gap-1.5 px-3 py-2 text-xs rounded-lg border border-accent/30 text-text-primary bg-bg-primary/70 hover:bg-bg-primary transition-colors"
-        >
-          <Copy className="w-3 h-3" />
-          Fix using coding agent
-        </button>
-      </div>
+      {hasMorePolicyRepos && (
+        <p className="text-xs text-text-secondary pt-1">
+          Showing top {TOP_POLICY_DISPLAY_COUNT} of {totalPolicyRepos} repositories with policy issues.{' '}
+          <Link to="/failed" className="text-accent hover:text-accent-hover hover:underline">
+            View all on Policy Exceptions
+          </Link>
+        </p>
+      )}
     </div>
   );
 }

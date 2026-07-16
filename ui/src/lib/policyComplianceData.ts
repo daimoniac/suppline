@@ -1,5 +1,19 @@
 import type { APIClient, PolicyFailureFinding, Scan } from './api';
 
+const POLICY_COMPLIANCE_SCAN_PAGE_SIZE = 100;
+
+export const POLICY_AGENT_PROMPT_HINT_DEFAULT =
+  'Copy a prompt to triage all CEL policy failures matching the current image usage filter with your coding agent.';
+
+export const POLICY_AGENT_PROMPT_HINT_FILTERED =
+  'Copy a prompt to triage all CEL policy failures matching the current filters with your coding agent.';
+
+export type PolicyExceptionScanFilters = {
+  inUseRequestParams?: Record<string, string>;
+  repository?: string;
+  policyFilter?: string;
+};
+
 export type PolicyComplianceSnapshot = {
   failedScans: Scan[];
   policyByRepo: Record<string, { failed: number; pending: number }>;
@@ -8,14 +22,60 @@ export type PolicyComplianceSnapshot = {
   failedInUseCount: number;
 };
 
+export function buildPolicyExceptionScanFilters(filters: PolicyExceptionScanFilters): Record<string, unknown> {
+  const query: Record<string, unknown> = {
+    limit: POLICY_COMPLIANCE_SCAN_PAGE_SIZE,
+    offset: 0,
+  };
+
+  if (filters.repository) {
+    query.repository = filters.repository;
+  }
+
+  if (!filters.policyFilter || filters.policyFilter === 'all') {
+    query.policy_passed = false;
+  } else {
+    query.policy_status = filters.policyFilter;
+  }
+
+  if (filters.inUseRequestParams) {
+    Object.assign(query, filters.inUseRequestParams);
+  }
+
+  return query;
+}
+
+export async function loadAllPolicyExceptionScans(
+  apiClient: APIClient,
+  filters: PolicyExceptionScanFilters
+): Promise<Scan[]> {
+  const baseFilters = buildPolicyExceptionScanFilters(filters);
+
+  const firstPage = await apiClient.getScansPage(baseFilters);
+  let scans = firstPage.scans;
+  for (let offset = scans.length; offset < firstPage.total; offset += POLICY_COMPLIANCE_SCAN_PAGE_SIZE) {
+    const page = await apiClient.getScansPage({
+      ...baseFilters,
+      offset,
+    });
+    scans = scans.concat(page.scans);
+  }
+
+  return scans;
+}
+
+export function buildPolicyFixPromptFromScans(
+  scans: Pick<Scan, 'Repository' | 'Tag' | 'PolicyStatus' | 'PolicyFailureFindings'>[]
+): string {
+  const celFailedScans = scans.filter(scan => scan.PolicyStatus !== 'pending');
+  return buildPolicyFixPrompt(buildPolicyFixPromptRows(celFailedScans));
+}
+
 export async function fetchPolicyComplianceData(
   apiClient: APIClient,
   inUseRequestParams: Record<string, string> | undefined
 ): Promise<PolicyComplianceSnapshot> {
-  const nonPassedScans = await apiClient.getScans({
-    policy_passed: false,
-    ...(inUseRequestParams && inUseRequestParams),
-  });
+  const nonPassedScans = await loadAllPolicyExceptionScans(apiClient, { inUseRequestParams });
 
   const failedScans = nonPassedScans.filter(s => s.PolicyStatus !== 'pending');
   const pendingScans = nonPassedScans.filter(s => s.PolicyStatus === 'pending');
