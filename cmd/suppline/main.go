@@ -356,7 +356,9 @@ func run() error {
 
 // enqueueFailedArtifacts retrieves all failed artifacts from the state store and
 // enqueues them for immediate rescanning in the high-priority queue when starting up.
-func enqueueFailedArtifacts(ctx context.Context, store statestore.StateStore, taskQueue queue.TaskQueue, regsyncCfg *config.RegsyncConfig, logger *slog.Logger) error {
+// In-use failed digests are enqueued first, then the rest of policy-failed digests,
+// so they drain ahead of regular watcher scans.
+func enqueueFailedArtifacts(ctx context.Context, store statestore.StateStoreQuery, taskQueue queue.TaskQueue, regsyncCfg *config.RegsyncConfig, logger *slog.Logger) error {
 	failedArtifacts, err := store.GetFailedArtifacts(ctx)
 	if err != nil {
 		return fmt.Errorf("failed to get failed artifacts: %w", err)
@@ -369,10 +371,34 @@ func enqueueFailedArtifacts(ctx context.Context, store statestore.StateStore, ta
 
 	logger.Info("found failed artifacts to rescan", "count", len(failedArtifacts))
 
-	// Enqueue each failed artifact with high priority
-	enqueuedCount := 0
+	ordered := failedArtifacts
+	inUseCount := 0
+	notInUseCount := len(failedArtifacts)
+
+	lookups := make([]statestore.RuntimeLookupInput, 0, len(failedArtifacts))
 	for _, artifact := range failedArtifacts {
-		// Get VEX statements for this repository
+		lookups = append(lookups, statestore.RuntimeLookupInput{
+			Digest:     artifact.Digest,
+			Repository: artifact.Repository,
+			Tag:        artifact.Tag,
+		})
+	}
+
+	usageByDigest, err := store.GetRuntimeUsageForScans(ctx, lookups)
+	if err != nil {
+		logger.Warn("failed to look up runtime usage for failed artifacts; enqueueing without in-use ordering",
+			"error", err)
+	} else {
+		inUse, notInUse := partitionFailedArtifactsByRuntimeUsage(failedArtifacts, usageByDigest)
+		ordered = make([]*statestore.ScanRecord, 0, len(failedArtifacts))
+		ordered = append(ordered, inUse...)
+		ordered = append(ordered, notInUse...)
+		inUseCount = len(inUse)
+		notInUseCount = len(notInUse)
+	}
+
+	enqueuedCount := 0
+	for _, artifact := range ordered {
 		vexStatements := regsyncCfg.GetVEXStatementsForTarget(artifact.Repository)
 
 		task := &queue.ScanTask{
@@ -407,6 +433,8 @@ func enqueueFailedArtifacts(ctx context.Context, store statestore.StateStore, ta
 
 	logger.Info("finished enqueueing failed artifacts",
 		"enqueued", enqueuedCount,
+		"in_use", inUseCount,
+		"not_in_use", notInUseCount,
 		"total", len(failedArtifacts))
 
 	return nil
