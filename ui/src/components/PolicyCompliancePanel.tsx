@@ -23,49 +23,38 @@ export function PolicyCompliancePanel({
   const totalPolicyRepos = Object.keys(policyByRepo).length;
   const hasMorePolicyRepos = totalPolicyRepos > TOP_POLICY_DISPLAY_COUNT;
   const hasVisibleFailures = failedScans.some(scan => scan.PolicyStatus !== 'pending');
+  const heading = showCardHeading ? (
+    <h2 className={`text-sm font-semibold${hasVisibleFailures ? '' : ' mb-4'}`}>Policy Compliance Status</h2>
+  ) : null;
 
-  const body = (
+  const repoSection =
+    Object.keys(policyByRepo).length === 0 ? (
+      <div className={`text-center ${hasVisibleFailures ? 'py-6' : 'py-8'}`}>
+        <div className="text-3xl mb-2">🎆</div>
+        <h3 className="font-semibold text-accent">All Compliant</h3>
+        <p className="text-sm text-text-secondary">All images pass policy evaluation</p>
+      </div>
+    ) : (
+      <PolicyRepoBarsList
+        policyByRepo={policyByRepo}
+        topPolicyRepos={topPolicyRepos}
+        hasMorePolicyRepos={hasMorePolicyRepos}
+        totalPolicyRepos={totalPolicyRepos}
+      />
+    );
+
+  const body = hasVisibleFailures ? (
+    <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 items-start">
+      <div className="lg:col-span-2 space-y-3 min-w-0">
+        {heading}
+        {repoSection}
+      </div>
+      <PolicyAgentPromptCard scans={failedScans} />
+    </div>
+  ) : (
     <>
-      {hasVisibleFailures ? (
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 items-start">
-          <div className="lg:col-span-2 space-y-3 min-w-0">
-            {showCardHeading && <h2 className="text-sm font-semibold">Policy Compliance Status</h2>}
-            {Object.keys(policyByRepo).length === 0 ? (
-              <div className="text-center py-6">
-                <div className="text-3xl mb-2">🎆</div>
-                <h3 className="font-semibold text-accent">All Compliant</h3>
-                <p className="text-sm text-text-secondary">All images pass policy evaluation</p>
-              </div>
-            ) : (
-              <PolicyRepoBarsList
-                policyByRepo={policyByRepo}
-                topPolicyRepos={topPolicyRepos}
-                hasMorePolicyRepos={hasMorePolicyRepos}
-                totalPolicyRepos={totalPolicyRepos}
-              />
-            )}
-          </div>
-          <PolicyAgentPromptCard scans={failedScans} />
-        </div>
-      ) : (
-        <>
-          {showCardHeading && <h2 className="text-sm font-semibold mb-4">Policy Compliance Status</h2>}
-          {Object.keys(policyByRepo).length === 0 ? (
-            <div className="text-center py-8">
-              <div className="text-3xl mb-2">🎆</div>
-              <h3 className="font-semibold text-accent">All Compliant</h3>
-              <p className="text-sm text-text-secondary">All images pass policy evaluation</p>
-            </div>
-          ) : (
-            <PolicyRepoBarsList
-              policyByRepo={policyByRepo}
-              topPolicyRepos={topPolicyRepos}
-              hasMorePolicyRepos={hasMorePolicyRepos}
-              totalPolicyRepos={totalPolicyRepos}
-            />
-          )}
-        </>
-      )}
+      {heading}
+      {repoSection}
     </>
   );
 

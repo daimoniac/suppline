@@ -3,7 +3,11 @@ import { Link, useSearchParams } from 'react-router-dom';
 import { useAuth } from '../lib/auth';
 import { formatRelativeTime, formatDate, daysUntilReleaseAge, formatRemainingDays } from '../lib/utils';
 import { useImageUsageFilter } from '../lib/imageUsageFilter';
-import { loadAllPolicyExceptionScans, POLICY_AGENT_PROMPT_HINT_FILTERED } from '../lib/policyComplianceData';
+import {
+  buildPolicyExceptionScanFilters,
+  loadAllPolicyExceptionScans,
+  POLICY_AGENT_PROMPT_HINT_FILTERED,
+} from '../lib/policyComplianceData';
 import { PolicyAgentPromptCard } from '../components/PolicyAgentPromptCard';
 import { LoadingState, ErrorState, PageHeader, StatusBadge, VulnCounts, SortHeader, Pagination, DigestLinkWithCopy, RuntimeUsageBadge, PageFiltersBar, FilterActionButton, PolicyStatusSelect } from '../components/ui';
 import type { Scan } from '../lib/api';
@@ -61,17 +65,16 @@ export default function FailedImagesPage() {
     setLoading(true);
     setError('');
     try {
-      const sortKey = `${sortCol}_${sortDir}`;
-      const filters: Record<string, unknown> = {
-        sort_by: sortKey,
+      const filters = {
+        ...buildPolicyExceptionScanFilters({
+          inUseRequestParams,
+          repository,
+          policyFilter,
+        }),
+        sort_by: `${sortCol}_${sortDir}`,
         limit: pageSize,
         offset,
       };
-      if (repository) filters.repository = repository;
-      // Keep default behavior as "policy exceptions" (failed + pending).
-      if (policyFilter === 'all') filters.policy_passed = false;
-      else filters.policy_status = policyFilter;
-      if (inUseRequestParams) Object.assign(filters, inUseRequestParams);
 
       const result = await apiClient.getScansPage(filters);
       setScans(result.scans);
@@ -117,8 +120,8 @@ export default function FailedImagesPage() {
 
   if (error) return <ErrorState message={error} onRetry={load} />;
 
-  const pendingCount = scans.filter(s => s.PolicyStatus === 'pending').length;
-  const failedCount = scans.length - pendingCount;
+  const pendingCount = promptScans.filter(s => s.PolicyStatus === 'pending').length;
+  const failedCount = promptScans.length - pendingCount;
 
   return (
     <div>
@@ -132,8 +135,12 @@ export default function FailedImagesPage() {
               <div className="text-sm font-medium text-text-primary">Policy Exceptions Detected</div>
               <div className="text-xs text-text-secondary flex items-center gap-3 flex-wrap">
                 <span>{totalScans} image{totalScans !== 1 ? 's' : ''} require attention.</span>
-                <span className="px-1.5 py-0.5 rounded text-[10px] font-semibold bg-danger-bg text-danger">{failedCount} Failed</span>
-                <span className="px-1.5 py-0.5 rounded text-[10px] font-semibold bg-warning-bg text-warning">{pendingCount} Pending Maturity</span>
+                {promptScans.length > 0 && (
+                  <>
+                    <span className="px-1.5 py-0.5 rounded text-[10px] font-semibold bg-danger-bg text-danger">{failedCount} Failed</span>
+                    <span className="px-1.5 py-0.5 rounded text-[10px] font-semibold bg-warning-bg text-warning">{pendingCount} Pending Maturity</span>
+                  </>
+                )}
               </div>
             </div>
           </div>
