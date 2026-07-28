@@ -48,19 +48,49 @@ export function SortHeader({ column, label, sortColumn, sortDirection, onSort }:
   );
 }
 
-export function Pagination({ currentPage, totalPages, total, pageSize, onPageChange, itemLabel = 'items' }: { currentPage: number; totalPages: number; total: number; pageSize: number; onPageChange: (page: number) => void; itemLabel?: string }) {
-  if (totalPages <= 1) return null;
+export function Pagination({ currentPage, totalPages, total, pageSize, onPageChange, onPageSizeChange, pageSizeOptions, itemLabel = 'items' }: {
+  currentPage: number;
+  totalPages: number;
+  total: number;
+  pageSize: number;
+  onPageChange: (page: number) => void;
+  onPageSizeChange?: (pageSize: number) => void;
+  pageSizeOptions?: readonly number[];
+  itemLabel?: string;
+}) {
+  if (total <= 0) return null;
   const start = (currentPage - 1) * pageSize + 1;
   const end = Math.min(currentPage * pageSize, total);
+  const showNav = totalPages > 1;
   return (
-    <div className="flex items-center justify-between px-4 py-3 border-t border-border">
-      <span className="text-sm text-text-secondary">{start}–{end} of {total} {itemLabel}</span>
-      <div className="flex items-center gap-1">
-        {[{ label: '«', page: 1, disabled: currentPage === 1 }, { label: '‹', page: currentPage - 1, disabled: currentPage === 1 }, { label: '›', page: currentPage + 1, disabled: currentPage === totalPages }, { label: '»', page: totalPages, disabled: currentPage === totalPages }].map((btn, i) => (
-          <button key={i} disabled={btn.disabled} onClick={() => onPageChange(btn.page)} className="px-2.5 py-1 text-sm rounded border border-border text-text-secondary hover:bg-bg-tertiary disabled:opacity-30 disabled:cursor-not-allowed transition-colors">{btn.label}</button>
-        ))}
-        <span className="text-xs text-text-muted ml-2">Page {currentPage}/{totalPages}</span>
+    <div className="flex items-center justify-between gap-3 px-4 py-3 border-t border-border flex-wrap">
+      <div className="flex items-center gap-3 flex-wrap">
+        <span className="text-sm text-text-secondary">{start}–{end} of {total} {itemLabel}</span>
+        {onPageSizeChange && pageSizeOptions && pageSizeOptions.length > 0 && (
+          <label className="flex items-center gap-2 text-sm text-text-secondary">
+            <span className="text-text-muted">Show</span>
+            <select
+              value={pageSize}
+              onChange={e => onPageSizeChange(Number(e.target.value))}
+              className="px-2 py-1 bg-bg-secondary border border-border rounded-lg text-sm text-text-primary focus:outline-none focus:border-accent/50 transition-colors"
+              aria-label={`Items per page for ${itemLabel}`}
+            >
+              {pageSizeOptions.map(size => (
+                <option key={size} value={size}>{size}</option>
+              ))}
+            </select>
+            <span className="text-text-muted">{itemLabel}</span>
+          </label>
+        )}
       </div>
+      {showNav && (
+        <div className="flex items-center gap-1">
+          {[{ label: '«', page: 1, disabled: currentPage === 1 }, { label: '‹', page: currentPage - 1, disabled: currentPage === 1 }, { label: '›', page: currentPage + 1, disabled: currentPage === totalPages }, { label: '»', page: totalPages, disabled: currentPage === totalPages }].map((btn, i) => (
+            <button key={i} disabled={btn.disabled} onClick={() => onPageChange(btn.page)} className="px-2.5 py-1 text-sm rounded border border-border text-text-secondary hover:bg-bg-tertiary disabled:opacity-30 disabled:cursor-not-allowed transition-colors">{btn.label}</button>
+          ))}
+          <span className="text-xs text-text-muted ml-2">Page {currentPage}/{totalPages}</span>
+        </div>
+      )}
     </div>
   );
 }

@@ -6,6 +6,7 @@ import { LoadingState, ErrorState, PageHeader, Pagination, PageFiltersBar, Filte
 import type { VEXSummary } from '../lib/api';
 import { ArrowUpDown, ArrowUp, ArrowDown } from 'lucide-react';
 import { useSortablePaginationState } from '../lib/useSortablePaginationState';
+import { usePageSizePreference } from '../lib/pageSizePreference';
 
 const VEX_STATE_LABELS: Record<string, string> = {
   not_affected: 'Not Affected',
@@ -47,6 +48,7 @@ function ExpirationBadge({ expiresAt }: { expiresAt?: number }) {
 export default function VEXPage() {
   const { apiClient } = useAuth();
   const [searchParams] = useSearchParams();
+  const { pageSize, setPageSize, options: pageSizeOptions } = usePageSizePreference();
   const [statements, setStatements] = useState<VEXSummary[]>([]);
   const [inactive, setInactive] = useState<VEXSummary[]>([]);
   const [loading, setLoading] = useState(true);
@@ -54,7 +56,6 @@ export default function VEXPage() {
   const [search, setSearch] = useState(searchParams.get('cve_id') || searchParams.get('repository') || '');
   const [stateFilter, setStateFilter] = useState(searchParams.get('state') || 'all');
   const [expirationFilter, setExpirationFilter] = useState(searchParams.get('expiration_status') || 'all');
-  const pageSize = 20;
 
   // Combine, filter, sort
   let combined = [...statements, ...inactive];
@@ -213,7 +214,16 @@ export default function VEXPage() {
             })}
           </div>
         )}
-        <Pagination currentPage={page} totalPages={totalPages} total={combined.length} pageSize={pageSize} onPageChange={setPage} itemLabel="vex statements" />
+        <Pagination
+          currentPage={page}
+          totalPages={totalPages}
+          total={combined.length}
+          pageSize={pageSize}
+          onPageChange={setPage}
+          onPageSizeChange={(size) => { setPageSize(size); setPage(1); }}
+          pageSizeOptions={pageSizeOptions}
+          itemLabel="vex statements"
+        />
       </div>
     </div>
   );

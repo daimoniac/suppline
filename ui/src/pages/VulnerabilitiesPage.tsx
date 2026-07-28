@@ -6,17 +6,18 @@ import { LoadingState, ErrorState, PageHeader, SeverityBadge, Pagination, PageFi
 import type { VulnerabilityGroup } from '../lib/api';
 import { ChevronDown, ChevronRight, ExternalLink, ArrowUpDown, ArrowUp, ArrowDown } from 'lucide-react';
 import { useSortablePaginationState } from '../lib/useSortablePaginationState';
+import { usePageSizePreference } from '../lib/pageSizePreference';
 
 export default function VulnerabilitiesPage() {
   const { apiClient } = useAuth();
   const [searchParams] = useSearchParams();
+  const { pageSize, setPageSize, options: pageSizeOptions } = usePageSizePreference();
   const [groups, setGroups] = useState<VulnerabilityGroup[]>([]);
   const [total, setTotal] = useState(0);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [cveId, setCveId] = useState(searchParams.get('cve_id') || '');
   const [severity, setSeverity] = useState(searchParams.get('severity') || 'all');
-  const pageSize = 20;
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
   const [detailsByCVE, setDetailsByCVE] = useState<Record<string, VulnerabilityGroup>>({});
   const [loadingDetails, setLoadingDetails] = useState<Set<string>>(new Set());
@@ -198,7 +199,16 @@ export default function VulnerabilitiesPage() {
             ))}
           </div>
         )}
-        <Pagination currentPage={page} totalPages={totalPages} total={total} pageSize={pageSize} onPageChange={p => { setPage(p); }} itemLabel="CVEs" />
+        <Pagination
+          currentPage={page}
+          totalPages={totalPages}
+          total={total}
+          pageSize={pageSize}
+          onPageChange={p => { setPage(p); }}
+          onPageSizeChange={(size) => { setPageSize(size); setPage(1); }}
+          pageSizeOptions={pageSizeOptions}
+          itemLabel="CVEs"
+        />
       </div>
     </div>
   );

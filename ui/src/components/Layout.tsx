@@ -6,6 +6,7 @@ import {
   Plug, LogOut, ClipboardList, Menu, X,
 } from 'lucide-react';
 import { ImageUsageFilterProvider, useImageUsageFilter } from '../lib/imageUsageFilter';
+import { PageSizePreferenceProvider } from '../lib/pageSizePreference';
 import supplineIcon from '../assets/suppline-icon.svg';
 
 const navItems = [
@@ -22,7 +23,9 @@ const navItems = [
 export default function Layout() {
   return (
     <ImageUsageFilterProvider>
-      <LayoutContent />
+      <PageSizePreferenceProvider>
+        <LayoutContent />
+      </PageSizePreferenceProvider>
     </ImageUsageFilterProvider>
   );
 }

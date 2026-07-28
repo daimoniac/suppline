@@ -116,11 +116,26 @@ Never reach for an external component library. All UI building blocks are here:
 | `EmptyState` | Icon + title + message for zero-data views |
 | `ErrorState` | Error icon + message + optional Retry button |
 | `SortHeader` | `<th>` with chevron sort indicator |
-| `Pagination` | First/prev/next/last buttons + item count |
+| `Pagination` | First/prev/next/last buttons + item count + optional page-size select |
 | `ConfirmModal` | Backdrop modal with Confirm/Cancel |
 | `PageHeader` | `<h1>` title + `<p>` subtitle |
 
 Use these everywhere. Do not create one-off replacements.
+
+## State management
+
+**No global state library.** Keep state local unless it truly needs to be shared.
+
+| Scope | Mechanism |
+|---|---|
+| Authentication | `AuthContext` (`isAuthenticated`, `apiClient`, `login`, `logout`) |
+| Toasts | `ToastContext` (`toast(message, type)`) — auto-dismissed after 4 s |
+| Image usage filter | `ImageUsageFilterProvider` in `Layout` — persisted in `localStorage` (`suppline:image-usage-filter`) |
+| Page size | `PageSizePreferenceProvider` in `Layout` — global page size for all paged lists; options 10/25/50/100; default 25; persisted in `localStorage` (`suppline:page-size`) |
+| Page data | Local `useState` per page — no cross-page cache, re-fetched on mount |
+| URL-driven filters | `useSearchParams` for filter/sort/page state that should survive navigation |
+
+Do not add Zustand, Redux, Jotai, or any other state library.
 
 ## Page component pattern
 
@@ -161,19 +176,6 @@ export default function XxxPage() {
 - Show `<LoadingState>` only on initial load (when data is empty). For refreshes, let stale data stay visible.
 - Show `<ErrorState>` with an `onRetry={load}` prop.
 - Use `<ConfirmModal>` before any destructive or expensive action.
-
-## State management
-
-**No global state library.** Keep state local unless it truly needs to be shared.
-
-| Scope | Mechanism |
-|---|---|
-| Authentication | `AuthContext` (`isAuthenticated`, `apiClient`, `login`, `logout`) |
-| Toasts | `ToastContext` (`toast(message, type)`) — auto-dismissed after 4 s |
-| Page data | Local `useState` per page — no cross-page cache, re-fetched on mount |
-| URL-driven filters | `useSearchParams` for filter/sort/page state that should survive navigation |
-
-Do not add Zustand, Redux, Jotai, or any other state library.
 
 ## Styling
 

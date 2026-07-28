@@ -9,18 +9,19 @@ import type { Repository } from '../lib/api';
 import { RefreshCw } from 'lucide-react';
 import { useSortablePaginationState, type SortDirection } from '../lib/useSortablePaginationState';
 import { useScanPageFilters } from '../lib/useScanPageFilters';
+import { usePageSizePreference } from '../lib/pageSizePreference';
 
 export default function RepositoriesPage() {
   const { apiClient } = useAuth();
   const { toast } = useToast();
   const { inUseRequestParams } = useImageUsageFilter();
+  const { pageSize, setPageSize, options: pageSizeOptions } = usePageSizePreference();
   const [searchParams, setSearchParams] = useSearchParams();
 
   const [repos, setRepos] = useState<Repository[]>([]);
   const [total, setTotal] = useState(0);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
-  const pageSize = 10;
   const [confirmRescan, setConfirmRescan] = useState('');
 
   const defaultSortColumn = 'lastScanTime';
@@ -169,7 +170,16 @@ export default function RepositoriesPage() {
             </table>
           </div>
         )}
-        <Pagination currentPage={page} totalPages={totalPages} total={total} pageSize={pageSize} onPageChange={handlePageChange} itemLabel="repos" />
+        <Pagination
+          currentPage={page}
+          totalPages={totalPages}
+          total={total}
+          pageSize={pageSize}
+          onPageChange={handlePageChange}
+          onPageSizeChange={(size) => { setPageSize(size); handlePageChange(1); }}
+          pageSizeOptions={pageSizeOptions}
+          itemLabel="repos"
+        />
       </div>}
       <ConfirmModal open={!!confirmRescan} title="Rescan Repository" message={`Trigger rescan for all images in "${confirmRescan}"?`} onConfirm={() => handleRescan(confirmRescan)} onCancel={() => setConfirmRescan('')} />
     </div>

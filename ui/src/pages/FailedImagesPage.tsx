@@ -14,10 +14,12 @@ import type { Scan } from '../lib/api';
 import { AlertTriangle } from 'lucide-react';
 import { useSortablePaginationState, type SortDirection } from '../lib/useSortablePaginationState';
 import { useScanPageFilters } from '../lib/useScanPageFilters';
+import { usePageSizePreference } from '../lib/pageSizePreference';
 
 export default function FailedImagesPage() {
   const { apiClient } = useAuth();
   const { inUseRequestParams } = useImageUsageFilter();
+  const { pageSize, setPageSize, options: pageSizeOptions } = usePageSizePreference();
   const [searchParams, setSearchParams] = useSearchParams();
 
   const [scans, setScans] = useState<Scan[]>([]);
@@ -25,7 +27,6 @@ export default function FailedImagesPage() {
   const [totalScans, setTotalScans] = useState(0);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
-  const pageSize = 25;
   const defaultSortColumn = 'scanned_at';
   const defaultSortDirection: SortDirection = 'desc';
   const initialSortDirection = (searchParams.get('order') as SortDirection) || defaultSortDirection;
@@ -207,7 +208,16 @@ export default function FailedImagesPage() {
             ))}
           </tbody></table></div>
         )}
-        <Pagination currentPage={page} totalPages={totalPages} total={totalScans} pageSize={pageSize} onPageChange={handlePageChange} itemLabel="images" />
+        <Pagination
+          currentPage={page}
+          totalPages={totalPages}
+          total={totalScans}
+          pageSize={pageSize}
+          onPageChange={handlePageChange}
+          onPageSizeChange={(size) => { setPageSize(size); handlePageChange(1); }}
+          pageSizeOptions={pageSizeOptions}
+          itemLabel="images"
+        />
       </div>}
     </div>
   );

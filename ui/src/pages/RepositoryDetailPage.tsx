@@ -8,6 +8,7 @@ import { LoadingState, ErrorState, StatusBadge, VulnCounts, SortHeader, Paginati
 import type { RepositoryTag } from '../lib/api';
 import { ArrowLeft, RefreshCw } from 'lucide-react';
 import { useSortablePaginationState } from '../lib/useSortablePaginationState';
+import { usePageSizePreference } from '../lib/pageSizePreference';
 
 export default function RepositoryDetailPage() {
   const { name } = useParams<{ name: string }>();
@@ -15,6 +16,7 @@ export default function RepositoryDetailPage() {
   const { apiClient } = useAuth();
   const { toast } = useToast();
   const { inUseRequestParams } = useImageUsageFilter();
+  const { pageSize, setPageSize, options: pageSizeOptions } = usePageSizePreference();
   const [searchParams] = useSearchParams();
 
   const [allTags, setAllTags] = useState<RepositoryTag[]>([]);
@@ -23,15 +25,21 @@ export default function RepositoryDetailPage() {
   const [error, setError] = useState('');
   const [search, setSearch] = useState(searchParams.get('search') || '');
   const [policyFilter, setPolicyFilter] = useState('all');
-  const pageSize = 10;
   const [confirmRescan, setConfirmRescan] = useState<{ type: 'repo' | 'tag'; name: string } | null>(null);
 
-  const { sortColumn: sortCol, sortDirection: sortDir, toggleSort, page, setPage } = useSortablePaginationState({
+  const policyFilteredTags = useMemo(() => {
+    if (policyFilter === 'all') return allTags;
+    return allTags.filter(t => (t.PolicyStatus || (t.PolicyPassed ? 'passed' : 'failed')) === policyFilter);
+  }, [allTags, policyFilter]);
+
+  const effectiveTotal = policyFilteredTags.length;
+
+  const { sortColumn: sortCol, sortDirection: sortDir, toggleSort, page, setPage, totalPages, offset } = useSortablePaginationState({
     initialSortColumn: 'name',
     initialSortDirection: 'asc',
     resolveNewColumnDirection: () => 'asc',
     pageSize,
-    totalItems: total,
+    totalItems: effectiveTotal,
   });
 
   const load = useCallback(async () => {
@@ -40,24 +48,24 @@ export default function RepositoryDetailPage() {
     setError('');
     try {
       const fetchSize = 200;
-      let offset = 0;
+      let fetchOffset = 0;
       let expectedTotal = 0;
       const collected: RepositoryTag[] = [];
 
       do {
         const resp = await apiClient.getRepository(decodedName, {
           limit: fetchSize,
-          offset,
+          offset: fetchOffset,
           ...(search && { search }),
           ...(inUseRequestParams && inUseRequestParams),
         });
         const pageTags = resp?.Tags || [];
         expectedTotal = resp?.Total || 0;
         collected.push(...pageTags);
-        offset += pageTags.length;
+        fetchOffset += pageTags.length;
 
         if (pageTags.length === 0) break;
-      } while (offset < expectedTotal);
+      } while (fetchOffset < expectedTotal);
 
       setAllTags(collected);
       setTotal(expectedTotal || collected.length);
@@ -75,10 +83,7 @@ export default function RepositoryDetailPage() {
       status: 'PolicyPassed',
     };
     const apiCol = colMap[sortCol] || 'Name';
-    const source = policyFilter === 'all'
-      ? allTags
-      : allTags.filter(t => (t.PolicyStatus || (t.PolicyPassed ? 'passed' : 'failed')) === policyFilter);
-    return [...source].sort((a, b) => {
+    return [...policyFilteredTags].sort((a, b) => {
       const av = a[apiCol as keyof RepositoryTag] as unknown;
       const bv = b[apiCol as keyof RepositoryTag] as unknown;
       if (sortCol === 'name') {
@@ -95,17 +100,13 @@ export default function RepositoryDetailPage() {
         ? String(av || '').localeCompare(String(bv || ''))
         : String(bv || '').localeCompare(String(av || ''));
     });
-  }, [allTags, sortCol, sortDir, policyFilter]);
+  }, [policyFilteredTags, sortCol, sortDir]);
 
   const tags = useMemo(() => {
-    const start = (page - 1) * pageSize;
-    return filteredAndSortedTags.slice(start, start + pageSize);
-  }, [filteredAndSortedTags, page]);
+    return filteredAndSortedTags.slice(offset, offset + pageSize);
+  }, [filteredAndSortedTags, offset, pageSize]);
 
   useEffect(() => { load(); }, [load]);
-
-  const effectiveTotal = policyFilter !== 'all' ? filteredAndSortedTags.length : total;
-  const effectiveTotalPages = Math.max(1, Math.ceil(effectiveTotal / pageSize));
 
   const handleSort = (col: string) => {
     toggleSort(col);
@@ -212,7 +213,16 @@ export default function RepositoryDetailPage() {
             })}
           </tbody></table></div>
         )}
-        <Pagination currentPage={page} totalPages={effectiveTotalPages} total={effectiveTotal} pageSize={pageSize} onPageChange={setPage} itemLabel="tags" />
+        <Pagination
+          currentPage={page}
+          totalPages={totalPages}
+          total={effectiveTotal}
+          pageSize={pageSize}
+          onPageChange={setPage}
+          onPageSizeChange={(size) => { setPageSize(size); setPage(1); }}
+          pageSizeOptions={pageSizeOptions}
+          itemLabel="tags"
+        />
       </div>
 
       <ConfirmModal
@@ -225,3 +235,4 @@ export default function RepositoryDetailPage() {
     </div>
   );
 }
+
