@@ -4,6 +4,8 @@ import (
 	"context"
 	"database/sql"
 	"encoding/json"
+	"fmt"
+	"strings"
 	"time"
 
 	"github.com/daimoniac/suppline/internal/errors"
@@ -82,6 +84,12 @@ func (s *SQLiteStore) RecordScan(ctx context.Context, record *ScanRecord) error 
 		if err != nil {
 			return errors.NewTransientf("failed to update artifact: %w", err)
 		}
+	}
+
+	// A tag can only point at one digest. Drop older (repo, tag, other digest) bindings
+	// so ListScans / GetRepository stay aligned after retags.
+	if err := pruneSupersededTagBindingsTx(ctx, tx, repositoryID, record.Digest, record.Tag); err != nil {
+		return err
 	}
 
 	// Insert scan record with applied VEX statements as JSON.
@@ -164,6 +172,108 @@ func (s *SQLiteStore) RecordScan(ctx context.Context, record *ScanRecord) error 
 
 	if err := tx.Commit(); err != nil {
 		return errors.NewTransientf("failed to commit transaction: %w", err)
+	}
+
+	return nil
+}
+
+// pruneSupersededTagBindingsTx deletes older artifact rows for the same repository+tag
+// that point at a different digest. Empty tags are left untouched.
+func pruneSupersededTagBindingsTx(ctx context.Context, tx *sql.Tx, repositoryID int64, digest, tag string) error {
+	if tag == "" {
+		return nil
+	}
+
+	rows, err := tx.QueryContext(ctx, `
+		SELECT id FROM artifacts
+		WHERE repository_id = ? AND tag = ? AND digest != ?
+	`, repositoryID, tag, digest)
+	if err != nil {
+		return errors.NewTransientf("failed to query superseded tag bindings: %w", err)
+	}
+	defer rows.Close()
+
+	var artifactIDs []int64
+	for rows.Next() {
+		var id int64
+		if err := rows.Scan(&id); err != nil {
+			return errors.NewTransientf("failed to scan superseded artifact id: %w", err)
+		}
+		artifactIDs = append(artifactIDs, id)
+	}
+	if err := rows.Err(); err != nil {
+		return errors.NewTransientf("error iterating superseded artifacts: %w", err)
+	}
+	if len(artifactIDs) == 0 {
+		return nil
+	}
+
+	for _, artifactID := range artifactIDs {
+		if err := deleteArtifactWithScansTx(ctx, tx, artifactID); err != nil {
+			return err
+		}
+	}
+
+	return nil
+}
+
+// deleteArtifactWithScansTx removes one artifact and the scan records it owns,
+// clearing last_scan_id references first so foreign keys stay valid.
+func deleteArtifactWithScansTx(ctx context.Context, tx *sql.Tx, artifactID int64) error {
+	scanRows, err := tx.QueryContext(ctx, `
+		SELECT id FROM scan_records WHERE artifact_id = ?
+	`, artifactID)
+	if err != nil {
+		return errors.NewTransientf("failed to query scan records for superseded artifact: %w", err)
+	}
+	defer scanRows.Close()
+
+	var scanIDs []int64
+	for scanRows.Next() {
+		var scanID int64
+		if err := scanRows.Scan(&scanID); err != nil {
+			return errors.NewTransientf("failed to scan scan record id for superseded artifact: %w", err)
+		}
+		scanIDs = append(scanIDs, scanID)
+	}
+	if err := scanRows.Err(); err != nil {
+		return errors.NewTransientf("error iterating scan records for superseded artifact: %w", err)
+	}
+
+	if len(scanIDs) > 0 {
+		placeholders := make([]string, len(scanIDs))
+		args := make([]interface{}, len(scanIDs))
+		for i, scanID := range scanIDs {
+			placeholders[i] = "?"
+			args[i] = scanID
+		}
+		_, err = tx.ExecContext(ctx, fmt.Sprintf(`
+			UPDATE artifacts SET last_scan_id = NULL WHERE last_scan_id IN (%s)
+		`, strings.Join(placeholders, ",")), args...)
+		if err != nil {
+			return errors.NewTransientf("failed to clear last_scan_id for superseded artifact scans: %w", err)
+		}
+	}
+
+	_, err = tx.ExecContext(ctx, `
+		UPDATE artifacts SET last_scan_id = NULL WHERE id = ?
+	`, artifactID)
+	if err != nil {
+		return errors.NewTransientf("failed to clear superseded artifact last_scan_id: %w", err)
+	}
+
+	_, err = tx.ExecContext(ctx, `
+		DELETE FROM scan_records WHERE artifact_id = ?
+	`, artifactID)
+	if err != nil {
+		return errors.NewTransientf("failed to delete superseded artifact scan records: %w", err)
+	}
+
+	_, err = tx.ExecContext(ctx, `
+		DELETE FROM artifacts WHERE id = ?
+	`, artifactID)
+	if err != nil {
+		return errors.NewTransientf("failed to delete superseded artifact: %w", err)
 	}
 
 	return nil
