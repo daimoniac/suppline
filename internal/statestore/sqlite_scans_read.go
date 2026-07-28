@@ -345,10 +345,10 @@ func buildScanFilterClause(filter ScanFilter) (string, []interface{}) {
 }
 
 // ListScans returns scan records with optional filters.
-// Only returns the current (latest) scan per artifact, i.e. those referenced by
-// artifacts.last_scan_id. This keeps results consistent with GetRepository which
-// also reads the current state via last_scan_id, and avoids surfacing stale
-// historical records (e.g. an old failed scan after a subsequent passing scan).
+// Only returns the current (latest) scan for the newest artifact per
+// (repository, tag), matching GetRepository's MAX(id) semantics. This avoids
+// surfacing superseded digest bindings after a tag was retargeted, as well as
+// stale historical scan_records that are no longer referenced by last_scan_id.
 func (s *SQLiteStore) ListScans(ctx context.Context, filter ScanFilter) ([]*ScanRecord, error) {
 	originalLimit := filter.Limit
 	originalOffset := filter.Offset
@@ -367,6 +367,13 @@ func (s *SQLiteStore) ListScans(ctx context.Context, filter ScanFilter) ([]*Scan
 		FROM artifacts a
 		JOIN repositories r ON a.repository_id = r.id
 		JOIN scan_records sr ON a.last_scan_id = sr.id
+		INNER JOIN (
+			SELECT a2.repository_id, a2.tag, MAX(a2.id) AS max_id
+			FROM artifacts a2
+			GROUP BY a2.repository_id, a2.tag
+		) latest ON a.repository_id = latest.repository_id
+			AND a.tag IS latest.tag
+			AND a.id = latest.max_id
 		WHERE 1=1
 	`
 	filterClause, args := buildScanFilterClause(filter)
@@ -507,6 +514,13 @@ func (s *SQLiteStore) CountScans(ctx context.Context, filter ScanFilter) (int, e
 		FROM artifacts a
 		JOIN repositories r ON a.repository_id = r.id
 		JOIN scan_records sr ON a.last_scan_id = sr.id
+		INNER JOIN (
+			SELECT a2.repository_id, a2.tag, MAX(a2.id) AS max_id
+			FROM artifacts a2
+			GROUP BY a2.repository_id, a2.tag
+		) latest ON a.repository_id = latest.repository_id
+			AND a.tag IS latest.tag
+			AND a.id = latest.max_id
 		WHERE 1=1
 	`
 	filterClause, args := buildScanFilterClause(filter)
