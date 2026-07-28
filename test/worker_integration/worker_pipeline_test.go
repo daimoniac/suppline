@@ -22,6 +22,9 @@ import (
 
 type mockRegistry struct {
 	manifestError error
+	liveTags      []string
+	tagDigests    map[string]string
+	listTagsError error
 }
 
 func (m *mockRegistry) ListRepositories(ctx context.Context) ([]string, error) {
@@ -29,10 +32,22 @@ func (m *mockRegistry) ListRepositories(ctx context.Context) ([]string, error) {
 }
 
 func (m *mockRegistry) ListTags(ctx context.Context, repo string) ([]string, error) {
+	if m.listTagsError != nil {
+		return nil, m.listTagsError
+	}
+	if m.liveTags != nil {
+		return m.liveTags, nil
+	}
 	return []string{"latest"}, nil
 }
 
 func (m *mockRegistry) GetDigest(ctx context.Context, repo, tag string) (string, error) {
+	if m.tagDigests != nil {
+		if digest, ok := m.tagDigests[tag]; ok {
+			return digest, nil
+		}
+		return "", supplineErrors.NewManifestNotFound(errors.New("MANIFEST_UNKNOWN"))
+	}
 	return "sha256:abc123", nil
 }
 
@@ -47,17 +62,15 @@ func (m *mockRegistry) GetManifest(ctx context.Context, repository, digest strin
 }
 
 func (m *mockRegistry) VerifyTagExists(ctx context.Context, repo, tag string) error {
-	return nil
+	_, err := m.GetDigest(ctx, repo, tag)
+	return err
 }
 
 func (m *mockRegistry) GetManifestWithTagVerification(ctx context.Context, repo, tag, digest string) (*registry.Manifest, error) {
-	if m.manifestError != nil {
-		return nil, m.manifestError
+	if err := m.VerifyTagExists(ctx, repo, tag); err != nil {
+		return nil, err
 	}
-	return &registry.Manifest{
-		Digest:    digest,
-		MediaType: "application/vnd.docker.distribution.manifest.v2+json",
-	}, nil
+	return m.GetManifest(ctx, repo, digest)
 }
 
 type mockScanner struct {
@@ -123,6 +136,7 @@ type mockStateStore struct {
 	lastScanID       int64
 	cleanupCalled    map[string]bool
 	cleanupErrors    map[string]error
+	tagsForDigest    map[string][]statestore.TagRef
 }
 
 func newMockStateStore() *mockStateStore {
@@ -130,6 +144,7 @@ func newMockStateStore() *mockStateStore {
 		cleanupCalled: make(map[string]bool),
 		cleanupErrors: make(map[string]error),
 		lastScanID:    1,
+		tagsForDigest: make(map[string][]statestore.TagRef),
 	}
 }
 
@@ -155,10 +170,32 @@ func (m *mockStateStore) GetFailedArtifacts(ctx context.Context) ([]*statestore.
 	return nil, nil
 }
 
+func (m *mockStateStore) GetTagsForDigest(ctx context.Context, digest string) ([]statestore.TagRef, error) {
+	return m.tagsForDigest[digest], nil
+}
+
 func (m *mockStateStore) CleanupArtifactScans(ctx context.Context, digest string) error {
 	m.cleanupCalled["artifact_"+digest] = true
 	if err, exists := m.cleanupErrors["artifact_"+digest]; exists {
 		return err
+	}
+	return nil
+}
+
+func (m *mockStateStore) CleanupArtifactTag(ctx context.Context, repository, digest, tag string) error {
+	key := "artifact_tag_" + repository + "_" + digest + "_" + tag
+	m.cleanupCalled[key] = true
+	if err, exists := m.cleanupErrors[key]; exists {
+		return err
+	}
+	if refs, ok := m.tagsForDigest[digest]; ok {
+		filtered := refs[:0]
+		for _, ref := range refs {
+			if !(ref.Repository == repository && ref.Tag == tag) {
+				filtered = append(filtered, ref)
+			}
+		}
+		m.tagsForDigest[digest] = filtered
 	}
 	return nil
 }
@@ -645,5 +682,107 @@ func TestProcessTask_ErrorClassificationIntegration(t *testing.T) {
 				t.Error("expected artifact cleanup to be attempted")
 			}
 		})
+	}
+}
+
+func TestPipeline_ReconcilesStaleTagsOnDigestScan(t *testing.T) {
+	mockQ := queue.NewInMemoryQueue(10)
+	defer mockQ.Close()
+
+	digest := "sha256:1234"
+	repo := "library/nginx"
+
+	mockReg := &mockRegistry{
+		liveTags: []string{"8.8.0"},
+		tagDigests: map[string]string{
+			"8.8.0": digest,
+		},
+	}
+	mockScan := &mockScanner{}
+	mockPol := &mockPolicyEngine{}
+	mockAtt := &mockAttestor{}
+	mockStore := newMockStateStore()
+	mockStore.tagsForDigest[digest] = []statestore.TagRef{
+		{Repository: repo, Tag: "8.8"},
+		{Repository: repo, Tag: "8.8.0"},
+	}
+
+	w := worker.NewImageWorker(mockQ, mockScan, mockPol, mockAtt, mockReg, mockStore, worker.DefaultConfig(), slog.Default(), nil)
+
+	task := &queue.ScanTask{
+		ID:         "test-reconcile",
+		Repository: repo,
+		Digest:     digest,
+		Tag:        "8.8.0",
+		EnqueuedAt: time.Now(),
+		IsRescan:   true,
+	}
+
+	if err := w.ProcessTask(context.Background(), task); err != nil {
+		t.Fatalf("expected successful scan, got: %v", err)
+	}
+
+	staleKey := "artifact_tag_" + repo + "_" + digest + "_8.8"
+	if !mockStore.cleanupCalled[staleKey] {
+		t.Fatalf("expected stale tag 8.8 to be cleaned up, calls=%v", mockStore.cleanupCalled)
+	}
+
+	keepKey := "artifact_tag_" + repo + "_" + digest + "_8.8.0"
+	if mockStore.cleanupCalled[keepKey] {
+		t.Fatal("did not expect valid tag 8.8.0 to be cleaned up")
+	}
+
+	if task.Tag != "8.8.0" {
+		t.Fatalf("expected task tag to remain 8.8.0, got %q", task.Tag)
+	}
+
+	if mockStore.cleanupCalled["artifact_"+digest] {
+		t.Fatal("did not expect full digest cleanup when only one alias was deleted")
+	}
+}
+
+func TestPipeline_RetargetsTaskWhenOwnTagDeleted(t *testing.T) {
+	mockQ := queue.NewInMemoryQueue(10)
+	defer mockQ.Close()
+
+	digest := "sha256:1234"
+	repo := "library/nginx"
+
+	mockReg := &mockRegistry{
+		liveTags: []string{"8.8.0"},
+		tagDigests: map[string]string{
+			"8.8.0": digest,
+		},
+	}
+	mockStore := newMockStateStore()
+	mockStore.tagsForDigest[digest] = []statestore.TagRef{
+		{Repository: repo, Tag: "8.8"},
+		{Repository: repo, Tag: "8.8.0"},
+	}
+
+	w := worker.NewImageWorker(mockQ, &mockScanner{}, &mockPolicyEngine{}, &mockAttestor{}, mockReg, mockStore, worker.DefaultConfig(), slog.Default(), nil)
+
+	task := &queue.ScanTask{
+		ID:         "test-retarget",
+		Repository: repo,
+		Digest:     digest,
+		Tag:        "8.8", // deleted on registry, but digest still present via 8.8.0
+		EnqueuedAt: time.Now(),
+		IsRescan:   true,
+	}
+
+	if err := w.ProcessTask(context.Background(), task); err != nil {
+		t.Fatalf("expected successful scan after retarget, got: %v", err)
+	}
+
+	staleKey := "artifact_tag_" + repo + "_" + digest + "_8.8"
+	if !mockStore.cleanupCalled[staleKey] {
+		t.Fatal("expected deleted task tag 8.8 to be cleaned up")
+	}
+	if task.Tag != "8.8.0" {
+		t.Fatalf("expected task retarget to 8.8.0, got %q", task.Tag)
+	}
+	if mockStore.cleanupCalled["artifact_"+digest] {
+		t.Fatal("did not expect full digest cleanup")
 	}
 }

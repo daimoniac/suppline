@@ -2086,6 +2086,15 @@ func (m *mockWorkerStateStore) CleanupArtifactScans(ctx context.Context, digest 
 	return nil
 }
 
+func (m *mockWorkerStateStore) CleanupArtifactTag(ctx context.Context, repository, digest, tag string) error {
+	key := "artifact_tag_" + repository + "_" + digest + "_" + tag
+	m.cleanupCalled[key] = true
+	if err, exists := m.cleanupErrors[key]; exists {
+		return err
+	}
+	return nil
+}
+
 func (m *mockWorkerStateStore) CleanupOrphanedRepositories(ctx context.Context) ([]string, error) {
 	m.cleanupCalled["repositories"] = true
 	if err, exists := m.cleanupErrors["repositories"]; exists {

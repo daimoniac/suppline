@@ -9,6 +9,101 @@ import (
 	"github.com/daimoniac/suppline/internal/errors"
 )
 
+// CleanupArtifactTag removes one (repository, digest, tag) artifact binding without
+// deleting sibling tags that still point at the same digest.
+func (s *SQLiteStore) CleanupArtifactTag(ctx context.Context, repository, digest, tag string) error {
+	return s.executeCleanup(ctx, func(tx *sql.Tx) error {
+		var artifactID, repositoryID int64
+		err := tx.QueryRowContext(ctx, `
+			SELECT a.id, a.repository_id
+			FROM artifacts a
+			JOIN repositories r ON a.repository_id = r.id
+			WHERE r.name = ? AND a.digest = ? AND a.tag = ?
+		`, repository, digest, tag).Scan(&artifactID, &repositoryID)
+		if err == sql.ErrNoRows {
+			return nil
+		}
+		if err != nil {
+			return errors.NewTransientf("failed to query artifact for tag cleanup: %w", err)
+		}
+
+		scanRows, err := tx.QueryContext(ctx, `
+			SELECT id FROM scan_records WHERE artifact_id = ?
+		`, artifactID)
+		if err != nil {
+			return errors.NewTransientf("failed to query scan records for tag cleanup: %w", err)
+		}
+		defer scanRows.Close()
+
+		var scanIDs []int64
+		for scanRows.Next() {
+			var scanID int64
+			if err := scanRows.Scan(&scanID); err != nil {
+				return errors.NewTransientf("failed to scan scan record id for tag cleanup: %w", err)
+			}
+			scanIDs = append(scanIDs, scanID)
+		}
+		if err := scanRows.Err(); err != nil {
+			return errors.NewTransientf("error iterating scan records for tag cleanup: %w", err)
+		}
+
+		// Clear last_scan_id on any artifact that still references scans owned by this tag.
+		if len(scanIDs) > 0 {
+			placeholders := make([]string, len(scanIDs))
+			args := make([]interface{}, len(scanIDs))
+			for i, scanID := range scanIDs {
+				placeholders[i] = "?"
+				args[i] = scanID
+			}
+			_, err = tx.ExecContext(ctx, fmt.Sprintf(`
+				UPDATE artifacts SET last_scan_id = NULL WHERE last_scan_id IN (%s)
+			`, strings.Join(placeholders, ",")), args...)
+			if err != nil {
+				return errors.NewTransientf("failed to clear last_scan_id references for tag cleanup: %w", err)
+			}
+		}
+
+		_, err = tx.ExecContext(ctx, `
+			UPDATE artifacts SET last_scan_id = NULL WHERE id = ?
+		`, artifactID)
+		if err != nil {
+			return errors.NewTransientf("failed to clear artifact last_scan_id for tag cleanup: %w", err)
+		}
+
+		_, err = tx.ExecContext(ctx, `
+			DELETE FROM scan_records WHERE artifact_id = ?
+		`, artifactID)
+		if err != nil {
+			return errors.NewTransientf("failed to delete scan records for tag cleanup: %w", err)
+		}
+
+		_, err = tx.ExecContext(ctx, `
+			DELETE FROM artifacts WHERE id = ?
+		`, artifactID)
+		if err != nil {
+			return errors.NewTransientf("failed to delete artifact for tag cleanup: %w", err)
+		}
+
+		var remainingArtifacts int
+		err = tx.QueryRowContext(ctx, `
+			SELECT COUNT(*) FROM artifacts WHERE repository_id = ?
+		`, repositoryID).Scan(&remainingArtifacts)
+		if err != nil {
+			return errors.NewTransientf("failed to count remaining artifacts after tag cleanup: %w", err)
+		}
+		if remainingArtifacts == 0 {
+			_, err = tx.ExecContext(ctx, `
+				DELETE FROM repositories WHERE id = ?
+			`, repositoryID)
+			if err != nil {
+				return errors.NewTransientf("failed to delete empty repository after tag cleanup: %w", err)
+			}
+		}
+
+		return nil
+	})
+}
+
 func (s *SQLiteStore) CleanupArtifactScans(ctx context.Context, digest string) error {
 	return s.executeCleanup(ctx, func(tx *sql.Tx) error {
 		// First, get all artifact IDs and repository IDs for this digest

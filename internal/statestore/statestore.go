@@ -138,6 +138,11 @@ type StateStoreCleanup interface {
 	// This is used when a manifest is no longer available in the registry.
 	CleanupArtifactScans(ctx context.Context, digest string) error
 
+	// CleanupArtifactTag removes a single repository+digest+tag binding when the tag was
+	// deleted or retargeted in the registry while the digest itself may still exist.
+	// Sibling tags for the same digest are preserved. Empty repositories are removed.
+	CleanupArtifactTag(ctx context.Context, repository, digest, tag string) error
+
 	// CleanupOrphanedRepositories removes repositories with no remaining artifacts.
 	// Returns a list of deleted repository names for logging purposes.
 	CleanupOrphanedRepositories(ctx context.Context) ([]string, error)

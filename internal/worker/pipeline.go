@@ -550,38 +550,178 @@ func (p *Pipeline) performRepositoryCleanup(ctx context.Context, cleanupStore st
 	return nil
 }
 
-// fetchImageMetadata retrieves image metadata with optional tag verification
+// fetchImageMetadata retrieves image metadata and reconciles stored tags for the digest.
+// Digest availability is authoritative: a missing digest still triggers full cleanup.
+// Individual tags that were deleted or retargeted are pruned without removing sibling tags.
 func (p *Pipeline) fetchImageMetadata(ctx context.Context, task *queue.ScanTask, imageRef string) (*registry.Manifest, error) {
 	repo := extractRepository(imageRef)
 	digest := extractDigest(imageRef)
 
-	// If we have both tag and digest, use verification to detect deleted tags
-	if task.Tag != "" && task.Tag != "latest" {
-		p.logger.Debug("fetching image metadata with tag verification",
-			"image_ref", imageRef,
-			"tag", task.Tag,
-			"digest", digest)
-
-		manifest, err := p.worker.registry.GetManifestWithTagVerification(ctx, repo, task.Tag, digest)
-		if err != nil {
-			// Error is already classified in registry client
-			return nil, err
-		}
-		return manifest, nil
-	}
-
-	// Fallback to digest-only fetch (for latest tags or when tag is unavailable)
-	p.logger.Debug("fetching image metadata by digest only",
+	p.logger.Debug("fetching image metadata by digest",
 		"image_ref", imageRef,
 		"digest", digest)
 
 	manifest, err := p.worker.registry.GetManifest(ctx, repo, digest)
 	if err != nil {
-		// Classify registry errors to detect MANIFEST_UNKNOWN
-		classifiedErr := errors.ClassifyRegistryError(err)
-		return nil, classifiedErr
+		return nil, errors.ClassifyRegistryError(err)
 	}
+
+	if err := p.reconcileStoredTags(ctx, task, repo, digest); err != nil {
+		return nil, err
+	}
+
 	return manifest, nil
+}
+
+// reconcileStoredTags removes stored tag bindings that no longer point at this digest
+// in the registry, and retargets the scan task to a still-valid tag when needed.
+func (p *Pipeline) reconcileStoredTags(ctx context.Context, task *queue.ScanTask, repository, digest string) error {
+	tagStore, ok := p.worker.stateStore.(interface {
+		GetTagsForDigest(ctx context.Context, digest string) ([]statestore.TagRef, error)
+	})
+	if !ok {
+		return nil
+	}
+	cleanupStore, ok := p.worker.stateStore.(statestore.StateStoreCleanup)
+	if !ok {
+		p.logger.Warn("state store does not support tag cleanup during reconciliation",
+			"repository", repository,
+			"digest", digest)
+		return nil
+	}
+
+	storedTags, err := tagStore.GetTagsForDigest(ctx, digest)
+	if err != nil {
+		if errors.IsTransient(err) {
+			return fmt.Errorf("failed to load stored tags for reconciliation: %w", err)
+		}
+		p.logger.Warn("permanent error loading stored tags for reconciliation",
+			"repository", repository,
+			"digest", digest,
+			"error", err)
+		return nil
+	}
+
+	var repoTags []string
+	for _, ref := range storedTags {
+		if ref.Repository == repository && ref.Tag != "" {
+			repoTags = append(repoTags, ref.Tag)
+		}
+	}
+
+	liveTagSet := map[string]struct{}{}
+	if len(repoTags) > 0 {
+		liveTags, listErr := p.worker.registry.ListTags(ctx, repository)
+		if listErr != nil {
+			classified := errors.ClassifyRegistryError(listErr)
+			if errors.IsTransient(classified) {
+				return fmt.Errorf("failed to list registry tags for reconciliation: %w", classified)
+			}
+			p.logger.Warn("permanent error listing registry tags for reconciliation",
+				"repository", repository,
+				"digest", digest,
+				"error", classified)
+			return nil
+		}
+		for _, tag := range liveTags {
+			liveTagSet[tag] = struct{}{}
+		}
+	}
+
+	validTags := make(map[string]struct{}, len(repoTags))
+	for _, tag := range repoTags {
+		stale, checkErr := p.isStoredTagStale(ctx, repository, digest, tag, liveTagSet)
+		if checkErr != nil {
+			return checkErr
+		}
+		if !stale {
+			validTags[tag] = struct{}{}
+			continue
+		}
+
+		p.logger.Info("removing stale tag binding for digest",
+			"repository", repository,
+			"digest", digest,
+			"tag", tag)
+		if cleanupErr := cleanupStore.CleanupArtifactTag(ctx, repository, digest, tag); cleanupErr != nil {
+			if errors.IsTransient(cleanupErr) {
+				return fmt.Errorf("failed to cleanup stale tag %s: %w", tag, cleanupErr)
+			}
+			p.logger.Error("permanent error cleaning up stale tag",
+				"repository", repository,
+				"digest", digest,
+				"tag", tag,
+				"error", cleanupErr)
+		}
+	}
+
+	return p.retargetTaskTag(ctx, task, repository, digest, validTags)
+}
+
+func (p *Pipeline) isStoredTagStale(ctx context.Context, repository, digest, tag string, liveTagSet map[string]struct{}) (bool, error) {
+	if _, exists := liveTagSet[tag]; !exists {
+		return true, nil
+	}
+
+	currentDigest, err := p.worker.registry.GetDigest(ctx, repository, tag)
+	if err != nil {
+		classified := errors.ClassifyRegistryError(err)
+		if errors.IsManifestNotFound(classified) {
+			return true, nil
+		}
+		if errors.IsTransient(classified) {
+			return false, fmt.Errorf("failed to resolve digest for tag %s during reconciliation: %w", tag, classified)
+		}
+		p.logger.Warn("permanent error resolving tag digest during reconciliation; leaving tag in place",
+			"repository", repository,
+			"digest", digest,
+			"tag", tag,
+			"error", classified)
+		return false, nil
+	}
+
+	return currentDigest != digest, nil
+}
+
+func (p *Pipeline) retargetTaskTag(ctx context.Context, task *queue.ScanTask, repository, digest string, validStoredTags map[string]struct{}) error {
+	if task.Tag == "" || task.Tag == "latest" {
+		return nil
+	}
+
+	if _, ok := validStoredTags[task.Tag]; ok {
+		return nil
+	}
+
+	// Task tag may be new (not yet stored) or may have just been pruned. Verify against registry.
+	currentDigest, err := p.worker.registry.GetDigest(ctx, repository, task.Tag)
+	if err == nil && currentDigest == digest {
+		return nil
+	}
+	if err != nil {
+		classified := errors.ClassifyRegistryError(err)
+		if errors.IsTransient(classified) {
+			return fmt.Errorf("failed to verify task tag during retarget: %w", classified)
+		}
+	}
+
+	replacement := pickReplacementTag(validStoredTags)
+	p.logger.Info("scan task tag no longer points at digest; retargeting",
+		"repository", repository,
+		"digest", digest,
+		"old_tag", task.Tag,
+		"new_tag", replacement)
+	task.Tag = replacement
+	return nil
+}
+
+func pickReplacementTag(validStoredTags map[string]struct{}) string {
+	replacement := ""
+	for tag := range validStoredTags {
+		if replacement == "" || tag < replacement {
+			replacement = tag
+		}
+	}
+	return replacement
 }
 
 // getPolicyEngineForRepository returns a policy engine for the given repository
