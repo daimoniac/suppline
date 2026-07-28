@@ -195,40 +195,41 @@ func (s *APIServer) handleGetSemverUpdateTasks(w http.ResponseWriter, r *http.Re
 		// Join multiple range strings with || so a runtime version only needs
 		// to satisfy one configured range.
 		constraintStr := strings.Join(c.CurrentRanges, " || ")
-		constraint, err := semver.NewConstraint(constraintStr)
+		constraint, err := semverutil.NewConstraint(constraintStr)
 		if err != nil {
 			s.logger.Warn("failed to parse semver constraint", "constraint", constraintStr, "error", err)
 			c.Status = "no_runtime_data"
 			continue
 		}
 
-		var outOfRange []*semver.Version
-		var allVersions []*semver.Version
+		var outOfRangeTags []string
+		var allTags []string
 		for _, tag := range c.RuntimeVersions {
 			v, ok := semverutil.ParseVersion(tag)
 			if !ok {
 				continue
 			}
-			allVersions = append(allVersions, v)
+			allTags = append(allTags, tag)
 			if !constraint.Check(v) {
-				outOfRange = append(outOfRange, v)
+				outOfRangeTags = append(outOfRangeTags, tag)
 				c.OutOfRangeVersions = append(c.OutOfRangeVersions, tag)
 			}
 		}
 
-		if len(allVersions) == 0 {
+		if len(allTags) == 0 {
 			c.Status = "no_runtime_data"
 			continue
 		}
 
-		sort.Slice(allVersions, func(a, b int) bool { return allVersions[a].LessThan(allVersions[b]) })
-		minVer := allVersions[0]
+		// RuntimeVersions is already sorted by ParseVersion order.
+		minTag := allTags[0]
+		minVer, _ := semverutil.ParseVersion(minTag)
 
-		suggestedLower := suggestedLowerBound(minVer, c.CurrentRanges)
+		suggestedLower := suggestedLowerBound(minVer, minTag, c.CurrentRanges)
 		suggestedRange := formatSuggestedLowerOnlyRange(suggestedLower, strings.Join(c.CurrentRanges, " "))
-		tightenRanges, hasTighteningSuggestion := suggestedRangesForTighten(c.CurrentRanges, allVersions)
+		tightenRanges, hasTighteningSuggestion := suggestedRangesForTighten(c.CurrentRanges, allTags)
 
-		if len(outOfRange) == 0 {
+		if len(outOfRangeTags) == 0 {
 			c.Status = "current"
 			if hasTighteningSuggestion {
 				c.Status = "tighten"
@@ -418,24 +419,36 @@ func sameSemverLowerOnlyRange(current []string, proposedLower string) bool {
 	if m == nil {
 		return false
 	}
-	currentLower, err := semver.NewVersion(m[1])
-	if err != nil {
+	currentLower, ok := semverutil.ParseVersion(m[1])
+	if !ok {
 		return false
 	}
-	proposed, err := semver.NewVersion(proposedLower)
-	if err != nil {
+	proposed, ok := semverutil.ParseVersion(proposedLower)
+	if !ok {
 		return false
 	}
 	return currentLower.Equal(proposed)
 }
 
-func suggestedLowerBound(minVer *semver.Version, currentRanges []string) string {
-	if !rangesIncludePrereleaseMarker(currentRanges) {
-		return minVer.String()
+func suggestedLowerBound(minVer *semver.Version, originalTag string, currentRanges []string) string {
+	if rangesIncludePrereleaseMarker(currentRanges) {
+		// Keep prerelease inclusion semantics when existing constraints use -0.
+		return fmt.Sprintf("%d.%d.%d-0", minVer.Major(), minVer.Minor(), minVer.Patch())
 	}
 
-	// Keep prerelease inclusion semantics when existing constraints use -0.
-	return fmt.Sprintf("%d.%d.%d-0", minVer.Major(), minVer.Minor(), minVer.Patch())
+	// Prefer the original tag so Bitnami-style "-rN" revisions are preserved
+	// (ParseVersion canonicalizes them to ".N" for comparison only).
+	if originalTag != "" {
+		return stripLeadingV(originalTag)
+	}
+	return minVer.String()
+}
+
+func stripLeadingV(tag string) string {
+	if len(tag) > 0 && (tag[0] == 'v' || tag[0] == 'V') {
+		return tag[1:]
+	}
+	return tag
 }
 
 func rangesIncludePrereleaseMarker(ranges []string) bool {
@@ -447,23 +460,39 @@ func rangesIncludePrereleaseMarker(ranges []string) bool {
 	return false
 }
 
-func suggestedRangesForTighten(currentRanges []string, runtimeVersions []*semver.Version) ([]string, bool) {
+func suggestedRangesForTighten(currentRanges []string, runtimeTags []string) ([]string, bool) {
 	suggested := make([]string, 0, len(currentRanges))
 	changed := false
-	sort.Slice(runtimeVersions, func(i, j int) bool { return runtimeVersions[i].LessThan(runtimeVersions[j]) })
-	runtimeFloor := runtimeVersions[0]
+
+	type taggedVersion struct {
+		tag string
+		ver *semver.Version
+	}
+	runtime := make([]taggedVersion, 0, len(runtimeTags))
+	for _, tag := range runtimeTags {
+		v, ok := semverutil.ParseVersion(tag)
+		if !ok {
+			continue
+		}
+		runtime = append(runtime, taggedVersion{tag: tag, ver: v})
+	}
+	if len(runtime) == 0 {
+		return nil, false
+	}
+	sort.Slice(runtime, func(i, j int) bool { return runtime[i].ver.LessThan(runtime[j].ver) })
+	runtimeFloor := runtime[0].ver
 
 	for _, current := range currentRanges {
-		constraint, err := semver.NewConstraint(current)
+		constraint, err := semverutil.NewConstraint(current)
 		if err != nil {
 			suggested = append(suggested, current)
 			continue
 		}
 
-		matching := make([]*semver.Version, 0, len(runtimeVersions))
-		for _, v := range runtimeVersions {
-			if constraint.Check(v) {
-				matching = append(matching, v)
+		matching := make([]taggedVersion, 0, len(runtime))
+		for _, tv := range runtime {
+			if constraint.Check(tv.ver) {
+				matching = append(matching, tv)
 			}
 		}
 
@@ -476,14 +505,14 @@ func suggestedRangesForTighten(currentRanges []string, runtimeVersions []*semver
 			continue
 		}
 
-		sort.Slice(matching, func(i, j int) bool { return matching[i].LessThan(matching[j]) })
+		sort.Slice(matching, func(i, j int) bool { return matching[i].ver.LessThan(matching[j].ver) })
 		trimmedCurrent := strings.TrimSpace(current)
 		if exactVersionRangeRe.MatchString(trimmedCurrent) {
 			suggested = append(suggested, trimmedCurrent)
 			continue
 		}
 
-		lower := suggestedLowerBound(matching[0], []string{current})
+		lower := suggestedLowerBound(matching[0].ver, matching[0].tag, []string{current})
 		next := formatSuggestedLowerOnlyRange(lower, current)
 		upperBounds := extractUpperBounds(current)
 		if len(upperBounds) == 0 && sameSemverLowerOnlyRange([]string{current}, lower) {
@@ -533,8 +562,8 @@ func rangeStrictlyBelowVersion(r string, floor *semver.Version) bool {
 	for _, upper := range extractUpperBounds(r) {
 		inclusive := strings.HasPrefix(upper, "<=")
 		verStr := strings.TrimLeft(upper, "<=>")
-		v, err := semver.NewVersion(verStr)
-		if err != nil {
+		v, ok := semverutil.ParseVersion(verStr)
+		if !ok {
 			continue
 		}
 
@@ -574,8 +603,7 @@ func rangeStrictlyBelowVersion(r string, floor *semver.Version) bool {
 		}
 
 		if exactVersionRangeRe.MatchString(token) {
-			v, err := semver.NewVersion(token)
-			if err == nil && v.LessThan(floor) {
+			if v, ok := semverutil.ParseVersion(token); ok && v.LessThan(floor) {
 				return true
 			}
 		}
@@ -585,20 +613,20 @@ func rangeStrictlyBelowVersion(r string, floor *semver.Version) bool {
 }
 
 func inferredUpperBoundForTilde(raw string) (*semver.Version, bool) {
-	v, err := semver.NewVersion(raw)
-	if err != nil {
+	v, ok := semverutil.ParseVersion(raw)
+	if !ok {
 		return nil, false
 	}
-	upper, err := semver.NewVersion(fmt.Sprintf("%d.%d.0", v.Major(), v.Minor()+1))
-	if err != nil {
+	upper, ok := semverutil.ParseVersion(fmt.Sprintf("%d.%d.0", v.Major(), v.Minor()+1))
+	if !ok {
 		return nil, false
 	}
 	return upper, true
 }
 
 func inferredUpperBoundForCaret(raw string) (*semver.Version, bool) {
-	v, err := semver.NewVersion(raw)
-	if err != nil {
+	v, ok := semverutil.ParseVersion(raw)
+	if !ok {
 		return nil, false
 	}
 
@@ -607,21 +635,21 @@ func inferredUpperBoundForCaret(raw string) (*semver.Version, bool) {
 	patch := v.Patch()
 
 	if major > 0 {
-		upper, err := semver.NewVersion(fmt.Sprintf("%d.0.0", major+1))
-		if err != nil {
+		upper, ok := semverutil.ParseVersion(fmt.Sprintf("%d.0.0", major+1))
+		if !ok {
 			return nil, false
 		}
 		return upper, true
 	}
 	if minor > 0 {
-		upper, err := semver.NewVersion(fmt.Sprintf("0.%d.0", minor+1))
-		if err != nil {
+		upper, ok := semverutil.ParseVersion(fmt.Sprintf("0.%d.0", minor+1))
+		if !ok {
 			return nil, false
 		}
 		return upper, true
 	}
-	upper, err := semver.NewVersion(fmt.Sprintf("0.0.%d", patch+1))
-	if err != nil {
+	upper, ok := semverutil.ParseVersion(fmt.Sprintf("0.0.%d", patch+1))
+	if !ok {
 		return nil, false
 	}
 	return upper, true

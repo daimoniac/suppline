@@ -209,6 +209,47 @@ func TestHandleGetSemverUpdateTasks_MatchesCanonicalDockerHubRepositoryRefs(t *t
 	}
 }
 
+func TestHandleGetSemverUpdateTasks_BitnamiRevisionNotOutOfBounds(t *testing.T) {
+	// Bitnami tags use -rN revisions. SemVer would lexicographically treat r16 < r9;
+	// suppline canonicalizes so r16 satisfies >=...-r9 and only suggests tightening.
+	regsync := regsyncWithSemver(
+		"docker.io/bitnamilegacy/mysqld-exporter",
+		"hostingmaloonde/bitnamilegacy_mysqld-exporter",
+		[]string{">=0.17.2-debian-12-r9"},
+	)
+	store := &mockClusterInventoryStore{
+		mockStateStore: &mockStateStore{},
+		summaries:      []statestore.ClusterSummary{{Name: "prod"}},
+		clusterImages: []statestore.ClusterImageSummary{
+			{Namespace: "default", ImageRef: "hostingmaloonde/bitnamilegacy_mysqld-exporter", Tag: "0.17.2-debian-12-r16"},
+		},
+	}
+	server := tasksTestServer(t, store, regsync)
+
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/tasks/semver-updates", nil)
+	w := httptest.NewRecorder()
+	server.router.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", w.Code, w.Body.String())
+	}
+
+	var resp SemverUpdateTasksResponse
+	if err := json.NewDecoder(w.Body).Decode(&resp); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if len(resp.Entries) != 1 {
+		t.Fatalf("expected 1 entry, got %d", len(resp.Entries))
+	}
+	entry := resp.Entries[0]
+	if entry.Status != "tighten" {
+		t.Fatalf("expected tighten (in range), got %q out_of_range=%v", entry.Status, entry.OutOfRangeVersions)
+	}
+	if len(entry.SuggestedRanges) != 1 || entry.SuggestedRanges[0] != ">=0.17.2-debian-12-r16" {
+		t.Fatalf("expected suggested >=0.17.2-debian-12-r16, got %v", entry.SuggestedRanges)
+	}
+}
+
 func TestHandleGetSemverUpdateTasks_OutdatedRange(t *testing.T) {
 	// 1.27.2 is outside >=1.20.0 <1.26.0 → should suggest >=1.25.3.
 	regsync := regsyncWithSemver("docker.io/nginx", "registry.example.com/nginx", []string{">=1.20.0 <1.26.0"})
