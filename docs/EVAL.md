@@ -52,7 +52,7 @@ curl -s -H "Authorization: Bearer demo" http://localhost:8080/api/v1/scans | hea
 
 | Piece | Behavior |
 |-------|----------|
-| Registry | Bundled `registry:2` over HTTP — **not** for production |
+| Registry | Bundled `registry:3` over HTTP — **not** for production |
 | Sources | `public.ecr.aws` (no auth). Docker Hub is optional via `.env` |
 | Signing | Cosign keypair auto-generated into `./keys/demo` on first start (does not touch existing `./keys/cosign.*`) |
 | `demo-pass` / `demo-fail` | Intentional CEL `true` / `false` so pass+fail always show for the gate |

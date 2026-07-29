@@ -3,7 +3,7 @@
 # Docs: docs/EVAL.md
 services:
   registry:
-    image: registry:2.8.3
+    image: registry:3.1.1
     container_name: suppline-registry
     environment:
       - REGISTRY_STORAGE_DELETE_ENABLED=true

@@ -103,7 +103,7 @@ The integration tests cover:
 ### Test Registry
 - **Port**: 5000
 - **Purpose**: Local Docker registry for testing image operations and attestations
-- **Image**: registry:2
+- **Image**: registry:3.1.1
 - **Startup time**: ~5 seconds
 - **Usage**: Tests automatically push images to `localhost:5000/test/*` for attestation testing
 
