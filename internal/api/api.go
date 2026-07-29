@@ -113,6 +113,7 @@ func (s *APIServer) setupRoutes() {
 	s.router.HandleFunc("/api/v1/vex", s.corsMiddleware(s.authMiddleware(s.handleListVEX, false)))
 	s.router.HandleFunc("/api/v1/vex/inactive", s.corsMiddleware(s.authMiddleware(s.handleListInactiveVEX, false)))
 	s.router.HandleFunc("/api/v1/images/failed", s.corsMiddleware(s.authMiddleware(s.handleListFailedImages, false)))
+	s.router.HandleFunc("/api/v1/policies", s.corsMiddleware(s.authMiddleware(s.handleListPolicies, false)))
 	s.router.HandleFunc("/api/v1/repositories", s.corsMiddleware(s.authMiddleware(s.handleListRepositories, false)))
 	s.router.HandleFunc("/api/v1/repositories/", s.corsMiddleware(s.authMiddleware(s.handleRepositoriesRouter, false)))
 

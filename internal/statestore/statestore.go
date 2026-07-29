@@ -176,8 +176,12 @@ type RepositoryInfo struct {
 	VulnerabilityCount VulnerabilityCountSummary
 	PolicyPassed       bool
 	PolicyStatus       string
-	RuntimeUsed        bool
-	Whitelisted        bool
+	// PolicyExpression / PolicyDescription are filled by the API from live config
+	// (not persisted). Empty when no x-policy is configured for the repository.
+	PolicyExpression  string `json:",omitempty"`
+	PolicyDescription string `json:",omitempty"`
+	RuntimeUsed       bool
+	Whitelisted       bool
 }
 
 // VulnerabilityCountSummary represents aggregated vulnerability counts
@@ -194,6 +198,10 @@ type RepositoryDetail struct {
 	Name  string
 	Tags  []TagInfo
 	Total int
+	// PolicyExpression / PolicyDescription are filled by the API from live config
+	// (not persisted). Empty when no x-policy is configured for the repository.
+	PolicyExpression  string `json:",omitempty"`
+	PolicyDescription string `json:",omitempty"`
 }
 
 // TagInfo represents a tag within a repository

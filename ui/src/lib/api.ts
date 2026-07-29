@@ -142,6 +142,11 @@ export class APIClient {
     return this.request<{ message: string }>(`/api/v1/repositories/${encodeURIComponent(name)}/tags/${encodeURIComponent(tag)}/rescan`, { method: 'POST', body: '{}' });
   }
 
+  // Policies
+  async getPolicies() {
+    return this.request<PoliciesResponse>('/api/v1/policies');
+  }
+
   // Vulnerabilities
   async queryVulnerabilities(filters: Record<string, unknown> = {}) {
     const { data, response } = await this.requestWithResponse<VulnerabilityGroup[]>(`/api/v1/vulnerabilities${this.qs(filters)}`);
@@ -306,6 +311,8 @@ export interface Repository {
   LastScanTime: number;
   PolicyPassed: boolean;
   PolicyStatus?: string;
+  PolicyExpression?: string;
+  PolicyDescription?: string;
   VulnerabilityCount: VulnCount;
   RuntimeUsed?: boolean;
   Whitelisted?: boolean;
@@ -314,6 +321,16 @@ export interface Repository {
 export interface RepositoriesResponse {
   Repositories: Repository[];
   Total: number;
+}
+
+export interface PolicyInfo {
+  Expression: string;
+  Description: string;
+}
+
+export interface PoliciesResponse {
+  Default?: PolicyInfo | null;
+  Repositories?: Record<string, PolicyInfo>;
 }
 
 export interface RepositoryTag {
@@ -335,8 +352,11 @@ export interface RepositoryTag {
 }
 
 export interface RepositoryDetailResponse {
+  Name?: string;
   Tags: RepositoryTag[];
   Total: number;
+  PolicyExpression?: string;
+  PolicyDescription?: string;
 }
 
 export interface RepositoryVEXInfo {

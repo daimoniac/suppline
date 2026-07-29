@@ -4,7 +4,7 @@ import { useAuth } from '../lib/auth';
 import { useToast } from '../lib/toast';
 import { formatRelativeTime } from '../lib/utils';
 import { useImageUsageFilter } from '../lib/imageUsageFilter';
-import { LoadingState, ErrorState, PageHeader, StatusBadge, VulnCounts, SortHeader, Pagination, ConfirmModal, RuntimeUsageBadge, PageFiltersBar, FilterActionButton, PolicyStatusSelect } from '../components/ui';
+import { LoadingState, ErrorState, PageHeader, StatusBadge, VulnCounts, SortHeader, Pagination, ConfirmModal, RuntimeUsageBadge, PageFiltersBar, FilterActionButton, PolicyStatusSelect, PolicyDescriptionText } from '../components/ui';
 import type { Repository } from '../lib/api';
 import { RefreshCw } from 'lucide-react';
 import { useSortablePaginationState, type SortDirection } from '../lib/useSortablePaginationState';
@@ -159,6 +159,11 @@ export default function RepositoriesPage() {
                         <StatusBadge passed={r.PolicyPassed} status={r.PolicyStatus} />
                         <RuntimeUsageBadge inUse={!!r.RuntimeUsed} whitelisted={!!r.Whitelisted} />
                       </div>
+                      <PolicyDescriptionText
+                        description={r.PolicyDescription}
+                        expression={r.PolicyExpression}
+                        className="mt-1"
+                      />
                     </td>
                     <td className="px-4 py-3">
                       <button onClick={e => { e.stopPropagation(); setConfirmRescan(r.Name); }} className="px-3 py-1 text-xs rounded border border-warning/30 text-warning hover:bg-warning-bg transition-colors flex items-center gap-1">

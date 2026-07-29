@@ -11,6 +11,27 @@ export function StatusBadge({ passed, label, status }: { passed: boolean; label?
   return <span className={cn('inline-flex items-center px-2 py-0.5 rounded text-xs font-medium', isPending ? 'bg-warning-bg text-warning' : passed ? 'bg-success-bg text-success' : 'bg-danger-bg text-danger')}>{label || (isPending ? 'Pending' : passed ? 'Passed' : 'Failed')}</span>;
 }
 
+/** Labelled one-liner for a human-readable CEL policy; hides when description is empty. */
+export function PolicyDescriptionText({
+  description,
+  expression,
+  label = 'Policy gate',
+  className,
+}: {
+  description?: string | null;
+  expression?: string | null;
+  label?: string;
+  className?: string;
+}) {
+  if (!description) return null;
+  return (
+    <p className={cn('text-xs text-text-muted', className)} title={expression || undefined}>
+      <span className="text-text-muted">{label}: </span>
+      <span className="text-text-secondary">{description}</span>
+    </p>
+  );
+}
+
 export function SeverityBadge({ severity, count }: { severity: string; count?: number }) {
   return <span className={cn('inline-flex items-center gap-1 px-2 py-0.5 rounded text-xs font-semibold text-white', severityColor(severity))}>{count !== undefined ? count : severity.toUpperCase()}</span>;
 }

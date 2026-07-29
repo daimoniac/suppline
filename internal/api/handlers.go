@@ -1126,6 +1126,12 @@ func (s *APIServer) handleListRepositories(w http.ResponseWriter, r *http.Reques
 		return
 	}
 
+	for i := range response.Repositories {
+		expr, desc := s.enrichRepositoryPolicy(response.Repositories[i].Name)
+		response.Repositories[i].PolicyExpression = expr
+		response.Repositories[i].PolicyDescription = desc
+	}
+
 	s.respondJSON(w, http.StatusOK, response)
 }
 
@@ -1214,6 +1220,10 @@ func (s *APIServer) handleGetRepository(w http.ResponseWriter, r *http.Request) 
 			detail.Tags[i].Runtime = usage.Runtime
 		}
 	}
+
+	expr, desc := s.enrichRepositoryPolicy(name)
+	detail.PolicyExpression = expr
+	detail.PolicyDescription = desc
 
 	s.respondJSON(w, http.StatusOK, detail)
 }

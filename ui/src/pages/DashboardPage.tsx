@@ -7,7 +7,7 @@ import { fetchPolicyComplianceData, type PolicyComplianceSnapshot } from '../lib
 import { scheduleEffectLoad } from '../lib/scheduleEffectLoad';
 import { LoadingState, ErrorState, StatusBadge, SeverityBadge, VulnCounts, DigestLinkWithCopy } from '../components/ui';
 import { PolicyCompliancePanel } from '../components/PolicyCompliancePanel';
-import type { Scan, SemverUpdateTasksResponse, VEXExpiryTasksResponse } from '../lib/api';
+import type { PoliciesResponse, Scan, SemverUpdateTasksResponse, VEXExpiryTasksResponse } from '../lib/api';
 import { ShieldAlert, ShieldCheck, Clock, Clock3, ArrowRight, ClipboardList, Sparkles, Trash2, TriangleAlert } from 'lucide-react';
 
 interface DashboardData {
@@ -24,6 +24,7 @@ interface DashboardData {
   runtimeUnusedTaskCount: number;
   vexExpiredTaskCount: number;
   vexExpiringSoonTaskCount: number;
+  defaultPolicy: PoliciesResponse['Default'];
 }
 
 export default function DashboardPage() {
@@ -37,7 +38,7 @@ export default function DashboardPage() {
     setLoading(true);
     setError('');
     try {
-      const [recentScans, policySnap, allVEXStatements, inactiveVEXStatements, vulnStats, semverTasksResult, runtimeUnusedReposResult, runtimeUnusedWhitelistResult, vexExpiryTasksResult] = await Promise.all([
+      const [recentScans, policySnap, allVEXStatements, inactiveVEXStatements, vulnStats, semverTasksResult, runtimeUnusedReposResult, runtimeUnusedWhitelistResult, vexExpiryTasksResult, policies] = await Promise.all([
         apiClient.getScans({ limit: 20, ...(inUseRequestParams && inUseRequestParams) }),
         fetchPolicyComplianceData(apiClient, inUseRequestParams),
         apiClient.getVEXStatements({}),
@@ -47,6 +48,7 @@ export default function DashboardPage() {
         loadAllRuntimeUnusedRepositories(apiClient).catch(() => null),
         apiClient.getRuntimeUnusedWhitelist().catch(() => ({ repositories: [] })),
         apiClient.getVEXExpiryTasks().catch(() => null as VEXExpiryTasksResponse | null),
+        apiClient.getPolicies().catch(() => ({}) as PoliciesResponse),
       ]);
 
       const runtimeUnusedTaskCount = runtimeUnusedReposResult
@@ -76,6 +78,7 @@ export default function DashboardPage() {
         runtimeUnusedTaskCount,
         vexExpiredTaskCount,
         vexExpiringSoonTaskCount,
+        defaultPolicy: policies.Default ?? null,
       });
     } catch (e: unknown) {
       setError(e instanceof Error ? e.message : 'Failed to load dashboard');
@@ -189,7 +192,11 @@ export default function DashboardPage() {
         </div>
       )}
 
-      <PolicyCompliancePanel policyByRepo={data.policy.policyByRepo} failedScans={data.policy.failedScans} />
+      <PolicyCompliancePanel
+        policyByRepo={data.policy.policyByRepo}
+        failedScans={data.policy.failedScans}
+        defaultPolicy={data.defaultPolicy}
+      />
 
       {totalVulns > 0 && (
         <div className="bg-bg-primary border border-border rounded-xl p-5">

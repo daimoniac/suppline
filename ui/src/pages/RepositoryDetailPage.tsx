@@ -4,7 +4,7 @@ import { useAuth } from '../lib/auth';
 import { useToast } from '../lib/toast';
 import { formatRelativeTime, daysUntilReleaseAge, formatRemainingDays, compareTagNames } from '../lib/utils';
 import { useImageUsageFilter } from '../lib/imageUsageFilter';
-import { LoadingState, ErrorState, StatusBadge, VulnCounts, SortHeader, Pagination, ConfirmModal, RuntimeUsageBadge, PageFiltersBar, FilterActionButton, PolicyStatusSelect } from '../components/ui';
+import { LoadingState, ErrorState, StatusBadge, VulnCounts, SortHeader, Pagination, ConfirmModal, RuntimeUsageBadge, PageFiltersBar, FilterActionButton, PolicyStatusSelect, PolicyDescriptionText } from '../components/ui';
 import type { RepositoryTag } from '../lib/api';
 import { ArrowLeft, RefreshCw } from 'lucide-react';
 import { useSortablePaginationState } from '../lib/useSortablePaginationState';
@@ -22,6 +22,8 @@ export default function RepositoryDetailPage() {
 
   const [allTags, setAllTags] = useState<RepositoryTag[]>([]);
   const [total, setTotal] = useState(0);
+  const [policyDescription, setPolicyDescription] = useState('');
+  const [policyExpression, setPolicyExpression] = useState('');
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [search, setSearch] = useState(searchParams.get('search') || '');
@@ -62,6 +64,10 @@ export default function RepositoryDetailPage() {
         });
         const pageTags = resp?.Tags || [];
         expectedTotal = resp?.Total || 0;
+        if (fetchOffset === 0) {
+          setPolicyDescription(resp?.PolicyDescription || '');
+          setPolicyExpression(resp?.PolicyExpression || '');
+        }
         collected.push(...pageTags);
         fetchOffset += pageTags.length;
 
@@ -139,6 +145,11 @@ export default function RepositoryDetailPage() {
         <div className="flex-1">
           <h1 className="text-2xl font-bold">{decodedName}</h1>
           <p className="text-sm text-text-secondary">{effectiveTotal} tag{effectiveTotal !== 1 ? 's' : ''}{policyFilter !== 'all' ? ` (filtered from ${total})` : ''}</p>
+          <PolicyDescriptionText
+            description={policyDescription}
+            expression={policyExpression}
+            className="mt-1"
+          />
         </div>
         <button onClick={() => setConfirmRescan({ type: 'repo', name: decodedName })} className="px-4 py-2 text-sm rounded-lg border border-warning/30 text-warning hover:bg-warning-bg flex items-center gap-2 transition-colors">
           <RefreshCw className="w-4 h-4" /> Rescan All

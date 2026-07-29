@@ -1,17 +1,21 @@
 import { Link } from 'react-router-dom';
 import { PolicyAgentPromptCard } from './PolicyAgentPromptCard';
-import type { Scan } from '../lib/api';
+import { PolicyDescriptionText } from './ui';
+import type { PolicyInfo, Scan } from '../lib/api';
 
 const TOP_POLICY_DISPLAY_COUNT = 5;
 
 export function PolicyCompliancePanel({
   policyByRepo,
   failedScans,
+  defaultPolicy,
   showCardHeading = true,
   embedded = false,
 }: {
   policyByRepo: Record<string, { failed: number; pending: number }>;
   failedScans: Scan[];
+  /** Default x-policy from config; rendered under the heading when configured. */
+  defaultPolicy?: PolicyInfo | null;
   /** When false, the main heading is omitted (e.g. parent TaskSection already provides a title). */
   showCardHeading?: boolean;
   /** When true, skip the outer card shell (e.g. inside TaskSection which is already a card). */
@@ -23,8 +27,16 @@ export function PolicyCompliancePanel({
   const totalPolicyRepos = Object.keys(policyByRepo).length;
   const hasMorePolicyRepos = totalPolicyRepos > TOP_POLICY_DISPLAY_COUNT;
   const hasVisibleFailures = failedScans.some(scan => scan.PolicyStatus !== 'pending');
-  const heading = showCardHeading ? (
-    <h2 className={`text-sm font-semibold${hasVisibleFailures ? '' : ' mb-4'}`}>Policy Compliance Status</h2>
+  const heading = showCardHeading || defaultPolicy ? (
+    <div className={hasVisibleFailures ? '' : 'mb-4'}>
+      {showCardHeading && <h2 className="text-sm font-semibold">Policy Compliance Status</h2>}
+      <PolicyDescriptionText
+        description={defaultPolicy?.Description}
+        expression={defaultPolicy?.Expression}
+        label="Default policy gate"
+        className="mt-1"
+      />
+    </div>
   ) : null;
 
   const repoSection =
