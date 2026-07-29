@@ -57,7 +57,7 @@
             "Sigstore Attestations with cosign",
             "Kyverno Policy Generation for Verified-Only Admission",
             "Runtime Usage Awareness from Kubernetes Clusters",
-            "REST API, Dashboard and MCP Server",
+            "REST API and Dashboard",
             "Prometheus Metrics and Structured Logging",
             "Air-Gap Compatible"
         ]
@@ -281,14 +281,6 @@
 
                     <article class="feature-card" role="listitem">
                         <div class="feature-icon" aria-hidden="true">
-                            <img src="images/icons/mcp.svg" alt="">
-                        </div>
-                        <h3>MCP Server</h3>
-                        <p>Point an LLM client at suppline and ask in plain language which deployed images fail policy, or whether any VEX statements have expired.</p>
-                    </article>
-
-                    <article class="feature-card" role="listitem">
-                        <div class="feature-icon" aria-hidden="true">
                             <img src="images/icons/persistence.svg" alt="">
                         </div>
                         <h3>Auditable History</h3>
@@ -408,7 +400,7 @@
             <div class="container">
                 <h2>Architecture</h2>
                 <div class="architecture-content">
-                    <img src="images/architecture-diagram.svg" alt="suppline architecture diagram: regsync mirrors remote registries into a local registry, the watcher and queue feed a worker pipeline that scans with Trivy, evaluates CEL policy and signs cosign attestations back into the registry, results are persisted in SQLite and exposed through the API, dashboard, MCP server and metrics, while Kubernetes pulls verified images and an optional cluster agent reports what is actually running" class="architecture-diagram">
+                    <img src="images/architecture-diagram.svg" alt="suppline architecture diagram: regsync mirrors remote registries into a local registry, the watcher and queue feed a worker pipeline that scans with Trivy, evaluates CEL policy and signs cosign attestations back into the registry, results are persisted in SQLite and exposed through the API, dashboard and metrics, while Kubernetes pulls verified images and an optional cluster agent reports what is actually running" class="architecture-diagram">
                     <div class="architecture-description">
                         <h3>Pipeline Components</h3>
                         <ul role="list">
@@ -419,7 +411,7 @@
                             <li role="listitem"><strong>Policy Engine:</strong> applies active VEX exemptions, then evaluates your CEL expression</li>
                             <li role="listitem"><strong>Attestor:</strong> cosign signs SBOM, vulnerability, VEX and SCAI attestations into the registry</li>
                             <li role="listitem"><strong>State Store:</strong> SQLite keeps scan history, verdicts and runtime usage</li>
-                            <li role="listitem"><strong>Interfaces:</strong> REST API with Swagger, web dashboard, MCP server, Prometheus metrics and health checks</li>
+                            <li role="listitem"><strong>Interfaces:</strong> REST API with Swagger, web dashboard, Prometheus metrics and health checks</li>
                             <li role="listitem"><strong>Admission:</strong> Kyverno or OPA verifies the SCAI attestation in your cluster, using a policy suppline generates</li>
                         </ul>
                         <p class="architecture-note">

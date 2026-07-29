@@ -35,7 +35,7 @@ One Go binary. SQLite state. No SaaS, no phone-home, air-gap compatible by desig
 ## How it works
 
 <p align="center">
-  <img src="suppline.cloud/images/architecture-diagram.svg" alt="suppline architecture: regsync mirrors remote registries into a local registry, the watcher and queue feed a worker pipeline that scans with Trivy, evaluates CEL policy and signs cosign attestations back into the registry, results are persisted in SQLite and exposed through the API, dashboard, MCP server and metrics, while Kubernetes pulls verified images and an optional cluster agent reports what is actually running" width="760"/>
+  <img src="suppline.cloud/images/architecture-diagram.svg" alt="suppline architecture: regsync mirrors remote registries into a local registry, the watcher and queue feed a worker pipeline that scans with Trivy, evaluates CEL policy and signs cosign attestations back into the registry, results are persisted in SQLite and exposed through the API, dashboard and metrics, while Kubernetes pulls verified images and an optional cluster agent reports what is actually running" width="760"/>
 </p>
 
 1. **Mirror** — regsync keeps your registry in sync with the upstream repositories listed in `suppline.yml`.
@@ -191,17 +191,6 @@ helm install clusterstate-agent ./clusterstate-agent/chart \
   --set suppline.url=http://suppline.suppline.svc.cluster.local:8080
 ```
 
-## Ask your supply chain questions
-
-`suppline-mcp` is a [Model Context Protocol](https://modelcontextprotocol.io/) server wrapping the REST API, so an LLM client can answer things like *"which images currently deployed to prod fail policy?"* or *"do we have expired VEX statements?"*.
-
-```bash
-make build-mcp
-suppline-mcp --transport stdio    # or: --transport http --addr :8082 --mount /mcp
-```
-
-Read-only by default (`list_scans`, `list_failed_images`, `query_vulnerabilities`, `list_repositories`, `get_cluster_images`, …); `--allow-writes` adds `trigger_rescan` and `reevaluate_policy`.
-
 ## Deploy
 
 **Docker Compose (eval)** — throwaway registry, zero credentials (see [docs/EVAL.md](docs/EVAL.md)):
@@ -281,7 +270,6 @@ internal/
   attestation/         cosign / Sigstore
   statestore/          SQLite persistence
   api/                 REST API and Swagger
-  mcp/                 MCP server
 clusterstate-agent/    Kubernetes inventory reporter
 charts/suppline/       Helm chart
 ui/                    React + Vite frontend

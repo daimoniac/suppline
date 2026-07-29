@@ -1,4 +1,4 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 900 880" class="architecture-diagram-svg" role="img" aria-label="suppline architecture: regsync mirrors remote registries into a local registry; the watcher enqueues new digests; the worker pipeline scans with Trivy, evaluates CEL policy with VEX, and signs cosign attestations back into the registry; results are persisted in SQLite and exposed through the API, dashboard, MCP server and metrics; Kubernetes pulls verified images and Kyverno or OPA checks the attestation; an optional cluster agent reports which images are actually running.">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 900 880" class="architecture-diagram-svg" role="img" aria-label="suppline architecture: regsync mirrors remote registries into a local registry; the watcher enqueues new digests; the worker pipeline scans with Trivy, evaluates CEL policy with VEX, and signs cosign attestations back into the registry; results are persisted in SQLite and exposed through the API, dashboard and metrics; Kubernetes pulls verified images and Kyverno or OPA checks the attestation; an optional cluster agent reports which images are actually running.">
   <defs>
     <style>
       .box { fill: #f0f9ff; stroke: #1e40af; stroke-width: 2.5; }
@@ -92,7 +92,7 @@
 
   <rect x="350" y="664" width="250" height="70" class="box" rx="8"/>
   <text x="475" y="690" text-anchor="middle" class="box-title-small">Interfaces</text>
-  <text x="475" y="711" text-anchor="middle" class="box-text-small">API · dashboard · MCP · metrics</text>
+  <text x="475" y="711" text-anchor="middle" class="box-text-small">API · dashboard · metrics</text>
 
   <!-- ===== Your cluster ===== -->
   <text x="660" y="238" class="zone-label">YOUR CLUSTER</text>

@@ -64,7 +64,7 @@ Open `http://localhost:3000` and log in with API key `demo`. Full checklist: [Ev
 - **Sigstore attestations** — SBOM, vulnerability, VEX, and SCAI — signed with your own key
 - **Kyverno policy generation** for verified-only admission, straight from the API
 - **Runtime awareness** via an optional cluster agent, so you can tell a backlog item from an incident
-- **REST API, web UI, MCP server** for LLM clients, Prometheus metrics, and structured JSON logs
+- **REST API, web UI**, Prometheus metrics, and structured JSON logs
 
 ## Documentation
 
