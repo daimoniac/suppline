@@ -10,6 +10,7 @@ import { RefreshCw } from 'lucide-react';
 import { useSortablePaginationState, type SortDirection } from '../lib/useSortablePaginationState';
 import { useScanPageFilters } from '../lib/useScanPageFilters';
 import { usePageSizePreference } from '../lib/pageSizePreference';
+import { scheduleEffectLoad } from '../lib/scheduleEffectLoad';
 
 export default function RepositoriesPage() {
   const { apiClient } = useAuth();
@@ -101,7 +102,7 @@ export default function RepositoriesPage() {
     }
   }, [apiClient, inUseRequestParams, offset, pageSize, policyFilter, repository, sortCol, sortDir]);
 
-  useEffect(() => { load(); }, [load]);
+  useEffect(() => { scheduleEffectLoad(load); }, [load]);
 
   const handleSort = (col: string) => {
     const nextDir = col === sortCol ? (sortDir === 'asc' ? 'desc' : 'asc') : 'asc';

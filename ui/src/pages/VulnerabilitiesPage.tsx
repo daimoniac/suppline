@@ -7,6 +7,7 @@ import type { VulnerabilityGroup } from '../lib/api';
 import { ChevronDown, ChevronRight, ExternalLink, ArrowUpDown, ArrowUp, ArrowDown } from 'lucide-react';
 import { useSortablePaginationState } from '../lib/useSortablePaginationState';
 import { usePageSizePreference } from '../lib/pageSizePreference';
+import { scheduleEffectLoad } from '../lib/scheduleEffectLoad';
 
 export default function VulnerabilitiesPage() {
   const { apiClient } = useAuth();
@@ -60,7 +61,7 @@ export default function VulnerabilitiesPage() {
     }
   }, [apiClient, cveId, offset, severity, sortBy, sortDir, pageSize]);
 
-  useEffect(() => { load(); }, [load]);
+  useEffect(() => { scheduleEffectLoad(load); }, [load]);
 
   const loadDetails = useCallback(async (id: string) => {
     setLoadingDetails(prev => {

@@ -15,6 +15,7 @@ import { AlertTriangle } from 'lucide-react';
 import { useSortablePaginationState, type SortDirection } from '../lib/useSortablePaginationState';
 import { useScanPageFilters } from '../lib/useScanPageFilters';
 import { usePageSizePreference } from '../lib/pageSizePreference';
+import { scheduleEffectLoad } from '../lib/scheduleEffectLoad';
 
 export default function FailedImagesPage() {
   const { apiClient } = useAuth();
@@ -87,7 +88,7 @@ export default function FailedImagesPage() {
     }
   }, [apiClient, inUseRequestParams, offset, pageSize, policyFilter, repository, sortCol, sortDir]);
 
-  useEffect(() => { load(); }, [load]);
+  useEffect(() => { scheduleEffectLoad(load); }, [load]);
 
   useEffect(() => {
     let cancelled = false;

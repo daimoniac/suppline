@@ -8,6 +8,7 @@ import type { Scan } from '../lib/api';
 import { useSortablePaginationState, type SortDirection } from '../lib/useSortablePaginationState';
 import { useScanPageFilters } from '../lib/useScanPageFilters';
 import { usePageSizePreference } from '../lib/pageSizePreference';
+import { scheduleEffectLoad } from '../lib/scheduleEffectLoad';
 
 export default function ScansPage() {
   const { apiClient } = useAuth();
@@ -78,7 +79,7 @@ export default function ScansPage() {
     }
   }, [apiClient, inUseRequestParams, offset, pageSize, policyFilter, repository, sortCol, sortDir]);
 
-  useEffect(() => { load(); }, [load]);
+  useEffect(() => { scheduleEffectLoad(load); }, [load]);
 
   const handleSort = (col: string) => {
     const nextDir = col === sortCol ? (sortDir === 'asc' ? 'desc' : 'asc') : 'desc';

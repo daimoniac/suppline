@@ -4,6 +4,7 @@ import { useAuth } from '../lib/auth';
 import { formatRelativeTime, loadAllRuntimeUnusedRepositories, summarizeRuntimeUnusedRepositories } from '../lib/utils';
 import { useImageUsageFilter } from '../lib/imageUsageFilter';
 import { fetchPolicyComplianceData, type PolicyComplianceSnapshot } from '../lib/policyComplianceData';
+import { scheduleEffectLoad } from '../lib/scheduleEffectLoad';
 import { LoadingState, ErrorState, StatusBadge, SeverityBadge, VulnCounts, DigestLinkWithCopy } from '../components/ui';
 import { PolicyCompliancePanel } from '../components/PolicyCompliancePanel';
 import type { Scan, SemverUpdateTasksResponse, VEXExpiryTasksResponse } from '../lib/api';
@@ -83,7 +84,7 @@ export default function DashboardPage() {
     }
   };
 
-  useEffect(() => { load(); }, [inUseRequestParams]); // eslint-disable-line
+  useEffect(() => { scheduleEffectLoad(load); }, [inUseRequestParams]); // eslint-disable-line react-hooks/exhaustive-deps -- reload when usage filter changes
 
   if (loading) return <LoadingState message="Loading dashboard…" />;
   if (error) return <ErrorState message={error} onRetry={load} />;

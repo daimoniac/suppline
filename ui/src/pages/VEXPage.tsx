@@ -7,6 +7,7 @@ import type { VEXSummary } from '../lib/api';
 import { ArrowUpDown, ArrowUp, ArrowDown } from 'lucide-react';
 import { useSortablePaginationState } from '../lib/useSortablePaginationState';
 import { usePageSizePreference } from '../lib/pageSizePreference';
+import { scheduleEffectLoad } from '../lib/scheduleEffectLoad';
 
 const VEX_STATE_LABELS: Record<string, string> = {
   not_affected: 'Not Affected',
@@ -120,7 +121,7 @@ export default function VEXPage() {
     }
   }, [apiClient]);
 
-  useEffect(() => { load(); }, [load]);
+  useEffect(() => { scheduleEffectLoad(load); }, [load]);
 
   if (loading) return <LoadingState />;
   if (error) return <ErrorState message={error} onRetry={load} />;

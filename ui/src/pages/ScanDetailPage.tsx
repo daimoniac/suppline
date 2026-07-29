@@ -2,7 +2,8 @@ import { useEffect, useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
 import { useAuth } from '../lib/auth';
 import { useToast } from '../lib/toast';
-import { formatRelativeTime, formatDate, truncateDigest, copyToClipboard, daysUntilReleaseAge, formatRemainingDays, getRuntimeClusterCount, getRuntimeNamespaceEntries } from '../lib/utils';
+import { formatRelativeTime, formatDate, truncateDigest, copyToClipboard, daysUntilReleaseAge, formatRemainingDays, getRuntimeClusterCount, getRuntimeNamespaceEntries, isPast } from '../lib/utils';
+import { scheduleEffectLoad } from '../lib/scheduleEffectLoad';
 import { LoadingState, ErrorState, StatusBadge, SeverityBadge } from '../components/ui';
 import type { ScanDetail, Vulnerability } from '../lib/api';
 import { ArrowLeft, RefreshCw, Copy, CheckCircle, XCircle, ChevronDown, ChevronRight, ExternalLink } from 'lucide-react';
@@ -33,7 +34,7 @@ export default function ScanDetailPage() {
     }
   };
 
-  useEffect(() => { load(); }, [digest]); // eslint-disable-line
+  useEffect(() => { scheduleEffectLoad(load); }, [digest]); // eslint-disable-line react-hooks/exhaustive-deps -- reload when digest changes
 
   const handleRescan = async () => {
     if (!digest) return;
@@ -211,7 +212,7 @@ export default function ScanDetailPage() {
           <div className="space-y-2">
             {vexStatements.map((stmt, idx) => {
               const mitigated = (scan.Vulnerabilities || []).filter(v => v.CVEID === stmt.CVEID);
-              const isExpired = stmt.ExpiresAt && (stmt.ExpiresAt < 1e12 ? stmt.ExpiresAt * 1000 : stmt.ExpiresAt) <= Date.now();
+              const isExpired = stmt.ExpiresAt && isPast(stmt.ExpiresAt);
               return (
                 <div key={idx} className="border border-border rounded-lg overflow-hidden">
                   <button onClick={() => toggleVEXStatement(idx)} className="w-full flex items-center justify-between px-4 py-3 hover:bg-bg-secondary transition-colors">

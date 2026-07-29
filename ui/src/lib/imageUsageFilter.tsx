@@ -24,7 +24,7 @@ function isValidFilter(value: string | null): value is ImageUsageFilter {
  * Maps global image usage filter to query parameters understood by
  * /api/v1 (see parseListImageUsage in the API). Omits params when "all".
  */
-export function imageUsageToRequestParams(filter: ImageUsageFilter): Record<string, string> | undefined {
+function imageUsageToRequestParams(filter: ImageUsageFilter): Record<string, string> | undefined {
   switch (filter) {
     case 'all':
       return undefined;

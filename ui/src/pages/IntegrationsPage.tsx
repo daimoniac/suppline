@@ -2,6 +2,7 @@ import { Fragment, useEffect, useState } from 'react';
 import { useAuth } from '../lib/auth';
 import { useToast } from '../lib/toast';
 import { copyToClipboard, formatDate, formatRelativeTime } from '../lib/utils';
+import { scheduleEffectLoad } from '../lib/scheduleEffectLoad';
 import { LoadingState, ErrorState, PageHeader } from '../components/ui';
 import type { KubernetesClusterImageSummary, KubernetesClusterSummary } from '../lib/api';
 import { Boxes, ChevronDown, ChevronRight, Copy, Download, Key, Shield, Trash2 } from 'lucide-react';
@@ -62,7 +63,7 @@ export default function IntegrationsPage() {
     }
   };
 
-  useEffect(() => { load(); }, []); // eslint-disable-line
+  useEffect(() => { scheduleEffectLoad(load); }, []); // eslint-disable-line react-hooks/exhaustive-deps -- load once on mount
 
   const handleCopy = async (text: string, label: string) => {
     const ok = await copyToClipboard(text);

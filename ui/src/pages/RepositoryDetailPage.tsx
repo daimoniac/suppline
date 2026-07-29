@@ -9,6 +9,7 @@ import type { RepositoryTag } from '../lib/api';
 import { ArrowLeft, RefreshCw } from 'lucide-react';
 import { useSortablePaginationState } from '../lib/useSortablePaginationState';
 import { usePageSizePreference } from '../lib/pageSizePreference';
+import { scheduleEffectLoad } from '../lib/scheduleEffectLoad';
 
 export default function RepositoryDetailPage() {
   const { name } = useParams<{ name: string }>();
@@ -106,7 +107,7 @@ export default function RepositoryDetailPage() {
     return filteredAndSortedTags.slice(offset, offset + pageSize);
   }, [filteredAndSortedTags, offset, pageSize]);
 
-  useEffect(() => { load(); }, [load]);
+  useEffect(() => { scheduleEffectLoad(load); }, [load]);
 
   const handleSort = (col: string) => {
     toggleSort(col);

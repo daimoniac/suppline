@@ -5,6 +5,7 @@ import { useToast } from '../lib/toast';
 import { copyToClipboard, loadAllRuntimeUnusedRepositories, summarizeRuntimeUnusedRepositories } from '../lib/utils';
 import { useImageUsageFilter } from '../lib/imageUsageFilter';
 import { fetchPolicyComplianceData, type PolicyComplianceSnapshot } from '../lib/policyComplianceData';
+import { scheduleEffectLoad } from '../lib/scheduleEffectLoad';
 import { LoadingState, ErrorState, PageHeader, EmptyState, ConfirmModal } from '../components/ui';
 import { PolicyCompliancePanel } from '../components/PolicyCompliancePanel';
 import type {
@@ -344,9 +345,11 @@ function RuntimeUnusedRepositoryTask({
   }, [apiClient]);
 
   useEffect(() => {
-    loadWhitelist().catch(() => {
-      toast('Failed to load whitelist', 'error');
-    });
+    scheduleEffectLoad(() =>
+      loadWhitelist().catch(() => {
+        toast('Failed to load whitelist', 'error');
+      }),
+    );
   }, [loadWhitelist, toast]);
 
   const onWhitelist = useCallback(async (repository: string) => {
@@ -757,7 +760,7 @@ export default function TasksPage() {
     }
   }, [apiClient, inUseRequestParams]);
 
-  useEffect(() => { load(); }, [load]);
+  useEffect(() => { scheduleEffectLoad(load); }, [load]);
 
   useEffect(() => {
     if (!location.hash || loading) {
