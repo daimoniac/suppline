@@ -76,6 +76,10 @@ func (m *mockStateStore) GetFailedArtifacts(ctx context.Context) ([]*statestore.
 	return nil, nil
 }
 
+func (m *mockStateStore) EnsureArtifactTagBinding(ctx context.Context, repository, digest, tag string) (bool, error) {
+	return false, nil
+}
+
 func (m *mockStateStore) GetScanHistory(ctx context.Context, digest string, limit int) ([]*statestore.ScanRecord, error) {
 	return nil, nil
 }

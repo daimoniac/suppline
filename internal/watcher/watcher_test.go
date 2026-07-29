@@ -84,6 +84,8 @@ type mockStateStore struct {
 	scans        map[string]*statestore.ScanRecord
 	dueForRescan []string
 	err          error
+	bindings     map[string]bool // "repo|digest|tag" -> exists
+	boundAliases []string
 }
 
 func (m *mockStateStore) RecordScan(ctx context.Context, record *statestore.ScanRecord) error {
@@ -119,6 +121,26 @@ func (m *mockStateStore) GetFailedArtifacts(ctx context.Context) ([]*statestore.
 		return nil, m.err
 	}
 	return nil, nil
+}
+
+func (m *mockStateStore) EnsureArtifactTagBinding(ctx context.Context, repository, digest, tag string) (bool, error) {
+	if m.err != nil {
+		return false, m.err
+	}
+	key := repository + "|" + digest + "|" + tag
+	if m.bindings == nil {
+		m.bindings = make(map[string]bool)
+	}
+	if m.bindings[key] {
+		return false, nil
+	}
+	// Only create when digest already has a scan (mirrors SQLite behavior).
+	if _, ok := m.scans[digest]; !ok {
+		return false, nil
+	}
+	m.bindings[key] = true
+	m.boundAliases = append(m.boundAliases, tag)
+	return true, nil
 }
 
 // mockStateStore only implements the core StateStore interface
@@ -1038,4 +1060,61 @@ func TestWatcher_Discover_ReconcilesOrphanedRepositories(t *testing.T) {
 		t.Fatalf("expected only live repo remaining, got %v", mockStore.repoNames)
 	}
 }
+
+func TestWatcher_Discover_BindsAliasTagsForSharedDigest(t *testing.T) {
+	ctx := context.Background()
+	repo := "hostingmaloonde/kong"
+	digest := "sha256:shared"
+
+	mockRegistry := &mockRegistryClient{
+		repositories: []string{repo},
+		tags: map[string][]string{
+			repo: {"3.0", "3.0.2"},
+		},
+		digests: map[string]string{
+			repo + ":3.0":   digest,
+			repo + ":3.0.2": digest,
+		},
+	}
+
+	mockStore := &mockStateStore{
+		scans: map[string]*statestore.ScanRecord{
+			digest: {
+				Digest:     digest,
+				Repository: repo,
+				Tag:        "3.0",
+				CreatedAt:  time.Now().Unix(),
+			},
+		},
+		bindings: map[string]bool{
+			repo + "|" + digest + "|3.0": true,
+		},
+	}
+
+	mockQueue := queue.NewInMemoryQueue(100)
+	regsyncCfg := &config.RegsyncConfig{
+		Defaults: config.Defaults{RescanInterval: "24h"},
+		Sync:     []config.SyncEntry{{Target: repo}},
+	}
+	logger := observability.NewLogger("error")
+	w := NewWatcher(mockRegistry, regsyncCfg, mockStore, mockQueue, Config{
+		PollInterval:   5 * time.Second,
+		RescanInterval: 24 * time.Hour,
+	}, logger)
+
+	if err := w.Discover(ctx); err != nil {
+		t.Fatalf("Discover failed: %v", err)
+	}
+
+	if len(mockStore.boundAliases) != 1 || mockStore.boundAliases[0] != "3.0.2" {
+		t.Fatalf("expected alias 3.0.2 bound, got %v", mockStore.boundAliases)
+	}
+
+	// Shared digest already scanned recently — no new scan tasks.
+	queueDepth, _ := mockQueue.GetQueueDepth(ctx)
+	if queueDepth != 0 {
+		t.Fatalf("expected 0 scan tasks for already-scanned digest, got %d", queueDepth)
+	}
+}
+
 

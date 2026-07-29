@@ -49,6 +49,12 @@ type StateStore interface {
 
 	// GetFailedArtifacts returns all artifacts whose most recent scan failed policy evaluation
 	GetFailedArtifacts(ctx context.Context) ([]*ScanRecord, error)
+
+	// EnsureArtifactTagBinding ensures a (repository, digest, tag) artifact exists when the
+	// digest already has a scan via a sibling tag. The new binding inherits last_scan_id so
+	// alias tags appear in GetRepository without a redundant rescan. Returns true when a
+	// new binding was created.
+	EnsureArtifactTagBinding(ctx context.Context, repository, digest, tag string) (bool, error)
 }
 
 // ClusterImageEntry represents one runtime image entry reported by a cluster.

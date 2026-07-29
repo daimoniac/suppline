@@ -64,6 +64,10 @@ func (m *mockStateStore) GetFailedArtifacts(ctx context.Context) ([]*statestore.
 	return failed, nil
 }
 
+func (m *mockStateStore) EnsureArtifactTagBinding(ctx context.Context, repository, digest, tag string) (bool, error) {
+	return false, nil
+}
+
 func (m *mockStateStore) GetUniqueVulnerabilityCounts(ctx context.Context) (map[string]int, error) {
 	return m.counts, nil
 }

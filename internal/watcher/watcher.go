@@ -315,6 +315,16 @@ func (w *watcherImpl) processTag(ctx context.Context, repo, tag string, vexState
 		return fmt.Errorf("failed to get current digest: %w", err)
 	}
 
+	// When this digest was already scanned under a sibling tag, bind the alias so
+	// GetRepository lists it without waiting for a redundant rescan.
+	if err := w.ensureAliasTagBinding(ctx, repo, tag, currentDigest); err != nil {
+		w.logger.Warn("failed to ensure alias tag binding",
+			"repo", repo,
+			"tag", tag,
+			"digest", currentDigest,
+			"error", err.Error())
+	}
+
 	// Get rescan interval from regsync config (with fallback)
 	rescanInterval, err := w.regsyncConfig.GetRescanInterval(repo)
 	if err != nil {
@@ -412,6 +422,22 @@ func (w *watcherImpl) processTag(ctx context.Context, repo, tag string, vexState
 		return fmt.Errorf("failed to enqueue task: %w", err)
 	}
 
+	return nil
+}
+
+// ensureAliasTagBinding creates a stored tag binding when the digest was already
+// scanned under a different tag (queue dedup / shouldScan skip path).
+func (w *watcherImpl) ensureAliasTagBinding(ctx context.Context, repo, tag, digest string) error {
+	created, err := w.stateStore.EnsureArtifactTagBinding(ctx, repo, digest, tag)
+	if err != nil {
+		return err
+	}
+	if created {
+		w.logger.Info("bound alias tag to previously scanned digest",
+			"repo", repo,
+			"tag", tag,
+			"digest", digest)
+	}
 	return nil
 }
 

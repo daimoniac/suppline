@@ -10,7 +10,8 @@ import (
 )
 
 // CleanupArtifactTag removes one (repository, digest, tag) artifact binding without
-// deleting sibling tags that still point at the same digest.
+// deleting sibling tags that still point at the same digest. Scan records still
+// referenced by sibling aliases are reassigned, not deleted.
 func (s *SQLiteStore) CleanupArtifactTag(ctx context.Context, repository, digest, tag string) error {
 	return s.executeCleanup(ctx, func(tx *sql.Tx) error {
 		var artifactID, repositoryID int64
@@ -27,61 +28,8 @@ func (s *SQLiteStore) CleanupArtifactTag(ctx context.Context, repository, digest
 			return errors.NewTransientf("failed to query artifact for tag cleanup: %w", err)
 		}
 
-		scanRows, err := tx.QueryContext(ctx, `
-			SELECT id FROM scan_records WHERE artifact_id = ?
-		`, artifactID)
-		if err != nil {
-			return errors.NewTransientf("failed to query scan records for tag cleanup: %w", err)
-		}
-		defer scanRows.Close()
-
-		var scanIDs []int64
-		for scanRows.Next() {
-			var scanID int64
-			if err := scanRows.Scan(&scanID); err != nil {
-				return errors.NewTransientf("failed to scan scan record id for tag cleanup: %w", err)
-			}
-			scanIDs = append(scanIDs, scanID)
-		}
-		if err := scanRows.Err(); err != nil {
-			return errors.NewTransientf("error iterating scan records for tag cleanup: %w", err)
-		}
-
-		// Clear last_scan_id on any artifact that still references scans owned by this tag.
-		if len(scanIDs) > 0 {
-			placeholders := make([]string, len(scanIDs))
-			args := make([]interface{}, len(scanIDs))
-			for i, scanID := range scanIDs {
-				placeholders[i] = "?"
-				args[i] = scanID
-			}
-			_, err = tx.ExecContext(ctx, fmt.Sprintf(`
-				UPDATE artifacts SET last_scan_id = NULL WHERE last_scan_id IN (%s)
-			`, strings.Join(placeholders, ",")), args...)
-			if err != nil {
-				return errors.NewTransientf("failed to clear last_scan_id references for tag cleanup: %w", err)
-			}
-		}
-
-		_, err = tx.ExecContext(ctx, `
-			UPDATE artifacts SET last_scan_id = NULL WHERE id = ?
-		`, artifactID)
-		if err != nil {
-			return errors.NewTransientf("failed to clear artifact last_scan_id for tag cleanup: %w", err)
-		}
-
-		_, err = tx.ExecContext(ctx, `
-			DELETE FROM scan_records WHERE artifact_id = ?
-		`, artifactID)
-		if err != nil {
-			return errors.NewTransientf("failed to delete scan records for tag cleanup: %w", err)
-		}
-
-		_, err = tx.ExecContext(ctx, `
-			DELETE FROM artifacts WHERE id = ?
-		`, artifactID)
-		if err != nil {
-			return errors.NewTransientf("failed to delete artifact for tag cleanup: %w", err)
+		if err := deleteArtifactPreservingSharedScansTx(ctx, tx, artifactID); err != nil {
+			return err
 		}
 
 		var remainingArtifacts int

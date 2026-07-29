@@ -2078,6 +2078,14 @@ func (m *mockWorkerStateStore) ListDueForRescan(ctx context.Context, interval ti
 	return nil, nil
 }
 
+func (m *mockWorkerStateStore) GetFailedArtifacts(ctx context.Context) ([]*statestore.ScanRecord, error) {
+	return nil, nil
+}
+
+func (m *mockWorkerStateStore) EnsureArtifactTagBinding(ctx context.Context, repository, digest, tag string) (bool, error) {
+	return false, nil
+}
+
 func (m *mockWorkerStateStore) CleanupArtifactScans(ctx context.Context, digest string) error {
 	m.cleanupCalled["artifact_"+digest] = true
 	if err, exists := m.cleanupErrors["artifact_"+digest]; exists {
