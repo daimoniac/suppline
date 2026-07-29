@@ -11,16 +11,16 @@
             <image:title>suppline Logo</image:title>
         </image:image>
         <image:image>
-            <image:loc>https://suppline.cloud/suppline-Dashboard-11-23-2025_06_13_PM.png</image:loc>
-            <image:title>suppline Dashboard Overview</image:title>
+            <image:loc>https://suppline.cloud/dashboard-overview.png</image:loc>
+            <image:title>suppline Security Dashboard</image:title>
         </image:image>
         <image:image>
-            <image:loc>https://suppline.cloud/suppline-Dashboard-11-23-2025_06_15_PM.png</image:loc>
-            <image:title>suppline Scan Results</image:title>
+            <image:loc>https://suppline.cloud/repositories-overview.png</image:loc>
+            <image:title>suppline Repositories Overview</image:title>
         </image:image>
         <image:image>
-            <image:loc>https://suppline.cloud/suppline-Dashboard-11-23-2025_06_20_PM.png</image:loc>
-            <image:title>suppline Policy Configuration</image:title>
+            <image:loc>https://suppline.cloud/scan-detail.png</image:loc>
+            <image:title>suppline Scan Detail</image:title>
         </image:image>
     </url>
 </urlset>

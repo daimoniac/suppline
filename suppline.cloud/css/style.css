@@ -521,7 +521,7 @@ section {
     height: 300px;
     display: block;
     object-fit: contain;
-    background-color: #f0f0f0;
+    background-color: #0b1220;
     cursor: pointer;
     transition: var(--transition);
     flex-shrink: 0;
