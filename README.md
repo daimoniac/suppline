@@ -71,7 +71,13 @@ curl http://localhost:8081/health
 curl -H "Authorization: Bearer demo" http://localhost:8080/api/v1/scans
 ```
 
-Full checklist, Hub escape hatch, and “you’re done when…”: **[docs/EVAL.md](docs/EVAL.md)**.
+Full checklist, Hub escape hatch, attestation gate POC, and “you’re done when…”: **[docs/EVAL.md](docs/EVAL.md)**.
+
+After scans finish, prove the admit/deny gate without a cluster:
+
+```bash
+docker compose --profile eval-gate run --rm eval-gate
+```
 
 | Port | Service |
 |------|---------|

@@ -136,6 +136,34 @@ services:
       - suppline
     restart: unless-stopped
 
+  # Attestation gate POC (same SCAI checks as Kyverno admit/deny).
+  # Usage: docker compose --profile eval-gate run --rm eval-gate
+  eval-gate:
+    profiles: ["eval-gate"]
+    image: daimon666/suppline
+    user: "0:0"
+    depends_on:
+      suppline:
+        condition: service_healthy
+      registry:
+        condition: service_healthy
+    environment:
+      - SUPPLINE_API_URL=http://suppline:8080
+      - SUPPLINE_API_KEY=demo
+      - EVAL_REGISTRY=registry:5000
+      - EVAL_COSIGN_PUBKEY=/keys/demo/cosign.pub
+    volumes:
+      - ./keys/demo:/keys/demo:ro
+      - ./scripts/eval-attestation-gate.sh:/eval-attestation-gate.sh:ro
+    networks:
+      - suppline
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - |
+        set -eu
+        apk add --no-cache curl jq >/dev/null
+        exec /bin/sh /eval-attestation-gate.sh
+
   # Release helper: build/push clusterstate-agent image via docker compose.
   # Usage:
   #   CLUSTERSTATE_AGENT_IMAGE=daimon666/suppline-clusterstate-agent:0.1.0 \

@@ -65,7 +65,17 @@ Config lives in [`suppline.demo.yml`](https://github.com/daimoniac/suppline/blob
 - [ ] UI loads with key `demo`
 - [ ] `demo-pass` shows **passed** and attestations on the digest
 - [ ] `demo-fail` shows **failed** with the demo failure message
-- [ ] (Optional) Kyverno Audit policy: `curl -s -H "Authorization: Bearer demo" http://localhost:8080/api/v1/integration/kyverno/policy`
+- [ ] Attestation gate POC admits pass / denies fail:
+
+```bash
+docker compose --profile eval-gate run --rm eval-gate
+# or on the host (needs cosign + jq):
+./scripts/eval-attestation-gate.sh
+```
+
+- [ ] (Optional) Kyverno ClusterPolicy YAML: `curl -s -H "Authorization: Bearer demo" http://localhost:8080/api/v1/integration/kyverno/policy`
+
+The gate POC verifies the SCAI signature with `./keys/demo/cosign.pub`, checks `validUntil`, and applies the same `scanStatus` allow-list as Kyverno (`passed` / `passed-with-exceptions`). It does **not** spin up a cluster — that is the lightweight proof that admission would accept `demo-pass` and reject `demo-fail`.
 
 ## Optional: Docker Hub sources
 
