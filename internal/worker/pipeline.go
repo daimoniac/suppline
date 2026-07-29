@@ -684,33 +684,58 @@ func (p *Pipeline) isStoredTagStale(ctx context.Context, repository, digest, tag
 }
 
 func (p *Pipeline) retargetTaskTag(ctx context.Context, task *queue.ScanTask, repository, digest string, validStoredTags map[string]struct{}) error {
-	if task.Tag == "" || task.Tag == "latest" {
+	if task.Tag == "latest" {
 		return nil
 	}
 
-	if _, ok := validStoredTags[task.Tag]; ok {
-		return nil
-	}
+	if task.Tag != "" {
+		if _, ok := validStoredTags[task.Tag]; ok {
+			return nil
+		}
 
-	// Task tag may be new (not yet stored) or may have just been pruned. Verify against registry.
-	currentDigest, err := p.worker.registry.GetDigest(ctx, repository, task.Tag)
-	if err == nil && currentDigest == digest {
-		return nil
-	}
-	if err != nil {
-		classified := errors.ClassifyRegistryError(err)
-		if errors.IsTransient(classified) {
-			return fmt.Errorf("failed to verify task tag during retarget: %w", classified)
+		// Task tag may be new (not yet stored) or may have just been pruned. Verify against registry.
+		currentDigest, err := p.worker.registry.GetDigest(ctx, repository, task.Tag)
+		if err == nil && currentDigest == digest {
+			return nil
+		}
+		if err != nil {
+			classified := errors.ClassifyRegistryError(err)
+			if errors.IsTransient(classified) {
+				return fmt.Errorf("failed to verify task tag during retarget: %w", classified)
+			}
 		}
 	}
 
 	replacement := pickReplacementTag(validStoredTags)
-	p.logger.Info("scan task tag no longer points at digest; retargeting",
-		"repository", repository,
-		"digest", digest,
-		"old_tag", task.Tag,
-		"new_tag", replacement)
-	task.Tag = replacement
+	if replacement == "" {
+		// No live tags remain for this digest. Clean DB state instead of recording an
+		// untagged artifact (tag="") which would pollute repository listings.
+		p.logger.Info("no live tags remain for digest; cleaning up artifact scans",
+			"repository", repository,
+			"digest", digest,
+			"old_tag", task.Tag)
+		if cleanupStore, ok := p.worker.stateStore.(statestore.StateStoreCleanup); ok {
+			if cleanupErr := cleanupStore.CleanupArtifactScans(ctx, digest); cleanupErr != nil {
+				if errors.IsTransient(cleanupErr) {
+					return fmt.Errorf("failed to cleanup digest with no live tags: %w", cleanupErr)
+				}
+				p.logger.Error("permanent error cleaning digest with no live tags",
+					"repository", repository,
+					"digest", digest,
+					"error", cleanupErr)
+			}
+		}
+		return errors.NewManifestNotFoundf("no live tags for digest %s in repository %s", digest, repository)
+	}
+
+	if task.Tag != replacement {
+		p.logger.Info("scan task tag no longer points at digest; retargeting",
+			"repository", repository,
+			"digest", digest,
+			"old_tag", task.Tag,
+			"new_tag", replacement)
+		task.Tag = replacement
+	}
 	return nil
 }
 

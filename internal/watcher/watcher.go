@@ -161,6 +161,9 @@ func (w *watcherImpl) processRepository(ctx context.Context, repo string) error 
 
 	// Process each tag
 	for _, tag := range tags {
+		if tag == "" {
+			continue
+		}
 		if err := w.processTag(ctx, repo, tag, vexStatements, useVEXRepo); err != nil {
 			w.logger.Error("failed to process tag",
 				"repo", repo,

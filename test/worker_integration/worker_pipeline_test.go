@@ -806,3 +806,50 @@ func TestPipeline_RetargetsTaskWhenOwnTagDeleted(t *testing.T) {
 		t.Fatal("did not expect full digest cleanup")
 	}
 }
+
+func TestPipeline_CleansDigestWhenNoLiveTagsRemain(t *testing.T) {
+	mockQ := queue.NewInMemoryQueue(10)
+	defer mockQ.Close()
+
+	digest := "sha256:orphan"
+	repo := "hostingmaloonde/n8nio_n8n"
+
+	mockReg := &mockRegistry{
+		liveTags:   []string{"2.33.0"}, // digest no longer referenced by any live tag
+		tagDigests: map[string]string{"2.33.0": "sha256:other"},
+	}
+	mockStore := newMockStateStore()
+	mockStore.tagsForDigest[digest] = []statestore.TagRef{
+		{Repository: repo, Tag: "2.22.3"},
+	}
+
+	w := worker.NewImageWorker(mockQ, &mockScanner{}, &mockPolicyEngine{}, &mockAttestor{}, mockReg, mockStore, worker.DefaultConfig(), slog.Default(), nil)
+
+	task := &queue.ScanTask{
+		ID:         "test-no-live-tags",
+		Repository: repo,
+		Digest:     digest,
+		Tag:        "2.22.3",
+		EnqueuedAt: time.Now(),
+		IsRescan:   true,
+	}
+
+	err := w.ProcessTask(context.Background(), task)
+	if err == nil {
+		t.Fatal("expected error when digest has no live tags")
+	}
+	if !supplineErrors.IsManifestNotFound(err) {
+		t.Fatalf("expected manifest-not-found style error, got: %v", err)
+	}
+	staleKey := "artifact_tag_" + repo + "_" + digest + "_2.22.3"
+	if !mockStore.cleanupCalled[staleKey] {
+		t.Fatalf("expected stale tag cleanup, calls=%v", mockStore.cleanupCalled)
+	}
+	if !mockStore.cleanupCalled["artifact_"+digest] {
+		t.Fatalf("expected full digest cleanup when no live tags remain, calls=%v", mockStore.cleanupCalled)
+	}
+	if task.Tag == "" {
+		t.Fatal("task tag must not be rewritten to empty string")
+	}
+}
+

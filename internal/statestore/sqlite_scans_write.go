@@ -19,6 +19,16 @@ func nullableInt64(value int64) interface{} {
 // RecordClusterInventory replaces the image inventory snapshot for a cluster.
 
 func (s *SQLiteStore) RecordScan(ctx context.Context, record *ScanRecord) error {
+	if record == nil {
+		return errors.NewPermanentf("scan record is required")
+	}
+	if record.Repository == "" || record.Digest == "" {
+		return errors.NewPermanentf("repository and digest are required")
+	}
+	if record.Tag == "" {
+		return errors.NewPermanentf("cannot record scan with empty tag for %s@%s", record.Repository, record.Digest)
+	}
+
 	tx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {
 		return errors.NewTransientf("failed to begin transaction: %w", err)
@@ -298,6 +308,10 @@ func deleteArtifactPreservingSharedScansTx(ctx context.Context, tx *sql.Tx, arti
 func (s *SQLiteStore) EnsureArtifactTagBinding(ctx context.Context, repository, digest, tag string) (bool, error) {
 	if repository == "" || digest == "" {
 		return false, errors.NewPermanentf("repository and digest are required")
+	}
+	if tag == "" {
+		// Untagged artifacts are not part of the registry tag model.
+		return false, nil
 	}
 
 	tx, err := s.db.BeginTx(ctx, nil)

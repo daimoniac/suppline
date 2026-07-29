@@ -73,15 +73,45 @@ func TestEnsureArtifactTagBinding_CreatesAliasFromSiblingScan(t *testing.T) {
 	}
 }
 
-func TestEnsureArtifactTagBinding_NoopWithoutSiblingScan(t *testing.T) {
+func TestEnsureArtifactTagBinding_NoopForEmptyTag(t *testing.T) {
 	store, cleanup := createTestStore(t)
 	defer cleanup()
 
-	created, err := store.EnsureArtifactTagBinding(context.Background(), "hostingmaloonde/kong", "sha256:deadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeef", "3.0.2")
+	ctx := context.Background()
+	repo := "hostingmaloonde/kong"
+	digest := "sha256:c944149b4d0aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+	if err := store.RecordScan(ctx, &ScanRecord{
+		Repository:   repo,
+		Digest:       digest,
+		Tag:          "3.0",
+		PolicyPassed: true,
+		PolicyStatus: "passed",
+	}); err != nil {
+		t.Fatalf("RecordScan: %v", err)
+	}
+
+	created, err := store.EnsureArtifactTagBinding(ctx, repo, digest, "")
 	if err != nil {
 		t.Fatalf("EnsureArtifactTagBinding: %v", err)
 	}
 	if created {
-		t.Fatal("expected no binding without sibling scan")
+		t.Fatal("expected empty tag binding to be rejected")
 	}
 }
+
+func TestRecordScan_RejectsEmptyTag(t *testing.T) {
+	store, cleanup := createTestStore(t)
+	defer cleanup()
+
+	err := store.RecordScan(context.Background(), &ScanRecord{
+		Repository:   "hostingmaloonde/n8nio_n8n",
+		Digest:       "sha256:9991e52f5fbf289d246bece86b7e5f205690b94ce1dc88db5a5c8156566b66d9",
+		Tag:          "",
+		PolicyPassed: false,
+		PolicyStatus: "failed",
+	})
+	if err == nil {
+		t.Fatal("expected error recording empty tag")
+	}
+}
+

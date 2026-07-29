@@ -97,16 +97,16 @@ func TestCleanupRepository_NoopWhenMissing(t *testing.T) {
 	}
 }
 
-func TestListArtifactTags_EmptyTagIncluded(t *testing.T) {
+func TestListArtifactTags_ReturnsBindings(t *testing.T) {
 	store, cleanup := createTestStore(t)
 	defer cleanup()
 
 	ctx := context.Background()
-	repo := "hostingmaloonde/empty-tag"
+	repo := "hostingmaloonde/tagged"
 	err := store.RecordScan(ctx, &ScanRecord{
 		Repository:   repo,
 		Digest:       "sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
-		Tag:          "",
+		Tag:          "1.0.0",
 		PolicyPassed: true,
 		PolicyStatus: "passed",
 	})
@@ -118,10 +118,7 @@ func TestListArtifactTags_EmptyTagIncluded(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ListArtifactTags: %v", err)
 	}
-	if len(bindings) != 1 {
-		t.Fatalf("expected 1 binding, got %d", len(bindings))
-	}
-	if bindings[0].Tag != "" {
-		t.Fatalf("expected empty tag, got %q", bindings[0].Tag)
+	if len(bindings) != 1 || bindings[0].Tag != "1.0.0" {
+		t.Fatalf("expected one tagged binding, got %+v", bindings)
 	}
 }
