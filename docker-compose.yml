@@ -22,10 +22,15 @@ services:
       start_period: 5s
 
   suppline:
-    image: ghcr.io/daimoniac/suppline
+    # Docker Hub is the day-to-day push target (cluster pulls daimon666/*).
+    # Extra tag keeps GHCR in sync when logged into both registries.
+    image: daimon666/suppline
     build:
       context: .
       dockerfile: Dockerfile
+      tags:
+        - daimon666/suppline
+        - ghcr.io/daimoniac/suppline
     container_name: suppline
     user: "0:0"
     depends_on:
@@ -79,10 +84,13 @@ services:
       start_period: 15s
 
   ui:
-    image: ghcr.io/daimoniac/suppline-ui
+    image: daimon666/suppline-ui
     build:
       context: ui
       dockerfile: Dockerfile
+      tags:
+        - daimon666/suppline-ui
+        - ghcr.io/daimoniac/suppline-ui
     container_name: suppline-ui
     ports:
       - "3000:80"
@@ -141,7 +149,7 @@ services:
   # Usage: docker compose --profile eval-gate run --rm eval-gate
   eval-gate:
     profiles: ["eval-gate"]
-    image: ghcr.io/daimoniac/suppline
+    image: daimon666/suppline
     user: "0:0"
     depends_on:
       suppline:
