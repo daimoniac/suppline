@@ -1,2 +1,0 @@
-hostingmaloonde/alpine:3.23.5
-hostingmaloonde/oauth2-proxy_oauth2-proxy:v7.14.2
