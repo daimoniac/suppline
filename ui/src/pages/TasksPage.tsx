@@ -1,11 +1,11 @@
 import { type ReactNode, useCallback, useEffect, useState } from 'react';
-import { useLocation } from 'react-router-dom';
+import { Link, useLocation } from 'react-router-dom';
 import { useAuth } from '../lib/auth';
 import { useToast } from '../lib/toast';
 import { copyToClipboard, loadAllRuntimeUnusedRepositories, summarizeRuntimeUnusedRepositories } from '../lib/utils';
 import { useImageUsageFilter } from '../lib/imageUsageFilter';
 import { fetchPolicyComplianceData, type PolicyComplianceSnapshot } from '../lib/policyComplianceData';
-import { LoadingState, ErrorState, PageHeader, EmptyState } from '../components/ui';
+import { LoadingState, ErrorState, PageHeader, EmptyState, ConfirmModal } from '../components/ui';
 import { PolicyCompliancePanel } from '../components/PolicyCompliancePanel';
 import type {
   RepositoriesResponse,
@@ -336,6 +336,7 @@ function RuntimeUnusedRepositoryTask({
   const [showAll, setShowAll] = useState(false);
   const [whitelist, setWhitelist] = useState<string[]>([]);
   const [busyKey, setBusyKey] = useState<string | null>(null);
+  const [confirmRescan, setConfirmRescan] = useState('');
 
   const loadWhitelist = useCallback(async () => {
     const result = await apiClient.getRuntimeUnusedWhitelist();
@@ -382,6 +383,16 @@ function RuntimeUnusedRepositoryTask({
       setBusyKey(null);
     }
   }, [apiClient]);
+
+  const handleRescan = async (name: string) => {
+    setConfirmRescan('');
+    try {
+      const resp = await apiClient.triggerRepositoryRescan(name);
+      toast(resp.message || 'Rescan triggered', 'success');
+    } catch (e: unknown) {
+      toast(e instanceof Error ? e.message : 'Failed', 'error');
+    }
+  };
 
   const { whitelistSet, actionableRepositories, hiddenByWhitelistCount } = summarizeRuntimeUnusedRepositories(data.Repositories, whitelist);
   const displayedRepositories = showAll ? data.Repositories : actionableRepositories;
@@ -459,7 +470,13 @@ function RuntimeUnusedRepositoryTask({
               return (
               <tr key={idx} className={`border-b border-border/50 last:border-0 ${isWhitelisted ? 'bg-bg-secondary/45' : ''}`}>
                 <td className="px-3 py-3">
-                  <span className="text-xs font-mono text-text-primary max-w-[24rem] inline-block truncate" title={entry.Name}>{entry.Name}</span>
+                  <Link
+                    to={`/repositories/${encodeURIComponent(entry.Name)}`}
+                    className="text-xs font-mono text-accent hover:underline max-w-[24rem] inline-block truncate"
+                    title={entry.Name}
+                  >
+                    {entry.Name}
+                  </Link>
                 </td>
                 <td className="px-3 py-3">
                   <span className="text-xs text-text-secondary">{entry.ArtifactCount}</span>
@@ -468,22 +485,30 @@ function RuntimeUnusedRepositoryTask({
                   <RuntimeUnusedRepoStatusBadge />
                 </td>
                 <td className="px-3 py-3 text-right">
-                  <button
-                    onClick={() => {
-                      const action = isWhitelisted ? onRemoveWhitelist : onWhitelist;
-                      const successMessage = isWhitelisted
-                        ? `Removed ${entry.Name} from whitelist`
-                        : `Whitelisted ${entry.Name}`;
+                  <div className="inline-flex items-center gap-2">
+                    <button
+                      onClick={() => setConfirmRescan(entry.Name)}
+                      className="px-2.5 py-1 text-xs rounded-lg border border-warning/30 text-warning hover:bg-warning-bg transition-colors flex items-center gap-1"
+                    >
+                      <RefreshCw className="w-3 h-3" /> Rescan
+                    </button>
+                    <button
+                      onClick={() => {
+                        const action = isWhitelisted ? onRemoveWhitelist : onWhitelist;
+                        const successMessage = isWhitelisted
+                          ? `Removed ${entry.Name} from whitelist`
+                          : `Whitelisted ${entry.Name}`;
 
-                      action(entry.Name)
-                        .then(() => toast(successMessage, 'success'))
-                        .catch(() => undefined);
-                    }}
-                    disabled={busyKey === `add:${entry.Name}` || busyKey === `remove:${entry.Name}`}
-                    className="px-2.5 py-1 text-xs rounded-lg border border-border text-text-secondary hover:bg-bg-tertiary disabled:opacity-40 transition-colors"
-                  >
-                    {isWhitelisted ? 'Remove from whitelist' : 'Whitelist'}
-                  </button>
+                        action(entry.Name)
+                          .then(() => toast(successMessage, 'success'))
+                          .catch(() => undefined);
+                      }}
+                      disabled={busyKey === `add:${entry.Name}` || busyKey === `remove:${entry.Name}`}
+                      className="px-2.5 py-1 text-xs rounded-lg border border-border text-text-secondary hover:bg-bg-tertiary disabled:opacity-40 transition-colors"
+                    >
+                      {isWhitelisted ? 'Remove from whitelist' : 'Whitelist'}
+                    </button>
+                  </div>
                 </td>
               </tr>
               );
@@ -498,6 +523,13 @@ function RuntimeUnusedRepositoryTask({
           </tbody>
         </table>
       </div>
+      <ConfirmModal
+        open={!!confirmRescan}
+        title="Rescan Repository"
+        message={`Trigger rescan for all images in "${confirmRescan}"?`}
+        onConfirm={() => handleRescan(confirmRescan)}
+        onCancel={() => setConfirmRescan('')}
+      />
     </div>
   );
 }
