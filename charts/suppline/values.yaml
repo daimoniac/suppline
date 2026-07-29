@@ -76,7 +76,7 @@ backend:
 trivy:
   image:
     repository: aquasec/trivy
-    tag: "0.58.2"
+    tag: "0.72.0"
     pullPolicy: IfNotPresent
 
   resources:

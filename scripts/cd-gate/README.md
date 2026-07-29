@@ -32,7 +32,7 @@ export REGISTRY_PASSWORD='...'   # or PAT for the registry
 # optional overrides:
 # export REGISTRY_SERVER=docker.io
 # export REGISTRY_USERNAME=...
-# export KYVERNO_VERSION=1.17.1
+# export KYVERNO_VERSION=1.18.2
 
 docker compose run --rm kyverno-apply-test
 ```
@@ -76,9 +76,9 @@ include:
 | `REGISTRY_SERVER` | `docker.io` | Registry hostname for auth metadata. |
 | `REGISTRY_USERNAME` | `hostingmaloonde` | Username for `~/.docker/config.json`. |
 | `REGISTRY_AUTH_HOST` | (derived) | Override JSON key under `auths` if needed for your registry. |
-| `KYVERNO_VERSION` | `1.17.1` | Kyverno CLI release. |
+| `KYVERNO_VERSION` | `1.18.2` | Kyverno CLI release. |
 | `KYVERNO_POLICY_PATH` | `${CI_PROJECT_DIR}/scripts/cd-gate/policy.yaml` | Override path to the policy file. Relative paths resolve under `CI_PROJECT_DIR` (same as `KYVERNO_IMAGES_FILE`). |
-| `KYVERNO_GATE_IMAGE` | `${CI_REGISTRY_IMAGE}/kyverno-gate:${KYVERNO_VERSION}` | Job image. Built by `build-kyverno-gate-image` (below). For `gitlab-ci-local`, override to `alpine:3.20`. |
+| `KYVERNO_GATE_IMAGE` | `${CI_REGISTRY_IMAGE}/kyverno-gate:${KYVERNO_VERSION}` | Job image. Built by `build-kyverno-gate-image` (below). For `gitlab-ci-local`, override to `alpine:3.23.5`. |
 | `KYVERNO_INSTALL_DIR` | `${CI_PROJECT_DIR}/.cache/kyverno-${KYVERNO_VERSION}` | Where the script installs the CLI when missing from `PATH`. Cached across pipelines. |
 | `KYVERNO_JUNIT_OUTPUT` | `${CI_PROJECT_DIR}/kyverno-gate-junit.xml` | JUnit report path. Surfaced in the GitLab MR widget via `artifacts:reports:junit`. |
 
@@ -95,14 +95,14 @@ Alternatively, build and push from a workstation:
 
 ```bash
 docker build -f scripts/cd-gate/Dockerfile scripts/cd-gate \
-  --build-arg KYVERNO_VERSION=1.17.1 \
-  -t "${CI_REGISTRY_IMAGE}/kyverno-gate:1.17.1"
-docker push "${CI_REGISTRY_IMAGE}/kyverno-gate:1.17.1"
+  --build-arg KYVERNO_VERSION=1.18.2 \
+  -t "${CI_REGISTRY_IMAGE}/kyverno-gate:1.18.2"
+docker push "${CI_REGISTRY_IMAGE}/kyverno-gate:1.18.2"
 ```
 
 ### CLI cache
 
-When the prebuilt image is not in use (e.g. `KYVERNO_GATE_IMAGE=alpine:3.20` under `gitlab-ci-local`), the script installs the CLI into `${CI_PROJECT_DIR}/.cache/kyverno-${KYVERNO_VERSION}/` and the job caches that directory (`cache.key = kyverno-cli-${KYVERNO_VERSION}`). Subsequent runs skip the `apk add` + tarball download — the cached binary is detected and reused. For `gitlab-ci-local`, pass `--mount-cache` to exercise the same path locally.
+When the prebuilt image is not in use (e.g. `KYVERNO_GATE_IMAGE=alpine:3.23.5` under `gitlab-ci-local`), the script installs the CLI into `${CI_PROJECT_DIR}/.cache/kyverno-${KYVERNO_VERSION}/` and the job caches that directory (`cache.key = kyverno-cli-${KYVERNO_VERSION}`). Subsequent runs skip the `apk add` + tarball download — the cached binary is detected and reused. For `gitlab-ci-local`, pass `--mount-cache` to exercise the same path locally.
 
 ### JUnit report
 

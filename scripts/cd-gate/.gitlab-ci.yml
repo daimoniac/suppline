@@ -5,7 +5,7 @@
 #   * build-kyverno-gate-image : optional kaniko build+push of the Dockerfile.
 #     Triggers on default-branch changes to the Dockerfile, plus manual on any
 #     pipeline. Produces a prebuilt image you can point KYVERNO_GATE_IMAGE at.
-#   * kyverno-image-policy     : the gate itself. Defaults to alpine:3.20 and
+#   * kyverno-image-policy     : the gate itself. Defaults to alpine:3.23.5 and
 #     installs the Kyverno CLI into a cached directory (fast on second run).
 #
 # Both jobs work whether CI_PROJECT_DIR is the repo root (GitLab) or the
@@ -35,14 +35,14 @@ stages:
   - cd-gate
 
 variables:
-  KYVERNO_VERSION: "1.17.1"
+  KYVERNO_VERSION: "1.18.2"
   REGISTRY_SERVER: "docker.io"
   REGISTRY_USERNAME: "hostingmaloonde"
   # Default: Alpine + cached CLI install. For the fast path, build once via the
   # build-kyverno-gate-image job below, then set
   #   KYVERNO_GATE_IMAGE=$CI_REGISTRY_IMAGE/kyverno-gate:$KYVERNO_VERSION
   # in Settings > CI/CD > Variables (or here in this file).
-  KYVERNO_GATE_IMAGE: "alpine:3.20"
+  KYVERNO_GATE_IMAGE: "alpine:3.23.5"
 
 # Locate the gate directory regardless of whether CI_PROJECT_DIR is the repo
 # root or scripts/cd-gate/. Run as the first script step.

@@ -66,7 +66,7 @@ The following table lists the configurable parameters of the Suppline chart and 
 | Parameter | Description | Default |
 |-----------|-------------|---------|
 | `trivy.image.repository` | Trivy image repository | `aquasec/trivy` |
-| `trivy.image.tag` | Trivy image tag | `0.58.2` |
+| `trivy.image.tag` | Trivy image tag | `0.72.0` |
 | `trivy.resources.requests.memory` | Memory request | `1Gi` |
 | `trivy.resources.limits.memory` | Memory limit | `2Gi` |
 
