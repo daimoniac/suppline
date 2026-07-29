@@ -31,10 +31,27 @@ export default function Layout() {
 }
 
 function LayoutContent() {
-  const { logout } = useAuth();
+  const { logout, apiClient } = useAuth();
   const { filter, setFilter } = useImageUsageFilter();
   const [isCompact, setIsCompact] = useState(() => window.matchMedia('(max-width: 1023px)').matches);
   const [menuOpen, setMenuOpen] = useState(false);
+  const [version, setVersion] = useState<string | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    apiClient.getHealth()
+      .then(h => {
+        if (!cancelled && h.version) {
+          setVersion(h.version);
+        }
+      })
+      .catch(() => {
+        /* version is optional chrome */
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [apiClient]);
 
   useEffect(() => {
     const mediaQuery = window.matchMedia('(max-width: 1023px)');
@@ -169,8 +186,8 @@ function LayoutContent() {
           </div>
         </nav>
 
-        {/* Logout */}
-        <div className="p-2 border-t border-border">
+        {/* Logout + version */}
+        <div className="p-2 border-t border-border space-y-1">
           <button
             onClick={() => {
               closeMenuOnCompact();
@@ -181,6 +198,14 @@ function LayoutContent() {
             <LogOut className="w-4 h-4" />
             Logout
           </button>
+          {version && (
+            <p
+              className="px-3 py-1 text-[11px] text-text-muted tabular-nums"
+              title="Backend version"
+            >
+              {/^v?\d/.test(version) && !version.startsWith('v') ? `v${version}` : version}
+            </p>
+          )}
         </div>
       </aside>
 

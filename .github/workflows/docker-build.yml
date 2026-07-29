@@ -27,10 +27,12 @@ jobs:
             context: .
             file: ./Dockerfile
             image_suffix: ""
+            version_arg: true
           - name: ui
             context: ./ui
             file: ./ui/Dockerfile
             image_suffix: "-ui"
+            version_arg: false
 
     steps:
       - uses: actions/checkout@v4
@@ -64,5 +66,6 @@ jobs:
           push: ${{ github.event_name != 'pull_request' }}
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
+          build-args: ${{ matrix.version_arg && format('VERSION={0}', github.sha) || '' }}
           cache-from: type=gha
           cache-to: type=gha,mode=max

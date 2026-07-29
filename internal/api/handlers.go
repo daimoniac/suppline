@@ -15,6 +15,7 @@ import (
 	"github.com/daimoniac/suppline/internal/queue"
 	"github.com/daimoniac/suppline/internal/statestore"
 	"github.com/daimoniac/suppline/internal/types"
+	"github.com/daimoniac/suppline/internal/version"
 )
 
 // handleGetScan retrieves a scan record with vulnerabilities for a specific digest
@@ -847,7 +848,8 @@ func (s *APIServer) handleHealth(w http.ResponseWriter, r *http.Request) {
 	// TODO: Implement in task 10 (observability)
 	// For now, return basic health status
 	s.respondJSON(w, http.StatusOK, map[string]string{
-		"status": "healthy",
+		"status":  "healthy",
+		"version": version.Version,
 	})
 }
 

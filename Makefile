@@ -1,5 +1,7 @@
 .PHONY: help test test-unit test-integration test-auth test-all docker-up docker-down docker-logs clean build build-mcp release-build-mcp
 
+VERSION ?= dev
+
 help: ## Show this help message
 	@echo 'Usage: make [target]'
 	@echo ''
@@ -7,7 +9,7 @@ help: ## Show this help message
 	@awk 'BEGIN {FS = ":.*?## "} /^[a-zA-Z_-]+:.*?## / {printf "  %-20s %s\n", $$1, $$2}' $(MAKEFILE_LIST)
 
 build: swagger ## Build the application
-	go build -o suppline ./cmd/suppline
+	go build -ldflags="-X github.com/daimoniac/suppline/internal/version.Version=$(VERSION)" -o suppline ./cmd/suppline
 
 build-mcp: ## Build the suppline-mcp Model Context Protocol server
 	go build -o suppline-mcp ./cmd/suppline-mcp

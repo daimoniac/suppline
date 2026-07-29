@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"github.com/daimoniac/suppline/internal/version"
 	"log/slog"
 	"net/http"
 	"sync"
@@ -21,14 +22,15 @@ const (
 
 // ComponentHealth represents the health of a single component
 type ComponentHealth struct {
-	Status  ComponentStatus `json:"status"`
-	Message string          `json:"message,omitempty"`
-	LastCheck time.Time     `json:"last_check"`
+	Status    ComponentStatus `json:"status"`
+	Message   string          `json:"message,omitempty"`
+	LastCheck time.Time       `json:"last_check"`
 }
 
 // HealthStatus represents the overall health status
 type HealthStatus struct {
 	Status     ComponentStatus            `json:"status"`
+	Version    string                     `json:"version"`
 	Components map[string]ComponentHealth `json:"components"`
 	Timestamp  time.Time                  `json:"timestamp"`
 }
@@ -92,6 +94,7 @@ func (h *HealthChecker) GetHealth() HealthStatus {
 
 	return HealthStatus{
 		Status:     status,
+		Version:    version.Version,
 		Components: components,
 		Timestamp:  time.Now(),
 	}
@@ -141,7 +144,7 @@ func (h *HealthChecker) HealthHandler() http.HandlerFunc {
 		health := h.GetHealth()
 
 		w.Header().Set("Content-Type", "application/json")
-		
+
 		// Set HTTP status code based on health
 		if health.Status == StatusHealthy {
 			w.WriteHeader(http.StatusOK)
@@ -162,7 +165,7 @@ func (h *HealthChecker) ReadyHandler() http.HandlerFunc {
 		health := h.GetHealth()
 
 		w.Header().Set("Content-Type", "application/json")
-		
+
 		// Ready if all components are healthy
 		if health.Status == StatusHealthy {
 			w.WriteHeader(http.StatusOK)

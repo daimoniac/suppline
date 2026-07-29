@@ -210,7 +210,9 @@ export class APIClient {
   }
 
   // Health
-  async getHealth() { return this.request<Record<string, unknown>>('/health'); }
+  async getHealth() {
+    return this.request<{ status: string; version?: string }>('/health');
+  }
 }
 
 // Types

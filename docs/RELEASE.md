@@ -48,6 +48,49 @@ helm upgrade --install suppline oci://ghcr.io/daimoniac/charts/suppline \
 
 Empty image tags in the chart default to `Chart.AppVersion`, so a released chart pulls matching image tags.
 
+## Verify with kind
+
+Local smoke of a published chart (bundled lab registry, no PVCs). Needs `kind`, `kubectl`, `helm`, and `cosign`.
+
+```bash
+kind create cluster --name suppline-smoke
+kubectl config use-context kind-suppline-smoke
+
+rm -rf /tmp/suppline-smoke-keys && mkdir -p /tmp/suppline-smoke-keys
+(cd /tmp/suppline-smoke-keys && COSIGN_PASSWORD=demo cosign generate-key-pair)
+KEY_B64=$(base64 -w0 /tmp/suppline-smoke-keys/cosign.key)
+
+helm upgrade --install suppline-smoke oci://ghcr.io/daimoniac/charts/suppline \
+  --version 0.1.3 \
+  -n suppline-smoke --create-namespace \
+  --set registry.enabled=true \
+  --set backend.secrets.SUPPLINE_API_KEY=demo \
+  --set backend.secrets.ATTESTATION_KEY="$KEY_B64" \
+  --set backend.secrets.ATTESTATION_KEY_PASSWORD=demo \
+  --set persistence.data.enabled=false \
+  --set persistence.trivyCache.enabled=false \
+  --set registry.persistence.enabled=false \
+  --wait --timeout 8m
+
+kubectl get pods -n suppline-smoke
+kubectl exec -n suppline-smoke suppline-smoke-0 -c suppline -- \
+  wget -qO- http://localhost:8081/health
+
+kubectl -n suppline-smoke port-forward svc/suppline-smoke-ui 3000:80
+# http://localhost:3000 — API key: demo
+```
+
+Bump `--version` to the tag you just cut. Attestation signing still needs a key (throwaway is fine for this smoke). `registry.enabled=true` is lab-only — production stays bring-your-own registry.
+
+Cleanup:
+
+```bash
+helm uninstall suppline-smoke -n suppline-smoke
+kind delete cluster --name suppline-smoke
+```
+
+If GHCR pulls fail, set the packages to **Public** or `docker login ghcr.io` first.
+
 ## CI vs release
 
 | Event | Workflow | Behavior |

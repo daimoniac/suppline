@@ -28,10 +28,11 @@ RUN mkdir -p build/swagger && \
     swag init -g internal/api/api.go -o build/swagger --parseDependency --parseInternal
 
 # Build the binary with CGO enabled for SQLite and cache mount
+ARG VERSION=dev
 RUN --mount=type=cache,target=/go/pkg/mod \
     --mount=type=cache,target=/root/.cache/go-build \
     CGO_ENABLED=1 GOOS=linux go build \
-    -ldflags="-w -s" \
+    -ldflags="-w -s -X github.com/daimoniac/suppline/internal/version.Version=${VERSION}" \
     -o suppline \
     ./cmd/suppline
 
