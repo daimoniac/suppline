@@ -1,103 +1,131 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 900 1000" class="architecture-diagram-svg">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 900 880" class="architecture-diagram-svg" role="img" aria-label="suppline architecture: regsync mirrors remote registries into a local registry; the watcher enqueues new digests; the worker pipeline scans with Trivy, evaluates CEL policy with VEX, and signs cosign attestations back into the registry; results are persisted in SQLite and exposed through the API, dashboard, MCP server and metrics; Kubernetes pulls verified images and Kyverno or OPA checks the attestation; an optional cluster agent reports which images are actually running.">
   <defs>
     <style>
       .box { fill: #f0f9ff; stroke: #1e40af; stroke-width: 2.5; }
       .box-large { fill: #f0f9ff; stroke: #1e40af; stroke-width: 2.5; }
+      .box-outline { fill: none; stroke: #93c5fd; stroke-width: 2; stroke-dasharray: 6 5; }
+      .box-accent { fill: #ecfeff; stroke: #0891b2; stroke-width: 2.5; }
       .box-title { font-weight: 600; font-size: 18px; fill: #1e40af; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; }
       .box-title-small { font-weight: 600; font-size: 15px; fill: #1e40af; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; }
+      .box-title-accent { font-weight: 600; font-size: 16px; fill: #0e7490; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; }
       .box-text { font-size: 13px; fill: #4b5563; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; }
       .box-text-small { font-size: 12px; fill: #6b7280; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; }
+      .zone-label { font-size: 12px; fill: #64748b; font-weight: 600; letter-spacing: 0.08em; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; }
       .arrow { stroke: #1e40af; stroke-width: 2.5; fill: none; marker-end: url(#arrowhead); }
-      .section-label { font-size: 14px; fill: #1f2937; font-weight: 600; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; }
-      .legend-text { font-size: 13px; fill: #4b5563; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; }
+      .arrow-accent { stroke: #0891b2; stroke-width: 2.5; fill: none; marker-end: url(#arrowhead-accent); }
+      .arrow-dashed { stroke: #0891b2; stroke-width: 2; fill: none; stroke-dasharray: 6 5; marker-end: url(#arrowhead-accent); }
+      .edge-label { font-size: 12px; fill: #475569; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; }
     </style>
     <marker id="arrowhead" markerWidth="10" markerHeight="10" refX="9" refY="3" orient="auto">
       <polygon points="0 0, 10 3, 0 6" fill="#1e40af" />
     </marker>
+    <marker id="arrowhead-accent" markerWidth="10" markerHeight="10" refX="9" refY="3" orient="auto">
+      <polygon points="0 0, 10 3, 0 6" fill="#0891b2" />
+    </marker>
   </defs>
 
-  <!-- Remote Registries -->
-  <rect x="60" y="30" width="780" height="100" class="box-large" rx="10"/>
-  <text x="450" y="65" text-anchor="middle" class="box-title">Remote Registries</text>
-  <text x="450" y="90" text-anchor="middle" class="box-text">(Docker Hub, Quay, ECR, GCR, Private Registries, etc.)</text>
+  <!-- Opaque background so the diagram stays readable when it is embedded on a
+       dark surface, such as a README rendered in GitHub's dark theme. -->
+  <rect width="900" height="880" fill="#ffffff"/>
 
-  <!-- Arrow down -->
-  <path d="M 450 130 L 450 170" class="arrow"/>
+  <!-- ===== Upstream ===== -->
+  <text x="60" y="24" class="zone-label">UPSTREAM</text>
+  <rect x="60" y="34" width="540" height="80" class="box-large" rx="10"/>
+  <text x="330" y="66" text-anchor="middle" class="box-title">Remote Registries</text>
+  <text x="330" y="90" text-anchor="middle" class="box-text">Docker Hub, Quay, ECR, GCR, vendor registries</text>
 
-  <!-- suppline Mirroring Section -->
-  <rect x="60" y="170" width="780" height="140" class="box-large" rx="10"/>
-  <text x="450" y="200" text-anchor="middle" class="box-title">suppline Mirroring</text>
-  
-  <!-- Watcher box -->
-  <rect x="100" y="220" width="160" height="70" class="box" rx="8"/>
-  <text x="180" y="250" text-anchor="middle" class="box-title-small">Watcher</text>
-  
-  <!-- Arrow right -->
-  <path d="M 260 255 L 310 255" class="arrow"/>
-  
-  <!-- Queue box -->
-  <rect x="310" y="220" width="160" height="70" class="box" rx="8"/>
-  <text x="390" y="250" text-anchor="middle" class="box-title-small">Queue</text>
-  
-  <!-- Arrow right -->
-  <path d="M 470 255 L 520 255" class="arrow"/>
-  
-  <!-- Worker box -->
-  <rect x="520" y="220" width="160" height="70" class="box" rx="8"/>
-  <text x="600" y="250" text-anchor="middle" class="box-title-small">Worker</text>
+  <path d="M 330 114 L 330 148" class="arrow"/>
+  <text x="342" y="136" class="edge-label">continuous sync</text>
 
-  <!-- Arrow down -->
-  <path d="M 450 310 L 450 350" class="arrow"/>
+  <!-- ===== Mirror ===== -->
+  <rect x="60" y="148" width="540" height="64" class="box" rx="8"/>
+  <text x="330" y="175" text-anchor="middle" class="box-title-small">Mirror</text>
+  <text x="330" y="196" text-anchor="middle" class="box-text-small">regsync, driven by your suppline.yml sync rules</text>
 
-  <!-- Local Registry -->
-  <rect x="60" y="350" width="780" height="100" class="box-large" rx="10"/>
-  <text x="450" y="385" text-anchor="middle" class="box-title">Local Registry</text>
-  <text x="450" y="410" text-anchor="middle" class="box-text">(Docker Registry, Harbor, etc.)</text>
+  <path d="M 330 212 L 330 246" class="arrow"/>
+  <text x="342" y="234" class="edge-label">images pushed</text>
 
-  <!-- Arrow down -->
-  <path d="M 450 450 L 450 490" class="arrow"/>
+  <!-- ===== Local registry (the hub) ===== -->
+  <rect x="60" y="246" width="540" height="96" class="box-large" rx="10"/>
+  <text x="330" y="278" text-anchor="middle" class="box-title">Local Registry</text>
+  <text x="330" y="302" text-anchor="middle" class="box-text">mirrored images + SBOM, vulnerability, VEX and SCAI attestations</text>
+  <text x="330" y="324" text-anchor="middle" class="box-text-small">any private registry, or the one bundled with the Helm chart</text>
 
-  <!-- Processing Components -->
-  <!-- Scanner -->
-  <rect x="100" y="490" width="170" height="100" class="box" rx="8"/>
-  <text x="185" y="525" text-anchor="middle" class="box-title-small">Scanner</text>
-  <text x="185" y="550" text-anchor="middle" class="box-text-small">(Trivy)</text>
+  <path d="M 330 342 L 330 392" class="arrow"/>
+  <text x="342" y="374" class="edge-label">new or changed digests</text>
 
-  <!-- Policy Engine -->
-  <rect x="365" y="490" width="170" height="100" class="box" rx="8"/>
-  <text x="450" y="525" text-anchor="middle" class="box-title-small">Policy Engine</text>
-  <text x="450" y="550" text-anchor="middle" class="box-text-small">(Kyverno)</text>
+  <!-- ===== suppline pipeline ===== -->
+  <text x="60" y="384" class="zone-label">SUPPLINE PIPELINE</text>
+  <rect x="60" y="392" width="540" height="248" class="box-outline" rx="12"/>
 
-  <!-- Attestor -->
-  <rect x="630" y="490" width="170" height="100" class="box" rx="8"/>
-  <text x="715" y="525" text-anchor="middle" class="box-title-small">Attestor</text>
-  <text x="715" y="550" text-anchor="middle" class="box-text-small">(Sigstore)</text>
+  <rect x="80" y="414" width="230" height="66" class="box" rx="8"/>
+  <text x="195" y="440" text-anchor="middle" class="box-title-small">Watcher</text>
+  <text x="195" y="461" text-anchor="middle" class="box-text-small">digest, history and interval gate</text>
 
-  <!-- Arrows from Local Registry to components -->
-  <path d="M 320 450 L 185 490" class="arrow"/>
-  <path d="M 450 450 L 450 490" class="arrow"/>
-  <path d="M 580 450 L 715 490" class="arrow"/>
+  <path d="M 310 447 L 346 447" class="arrow"/>
 
-  <!-- Arrows from components to State Store -->
-  <path d="M 185 590 L 350 650" class="arrow"/>
-  <path d="M 450 590 L 450 650" class="arrow"/>
-  <path d="M 715 590 L 550 650" class="arrow"/>
+  <rect x="350" y="414" width="230" height="66" class="box" rx="8"/>
+  <text x="465" y="440" text-anchor="middle" class="box-title-small">Queue</text>
+  <text x="465" y="461" text-anchor="middle" class="box-text-small">deduplicated by digest</text>
 
-  <!-- State Store -->
-  <rect x="310" y="650" width="280" height="100" class="box-large" rx="10"/>
-  <text x="450" y="685" text-anchor="middle" class="box-title">State Store</text>
-  <text x="450" y="710" text-anchor="middle" class="box-text">(SQLite)</text>
+  <path d="M 465 480 L 465 510" class="arrow"/>
 
-  <!-- Arrow down -->
-  <path d="M 450 750 L 450 790" class="arrow"/>
+  <rect x="80" y="510" width="500" height="112" class="box" rx="8"/>
+  <text x="330" y="536" text-anchor="middle" class="box-title-small">Worker pipeline</text>
+  <text x="330" y="560" text-anchor="middle" class="box-text-small">1. Trivy scan — SBOM and vulnerabilities</text>
+  <text x="330" y="580" text-anchor="middle" class="box-text-small">2. CEL policy, with active VEX exemptions applied</text>
+  <text x="330" y="600" text-anchor="middle" class="box-text-small">3. cosign attestations signed with your key</text>
 
-  <!-- REST API & Dashboard -->
-  <rect x="310" y="790" width="280" height="100" class="box-large" rx="10"/>
-  <text x="450" y="825" text-anchor="middle" class="box-title">REST API</text>
-  <text x="450" y="850" text-anchor="middle" class="box-text">Dashboard</text>
+  <!-- attestations pushed back into the registry -->
+  <path d="M 580 566 L 618 566 L 618 294 L 604 294" class="arrow"/>
+  <text x="626" y="440" class="edge-label">attestations</text>
 
-  <!-- Legend -->
-  <text x="60" y="930" class="section-label">Pipeline Components:</text>
-  <text x="60" y="960" class="legend-text">• Watcher: Monitors configured registries for new or updated images</text>
-  <text x="60" y="985" class="legend-text">• Queue: Manages work items for processing  •  Worker: Pulls images from remote registries and pushes to local registry</text>
+  <!-- pipeline results downwards -->
+  <path d="M 185 622 L 185 664" class="arrow"/>
+
+  <!-- ===== Persistence and interfaces ===== -->
+  <rect x="60" y="664" width="250" height="70" class="box" rx="8"/>
+  <text x="185" y="690" text-anchor="middle" class="box-title-small">State store</text>
+  <text x="185" y="711" text-anchor="middle" class="box-text-small">SQLite: scans, verdicts, usage</text>
+
+  <path d="M 310 699 L 346 699" class="arrow"/>
+
+  <rect x="350" y="664" width="250" height="70" class="box" rx="8"/>
+  <text x="475" y="690" text-anchor="middle" class="box-title-small">Interfaces</text>
+  <text x="475" y="711" text-anchor="middle" class="box-text-small">API · dashboard · MCP · metrics</text>
+
+  <!-- ===== Your cluster ===== -->
+  <text x="660" y="238" class="zone-label">YOUR CLUSTER</text>
+  <rect x="660" y="246" width="200" height="96" class="box-accent" rx="10"/>
+  <text x="760" y="276" text-anchor="middle" class="box-title-accent">Kubernetes</text>
+  <text x="760" y="299" text-anchor="middle" class="box-text-small">Kyverno / OPA checks</text>
+  <text x="760" y="317" text-anchor="middle" class="box-text-small">the attestation before</text>
+  <text x="760" y="335" text-anchor="middle" class="box-text-small">a pod is admitted</text>
+
+  <path d="M 600 268 L 656 268" class="arrow-accent"/>
+  <text x="608" y="260" class="edge-label">pulls</text>
+
+  <rect x="660" y="470" width="200" height="96" class="box-accent" rx="10"/>
+  <text x="760" y="500" text-anchor="middle" class="box-title-accent">Cluster agent</text>
+  <text x="760" y="523" text-anchor="middle" class="box-text-small">optional: reports which</text>
+  <text x="760" y="541" text-anchor="middle" class="box-text-small">images are actually</text>
+  <text x="760" y="559" text-anchor="middle" class="box-text-small">running, per namespace</text>
+
+  <path d="M 760 342 L 760 466" class="arrow-accent"/>
+  <path d="M 660 518 L 640 518 L 640 699 L 604 699" class="arrow-dashed"/>
+  <text x="632" y="658" text-anchor="end" class="edge-label">runtime inventory</text>
+
+  <!-- ===== Terminal states ===== -->
+  <text x="60" y="790" class="zone-label">EVERY DIGEST ENDS IN ONE OF THREE STATES</text>
+  <rect x="60" y="802" width="250" height="56" class="box" rx="8"/>
+  <text x="185" y="826" text-anchor="middle" class="box-title-small">passed</text>
+  <text x="185" y="846" text-anchor="middle" class="box-text-small">attested and deployable</text>
+
+  <rect x="325" y="802" width="250" height="56" class="box" rx="8"/>
+  <text x="450" y="826" text-anchor="middle" class="box-title-small">failed</text>
+  <text x="450" y="846" text-anchor="middle" class="box-text-small">blocked, evidence kept</text>
+
+  <rect x="590" y="802" width="250" height="56" class="box" rx="8"/>
+  <text x="715" y="826" text-anchor="middle" class="box-title-small">pending</text>
+  <text x="715" y="846" text-anchor="middle" class="box-text-small">held, re-evaluated later</text>
 </svg>

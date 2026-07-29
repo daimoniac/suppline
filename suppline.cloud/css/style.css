@@ -1491,3 +1491,316 @@ textarea:focus {
         color: #e5e7eb;
     }
 }
+
+/* ============================================
+   Hero Additions — pipeline stages & meta line
+   ============================================ */
+
+.hero-flow {
+    list-style: none;
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: center;
+    gap: 1.75rem;
+    margin: 0 0 var(--spacing-xl);
+}
+
+.hero-flow li {
+    position: relative;
+    display: inline-flex;
+    align-items: center;
+    padding: 0.375rem 0.875rem;
+    border: 1px solid rgba(255, 255, 255, 0.4);
+    border-radius: 2rem;
+    color: var(--bg-white);
+    font-weight: 600;
+    font-size: 0.95rem;
+    letter-spacing: 0.02em;
+    background-color: rgba(255, 255, 255, 0.08);
+}
+
+.hero-flow li:not(:last-child)::after {
+    content: "→";
+    position: absolute;
+    right: -1.25rem;
+    top: 50%;
+    transform: translateY(-50%);
+    color: rgba(255, 255, 255, 0.6);
+    font-weight: 400;
+}
+
+.hero-meta {
+    margin-top: var(--spacing-lg);
+    margin-bottom: 0;
+    font-size: 0.875rem;
+    color: rgba(255, 255, 255, 0.75);
+}
+
+/* ============================================
+   Shared Section Intro Text
+   ============================================ */
+
+.section-lead {
+    max-width: 760px;
+    margin: calc(var(--spacing-2xl) * -0.5) auto var(--spacing-2xl);
+    text-align: center;
+    font-size: 1.0625rem;
+}
+
+.section-lead strong {
+    color: var(--text-dark);
+}
+
+.section-note {
+    max-width: 760px;
+    margin: var(--spacing-lg) auto 0;
+    text-align: center;
+    font-size: 0.95rem;
+}
+
+/* ============================================
+   Pipeline Section — how it works
+   ============================================ */
+
+.pipeline {
+    background-color: var(--bg-white);
+}
+
+.pipeline h2 {
+    text-align: center;
+    margin-bottom: var(--spacing-2xl);
+}
+
+.pipeline-grid {
+    list-style: none;
+    counter-reset: stage-counter;
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+    gap: var(--spacing-md);
+}
+
+.pipeline-stage {
+    counter-increment: stage-counter;
+    position: relative;
+    padding: var(--spacing-lg) var(--spacing-md) var(--spacing-md);
+    background-color: var(--bg-light);
+    border-top: 3px solid var(--primary-color);
+    border-radius: 0.5rem;
+}
+
+.pipeline-stage::before {
+    content: counter(stage-counter);
+    position: absolute;
+    top: var(--spacing-xs);
+    right: var(--spacing-sm);
+    font-size: 1.75rem;
+    font-weight: 700;
+    line-height: 1;
+    color: var(--border-color);
+}
+
+.pipeline-stage h3 {
+    font-size: 1.25rem;
+    color: var(--primary-color);
+    margin-bottom: var(--spacing-xs);
+}
+
+.pipeline-stage p {
+    margin-bottom: 0;
+    font-size: 0.95rem;
+    line-height: 1.6;
+}
+
+/* ============================================
+   Architecture Additions
+   ============================================ */
+
+/* The diagram is detailed, so give it the full column width and put the
+   component list underneath instead of beside it. */
+.architecture-content {
+    grid-template-columns: 1fr;
+    gap: var(--spacing-xl);
+}
+
+.architecture-diagram {
+    display: block;
+    width: 100%;
+    max-width: 800px;
+    height: auto;
+    margin: 0 auto;
+    background-color: #ffffff;
+    border: 1px solid var(--border-color);
+    border-radius: 0.5rem;
+    padding: var(--spacing-md);
+}
+
+.architecture-description {
+    max-width: 900px;
+    margin: 0 auto;
+}
+
+.architecture-description h3 {
+    text-align: center;
+}
+
+.architecture-description ul {
+    columns: 2;
+    column-gap: var(--spacing-2xl);
+}
+
+.architecture-description li {
+    break-inside: avoid;
+}
+
+.architecture-note {
+    margin-top: var(--spacing-lg);
+    padding-top: var(--spacing-md);
+    border-top: 1px solid var(--border-color);
+    font-size: 0.95rem;
+}
+
+/* ============================================
+   Policy Section — policy as code
+   ============================================ */
+
+.policy {
+    background-color: var(--bg-light);
+}
+
+.policy h2 {
+    text-align: center;
+    margin-bottom: var(--spacing-2xl);
+}
+
+/* minmax(0, ...) keeps a long code line from stretching its column. */
+.policy-grid {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+    gap: var(--spacing-lg);
+    align-items: start;
+}
+
+.policy-pane {
+    min-width: 0;
+    background-color: var(--bg-white);
+    border: 1px solid var(--border-color);
+    border-radius: 0.75rem;
+    padding: var(--spacing-lg);
+}
+
+.policy-pane h3 {
+    font-size: 1.125rem;
+    margin-bottom: var(--spacing-sm);
+}
+
+.policy-pane h3:not(:first-child) {
+    margin-top: var(--spacing-lg);
+}
+
+.policy-pane pre {
+    font-size: 0.8125rem;
+    margin-bottom: var(--spacing-sm);
+}
+
+.policy-note {
+    margin-bottom: 0;
+    font-size: 0.9rem;
+    line-height: 1.6;
+}
+
+.policy-cta {
+    margin-top: var(--spacing-lg);
+    text-align: center;
+}
+
+/* Keep the two light sections from running together */
+.getting-started {
+    background-color: var(--bg-white);
+}
+
+/* ============================================
+   Responsive — new sections
+   ============================================ */
+
+@media (max-width: 768px) {
+    .hero-flow {
+        gap: 1.5rem;
+    }
+
+    .hero-flow li {
+        font-size: 0.875rem;
+        padding: 0.3125rem 0.75rem;
+    }
+
+    .hero-flow li:not(:last-child)::after {
+        right: -1.125rem;
+    }
+
+    .section-lead {
+        font-size: 1rem;
+        margin-bottom: var(--spacing-lg);
+    }
+
+    .pipeline-grid {
+        grid-template-columns: repeat(2, 1fr);
+    }
+
+    .policy-grid {
+        grid-template-columns: minmax(0, 1fr);
+        gap: var(--spacing-md);
+    }
+
+    .policy-pane {
+        padding: var(--spacing-md);
+    }
+
+    .architecture-diagram {
+        padding: var(--spacing-sm);
+    }
+
+    .architecture-description ul {
+        columns: 1;
+    }
+}
+
+@media (max-width: 480px) {
+    .hero-flow {
+        gap: 0.375rem;
+        margin-bottom: var(--spacing-lg);
+    }
+
+    .hero-flow li:not(:last-child)::after {
+        content: none;
+    }
+
+    .hero-meta {
+        font-size: 0.8rem;
+    }
+
+    .pipeline-grid {
+        grid-template-columns: 1fr;
+        gap: var(--spacing-sm);
+    }
+
+    .pipeline-stage h3 {
+        font-size: 1.125rem;
+    }
+
+    .pipeline-stage p,
+    .policy-note,
+    .section-note {
+        font-size: 0.9rem;
+    }
+}
+
+@media (prefers-color-scheme: dark) {
+    .pipeline-stage,
+    .policy-pane {
+        background-color: #1f2937;
+    }
+
+    .pipeline-stage::before {
+        color: #374151;
+    }
+}
