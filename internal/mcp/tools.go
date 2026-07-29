@@ -120,15 +120,7 @@ func registerReadOnlyTools(srv *mcpsdk.Server, c *Client, logger *slog.Logger) {
 		Description: "List image scans with optional filters. Combine policy_status='failed' and in_use_mode='in_use' to find policy failures for images currently deployed to runtime.",
 		Annotations: &mcpsdk.ToolAnnotations{ReadOnlyHint: true},
 	}, func(ctx context.Context, _ *mcpsdk.CallToolRequest, in ListScansInput) (*mcpsdk.CallToolResult, any, error) {
-		raw, err := c.ListScans(ctx, ListScansParams{
-			Repository:   in.Repository,
-			PolicyStatus: in.PolicyStatus,
-			InUseMode:    in.InUseMode,
-			MaxAge:       in.MaxAge,
-			SortBy:       in.SortBy,
-			Limit:        in.Limit,
-			Offset:       in.Offset,
-		})
+		raw, err := c.ListScans(ctx, ListScansParams(in))
 		return wrapResult(logger, "list_scans", raw, err)
 	})
 
@@ -158,12 +150,7 @@ func registerReadOnlyTools(srv *mcpsdk.Server, c *Client, logger *slog.Logger) {
 		Description: "List configured VEX statements, grouped by CVE with affected repositories. Set expired=true to find expired statements, expiring_soon=true for the next 7 days.",
 		Annotations: &mcpsdk.ToolAnnotations{ReadOnlyHint: true},
 	}, func(ctx context.Context, _ *mcpsdk.CallToolRequest, in ListVEXInput) (*mcpsdk.CallToolResult, any, error) {
-		raw, err := c.ListVEX(ctx, ListVEXParams{
-			CVEID:        in.CVEID,
-			Repository:   in.Repository,
-			ExpiringSoon: in.ExpiringSoon,
-			Expired:      in.Expired,
-		})
+		raw, err := c.ListVEX(ctx, ListVEXParams(in))
 		return wrapResult(logger, "list_vex_statements", raw, err)
 	})
 
@@ -183,18 +170,7 @@ func registerReadOnlyTools(srv *mcpsdk.Server, c *Client, logger *slog.Logger) {
 		Description: "Search vulnerabilities across all latest scans, grouped by CVE with affected image counts.",
 		Annotations: &mcpsdk.ToolAnnotations{ReadOnlyHint: true},
 	}, func(ctx context.Context, _ *mcpsdk.CallToolRequest, in QueryVulnerabilitiesInput) (*mcpsdk.CallToolResult, any, error) {
-		raw, err := c.QueryVulnerabilities(ctx, QueryVulnerabilitiesParams{
-			CVEID:          in.CVEID,
-			Severity:       in.Severity,
-			PackageName:    in.PackageName,
-			Repository:     in.Repository,
-			SortBy:         in.SortBy,
-			SortDir:        in.SortDir,
-			Limit:          in.Limit,
-			Offset:         in.Offset,
-			IncludeDigests: in.IncludeDigests,
-			MaxDigests:     in.MaxDigests,
-		})
+		raw, err := c.QueryVulnerabilities(ctx, QueryVulnerabilitiesParams(in))
 		return wrapResult(logger, "query_vulnerabilities", raw, err)
 	})
 
@@ -224,15 +200,7 @@ func registerReadOnlyTools(srv *mcpsdk.Server, c *Client, logger *slog.Logger) {
 		Description: "List mirrored repositories with aggregated vulnerability and policy status.",
 		Annotations: &mcpsdk.ToolAnnotations{ReadOnlyHint: true},
 	}, func(ctx context.Context, _ *mcpsdk.CallToolRequest, in ListRepositoriesInput) (*mcpsdk.CallToolResult, any, error) {
-		raw, err := c.ListRepositories(ctx, ListRepositoriesParams{
-			Search:       in.Search,
-			PolicyStatus: in.PolicyStatus,
-			InUseMode:    in.InUseMode,
-			MaxAge:       in.MaxAge,
-			SortBy:       in.SortBy,
-			Limit:        in.Limit,
-			Offset:       in.Offset,
-		})
+		raw, err := c.ListRepositories(ctx, ListRepositoriesParams(in))
 		return wrapResult(logger, "list_repositories", raw, err)
 	})
 
@@ -298,10 +266,7 @@ func registerWriteTools(srv *mcpsdk.Server, c *Client, logger *slog.Logger) {
 			IdempotentHint:  false,
 		},
 	}, func(ctx context.Context, _ *mcpsdk.CallToolRequest, in TriggerRescanInput) (*mcpsdk.CallToolResult, any, error) {
-		raw, err := c.TriggerScan(ctx, TriggerScanRequest{
-			Digest:     in.Digest,
-			Repository: in.Repository,
-		})
+		raw, err := c.TriggerScan(ctx, TriggerScanRequest(in))
 		return wrapResult(logger, "trigger_rescan", raw, err)
 	})
 
@@ -314,7 +279,7 @@ func registerWriteTools(srv *mcpsdk.Server, c *Client, logger *slog.Logger) {
 			IdempotentHint:  false,
 		},
 	}, func(ctx context.Context, _ *mcpsdk.CallToolRequest, in ReevaluatePolicyInput) (*mcpsdk.CallToolResult, any, error) {
-		raw, err := c.ReevaluatePolicy(ctx, ReevaluatePolicyRequest{Repository: in.Repository})
+		raw, err := c.ReevaluatePolicy(ctx, ReevaluatePolicyRequest(in))
 		return wrapResult(logger, "reevaluate_policy", raw, err)
 	})
 }
