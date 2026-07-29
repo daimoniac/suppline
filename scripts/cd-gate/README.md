@@ -78,7 +78,7 @@ include:
 | `REGISTRY_AUTH_HOST` | (derived) | Override JSON key under `auths` if needed for your registry. |
 | `KYVERNO_VERSION` | `1.18.2` | Kyverno CLI release. |
 | `KYVERNO_POLICY_PATH` | `${CI_PROJECT_DIR}/scripts/cd-gate/policy.yaml` | Override path to the policy file. Relative paths resolve under `CI_PROJECT_DIR` (same as `KYVERNO_IMAGES_FILE`). |
-| `KYVERNO_GATE_IMAGE` | `${CI_REGISTRY_IMAGE}/kyverno-gate:${KYVERNO_VERSION}` | Job image. Built by `build-kyverno-gate-image` (below). For `gitlab-ci-local`, override to `alpine:3.23.5`. |
+| `KYVERNO_GATE_IMAGE` | `${CI_REGISTRY_IMAGE}/kyverno-gate:${KYVERNO_VERSION}` | Job image. Built by `build-kyverno-gate-image` (below). For `gitlab-ci-local`, override to `alpine:3.24.1`. |
 | `KYVERNO_INSTALL_DIR` | `${CI_PROJECT_DIR}/.cache/kyverno-${KYVERNO_VERSION}` | Where the script installs the CLI when missing from `PATH`. Cached across pipelines. |
 | `KYVERNO_JUNIT_OUTPUT` | `${CI_PROJECT_DIR}/kyverno-gate-junit.xml` | JUnit report path. Surfaced in the GitLab MR widget via `artifacts:reports:junit`. |
 
@@ -102,7 +102,7 @@ docker push "${CI_REGISTRY_IMAGE}/kyverno-gate:1.18.2"
 
 ### CLI cache
 
-When the prebuilt image is not in use (e.g. `KYVERNO_GATE_IMAGE=alpine:3.23.5` under `gitlab-ci-local`), the script installs the CLI into `${CI_PROJECT_DIR}/.cache/kyverno-${KYVERNO_VERSION}/` and the job caches that directory (`cache.key = kyverno-cli-${KYVERNO_VERSION}`). Subsequent runs skip the `apk add` + tarball download — the cached binary is detected and reused. For `gitlab-ci-local`, pass `--mount-cache` to exercise the same path locally.
+When the prebuilt image is not in use (e.g. `KYVERNO_GATE_IMAGE=alpine:3.24.1` under `gitlab-ci-local`), the script installs the CLI into `${CI_PROJECT_DIR}/.cache/kyverno-${KYVERNO_VERSION}/` and the job caches that directory (`cache.key = kyverno-cli-${KYVERNO_VERSION}`). Subsequent runs skip the `apk add` + tarball download — the cached binary is detected and reused. For `gitlab-ci-local`, pass `--mount-cache` to exercise the same path locally.
 
 ### JUnit report
 

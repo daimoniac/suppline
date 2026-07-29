@@ -252,14 +252,14 @@ imagePullSecrets: []
 # Prefer bring-your-own Harbor/ECR/ACR/Artifactory: set registry.enabled=false (default)
 # and provide SUPPLINE_REGISTRY_* (+ upstream creds) via values-secrets.yaml.
 # Those env vars are available in suppline.yml via {{ env "…" }}.
-# The bundled registry:2 is for labs / bootstrap only — do not treat it as a long-term prod registry.
+# The bundled registry:3 is for labs / bootstrap only — do not treat it as a long-term prod registry.
 registry:
   enabled: false
   
   # Image configuration
   image:
     repository: registry
-    tag: 2.8.3
+    tag: 3.1.1
     pullPolicy: IfNotPresent
   
   # Service configuration

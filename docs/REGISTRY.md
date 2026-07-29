@@ -1,6 +1,6 @@
 # Private Docker Registry (Helm)
 
-The Helm chart can optionally deploy a self-contained `registry:2` for lab/bootstrap use.
+The Helm chart can optionally deploy a self-contained `registry:3` for lab/bootstrap use.
 
 **Defaults**
 

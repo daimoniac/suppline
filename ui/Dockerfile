@@ -1,5 +1,5 @@
 # Build stage
-FROM node:22-alpine3.23 AS builder
+FROM node:24-alpine3.24 AS builder
 
 WORKDIR /app
 COPY package.json package-lock.json* ./
@@ -9,7 +9,7 @@ COPY . .
 RUN npm run build
 
 # Serve stage
-FROM nginx:1.29.8-alpine3.23
+FROM nginx:1.31.3-alpine3.24
 
 # Remove default nginx static assets; directory must be writable by nginx (config.json)
 RUN rm -rf /usr/share/nginx/html/* \

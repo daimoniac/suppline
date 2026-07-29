@@ -9,7 +9,7 @@
 
 services:
   kyverno-apply-test:
-    image: alpine:3.23.5
+    image: alpine:3.24.1
     container_name: kyverno-apply-test
     working_dir: /work
     volumes:

@@ -14,7 +14,7 @@ RUN CGO_ENABLED=0 GOOS=linux go build \
     .
 
 # ---- Runtime ----
-FROM alpine:3.23.5
+FROM alpine:3.24.1
 
 # ca-certificates required for TLS connections to the suppline webhook
 RUN apk add --no-cache ca-certificates

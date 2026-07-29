@@ -78,7 +78,7 @@ registry:
   enabled: true
 ```
 
-Do **not** treat the bundled `registry:2` as a long-term production registry. Details: [docs/REGISTRY.md](../../docs/REGISTRY.md).
+Do **not** treat the bundled `registry:3` as a long-term production registry. Details: [docs/REGISTRY.md](../../docs/REGISTRY.md).
 
 ## Uninstall
 

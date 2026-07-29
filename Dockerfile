@@ -40,7 +40,7 @@ RUN --mount=type=cache,target=/go/pkg/mod \
 RUN mkdir -p /build/data /build/config
 
 # Stage 2: Create minimal runtime image
-FROM alpine:3.23.5
+FROM alpine:3.24.1
 
 # Install runtime dependencies including trivy client
 RUN apk add --no-cache ca-certificates sqlite-libs wget cosign && \

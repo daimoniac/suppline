@@ -2,7 +2,7 @@
 #
 # See README.md in this directory for build/push and KYVERNO_GATE_IMAGE.
 
-FROM alpine:3.23.5
+FROM alpine:3.24.1
 ARG KYVERNO_VERSION=1.18.2
 RUN apk add --no-cache ca-certificates curl tar \
   && curl -fsSL -o /tmp/kyverno.tgz \

@@ -37,7 +37,7 @@ ui/
 ├── index.html                    # SPA shell; mounts <div id="root">; imports Inter font
 ├── vite.config.ts                # Dev proxy: /api + /health + /config.json → localhost:8080
 ├── nginx.conf                    # nginx template; SPA fallback; security headers; asset caching
-├── Dockerfile                    # Multi-stage: node:22-alpine build → nginx:alpine serve
+├── Dockerfile                    # Multi-stage: node:24-alpine build → nginx:alpine serve
 ├── docker-entrypoint.d/
 │   └── 40-inject-env.sh         # Generates /config.json at container start; injects $API_BASE_URL
 └── src/
