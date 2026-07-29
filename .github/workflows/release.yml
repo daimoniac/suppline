@@ -102,7 +102,8 @@ jobs:
         with:
           context: ./ui
           file: ./ui/Dockerfile
-          platforms: linux/amd64,linux/arm64
+          # UI is Node/nginx — qemu arm64 builds are too slow for a solo release path
+          platforms: linux/amd64
           push: true
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
