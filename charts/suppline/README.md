@@ -16,7 +16,7 @@ helm template suppline ./charts/suppline \
 ## Prerequisites
 
 - Kubernetes 1.19+
-- Helm 3
+- Helm 3 or 4
 - A **target registry you control** (Harbor, ECR, ACR, Artifactory, …) — preferred for production
 - PersistentVolume support if `persistence.data.enabled` (SQLite state)
 - Cosign keypair for attestation signing

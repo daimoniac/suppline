@@ -19,7 +19,7 @@ This ensures suppline discovers images from scheduled jobs, pending deployments,
 
 - Kubernetes 1.21+
 - A running [suppline](https://github.com/daimoniac/suppline) instance reachable from within the cluster.
-- Helm 3 (for chart deployment).
+- Helm 3 or 4 (for chart deployment).
 
 ## Quick start (Helm)
 

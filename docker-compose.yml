@@ -187,7 +187,7 @@ services:
   #   docker compose --profile deploy run --rm clusterstate-agent-helm
   clusterstate-agent-helm:
     profiles: ["deploy"]
-    image: alpine/helm:3.21.3
+    image: alpine/helm:4.2.3
     working_dir: /workspace
     env_file:
       - path: .env
