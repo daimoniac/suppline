@@ -1,168 +1,95 @@
 <p align="center">
-  <img src="docs/suppline-fullsize.png" alt="suppline logo" width="300"/>
+  <img src="docs/suppline-fullsize.png" alt="suppline" width="300"/>
 </p>
 
+<p align="center">
+  <strong>Self-hosted image intake gateway for Kubernetes.</strong><br/>
+  Mirror → Scan → Gate → Attest → Run.
+</p>
 
-*“Self-hosted image intake gateway for Kubernetes.”*
+<p align="center">
+  <a href="LICENSE"><img src="https://img.shields.io/badge/license-Apache%202.0-blue.svg" alt="Apache 2.0"/></a>
+  <img src="https://img.shields.io/badge/go-1.26-00ADD8.svg" alt="Go 1.26"/>
+  <img src="https://img.shields.io/badge/deploy-Docker%20Compose%20%7C%20Helm-2496ED.svg" alt="Docker Compose or Helm"/>
+  <a href="https://suppline.cloud"><img src="https://img.shields.io/badge/docs-suppline.cloud-6f42c1.svg" alt="Documentation"/></a>
+</p>
 
+---
 
-Continuously mirrors remote registries, scans, policy-gates, and attests images before they reach your cluster.
+Your cluster runs dozens of third-party images you didn't build. Every one of them is a pull from someone else's registry, on someone else's uptime, with a CVE list nobody reviewed since the day it was deployed.
 
-suppline mirrors images from public registries into your local registry, continuously scans them with Trivy, evaluates CEL-based security policies, and publishes Sigstore attestations. Clusters then pull only from the local mirror and can enforce “verified-only” deployments via Kyverno/OPA.
+suppline is the gate in front of that. It continuously mirrors upstream images into **your** registry, scans every digest with Trivy, evaluates a policy you wrote, and publishes signed Sigstore attestations. Your clusters then pull only from the mirror — and can refuse to run anything without a valid, fresh attestation.
 
-Mirror → Scan → Gate → Attest → Run.
-cloud native, one service, no SaaS dependency — air-gap compatible by design. Increase availability, decrease vendor dependency, improve supply chain security, all in one go. 
+One Go binary. SQLite state. No SaaS, no phone-home, air-gap compatible by design.
 
-## Overview
+## Why you might want this
 
-suppline automates the complete container supply chain workflow for third party images:
+- **Your cluster stops depending on Docker Hub.** Upstream outage, rate limit, or a deleted tag no longer breaks a deploy.
+- **Every third-party image gets reviewed — continuously.** Not once at onboarding. Digests are rescanned on an interval, and new upstream tags enter the same gate automatically.
+- **Policy is code, not a wiki page.** CEL expressions per repository, with expiring VEX exemptions instead of permanent "we accepted that one" tribal knowledge.
+- **The verdict is cryptographic.** Kyverno or OPA verifies a cosign attestation at admission time, so the gate holds even if suppline is down.
+- **You can answer the audit question.** Which images fail policy, which of those are actually running in production, and what was known at the time — all in your own database.
 
-1. **Mirror** - Continuously syncs images from remote registries to your local registry using regsync
-2. **Scan** - Runs Trivy to identify vulnerabilities and generate SBOMs
-3. **Evaluate** - Applies CEL-based policies with VEX (Vulnerability Exploitability Exchange) support per repository
-4. **Attest** - Creates signed attestations (SBOM, vulnerabilities, VEX, SCAI) via Sigstore
+## How it works
 
-Runs as a single Go binary with built-in state persistence, REST API, and observability. Clusters pull only from your local mirror — no external registry dependencies. Integrates with Kyverno/OPA policies to enforce only scanned, compliant images in your cluster.
+<p align="center">
+  <img src="suppline.cloud/images/architecture-diagram.svg" alt="suppline architecture: regsync mirrors remote registries into a local registry, the watcher and queue feed a worker pipeline that scans with Trivy, evaluates CEL policy and signs cosign attestations back into the registry, results are persisted in SQLite and exposed through the API, dashboard, MCP server and metrics, while Kubernetes pulls verified images and an optional cluster agent reports what is actually running" width="760"/>
+</p>
 
-## Features
+1. **Mirror** — regsync keeps your registry in sync with the upstream repositories listed in `suppline.yml`.
+2. **Scan** — the watcher notices new or changed digests and enqueues them; Trivy produces an SBOM and vulnerability set.
+3. **Gate** — active VEX statements are applied, then your CEL policy decides: `passed`, `failed`, or `pending`.
+4. **Attest** — cosign signs SBOM, vulnerability, VEX, and SCAI attestations into the registry next to the image.
+5. **Run** — clusters pull from the mirror; Kyverno/OPA verifies the SCAI attestation before a pod starts.
 
-- **Continuous Registry Mirroring** - Syncs images from public registries to your local mirror using regsync, keeping your supply chain local and available
-- **Bring Your Own Registry** - Mirror to any private registry or use built-in local storage
-- **Registry Monitoring** - Watches for new/updated images in your local mirror
-- **Smart Rescanning** - Conditional logic based on digest changes and time intervals
-- **VEX Statements** - Industry-standard CycloneDX VEX (Vulnerability Exploitability Exchange) to exempt specific CVEs with analysis state, justification, and expiry dates
-- **Policy Engine** - CEL-based policies with per-repository overrides
-- **Sigstore Attestations** - SBOM, vulnerability, VEX, and SCAI attestations with cosign
-- **State Persistence** - SQLite-based scan history and vulnerability tracking
-- **REST API** - Query results, trigger rescans, manage policies
-- **Observability** - Prometheus metrics, structured JSON logs, health checks
-- **Air-Gap Compatible** - No external registry dependencies, works in isolated environments
+See [docs/STATE_MACHINE.md](docs/STATE_MACHINE.md) for the exact lifecycle, including rescan triggers and error paths.
 
-## Why Mirror?
+<details>
+<summary>The same flow, with the admin loop drawn in</summary>
 
-Continuous registry mirroring with suppline provides critical benefits:
+<p align="center">
+  <img src="docs/suppline_workflow.jpg" alt="suppline supply chain workflow" width="720"/>
+</p>
 
-- **Increased Availability** - Clusters pull from your local registry, not external vendors. No more image pull failures due to upstream outages.
-- **Decreased Vendor Dependency** - Your supply chain is no longer tied to the availability of Docker Hub, Quay, or other public registries.
-- **Improved Supply Chain Security** - All images pass through your security pipeline before reaching clusters. Enforce policies, scan for vulnerabilities, and attest every image.
-- **Air-Gap Deployments** - Mirror images once, deploy to isolated networks without external registry access.
-- **Compliance & Audit** - Complete audit trail of every image, scan result, and policy decision in your local database.
-- **Cost Optimization** - Reduce egress bandwidth by pulling from local registry instead of remote sources.
+</details>
 
-## How It Works
+## Quick start
 
-```
-Remote Registries → Mirroring (regsync) → Local Registry
-                                              ↓
-                                          Watcher → Queue → Worker → Scanner (Trivy)
-                                                                          ↓
-                                                                  Policy Engine
-                                                                          ↓
-                                                                  Attestor (Cosign)
-                                                                          ↓
-                                                                  State Store (SQLite)
-                                                                          ↓
-                                                                  REST API / Metrics
-```
-
-**Mirroring** continuously syncs images from remote registries to your local registry using regsync configuration. **Watcher** polls your local registry for new/updated images and enqueues scan tasks. **Worker** processes tasks through the pipeline: scan with Trivy, evaluate policy, create attestations, persist results. **API** exposes scan data and metrics for integration with Kyverno/OPA policies. Kubernetes clusters pull only from your local mirror, eliminating external registry dependencies.
-
-## Getting Started
-
-### Prerequisites
-
-- Container registry credentials
-- Cosign key pair for attestations
-
-### 1. Configure
+You need registry credentials and a cosign key pair. Docker Compose brings up suppline, the web UI, a Trivy server, and regsync.
 
 ```bash
+# 1. Configure what to mirror and how to gate it
 cp suppline.yml.example suppline.yml
-```
+cp env.example .env
+$EDITOR suppline.yml          # sync rules, policies, VEX
 
-Edit `suppline.yml` with your registry credentials and mirroring rules:
+# 2. Generate the signing key pair
+mkdir -p keys && cosign generate-key-pair && mv cosign.key cosign.pub keys/
 
-```yaml
-version: 1
+# 3. Put the secrets in .env: registry credentials, an API key of your choice,
+#    the key password, and the private key as base64
+echo "ATTESTATION_KEY=$(base64 -w0 keys/cosign.key)" >> .env
+$EDITOR .env
 
-creds:
-  - registry: docker.io
-    user: [username]
-    pass: [password]
-  - registry: myregistry.com
-    user: [username]
-    pass: [password]
-
-defaults:
-  parallel: 2
-  x-rescanInterval: 7d
-  x-runtimeInUseWindow: 60m
-  x-policy:
-    expression: "criticalCount == 0"
-    failureMessage: "critical vulnerabilities found"
-
-sync:
-  - source: nginx
-    target: myregistry.com/nginx
-    type: repository
-    x-vex:
-      - id: CVE-2024-56171
-        state: not_affected
-        justification: vulnerable_code_not_present
-        detail: "Accepted risk"
-        expires_at: 2025-12-31T23:59:59Z
-  - source: kubernetes/pause
-    target: myregistry.com/kubernetes/pause
-    type: repository
-```
-
-The `sync` section defines what images to mirror from remote registries to your local registry. Images are continuously kept in sync, scanned, and evaluated against your policies.
-
-### 2. Generate Keys
-
-```bash
-mkdir -p keys
-cosign generate-key-pair
-mv cosign.key keys/
-```
-
-### 3. Start
-
-```bash
+# 4. Start and check
 docker compose up -d
-```
-
-### 4. Verify
-
-```bash
 curl http://localhost:8081/health
-curl http://localhost:8080/api/v1/scans
+curl -H "Authorization: Bearer <your-api-key>" http://localhost:8080/api/v1/scans
 ```
+
+Then open the UI at **http://localhost:3000** and log in with your `SUPPLINE_API_KEY`. Swagger for the API lives at **http://localhost:8080/swagger**.
+
+| Port | Service |
+|------|---------|
+| 3000 | Web UI |
+| 8080 | REST API + Swagger |
+| 8081 | Health checks |
+| 9090 | Prometheus metrics |
+| 4954 | Trivy server |
 
 ## Configuration
 
-### Environment Variables
-
-| Variable | Default | Purpose |
-|----------|---------|---------|
-| `SUPPLINE_CONFIG` | `suppline.yml` | Config file path |
-| `LOG_LEVEL` | `info` | Log level (debug, info, warn, error) |
-| `QUEUE_BUFFER_SIZE` | `1000` | Task queue capacity |
-| `WORKER_POLL_INTERVAL` | `5s` | Worker poll frequency |
-| `WORKER_RETRY_ATTEMPTS` | `3` | Max retries for transient failures |
-| `TRIVY_SERVER_ADDR` | `localhost:4954` | Trivy server address |
-| `TRIVY_TIMEOUT` | `5m` | Scan timeout |
-| `ATTESTATION_COMMAND_TIMEOUT` | `2m` | Timeout per `cosign attest` invocation |
-| `SQLITE_PATH` | `suppline.db` | Database file path |
-| `ATTESTATION_KEY_PATH` | `/keys/cosign.key` | Cosign private key |
-| `API_PORT` | `8080` | API server port |
-| `SUPPLINE_API_KEY` | - | Optional API authentication |
-| `METRICS_PORT` | `9090` | Prometheus metrics port |
-| `HEALTH_CHECK_PORT` | `8081` | Health check port |
-
-### Configuration Format
-
-`suppline.yml` uses regsync format with suppline extensions for mirroring and security policies. You can use golang templating expansion, useful for e.g. secrets:
+`suppline.yml` is a [regsync](https://github.com/regclient/regclient) config with `x-` extensions, so mirroring rules and security policy live in one file. Go template expansion runs before YAML parsing, which keeps secrets out of the file.
 
 ```yaml
 version: 1
@@ -177,391 +104,185 @@ creds:
 
 defaults:
   parallel: 2
-  x-rescanInterval: 7d
-  x-runtimeInUseWindow: 60m
+  x-rescanInterval: 7d              # rescan unchanged digests this often
+  x-runtimeInUseWindow: 60m         # how recently seen counts as "running"
   x-policy:
     expression: "criticalCount == 0"
     failureMessage: "critical vulnerabilities found"
-  x-vex:                              # Default VEX statements for all targets
-    - id: CVE-2024-00001
-      state: false_positive
-      detail: "Known false positive"
-      expires_at: 2025-12-31T23:59:59Z
 
 sync:
   - source: nginx
     target: myregistry.com/nginx
-    type: repository
-    x-rescanInterval: 3d              # Override default
-    x-policy:                         # Override default
+    type: repository                # all tags; use "image" for one tag
+    x-policy:                       # per-repository override
       expression: "criticalCount == 0 && highCount <= 5"
-    x-vex:                            # Merged with default VEX statements
+    x-vex:
       - id: CVE-2024-56171
         state: not_affected
         justification: vulnerable_code_not_present
-        detail: "Accepted risk"
-        expires_at: 2025-12-31T23:59:59Z
+        detail: "Not reachable in our configuration"
+        expires_at: 2026-12-31T23:59:59Z
 ```
 
-**Key Fields:**
-- `source` - Source image/repository (from remote registry)
-- `target` - Target location in your local registry
-- `type` - `repository` (all tags) or `image` (specific tag)
-- `x-rescanInterval` - How often to rescan unchanged images (default: 24h)
-- `x-runtimeInUseWindow` - Runtime image is considered in use when `last_seen_at` is within this window, or when it was present in the most recent cluster sync (default: 60m)
-- `x-policy` - CEL-based security policy for this mirror
-- `x-vex` - VEX statements with analysis state, justification, and expiry (merged with defaults)
+Runtime behaviour is set with environment variables — `SUPPLINE_CONFIG`, `TRIVY_SERVER_ADDR`, `SQLITE_PATH`, `ATTESTATION_KEY`, `SUPPLINE_API_KEY`, `LOG_LEVEL`, and the worker/queue tunables. Full list in [docs/CONFIGURATION.md](docs/CONFIGURATION.md).
 
-Images are continuously mirrored from source to target, then scanned and evaluated against policies. Kubernetes clusters pull only from the target registry.
+## Policy as code
 
-### Policies
-
-Policies use CEL (Common Expression Language). Available variables:
-
-- `criticalCount`, `highCount`, `mediumCount`, `lowCount` - Vulnerability counts (excluding VEX-exempted)
-- `exemptedCount` - Number of VEX-exempted CVEs
-- `vulnerabilities` - Full vulnerability list with details
-- `imageRef` - Image reference
-
-**Common Policies:**
+Policies are [CEL](https://github.com/google/cel-spec) expressions evaluated against the scan result. Counts exclude VEX-exempted CVEs.
 
 ```yaml
-# No critical vulnerabilities
-expression: "criticalCount == 0"
+# each line is an alternative for x-policy.expression
+expression: "criticalCount == 0"                        # block criticals
+expression: "criticalCount == 0 && highCount == 0"      # block criticals and highs
+expression: "criticalCount == 0 && highCount <= 5"      # budget for highs
 
-# No critical or high
-expression: "criticalCount == 0 && highCount == 0"
-
-# Allow up to 5 high
-expression: "criticalCount == 0 && highCount <= 5"
-
-# Only block fixable critical vulnerabilities
+# Only block criticals that actually have a fix available
 expression: |
   vulnerabilities.filter(v,
-    v.severity == "CRITICAL" &&
-    v.fixedVersion != "" &&
-    !v.exempted
+    v.severity == "CRITICAL" && v.fixedVersion != "" && !v.exempted
   ).size() == 0
 ```
 
-See [Policy Guide](docs/POLICY.md) for more examples and CEL reference.
+Available variables: `criticalCount`, `highCount`, `mediumCount`, `lowCount`, `exemptedCount`, `vulnerabilities`, `imageRef`.
 
-## API
+A policy can also refuse to judge an image that is too fresh to trust — useful against compromised upstream releases that get pulled within hours:
 
-The API is mainly used for the UI. For details, see the swagger documentation included in the binary at http://localhost:8080/swagger.
-
-### Query Endpoints
-
-```bash
-# Get scan record
-GET /api/v1/scans/{digest}
-
-# List scans
-GET /api/v1/scans?repository=nginx&limit=10
-
-# Search vulnerabilities
-GET /api/v1/vulnerabilities?cve_id=CVE-2024-56171&severity=CRITICAL
-
-# List VEX statements
-GET /api/v1/vex
-
-# List inactive/expired VEX statements
-GET /api/v1/vex/inactive
-
-# List failed images
-GET /api/v1/images/failed
+```yaml
+x-policy:
+  expression: "criticalCount == 0"
+  minimumReleaseAge: 72h    # hold in "pending", no attestation, re-evaluated later
 ```
 
-### Action Endpoints
+VEX statements are CycloneDX-style exemptions with a state, justification, detail, and **expiry** — so an accepted risk resurfaces instead of silently living forever. Expiring statements are logged and listed at `/api/v1/vex/inactive`. More in [docs/POLICY.md](docs/POLICY.md).
+
+## Enforce it in the cluster
+
+suppline generates a ready-to-apply Kyverno policy from the public key it signs with:
 
 ```bash
-# Trigger rescan
-POST /api/v1/scans/trigger
-{ "digest": "sha256:abc123...", "repository": "nginx" }
-
-# Re-evaluate all policies
-POST /api/v1/policy/reevaluate
+curl -s http://localhost:8080/api/v1/integration/kyverno/policy > suppline-policy.yaml
+kubectl apply -f suppline-policy.yaml
 ```
 
-### Observability
+The generated `ClusterPolicy` verifies the SCAI attestation on every pod image and admits it only when `scanStatus` is `passed` (or passed with exceptions) **and** the attestation has not expired — so a stale verdict fails closed. It starts in `Audit` mode; switch `validationFailureAction` to `Enforce` when you're ready.
+
+Verify any attestation by hand:
 
 ```bash
-# Health check
-GET /health
-
-# Prometheus metrics
-GET /metrics
+cosign verify-attestation \
+  --type https://in-toto.io/attestation/scai/attribute-report/v0.3 \
+  --key keys/cosign.pub --insecure-ignore-tlog \
+  myregistry.com/nginx:1.27 | jq -r .payload | base64 -d | jq
 ```
 
-**Key Metrics:**
-- `suppline_scans_total` - Total scans by status
-- `suppline_policy_passed_total` - Images passing policy
-- `suppline_policy_failed_current{source="registry|runtime"}` - Current images failing policy in registry vs runtime
-- `suppline_vulnerabilities_total` - Vulnerabilities by severity
-- `suppline_queue_depth` - Current queue depth
+suppline also publishes `cyclonedx` (SBOM) and `vuln` attestations for every digest.
 
-## Deployment
+## Know what's actually running
 
-### Docker Compose
-This will spin up trivy, regsync, suppline, suppline-ui and registry containers comprising the solution.
+A failing image nobody deployed is a backlog item. A failing image in production is an incident. The optional [clusterstate-agent](clusterstate-agent/) reports pod and workload image inventory from each cluster to suppline, so scans, repositories, and the UI can be filtered by real runtime usage — and `suppline_policy_failed_current{source="runtime"}` tells you how many failures are live.
 
 ```bash
-docker compose up -d
-docker compose logs -f suppline
-docker compose down
+helm install clusterstate-agent ./clusterstate-agent/chart \
+  --namespace suppline \
+  --set clusterName=prod-eu-1 \
+  --set suppline.url=http://suppline.suppline.svc.cluster.local:8080
 ```
 
-### Kubernetes
+## Ask your supply chain questions
 
-edit the `values.yaml` and `values-secrets.yaml` (or use env variables) in `charts/suppline` and substitute your configuration.
-
-Install the solution using helm into your namespace:
+`suppline-mcp` is a [Model Context Protocol](https://modelcontextprotocol.io/) server wrapping the REST API, so an LLM client can answer things like *"which images currently deployed to prod fail policy?"* or *"do we have expired VEX statements?"*.
 
 ```bash
-helm install --upgrade -f charts/suppline/values.yaml -f charts/suppline/values-secrets.yaml suppline charts/suppline
+make build-mcp
+suppline-mcp --transport stdio    # or: --transport http --addr :8082 --mount /mcp
 ```
 
-### Standalone
+Read-only by default (`list_scans`, `list_failed_images`, `query_vulnerabilities`, `list_repositories`, `get_cluster_images`, …); `--allow-writes` adds `trigger_rescan` and `reevaluate_policy`.
+
+## Deploy
+
+**Docker Compose** — suppline, UI, Trivy, and regsync:
+
+```bash
+docker compose up -d && docker compose logs -f suppline
+```
+
+**Kubernetes** — Helm chart with an optional bundled registry (see [docs/REGISTRY.md](docs/REGISTRY.md)):
+
+```bash
+cp charts/suppline/values-secrets.yaml.example charts/suppline/values-secrets.yaml
+$EDITOR charts/suppline/values.yaml charts/suppline/values-secrets.yaml
+
+helm upgrade --install suppline charts/suppline \
+  -f charts/suppline/values.yaml \
+  -f charts/suppline/values-secrets.yaml
+```
+
+**Standalone binary** — CGO is required for SQLite, so you need a C toolchain:
 
 ```bash
 make build
 trivy server --listen localhost:4954 &
 export SUPPLINE_CONFIG=suppline.yml
-export ATTESTATION_KEY=<base64-encoded cosign private key>
+export TRIVY_SERVER_ADDR=localhost:4954
+export ATTESTATION_KEY=$(base64 -w0 keys/cosign.key)
 export ATTESTATION_KEY_PASSWORD=<cosign password>
 ./suppline
 ```
 
+## Observability
+
+Prometheus metrics on `:9090/metrics`, JSON logs on stdout, component health on `:8081/health` (config, queue, worker, trivy, database, watcher).
+
+| Metric | Tells you |
+|--------|-----------|
+| `suppline_policy_failed_current{source="registry\|runtime"}` | Failing images, split by mirrored vs actually running |
+| `suppline_vulnerabilities_total` | Vulnerabilities by severity |
+| `suppline_scans_total` | Scans by status |
+| `suppline_queue_depth` | Backlog — if this climbs, add workers or slow the watcher |
+| `suppline_scan_duration_seconds` | Scan latency histogram |
+
+A starter Grafana dashboard lives in [grafana/](grafana/).
+
 ## Development
 
-### Setup
-
 ```bash
-make deps
-make dev-setup
-make build
-make test
+make dev-setup          # deps + tooling
+make build              # regenerates swagger, then builds
+make test               # unit tests
+make test-integration   # integration tests (needs Docker Compose)
+make lint fmt vet
 ```
 
-### Project Structure
-
 ```
-cmd/suppline/              # Entry point
+cmd/suppline/          Service entry point
 internal/
-  ├── api/                 # HTTP API
-  ├── attestation/         # Sigstore integration
-  ├── config/              # Config parsing
-  ├── policy/              # CEL policy engine
-  ├── queue/               # Task queue
-  ├── registry/            # OCI registry client
-  ├── scanner/             # Trivy integration
-  ├── statestore/          # SQLite persistence
-  ├── watcher/             # Registry monitoring
-  └── worker/              # Pipeline orchestration
-test/integration/          # Integration tests
-ui/                        # web frontend
+  watcher/             Registry polling and scan decisions
+  queue/               Task queue with digest dedup
+  worker/              Pipeline: scan → policy → attest → persist
+  scanner/             Trivy integration
+  policy/              CEL engine and VEX handling
+  attestation/         cosign / Sigstore
+  statestore/          SQLite persistence
+  api/                 REST API and Swagger
+  mcp/                 MCP server
+clusterstate-agent/    Kubernetes inventory reporter
+charts/suppline/       Helm chart
+ui/                    React + Vite frontend
 ```
 
-### Testing
-
-```bash
-make test                  # Unit tests
-make test-integration      # Integration tests
-make test-all              # All tests with coverage
-```
-
-## Monitoring
-
-### Metrics
-
-Prometheus metrics on `:9090/metrics`:
-
-- `suppline_scans_total` - Total scans by status
-- `suppline_policy_passed_total` - Images passing policy
-- `suppline_policy_failed_current{source="registry|runtime"}` - Current images failing policy in registry vs runtime
-- `suppline_queue_depth` - Current queue depth
-- `suppline_vulnerabilities_total` - Vulnerabilities by severity
-- `suppline_scan_duration_seconds` - Scan duration histogram
-
-### Logging
-
-JSON-formatted structured logs with fields: `time`, `level`, `msg`, `digest`, `repository`, `critical`, `high`, `exempted`, etc.
-
-### Health
-
-```bash
-curl http://localhost:8081/health
-```
-
-Returns status of: config, queue, worker, trivy, database, watcher
-
-## Troubleshooting
-
-**Trivy connection failed**
-
-```bash
-curl http://localhost:4954/healthz
-docker compose logs trivy
-```
-
-**Authentication errors**
-
-```bash
-# Verify credentials in suppline.yml
-cosign login docker.io -u [username] -p [password]
-```
-
-```bash
-# Verify attestations generated by suppline
-cosign verify-attestation --type https://in-toto.io/attestation/scai/attribute-report/v0.3 --key keys/cosign.pub --insecure-ignore-tlog myprivateregistry/alpine:3.22 | jq -r .payload | base64 -d | jq -r
-Verification for myprivateregistry/beats_filebeat-oss@sha256:1d2de3fdbbf6494560a65a8d07961082b8b1652732fef839005f3e945f7a01d0 --
-The following checks were performed on each of these signatures:
-  - The cosign claims were validated
-  - The signatures were verified against the specified public key
-{
-  "_type": "https://in-toto.io/Statement/v0.1",
-  "predicateType": "https://in-toto.io/attestation/scai/attribute-report/v0.3",
-  "subject": [
-    {
-      "name": "index.docker.io/myprivateregistry/beats_filebeat-oss",
-      "digest": {
-        "sha256": "1d2de3fdbbf6494560a65a8d07961082b8b1652732fef839005f3e945f7a01d0"
-      }
-    }
-  ],
-  "predicate": {
-    "attribute": "container-security-assessment",
-    "attributes": [
-      {
-        "attribute": "vex-exempted-vulnerability",
-        "evidence": {
-          "cveId": "CVE-2021-43527",
-          "description": "NSS (Network Security Services) versions prior to 3.73 or 3.68.1 ESR are vulnerable to a heap overflow when handling DER-encoded DSA or RSA-PSS signatures. Applications using NSS for handling signatures encoded within CMS, S/MIME, PKCS \\#7, or PKCS \\#12 are likely to be impacted. Applications using NSS for certificate validation or other TLS, X.509, OCSP or CRL functionality may be impacted, depending on how they configure NSS. *Note: This vulnerability does NOT impact Mozilla Firefox.* However, email clients and PDF viewers that use NSS for signature verification, such as Thunderbird, LibreOffice, Evolution and Evince are believed to be impacted. This vulnerability affects NSS < 3.73 and NSS < 3.68.1.",
-          "fixedVersion": "3.67.0-4.el7_9",
-          "packageName": "nss",
-          "severity": "CRITICAL",
-          "state": "not_affected",
-          "justification": "vulnerable_code_not_in_execute_path",
-          "detail": "DSA/RSA not used",
-          "version": "3.53.1-7.el7_9"
-        }
-      }
-    ],
-    "evidence": {
-      "lastScanned": "2025-11-22T14:49:02.617663494Z",
-      "scanStatus": "passed-with-vex-exemptions",
-      "validUntil": "2025-11-30T14:49:02.617663494Z"
-    },
-    "target": {
-      "uri": "pkg:docker/myprivateregistry/beats_filebeat-oss@sha256:1d2de3fdbbf6494560a65a8d07961082b8b1652732fef839005f3e945f7a01d0"
-    }
-  }
-}
-```
-You can also check the attestations of type `cyclonedx` and `vuln` that suppline also generates for each digest.
-
-**Database locked**
-
-SQLite has limited concurrent write support
-Use PostgreSQL for high-throughput or multiple instances
-
-**Queue filling up**
-```bash
-curl http://localhost:8081/health
-export WORKER_POLL_INTERVAL=10s
-export QUEUE_BUFFER_SIZE=2000
-```
-
-**Debug mode**
-```bash
-export LOG_LEVEL=debug
-./suppline
-```
-
-## Security
-
-- Store Cosign keys in Kubernetes secrets or vault
-- Use `SUPPLINE_API_KEY` for API authentication in production
-- Never commit registry credentials to version control
-- Enable TLS for Trivy server (`TRIVY_INSECURE=false`)
-- Use network policies to restrict access in Kubernetes
-- Apply minimal RBAC permissions to service accounts
-
-## Integration
-
-### MCP server (LLM access)
-
-`suppline-mcp` is a [Model Context Protocol](https://modelcontextprotocol.io/)
-server that wraps the suppline REST API so LLM clients can answer supply-chain
-questions directly — e.g. *"tell me about policy failures for images currently
-deployed to runtime"* or *"are there any expired VEX statements?"*.
-
-Build the binary alongside the main service:
-
-```bash
-make build-mcp
-```
-
-Registered tools (all read-only by default):
-
-- `list_scans`, `get_scan`, `list_failed_images`
-- `list_vex_statements`, `list_inactive_vex`
-- `query_vulnerabilities`, `get_vulnerability`, `vulnerability_stats`
-- `list_repositories`, `get_repository`
-- `list_kubernetes_clusters`, `get_cluster_images`
-
-Pass `--allow-writes` to additionally expose `trigger_rescan` and
-`reevaluate_policy`.
-
-**Local use with Cursor / Claude Desktop (stdio transport)**
-
-Add an entry to your MCP client config (Cursor: `~/.cursor/mcp.json`,
-Claude Desktop: `claude_desktop_config.json`):
-
-```json
-{
-  "mcpServers": {
-    "suppline": {
-      "command": "/absolute/path/to/suppline-mcp",
-      "args": ["--transport", "stdio"],
-      "env": {
-        "SUPPLINE_URL": "http://localhost:8080",
-        "SUPPLINE_API_KEY": "dev-secret-key"
-      }
-    }
-  }
-}
-```
-
-The server logs to stderr (so the stdio JSON-RPC channel on stdout stays
-clean) and expects the suppline REST API to be reachable at `SUPPLINE_URL`.
-
-**Shared / remote use (Streamable HTTP transport)**
-
-```bash
-suppline-mcp \
-  --transport http \
-  --addr :8082 \
-  --mount /mcp \
-  --suppline-url http://suppline:8080 \
-  --suppline-api-key "$SUPPLINE_API_KEY"
-```
-
-The server exposes:
-
-- `POST /mcp` — Streamable HTTP MCP endpoint
-- `GET /healthz` — health probe
-
-Point an MCP-aware client (Cursor remote MCP, Claude Desktop Streamable HTTP,
-etc.) at `http://<host>:8082/mcp`.
+Contributor notes are in [AGENTS.md](AGENTS.md) and [ui/AGENTS.md](ui/AGENTS.md). Swagger files under `build/swagger/` are generated — don't hand-edit them.
 
 ## Documentation
 
-- **[API Reference](http://localhost:8080/swagger)** - Live Swagger docs
-- **[Configuration Guide](docs/CONFIGURATION.md)** - Environment variables and regsync format
-- **[Policy Guide](docs/POLICY.md)** - CEL policy examples and reference
+| Doc | Contents |
+|-----|----------|
+| [docs/CONFIGURATION.md](docs/CONFIGURATION.md) | Every environment variable and `suppline.yml` field |
+| [docs/POLICY.md](docs/POLICY.md) | CEL reference, policy recipes, VEX semantics |
+| [docs/STATE_MACHINE.md](docs/STATE_MACHINE.md) | Image lifecycle, rescan triggers, error handling |
+| [docs/REGISTRY.md](docs/REGISTRY.md) | Running the bundled private registry |
+| http://localhost:8080/swagger | Live API reference |
 
-## Support
+## License and support
 
-- **Issues**: https://github.com/daimoniac/suppline/issues
-- **Examples**: `suppline.yml.example` and `deploy/` directory
+Apache 2.0 — see [LICENSE](LICENSE). Issues and ideas: [github.com/daimoniac/suppline/issues](https://github.com/daimoniac/suppline/issues).
