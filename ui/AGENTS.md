@@ -7,14 +7,14 @@
 | Concern | Technology |
 |---|---|
 | Framework | React 19 (StrictMode) |
-| Language | TypeScript 5.9 (strict mode) |
+| Language | TypeScript 6.0 (strict mode) |
 | Build tool | Vite 8 |
 | Styling | Tailwind CSS 4 (CSS-first config via `@tailwindcss/vite` — **no `tailwind.config.js`**) |
 | Routing | React Router DOM v7 (BrowserRouter + nested routes) |
 | Icons | lucide-react |
 | HTTP | Native `fetch` — no axios, no React Query |
 | State | Local `useState`/`useEffect` per page + React Context for auth/toast |
-| Lint | ESLint 9 (flat config), typescript-eslint, react-hooks, react-refresh plugins |
+| Lint | ESLint 10 (flat config), typescript-eslint, react-hooks, react-refresh plugins |
 | Runtime | nginx:alpine serving static assets built from `dist/` |
 
 ## Essential commands
