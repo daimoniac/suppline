@@ -41,6 +41,11 @@ spec:
             configMapKeyRef:
               name: {{ include "suppline.fullname" . }}-ui-config
               key: API_BASE_URL
+        - name: BACKEND_URL
+          valueFrom:
+            configMapKeyRef:
+              name: {{ include "suppline.fullname" . }}-ui-config
+              key: BACKEND_URL
         ports:
         - name: http
           containerPort: 80

@@ -6,5 +6,8 @@ metadata:
   labels:
     {{- include "suppline.frontend.labels" . | nindent 4 }}
 data:
+  # Browser-facing base (relative path via nginx / ingress)
   API_BASE_URL: {{ .Values.frontend.apiBaseURL | quote }}
+  # In-cluster backend for nginx proxy_pass (absolute URL)
+  BACKEND_URL: {{ printf "http://%s:%v" (include "suppline.fullname" .) .Values.backend.service.port | quote }}
 {{- end }}

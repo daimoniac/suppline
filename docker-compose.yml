@@ -87,7 +87,8 @@ services:
     ports:
       - "3000:80"
     environment:
-      - API_BASE_URL=http://suppline:8080
+      - API_BASE_URL=/api
+      - BACKEND_URL=http://suppline:8080
     depends_on:
       - suppline
     networks:
