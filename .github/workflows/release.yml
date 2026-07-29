@@ -1,3 +1,5 @@
+# Cut a release: git tag vX.Y.Z && git push origin vX.Y.Z
+# Publishes semver images + Helm OCI chart + GitHub Release.
 name: Release
 
 on:
@@ -5,18 +7,20 @@ on:
     tags:
       - 'v*'
 
+permissions:
+  contents: write
+  packages: write
+
 env:
   REGISTRY: ghcr.io
+  # github.repository = owner/repo → ghcr.io/daimoniac/suppline
   IMAGE_NAME: ${{ github.repository }}
 
 jobs:
   create-release:
     runs-on: ubuntu-latest
-    permissions:
-      contents: write
     outputs:
       version: ${{ steps.version.outputs.version }}
-    
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -27,48 +31,33 @@ jobs:
         id: version
         run: |
           VERSION=${GITHUB_REF#refs/tags/v}
-          echo "version=$VERSION" >> $GITHUB_OUTPUT
-          echo "Release Version: $VERSION"
-
-      - name: Generate release notes
-        id: release_notes
-        run: |
-          echo "## What's Changed" > release_notes.md
-          echo "" >> release_notes.md
-          git log $(git describe --tags --abbrev=0 HEAD^)..HEAD --pretty=format:"- %s (%h)" >> release_notes.md || echo "- Initial release" >> release_notes.md
+          if ! echo "$VERSION" | grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+([.-].*)?$'; then
+            echo "Tag must be vMAJOR.MINOR.PATCH (got v$VERSION)"
+            exit 1
+          fi
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          echo "Release version: $VERSION"
 
       - name: Create GitHub Release
-        uses: softprops/action-gh-release@v1
+        uses: softprops/action-gh-release@v2
         with:
-          body_path: release_notes.md
+          generate_release_notes: true
           draft: false
-          prerelease: false
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          prerelease: ${{ contains(github.ref_name, '-') }}
 
   build-backend:
     runs-on: ubuntu-latest
     needs: create-release
-    permissions:
-      contents: read
-      packages: write
-
     steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
-
-      - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v3
-
-      - name: Log in to Container Registry
-        uses: docker/login-action@v3
+      - uses: actions/checkout@v4
+      - uses: docker/setup-qemu-action@v3
+      - uses: docker/setup-buildx-action@v3
+      - uses: docker/login-action@v3
         with:
           registry: ${{ env.REGISTRY }}
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Extract metadata for backend image
-        id: meta
+      - id: meta
         uses: docker/metadata-action@v5
         with:
           images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
@@ -76,10 +65,8 @@ jobs:
             type=semver,pattern={{version}}
             type=semver,pattern={{major}}.{{minor}}
             type=semver,pattern={{major}}
-            type=sha
-
-      - name: Build and push backend image
-        uses: docker/build-push-action@v5
+            type=raw,value=latest
+      - uses: docker/build-push-action@v6
         with:
           context: .
           file: ./Dockerfile
@@ -93,26 +80,16 @@ jobs:
   build-ui:
     runs-on: ubuntu-latest
     needs: create-release
-    permissions:
-      contents: read
-      packages: write
-
     steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
-
-      - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v3
-
-      - name: Log in to Container Registry
-        uses: docker/login-action@v3
+      - uses: actions/checkout@v4
+      - uses: docker/setup-qemu-action@v3
+      - uses: docker/setup-buildx-action@v3
+      - uses: docker/login-action@v3
         with:
           registry: ${{ env.REGISTRY }}
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Extract metadata for UI image
-        id: meta-ui
+      - id: meta
         uses: docker/metadata-action@v5
         with:
           images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}-ui
@@ -120,43 +97,31 @@ jobs:
             type=semver,pattern={{version}}
             type=semver,pattern={{major}}.{{minor}}
             type=semver,pattern={{major}}
-            type=sha
-
-      - name: Build and push UI image
-        uses: docker/build-push-action@v5
+            type=raw,value=latest
+      - uses: docker/build-push-action@v6
         with:
           context: ./ui
           file: ./ui/Dockerfile
           platforms: linux/amd64,linux/arm64
           push: true
-          tags: ${{ steps.meta-ui.outputs.tags }}
-          labels: ${{ steps.meta-ui.outputs.labels }}
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
   build-trivy:
     runs-on: ubuntu-latest
     needs: create-release
-    permissions:
-      contents: read
-      packages: write
-
     steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
-
-      - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v3
-
-      - name: Log in to Container Registry
-        uses: docker/login-action@v3
+      - uses: actions/checkout@v4
+      - uses: docker/setup-qemu-action@v3
+      - uses: docker/setup-buildx-action@v3
+      - uses: docker/login-action@v3
         with:
           registry: ${{ env.REGISTRY }}
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Extract metadata for Trivy image
-        id: meta-trivy
+      - id: meta
         uses: docker/metadata-action@v5
         with:
           images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}-trivy
@@ -164,58 +129,90 @@ jobs:
             type=semver,pattern={{version}}
             type=semver,pattern={{major}}.{{minor}}
             type=semver,pattern={{major}}
-            type=sha
-
-      - name: Build and push Trivy image
-        uses: docker/build-push-action@v5
+            type=raw,value=latest
+      - uses: docker/build-push-action@v6
         with:
           context: .
           file: ./Dockerfile.trivy
           platforms: linux/amd64,linux/arm64
           push: true
-          tags: ${{ steps.meta-trivy.outputs.tags }}
-          labels: ${{ steps.meta-trivy.outputs.labels }}
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
+
+  mirror-dockerhub:
+    runs-on: ubuntu-latest
+    needs: [create-release, build-backend, build-ui, build-trivy]
+    steps:
+      - uses: docker/setup-buildx-action@v3
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Log in to Docker Hub
+        uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      - name: Mirror multi-arch images to Docker Hub
+        env:
+          VERSION: ${{ needs.create-release.outputs.version }}
+        run: |
+          set -euo pipefail
+          MAJOR="${VERSION%%.*}"
+          MINOR="${VERSION%.*}"
+          mirror() {
+            local src="$1" dst="$2"
+            echo "Mirroring ${src}:${VERSION} -> ${dst}:{${VERSION},${MINOR},${MAJOR},latest}"
+            docker buildx imagetools create \
+              --tag "${dst}:${VERSION}" \
+              --tag "${dst}:${MINOR}" \
+              --tag "${dst}:${MAJOR}" \
+              --tag "${dst}:latest" \
+              "${src}:${VERSION}"
+          }
+          mirror "ghcr.io/${{ github.repository }}" "daimon666/suppline"
+          mirror "ghcr.io/${{ github.repository }}-ui" "daimon666/suppline-ui"
+          mirror "ghcr.io/${{ github.repository }}-trivy" "daimon666/suppline-trivy"
 
   package-helm:
     runs-on: ubuntu-latest
     needs: [create-release, build-backend, build-ui, build-trivy]
-    permissions:
-      contents: write
-      packages: write
-
     steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
 
-      - name: Set up Helm
-        uses: azure/setup-helm@v4
+      - uses: azure/setup-helm@v4
         with:
           version: 'v3.21.3'
 
-      - name: Update Chart version
+      - name: Set chart version and appVersion
         run: |
           VERSION=${{ needs.create-release.outputs.version }}
           sed -i "s/^version:.*/version: $VERSION/" charts/suppline/Chart.yaml
           sed -i "s/^appVersion:.*/appVersion: \"$VERSION\"/" charts/suppline/Chart.yaml
+          cat charts/suppline/Chart.yaml
 
       - name: Package Helm chart
         run: |
           mkdir -p .helm-releases
+          helm lint charts/suppline
           helm package charts/suppline -d .helm-releases
 
-      - name: Log in to GitHub Container Registry
+      - name: Log in to GHCR (Helm OCI)
         run: echo "${{ secrets.GITHUB_TOKEN }}" | helm registry login ghcr.io -u ${{ github.actor }} --password-stdin
 
-      - name: Push Helm chart to OCI registry
+      - name: Push Helm chart to OCI
         run: |
           VERSION=${{ needs.create-release.outputs.version }}
           helm push .helm-releases/suppline-${VERSION}.tgz oci://ghcr.io/${{ github.repository_owner }}/charts
 
-      - name: Upload Helm chart to release
-        uses: softprops/action-gh-release@v1
+      - name: Attach chart to GitHub Release
+        uses: softprops/action-gh-release@v2
         with:
           files: .helm-releases/*.tgz
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

@@ -213,6 +213,13 @@ docker compose up --build -d && docker compose logs -f suppline
 **Kubernetes (production)** — Helm chart; **bring-your-own registry** by default (see [docs/REGISTRY.md](docs/REGISTRY.md)):
 
 ```bash
+# From a release (recommended)
+helm upgrade --install suppline oci://ghcr.io/daimoniac/charts/suppline \
+  --version <x.y.z> \
+  -n suppline --create-namespace \
+  -f values-secrets.yaml
+
+# Or from a checkout
 cp charts/suppline/values-secrets.yaml.example charts/suppline/values-secrets.yaml
 # Set SUPPLINE_API_KEY, ATTESTATION_KEY*, SUPPLINE_REGISTRY_*, upstream creds
 # Override sync/policy via backend.supplineConfig or edit charts/suppline/suppline.yml
@@ -222,6 +229,8 @@ helm upgrade --install suppline charts/suppline \
   -f charts/suppline/values.yaml \
   -f charts/suppline/values-secrets.yaml
 ```
+
+Images ship to GHCR as `ghcr.io/daimoniac/suppline:<semver>` (and `-ui`). Cutting a release: [docs/RELEASE.md](docs/RELEASE.md).
 
 Need raw YAML instead of applying with Helm? `helm template … > manifests.yaml` — there is no separate Kustomize tree.
 
@@ -285,6 +294,7 @@ Contributor notes are in [AGENTS.md](AGENTS.md) and [ui/AGENTS.md](ui/AGENTS.md)
 | Doc | Contents |
 |-----|----------|
 | [docs/EVAL.md](docs/EVAL.md) | Zero-cred Compose eval (pass + fail + attest) |
+| [docs/RELEASE.md](docs/RELEASE.md) | Semver release: tag → GHCR images + OCI chart |
 | [docs/CONFIGURATION.md](docs/CONFIGURATION.md) | Every environment variable and `suppline.yml` field |
 | [docs/POLICY.md](docs/POLICY.md) | CEL reference, policy recipes, VEX semantics |
 | [docs/STATE_MACHINE.md](docs/STATE_MACHINE.md) | Image lifecycle, rescan triggers, error handling |

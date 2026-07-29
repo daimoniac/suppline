@@ -33,7 +33,7 @@ spec:
         fsGroup: {{ .Values.frontend.securityContext.fsGroup }}
       containers:
       - name: ui
-        image: "{{ .Values.frontend.image.repository }}:{{ .Values.frontend.image.tag }}"
+        image: "{{ .Values.frontend.image.repository }}:{{ .Values.frontend.image.tag | default .Chart.AppVersion }}"
         imagePullPolicy: {{ .Values.frontend.image.pullPolicy }}
         env:
         - name: API_BASE_URL

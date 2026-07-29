@@ -22,7 +22,7 @@ services:
       start_period: 5s
 
   suppline:
-    image: daimon666/suppline
+    image: ghcr.io/daimoniac/suppline
     build:
       context: .
       dockerfile: Dockerfile
@@ -79,7 +79,7 @@ services:
       start_period: 15s
 
   ui:
-    image: daimon666/suppline-ui
+    image: ghcr.io/daimoniac/suppline-ui
     build:
       context: ui
       dockerfile: Dockerfile
@@ -140,7 +140,7 @@ services:
   # Usage: docker compose --profile eval-gate run --rm eval-gate
   eval-gate:
     profiles: ["eval-gate"]
-    image: daimon666/suppline
+    image: ghcr.io/daimoniac/suppline
     user: "0:0"
     depends_on:
       suppline:

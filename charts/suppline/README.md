@@ -23,6 +23,17 @@ helm template suppline ./charts/suppline \
 
 ## Quick install (BYO registry)
 
+From a published release:
+
+```bash
+helm upgrade --install suppline oci://ghcr.io/daimoniac/charts/suppline \
+  --version <x.y.z> \
+  -n suppline --create-namespace \
+  -f values-secrets.yaml
+```
+
+From this repository:
+
 ```bash
 cp charts/suppline/values-secrets.yaml.example charts/suppline/values-secrets.yaml
 # Edit secrets: SUPPLINE_API_KEY, ATTESTATION_KEY*, SUPPLINE_REGISTRY_*, upstream creds
@@ -35,6 +46,8 @@ helm upgrade --install suppline ./charts/suppline \
 ```
 
 Point `sync[].target` (and `creds`) at your registry. The chart example uses `{{ env "SUPPLINE_REGISTRY_URL" }}`.
+
+Images default to `ghcr.io/daimoniac/suppline` / `suppline-ui`; empty tags use `Chart.AppVersion`. Releases: [docs/RELEASE.md](../../docs/RELEASE.md).
 
 ### Override config without editing the chart
 
@@ -79,13 +92,14 @@ Data PVCs may be retained (`helm.sh/resource-policy: keep`) so reinstalls can re
 
 | Parameter | Description | Default |
 |-----------|-------------|---------|
-| `backend.image.repository` | Backend image | `daimon666/suppline` |
-| `backend.image.tag` | Backend tag | `latest` |
+| `backend.image.repository` | Backend image | `ghcr.io/daimoniac/suppline` |
+| `backend.image.tag` | Backend tag | `""` → `Chart.AppVersion` |
 | `backend.supplineConfig` | Inline `suppline.yml` (overrides chart file) | unset (use chart `suppline.yml`) |
 | `backend.attestationKey.enabled` | Sign attestations | `true` |
 | `backend.secrets.*` | API key, cosign key, registry creds | via secrets file |
 | `frontend.enabled` | Deploy web UI | `true` |
-| `frontend.image.repository` | UI image | `daimon666/suppline-ui` |
+| `frontend.image.repository` | UI image | `ghcr.io/daimoniac/suppline-ui` |
+| `frontend.image.tag` | UI tag | `""` → `Chart.AppVersion` |
 | `frontend.ingress.enabled` | UI Ingress | `false` |
 | `regsync.enabled` | Deploy regsync | `true` |
 | `registry.enabled` | Bundled registry | `false` (BYO) |
@@ -105,7 +119,7 @@ See `values.yaml` for the full set.
 
 - Backend uses SQLite → single replica (`ReadWriteOnce`)
 - Chart ships an **example** `suppline.yml`, not a production site config
-- For OCI installs after a release tag: `oci://ghcr.io/daimoniac/charts/suppline` (see repo Helm workflow)
+- OCI chart: `oci://ghcr.io/daimoniac/charts/suppline` — cut releases with [docs/RELEASE.md](../../docs/RELEASE.md)
 
 ## Support
 

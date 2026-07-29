@@ -11,9 +11,11 @@ backend:
   secrets: {}
 
   image:
-    repository: daimon666/suppline
-    pullPolicy: Always
-    tag: "latest"
+    # Released images: ghcr.io/daimoniac/suppline:<semver> (see docs/RELEASE.md)
+    repository: ghcr.io/daimoniac/suppline
+    pullPolicy: IfNotPresent
+    # Empty → Chart.AppVersion (set on each v* release)
+    tag: ""
 
   service:
     type: ClusterIP
@@ -147,9 +149,10 @@ frontend:
   replicaCount: 1
 
   image:
-    repository: daimon666/suppline-ui
-    tag: "latest"
-    pullPolicy: Always
+    repository: ghcr.io/daimoniac/suppline-ui
+    # Empty → Chart.AppVersion
+    tag: ""
+    pullPolicy: IfNotPresent
 
   service:
     type: ClusterIP

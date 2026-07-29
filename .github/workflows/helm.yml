@@ -1,85 +1,39 @@
-name: Helm Chart CI/CD
+# Chart lint on PRs and main. Packaging/OCI publish is Release (tag v*).
+name: Helm Chart
 
 on:
   push:
     branches:
       - main
-    tags:
-      - 'v*'
+    paths:
+      - 'charts/suppline/**'
+      - '.github/workflows/helm.yml'
   pull_request:
     branches:
       - main
+    paths:
+      - 'charts/suppline/**'
+      - '.github/workflows/helm.yml'
 
 jobs:
-  lint-and-test:
+  lint:
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
         with:
           fetch-depth: 0
 
-      - name: Set up Helm
-        uses: azure/setup-helm@v4
+      - uses: azure/setup-helm@v4
         with:
           version: 'v3.21.3'
 
       - name: Lint Helm chart
         run: helm lint charts/suppline
 
-      - name: Install chart-testing
-        uses: helm/chart-testing-action@v2.6.1
+      - uses: helm/chart-testing-action@v2.6.1
 
-      - name: Run chart-testing (lint)
+      - name: chart-testing lint
         run: ct lint --target-branch ${{ github.event.repository.default_branch }} --charts charts/suppline
 
-  package-and-release:
-    runs-on: ubuntu-latest
-    needs: lint-and-test
-    if: startsWith(github.ref, 'refs/tags/v')
-    permissions:
-      contents: write
-      packages: write
-
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
-
-      - name: Set up Helm
-        uses: azure/setup-helm@v4
-        with:
-          version: 'v3.21.3'
-
-      - name: Extract version from tag
-        id: version
-        run: |
-          VERSION=${GITHUB_REF#refs/tags/v}
-          echo "version=$VERSION" >> $GITHUB_OUTPUT
-          echo "Version: $VERSION"
-
-      - name: Update Chart version
-        run: |
-          sed -i "s/^version:.*/version: ${{ steps.version.outputs.version }}/" charts/suppline/Chart.yaml
-          sed -i "s/^appVersion:.*/appVersion: \"${{ steps.version.outputs.version }}\"/" charts/suppline/Chart.yaml
-
-      - name: Package Helm chart
-        run: |
-          mkdir -p .helm-releases
-          helm package charts/suppline -d .helm-releases
-
-      - name: Log in to GitHub Container Registry
-        run: echo "${{ secrets.GITHUB_TOKEN }}" | helm registry login ghcr.io -u ${{ github.actor }} --password-stdin
-
-      - name: Push Helm chart to OCI registry
-        run: |
-          CHART_VERSION=${{ steps.version.outputs.version }}
-          helm push .helm-releases/suppline-${CHART_VERSION}.tgz oci://ghcr.io/${{ github.repository_owner }}/charts
-
-      - name: Upload Helm chart to release
-        uses: softprops/action-gh-release@v1
-        with:
-          files: .helm-releases/*.tgz
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      - name: helm template smoke
+        run: helm template smoke charts/suppline >/dev/null
