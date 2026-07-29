@@ -50,7 +50,6 @@ jobs:
     needs: create-release
     steps:
       - uses: actions/checkout@v4
-      - uses: docker/setup-qemu-action@v3
       - uses: docker/setup-buildx-action@v3
       - uses: docker/login-action@v3
         with:
@@ -70,21 +69,21 @@ jobs:
         with:
           context: .
           file: ./Dockerfile
-          platforms: linux/amd64,linux/arm64
+          # amd64 only — qemu arm64 + CGO is too slow for a solo release path
+          platforms: linux/amd64
           push: true
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
           build-args: |
             VERSION=${{ needs.create-release.outputs.version }}
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
+          cache-from: type=gha,scope=backend
+          cache-to: type=gha,mode=max,scope=backend
 
   build-ui:
     runs-on: ubuntu-latest
     needs: create-release
     steps:
       - uses: actions/checkout@v4
-      - uses: docker/setup-qemu-action@v3
       - uses: docker/setup-buildx-action@v3
       - uses: docker/login-action@v3
         with:
@@ -104,13 +103,12 @@ jobs:
         with:
           context: ./ui
           file: ./ui/Dockerfile
-          # UI is Node/nginx — qemu arm64 builds are too slow for a solo release path
           platforms: linux/amd64
           push: true
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
+          cache-from: type=gha,scope=ui
+          cache-to: type=gha,mode=max,scope=ui
 
   # Trivy: use upstream aquasec/trivy (Compose + Helm). No custom image.
 
@@ -133,7 +131,7 @@ jobs:
           username: ${{ secrets.DOCKERHUB_USERNAME }}
           password: ${{ secrets.DOCKERHUB_TOKEN }}
 
-      - name: Mirror multi-arch images to Docker Hub
+      - name: Mirror images to Docker Hub
         env:
           VERSION: ${{ needs.create-release.outputs.version }}
         run: |

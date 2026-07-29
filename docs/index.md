@@ -34,7 +34,7 @@ One Go binary. SQLite state. No SaaS, no phone-home, air-gap compatible by desig
 
 ## How it works
 
-![suppline supply chain workflow](suppline_workflow.jpg)
+![suppline architecture diagram](../suppline.cloud/images/architecture-diagram.svg)
 
 1. **Mirror** — regsync keeps your registry in sync with the upstream repositories listed in `suppline.yml`.
 2. **Scan** — the watcher notices new or changed digests and enqueues them; Trivy produces an SBOM and vulnerability set.

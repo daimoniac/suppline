@@ -22,7 +22,7 @@ Use [semver](https://semver.org/): `vMAJOR.MINOR.PATCH`. Optional prereleases (`
 That triggers [`.github/workflows/release.yml`](../.github/workflows/release.yml), which:
 
 1. Creates a **GitHub Release** (auto-generated notes)
-2. Builds multi-arch (`amd64`/`arm64`) images and pushes to GHCR
+2. Builds `linux/amd64` images and pushes to GHCR
 3. Packages the Helm chart (`version` + `appVersion` = tag without `v`) and pushes it to OCI
 4. Attaches the chart `.tgz` to the GitHub Release
 
@@ -35,7 +35,7 @@ That triggers [`.github/workflows/release.yml`](../.github/workflows/release.yml
 | Trivy | upstream `aquasec/trivy` (Compose + Helm) — not rebuilt |
 | Helm chart | `oci://ghcr.io/daimoniac/charts/suppline` (version = release) |
 
-Requires repo secrets `DOCKERHUB_USERNAME` and `DOCKERHUB_TOKEN` (Hub access token) so the release job can mirror multi-arch manifests to Docker Hub after GHCR publish.
+Requires repo secrets `DOCKERHUB_USERNAME` and `DOCKERHUB_TOKEN` (Hub access token) so the release job can mirror images to Docker Hub after GHCR publish.
 
 Install a released chart:
 
@@ -97,7 +97,7 @@ If GHCR pulls fail, set the packages to **Public** or `docker login ghcr.io` fir
 |-------|----------|----------|
 | PR / push to `main` | `docker-build.yml` | Build (PR) or push `main` / SHA tags (amd64 only) |
 | PR / push touching chart | `helm.yml` | Lint + `helm template` smoke |
-| Tag `v*` | `release.yml` | Semver images (multi-arch) + OCI chart + GitHub Release |
+| Tag `v*` | `release.yml` | Semver images (amd64) + OCI chart + GitHub Release |
 
 Do **not** hand-push release tags to GHCR; the tag workflow is the source of truth.
 
