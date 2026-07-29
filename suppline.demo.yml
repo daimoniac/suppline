@@ -1,0 +1,48 @@
+# Zero-credential Compose eval config.
+# Throwaway only — not for production. See docs/EVAL.md.
+version: 1
+
+creds:
+  # Bundled Compose registry (HTTP, no auth)
+  - registry: registry:5000
+    tls: disabled
+  # No-auth public sources (Hub optional via .env — see docs/EVAL.md)
+  - registry: public.ecr.aws
+    reqPerSec: 2
+    reqConcurrent: 1
+
+defaults:
+  parallel: 2
+  interval: 1m
+  cleanupTags: true
+  cleanupTagsExclude:
+    - ".*\\.sig$"
+    - ".*\\.att$"
+  x-rescanInterval: 1d
+  x-runtimeInUseWindow: 60m
+  x-worker-poll-interval: 15s
+  x-worker-concurrency: 2
+  x-worker-retry-attempts: 3
+  x-worker-retry-backoff: 10s
+  x-queue-buffer-size: 100
+  x-scaiValidityExtension: 7d
+  x-vex-repo: false
+
+sync:
+  # Guaranteed pass so first-run always produces attestations (demo policy).
+  - source: public.ecr.aws/docker/library/busybox:1.36.1
+    target: registry:5000/demo-pass:1.36.1
+    type: image
+    platform: linux/amd64
+    x-policy:
+      expression: "true"
+      failureMessage: "demo-pass should never fail"
+
+  # Guaranteed fail so the gate is visible next to a pass (demo policy).
+  - source: public.ecr.aws/docker/library/alpine:3.18.4
+    target: registry:5000/demo-fail:3.18.4
+    type: image
+    platform: linux/amd64
+    x-policy:
+      expression: "false"
+      failureMessage: "demo-fail is intentionally blocked"

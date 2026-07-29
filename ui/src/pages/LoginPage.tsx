@@ -40,7 +40,10 @@ export default function LoginPage() {
             <Lock className="w-4 h-4 text-text-secondary" />
             <h2 className="text-sm font-semibold">API Authentication</h2>
           </div>
-          <p className="text-xs text-text-secondary mb-5">Enter your API key to access the dashboard.</p>
+          <p className="text-xs text-text-secondary mb-5">
+            Enter your API key to access the dashboard.
+            {' '}Local Compose eval uses <code className="text-accent">demo</code>.
+          </p>
 
           <form onSubmit={handleSubmit} className="space-y-4">
             <input

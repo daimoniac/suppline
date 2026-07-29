@@ -97,6 +97,9 @@ type RegistryCredential struct {
 	RepoAuth      bool   `yaml:"repoAuth"`
 	ReqPerSec     int    `yaml:"reqPerSec"`
 	ReqConcurrent int    `yaml:"reqConcurrent"`
+	// TLS controls TLS for this registry: "enabled" (default), "insecure", or "disabled" (HTTP).
+	// Matches regsync/regclient creds.tls.
+	TLS string `yaml:"tls,omitempty"`
 }
 
 // Defaults contains default configuration values

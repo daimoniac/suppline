@@ -18,6 +18,7 @@ go.work
 # Configuration files with secrets
 suppline.yml
 /keys/*
+!/keys/.gitkeep
 .env
 values-secrets.yaml
 **/values-secrets.yaml
@@ -26,6 +27,7 @@ values-secrets.yaml
 *.db
 *.db-shm
 *.db-wal
+/data/
 
 # Logs
 *.log

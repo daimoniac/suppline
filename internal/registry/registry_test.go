@@ -55,6 +55,26 @@ func TestNewClient(t *testing.T) {
 			},
 			expectError: false,
 		},
+		{
+			name: "http registry with tls disabled",
+			config: &config.RegsyncConfig{
+				Version: 1,
+				Creds: []config.RegistryCredential{
+					{
+						Registry: "registry:5000",
+						TLS:      "disabled",
+					},
+				},
+				Sync: []config.SyncEntry{
+					{
+						Source: "public.ecr.aws/docker/library/busybox:1.36.1",
+						Target: "registry:5000/demo-pass:1.36.1",
+						Type:   "image",
+					},
+				},
+			},
+			expectError: false,
+		},
 	}
 
 	for _, tt := range tests {
@@ -64,12 +84,22 @@ func TestNewClient(t *testing.T) {
 				if err == nil {
 					t.Errorf("expected error but got none")
 				}
-			} else {
-				if err != nil {
-					t.Errorf("unexpected error: %v", err)
+				return
+			}
+			if err != nil {
+				t.Errorf("unexpected error: %v", err)
+			}
+			if client == nil {
+				t.Errorf("expected client but got nil")
+				return
+			}
+			if tt.name == "http registry with tls disabled" {
+				impl, ok := client.(*clientImpl)
+				if !ok {
+					t.Fatalf("expected *clientImpl")
 				}
-				if client == nil {
-					t.Errorf("expected client but got nil")
+				if !impl.isInsecure("registry:5000") {
+					t.Errorf("expected registry:5000 to be marked insecure")
 				}
 			}
 		})

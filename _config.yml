@@ -1,8 +1,9 @@
 title: suppline
-description: Self-hosted image intake gateway for Kubernetes
+description: Self-hosted Kubernetes image intake gateway — mirror, Trivy scan, CEL policy, Sigstore attestations. Replace supply-chain glue; admit only what passed.
 theme: jekyll-theme-minimal
 logo: docs/suppline-fullsize.png
 show_downloads: true
+url: https://suppline.cloud
 github:
   repository_url: https://github.com/daimoniac/suppline
   is_project_page: true
@@ -39,4 +40,10 @@ exclude:
   - env.example
   - suppline.yml
   - suppline.yml.example
+  - suppline.demo.yml
   - helm-deploy.sh
+  - scripts
+  - clusterstate-agent
+  - grafana
+  - CONTEXT.md
+  - AGENTS.md

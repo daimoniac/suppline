@@ -1,50 +1,83 @@
+# Zero-credential eval stack: checkout → docker compose up → open UI.
+# Throwaway registry + demo policies. Not for production.
+# Docs: docs/EVAL.md
 services:
-  # Main application
+  registry:
+    image: registry:2.8.3
+    container_name: suppline-registry
+    environment:
+      - REGISTRY_STORAGE_DELETE_ENABLED=true
+    volumes:
+      - registry-data:/var/lib/registry
+    ports:
+      - "127.0.0.1:5000:5000"
+    networks:
+      - suppline
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:5000/v2/"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 5s
+
   suppline:
     image: daimon666/suppline
     build:
       context: .
       dockerfile: Dockerfile
     container_name: suppline
+    user: "0:0"
+    depends_on:
+      registry:
+        condition: service_healthy
+      trivy:
+        condition: service_started
     ports:
       - "8080:8080" # API
       - "9090:9090" # Metrics
       - "8081:8081" # Health
-    # Note: DOCKER_USERNAME and DOCKER_PASSWORD are used for Go template expansion
-    # in suppline.yml credentials. Make sure to set these in your .env file.
     env_file:
-      - .env
+      - path: .env
+        required: false
     environment:
       - SUPPLINE_CONFIG=/config/suppline.yml
+      - SUPPLINE_API_KEY=demo
       - LOG_LEVEL=info
       - METRICS_PORT=9090
       - HEALTH_PORT=8081
       - API_PORT=8080
       - API_ENABLED=true
       - API_READ_ONLY=false
-      - QUEUE_BUFFER_SIZE=1000
-      - WORKER_POLL_INTERVAL=5m
+      - QUEUE_BUFFER_SIZE=100
+      - WORKER_POLL_INTERVAL=15s
       - WORKER_RETRY_ATTEMPTS=3
       - WORKER_RETRY_BACKOFF=10s
       - TRIVY_SERVER_ADDR=trivy:4954
+      - TRIVY_INSECURE=true
       - SCANNER_TIMEOUT=5m
       - STATE_STORE_TYPE=sqlite
       - SQLITE_PATH=/data/suppline.db
       - RESCAN_INTERVAL=24h
+      - ATTESTATION_ALLOW_HTTP_REGISTRY=true
+      - ATTESTATION_KEY_PASSWORD=demo
+      - KEYS_DIR=/keys/demo
     volumes:
       - ./data:/data
-      - ./suppline.yml:/config/suppline.yml:ro
+      - ./keys:/keys
+      - ./suppline.demo.yml:/config/suppline.yml:ro
+      - ./scripts/compose-suppline-entrypoint.sh:/compose-suppline-entrypoint.sh:ro
+    entrypoint: ["/bin/sh", "/compose-suppline-entrypoint.sh"]
     networks:
       - suppline
     restart: unless-stopped
     healthcheck:
-      test: [ "CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:8081/health" ]
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:8081/health"]
       interval: 30s
       timeout: 10s
       retries: 3
-      start_period: 10s
+      start_period: 15s
 
-  # Web UI
   ui:
     image: daimon666/suppline-ui
     build:
@@ -61,17 +94,16 @@ services:
       - suppline
     restart: unless-stopped
     healthcheck:
-      test: [ "CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:80/" ]
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:80/"]
       interval: 30s
       timeout: 5s
       retries: 3
       start_period: 5s
 
-  # Trivy server
   trivy:
     image: aquasec/trivy:0.72.0
     container_name: trivy-server
-    command: [ "server", "--listen", "0.0.0.0:4954" ]
+    command: ["server", "--listen", "0.0.0.0:4954"]
     ports:
       - "4954:4954"
     environment:
@@ -82,21 +114,24 @@ services:
       - suppline
     restart: unless-stopped
     healthcheck:
-      test: [ "CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:4954/healthz" ]
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:4954/healthz"]
       interval: 30s
       timeout: 10s
       retries: 3
       start_period: 30s
 
-  # Regsync - Registry synchronization
   regsync:
     image: daimon666/regsync:latest
     container_name: regsync
-    command: [ "server", "-c", "/config/suppline.yml" ]
+    command: ["server", "-c", "/config/suppline.yml"]
+    depends_on:
+      registry:
+        condition: service_healthy
     env_file:
-      - .env
+      - path: .env
+        required: false
     volumes:
-      - ./suppline.yml:/config/suppline.yml:ro
+      - ./suppline.demo.yml:/config/suppline.yml:ro
     networks:
       - suppline
     restart: unless-stopped
@@ -126,7 +161,8 @@ services:
     image: alpine/helm:3.21.3
     working_dir: /workspace
     env_file:
-      - .env
+      - path: .env
+        required: false
     volumes:
       - ./:/workspace:ro
       - ${HOME}/.kube:/root/.kube:ro
@@ -147,6 +183,8 @@ networks:
 
 volumes:
   trivy-cache:
+    driver: local
+  registry-data:
     driver: local
   ui-html:
     driver: local

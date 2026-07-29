@@ -42,7 +42,7 @@ Configuration is loaded from multiple sources in this priority order:
 | `TRIVY_SERVER_ADDR` | string | `localhost:4954` | Trivy server address (host:port) |
 | `TRIVY_TOKEN` | string | `` | Optional authentication token for Trivy server |
 | `TRIVY_TIMEOUT` | duration | `5m` | Timeout for Trivy scan operations |
-| `TRIVY_INSECURE` | bool | `false` | Skip TLS verification (not recommended for production) |
+| `TRIVY_INSECURE` | bool | `false` | Skip TLS verification / allow insecure registry access (eval/HTTP registries) |
 
 ### State Store
 
@@ -57,8 +57,9 @@ Configuration is loaded from multiple sources in this priority order:
 
 | Variable | Type | Default | Description |
 |----------|------|---------|-------------|
-| `ATTESTATION_KEY_PATH` | string | `` | Path to Cosign private key (required) |
+| `ATTESTATION_KEY` | string | `` | Base64-encoded Cosign private key (required for signing) |
 | `ATTESTATION_KEY_PASSWORD` | string | `` | Password for encrypted private key |
+| `ATTESTATION_ALLOW_HTTP_REGISTRY` | bool | `false` | Pass `--allow-http-registry` to cosign (Compose eval / HTTP registries only) |
 | `FULCIO_URL` | string | `https://fulcio.sigstore.dev` | Fulcio certificate authority URL |
 | `ATTESTATION_COMMAND_TIMEOUT` | duration | `2m` | Timeout per Cosign attestation command |
 
@@ -95,6 +96,7 @@ creds:
     repoAuth: bool            # Use repository-scoped authentication
     reqPerSec: int            # Rate limit (requests per second)
     reqConcurrent: int        # Concurrent request limit
+    tls: string               # optional: enabled (default), insecure, or disabled (HTTP)
 
 # Default settings
 defaults:
@@ -156,6 +158,10 @@ creds:
     repoAuth: false
     reqPerSec: 10
     reqConcurrent: 10
+
+  # Local HTTP registry (Compose eval / lab only)
+  - registry: registry:5000
+    tls: disabled
   
   # Plain text credentials (not recommended for production)
   - registry: registry.example.com

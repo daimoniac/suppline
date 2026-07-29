@@ -48,6 +48,11 @@ func (a *SigstoreAttestor) runCosignAttest(ctx context.Context, operation string
 	attestCtx, cancel := context.WithTimeout(ctx, a.attestTimeout)
 	defer cancel()
 
+	if allowHTTPRegistry() && len(args) > 0 {
+		// Insert after the subcommand (e.g. "attest").
+		args = append([]string{args[0], "--allow-http-registry"}, args[1:]...)
+	}
+
 	cmd := exec.CommandContext(attestCtx, "cosign", args...)
 	cmd.Env = os.Environ()
 	if password := os.Getenv("ATTESTATION_KEY_PASSWORD"); password != "" {
@@ -63,6 +68,11 @@ func (a *SigstoreAttestor) runCosignAttest(ctx context.Context, operation string
 	}
 
 	return output, nil
+}
+
+func allowHTTPRegistry() bool {
+	v := strings.ToLower(strings.TrimSpace(os.Getenv("ATTESTATION_ALLOW_HTTP_REGISTRY")))
+	return v == "1" || v == "true" || v == "yes"
 }
 
 // NewSigstoreAttestor creates a new Sigstore attestor

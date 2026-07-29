@@ -18,9 +18,11 @@
 
 Your cluster runs dozens of third-party images you didn't build. Every one of them is a pull from someone else's registry, on someone else's uptime, with a CVE list nobody reviewed since the day it was deployed.
 
-suppline is the gate in front of that. It continuously mirrors upstream images into **your** registry, scans every digest with Trivy, evaluates a policy you wrote, and publishes signed Sigstore attestations. Your clusters then pull only from the mirror — and can refuse to run anything without a valid, fresh attestation.
+suppline is the gate in front of that. **Stop maintaining supply-chain glue** — mirror, scan, policy, and cosign attestations in one system, and admit only what passed. Your clusters then pull only from the mirror — and can refuse to run anything without a valid, fresh attestation.
 
 One Go binary. SQLite state. No SaaS, no phone-home, air-gap compatible by design.
+
+**Used in production at [SocialHub](https://www.socialhub.io)** to gate third-party images before admission.
 
 ## Why you might want this
 
@@ -55,37 +57,32 @@ See [docs/STATE_MACHINE.md](docs/STATE_MACHINE.md) for the exact lifecycle, incl
 
 ## Quick start
 
-You need registry credentials and a cosign key pair. Docker Compose brings up suppline, the web UI, a Trivy server, and regsync.
+Zero credentials. Compose brings up a throwaway registry, Trivy, regsync, suppline, and the UI. One demo image **passes** (with attestations); one **fails**.
 
 ```bash
-# 1. Configure what to mirror and how to gate it
-cp suppline.yml.example suppline.yml
-cp env.example .env
-$EDITOR suppline.yml          # sync rules, policies, VEX
-
-# 2. Generate the signing key pair
-mkdir -p keys && cosign generate-key-pair && mv cosign.key cosign.pub keys/
-
-# 3. Put the secrets in .env: registry credentials, an API key of your choice,
-#    the key password, and the private key as base64
-echo "ATTESTATION_KEY=$(base64 -w0 keys/cosign.key)" >> .env
-$EDITOR .env
-
-# 4. Start and check
-docker compose up -d
-curl http://localhost:8081/health
-curl -H "Authorization: Bearer <your-api-key>" http://localhost:8080/api/v1/scans
+git clone https://github.com/daimoniac/suppline.git && cd suppline
+docker compose up --build -d
 ```
 
-Then open the UI at **http://localhost:3000** and log in with your `SUPPLINE_API_KEY`. Swagger for the API lives at **http://localhost:8080/swagger**.
+Open **http://localhost:3000** and log in with API key **`demo`**. First boot needs a few minutes for image pulls and Trivy’s DB.
+
+```bash
+curl http://localhost:8081/health
+curl -H "Authorization: Bearer demo" http://localhost:8080/api/v1/scans
+```
+
+Full checklist, Hub escape hatch, and “you’re done when…”: **[docs/EVAL.md](docs/EVAL.md)**.
 
 | Port | Service |
 |------|---------|
-| 3000 | Web UI |
+| 3000 | Web UI (API key `demo`) |
 | 8080 | REST API + Swagger |
 | 8081 | Health checks |
+| 5000 | Throwaway registry (localhost) |
 | 9090 | Prometheus metrics |
 | 4954 | Trivy server |
+
+For a production-shaped Compose/Helm install (BYO registry, your keys, real policy), see [Deploy](#deploy) and `suppline.yml.example` / `env.example`.
 
 ## Configuration
 
@@ -201,13 +198,13 @@ Read-only by default (`list_scans`, `list_failed_images`, `query_vulnerabilities
 
 ## Deploy
 
-**Docker Compose** — suppline, UI, Trivy, and regsync:
+**Docker Compose (eval)** — throwaway registry, zero credentials (see [docs/EVAL.md](docs/EVAL.md)):
 
 ```bash
-docker compose up -d && docker compose logs -f suppline
+docker compose up --build -d && docker compose logs -f suppline
 ```
 
-**Kubernetes** — Helm chart with an optional bundled registry (see [docs/REGISTRY.md](docs/REGISTRY.md)):
+**Kubernetes** — Helm chart with an optional bundled registry (see [docs/REGISTRY.md](docs/REGISTRY.md)). Prefer **bring-your-own registry** for production:
 
 ```bash
 cp charts/suppline/values-secrets.yaml.example charts/suppline/values-secrets.yaml
@@ -277,10 +274,12 @@ Contributor notes are in [AGENTS.md](AGENTS.md) and [ui/AGENTS.md](ui/AGENTS.md)
 
 | Doc | Contents |
 |-----|----------|
+| [docs/EVAL.md](docs/EVAL.md) | Zero-cred Compose eval (pass + fail + attest) |
 | [docs/CONFIGURATION.md](docs/CONFIGURATION.md) | Every environment variable and `suppline.yml` field |
 | [docs/POLICY.md](docs/POLICY.md) | CEL reference, policy recipes, VEX semantics |
 | [docs/STATE_MACHINE.md](docs/STATE_MACHINE.md) | Image lifecycle, rescan triggers, error handling |
-| [docs/REGISTRY.md](docs/REGISTRY.md) | Running the bundled private registry |
+| [docs/REGISTRY.md](docs/REGISTRY.md) | Bundled registry in Helm (prod: prefer BYO) |
+| [docs/DISCOVERABILITY.md](docs/DISCOVERABILITY.md) | Later: Artifact Hub / awesome-lists |
 | http://localhost:8080/swagger | Live API reference |
 
 ## License and support

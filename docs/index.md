@@ -1,6 +1,7 @@
 ---
 layout: default
 title: suppline - Self-hosted image intake gateway for Kubernetes
+description: Self-hosted Kubernetes image intake gateway — mirror, Trivy scan, CEL policy gate, and Sigstore attestations. Replace regsync+scanner+admission glue; admit only what passed. Used in production at SocialHub.
 ---
 
 # suppline
@@ -9,13 +10,19 @@ title: suppline - Self-hosted image intake gateway for Kubernetes
 
 **Mirror → Scan → Gate → Attest → Run.**
 
+Stop maintaining supply-chain glue — mirror, scan, policy, and cosign attestations in one system, and admit only what passed.
+
 Your cluster runs dozens of third-party images you didn't build. Every one is a pull from someone else's registry, on someone else's uptime, with a CVE list nobody has reviewed since the day it was deployed.
 
 suppline is the gate in front of that. It continuously mirrors upstream images into **your** registry, scans every digest with Trivy, evaluates a policy you wrote, and publishes signed Sigstore attestations. Clusters then pull only from the mirror — and can refuse to run anything without a valid, fresh attestation.
 
 One Go binary. SQLite state. No SaaS, no phone-home, air-gap compatible by design.
 
-[Get started on GitHub →](https://github.com/daimoniac/suppline)
+**[Try the zero-cred eval →](EVAL.md)** · [GitHub](https://github.com/daimoniac/suppline)
+
+## Used in production
+
+[SocialHub](https://www.socialhub.io) runs suppline in production to gate third-party images (mirror → scan → policy → attest) before admission.
 
 ## Why you might want this
 
@@ -37,27 +44,16 @@ One Go binary. SQLite state. No SaaS, no phone-home, air-gap compatible by desig
 
 The full lifecycle, including rescan triggers and error paths, is documented in the [state machine reference](STATE_MACHINE.md).
 
-## Quick start
+## Quick start (eval)
 
-You need registry credentials and a cosign key pair. Docker Compose brings up suppline, the web UI, a Trivy server, and regsync.
+No credentials required. Bundled throwaway registry; demo pass + fail policies.
 
 ```bash
 git clone https://github.com/daimoniac/suppline.git && cd suppline
-
-# Configure what to mirror and how to gate it
-cp suppline.yml.example suppline.yml
-cp env.example .env
-
-# Generate the signing key pair and hand the private key to suppline
-mkdir -p keys && cosign generate-key-pair && mv cosign.key cosign.pub keys/
-echo "ATTESTATION_KEY=$(base64 -w0 keys/cosign.key)" >> .env
-
-# Fill in registry credentials, an API key, and the key password in .env
-docker compose up -d
-curl http://localhost:8081/health
+docker compose up --build -d
 ```
 
-The web UI is at `http://localhost:3000`, the REST API and Swagger at `http://localhost:8080`.
+Open `http://localhost:3000` and log in with API key `demo`. Full checklist: [Eval quick start](EVAL.md).
 
 ## What you get
 
@@ -72,10 +68,12 @@ The web UI is at `http://localhost:3000`, the REST API and Swagger at `http://lo
 
 ## Documentation
 
+- [Eval quick start](EVAL.md) — zero-cred Compose afternoon path
 - [Configuration reference](CONFIGURATION.md) — every environment variable and `suppline.yml` field
 - [Policy guide](POLICY.md) — CEL reference, policy recipes, VEX semantics
 - [State machine](STATE_MACHINE.md) — image lifecycle, rescan triggers, error handling
 - [Private registry setup](REGISTRY.md) — running the bundled registry in Kubernetes
+- [Discoverability backlog](DISCOVERABILITY.md) — Artifact Hub / awesome-lists (later)
 - [GitHub repository](https://github.com/daimoniac/suppline) — source, Helm chart, issues
 
 ## Support

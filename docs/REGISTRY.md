@@ -2,6 +2,8 @@
 
 The Suppline Helm chart can optionally deploy a self-contained Docker registry for storing scanned images.
 
+**Defaults:** Compose eval bundles a throwaway HTTP registry ([EVAL.md](EVAL.md)). For production Kubernetes, prefer **bring your own** Harbor/ECR/ACR/Artifactory and set `registry.enabled: false` (or leave the bundle on only as a convenience). Do not treat `registry:2` as your long-term production registry.
+
 ## Enabling the Registry
 
 Set `registry.enabled: true` in your values file:

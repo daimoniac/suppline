@@ -67,10 +67,11 @@ type LayerDescriptor struct {
 
 // clientImpl implements the Client interface using go-containerregistry
 type clientImpl struct {
-	regsyncConfig *config.RegsyncConfig
-	authConfig    map[string]authn.Authenticator
-	remoteOpts    []remote.Option
-	logger        *slog.Logger
+	regsyncConfig      *config.RegsyncConfig
+	authConfig         map[string]authn.Authenticator
+	insecureRegistries map[string]bool
+	remoteOpts         []remote.Option
+	logger             *slog.Logger
 }
 
 // NewClient creates a new registry client configured with credentials from regsync config
@@ -99,10 +100,11 @@ func NewClient(regsyncConfig *config.RegsyncConfig) (Client, error) {
 	}
 
 	client := &clientImpl{
-		regsyncConfig: regsyncConfig,
-		authConfig:    make(map[string]authn.Authenticator),
-		remoteOpts:    transportOpts,
-		logger:        slog.Default(),
+		regsyncConfig:      regsyncConfig,
+		authConfig:         make(map[string]authn.Authenticator),
+		insecureRegistries: make(map[string]bool),
+		remoteOpts:         transportOpts,
+		logger:             slog.Default(),
 	}
 
 	for _, cred := range regsyncConfig.Creds {
@@ -113,9 +115,40 @@ func NewClient(regsyncConfig *config.RegsyncConfig) (Client, error) {
 			}
 			client.logger.Debug("registered credentials", "registry", cred.Registry, "user", cred.User)
 		}
+		tlsMode := strings.ToLower(strings.TrimSpace(cred.TLS))
+		if tlsMode == "disabled" || tlsMode == "insecure" {
+			client.markInsecure(cred.Registry)
+			client.logger.Debug("registered insecure registry", "registry", cred.Registry, "tls", tlsMode)
+		}
 	}
 
 	return client, nil
+}
+
+func (c *clientImpl) markInsecure(registry string) {
+	c.insecureRegistries[registry] = true
+	for _, normalized := range normalizeRegistry(registry) {
+		c.insecureRegistries[normalized] = true
+	}
+}
+
+func (c *clientImpl) isInsecure(registry string) bool {
+	if c.insecureRegistries[registry] {
+		return true
+	}
+	for _, normalized := range normalizeRegistry(registry) {
+		if c.insecureRegistries[normalized] {
+			return true
+		}
+	}
+	return false
+}
+
+func (c *clientImpl) nameOptions(registry string) []name.Option {
+	if c.isInsecure(registry) {
+		return []name.Option{name.Insecure}
+	}
+	return nil
 }
 
 // normalizeRegistry normalizes registry names to handle Docker Hub aliases
@@ -180,7 +213,7 @@ func (c *clientImpl) ListTags(ctx context.Context, repo string) ([]string, error
 	}
 
 	repoRef := fmt.Sprintf("%s/%s", registry, repository)
-	ref, err := name.NewRepository(repoRef)
+	ref, err := name.NewRepository(repoRef, c.nameOptions(registry)...)
 	if err != nil {
 		return nil, errors.NewPermanentf("failed to create repository reference: %w", err)
 	}
@@ -212,7 +245,7 @@ func (c *clientImpl) GetDigest(ctx context.Context, repo, tag string) (string, e
 	}
 
 	imageRef := fmt.Sprintf("%s/%s:%s", registry, repository, tag)
-	ref, err := name.ParseReference(imageRef)
+	ref, err := name.ParseReference(imageRef, c.nameOptions(registry)...)
 	if err != nil {
 		return "", errors.NewPermanentf("failed to parse image reference: %w", err)
 	}
@@ -237,7 +270,7 @@ func (c *clientImpl) GetManifest(ctx context.Context, repo, digest string) (*Man
 	}
 
 	imageRef := fmt.Sprintf("%s/%s@%s", registry, repository, digest)
-	ref, err := name.ParseReference(imageRef)
+	ref, err := name.ParseReference(imageRef, c.nameOptions(registry)...)
 	if err != nil {
 		return nil, errors.NewPermanentf("failed to parse image reference: %w", err)
 	}
@@ -329,7 +362,7 @@ func (c *clientImpl) VerifyTagExists(ctx context.Context, repo, tag string) erro
 	}
 
 	imageRef := fmt.Sprintf("%s/%s:%s", registry, repository, tag)
-	ref, err := name.ParseReference(imageRef)
+	ref, err := name.ParseReference(imageRef, c.nameOptions(registry)...)
 	if err != nil {
 		return errors.NewPermanentf("failed to parse image reference: %w", err)
 	}

@@ -7,6 +7,7 @@ Agent-focused working notes for this repository.
 Use these as the source of truth instead of duplicating details here:
 
 - Product overview, setup, architecture, config, API, deployment, and development commands: [README.md](README.md)
+- Zero-cred Compose eval path: [docs/EVAL.md](docs/EVAL.md)
 - UI-specific implementation guidance: [ui/AGENTS.md](ui/AGENTS.md)
 - Policy details and CEL examples: [docs/POLICY.md](docs/POLICY.md)
 - Registry and config details: [docs/REGISTRY.md](docs/REGISTRY.md), [docs/CONFIGURATION.md](docs/CONFIGURATION.md)

@@ -12,6 +12,7 @@ export class APIError extends Error {
 export class APIClient {
   private baseURL: string;
   private apiKey: string | null;
+  private unauthorizedHandlers: Array<() => void> = [];
 
   constructor(baseURL: string = '') {
     this.baseURL = baseURL;
@@ -21,6 +22,18 @@ export class APIClient {
   setAPIKey(key: string) { this.apiKey = key; }
   clearAPIKey() { this.apiKey = null; }
   getAPIKey() { return this.apiKey; }
+
+  /** Register a callback for HTTP 401. Returns an unsubscribe function. */
+  onUnauthorized(handler: () => void): () => void {
+    this.unauthorizedHandlers.push(handler);
+    return () => {
+      this.unauthorizedHandlers = this.unauthorizedHandlers.filter(h => h !== handler);
+    };
+  }
+
+  private notifyUnauthorized() {
+    for (const h of this.unauthorizedHandlers) h();
+  }
 
   private headers(): Record<string, string> {
     const h: Record<string, string> = { 'Content-Type': 'application/json' };
@@ -43,7 +56,10 @@ export class APIClient {
         ...opts,
         headers: { ...this.headers(), ...(opts.headers as Record<string, string> || {}) },
       });
-      if (response.status === 401) throw new APIError('Unauthorized', 401, 'Authentication required');
+      if (response.status === 401) {
+        this.notifyUnauthorized();
+        throw new APIError('Unauthorized', 401, 'Authentication required');
+      }
       if (!response.ok) {
         const err = await response.json().catch(() => ({}));
         throw new APIError(err.error || 'Request failed', response.status, err.details || response.statusText);
@@ -79,6 +95,10 @@ export class APIClient {
   private async requestText(endpoint: string): Promise<string> {
     const url = `${this.baseURL}${endpoint}`;
     const response = await fetch(url, { method: 'GET', mode: 'cors', credentials: 'omit', headers: this.headers() });
+    if (response.status === 401) {
+      this.notifyUnauthorized();
+      throw new APIError('Unauthorized', 401, 'Authentication required');
+    }
     if (!response.ok) throw new APIError('Request failed', response.status, response.statusText);
     return response.text();
   }
