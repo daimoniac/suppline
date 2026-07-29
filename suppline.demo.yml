@@ -46,3 +46,38 @@ sync:
     x-policy:
       expression: "false"
       failureMessage: "demo-fail is intentionally blocked"
+
+  # Semver-style filter locked to three patch tags (no libc variants).
+  - source: public.ecr.aws/docker/library/alpine
+    target: registry:5000/demo-semver
+    type: repository
+    platform: linux/amd64
+    tags:
+      semverRange:
+        - ">=3.20.0 <3.20.3"
+      allow:
+        - "^3\\.20\\.[0-2]$"
+      deny:
+        - "latest"
+    x-policy:
+      expression: "true"
+      failureMessage: "demo-semver should never fail"
+
+  # Real CVE + VEX exemption (distinct digest from demo-fail so it is scanned).
+  # Policy fails on CVE-2023-5363 unless VEX-exempted → with x-vex below it passes.
+  - source: public.ecr.aws/docker/library/alpine:3.18.3
+    target: registry:5000/demo-vex:3.18.3
+    type: image
+    platform: linux/amd64
+    x-policy:
+      expression: |
+        vulnerabilities.filter(v,
+          v.id == "CVE-2023-5363" && !v.exempted
+        ).size() == 0
+      failureMessage: "CVE-2023-5363 must be fixed or VEX-exempted"
+    x-vex:
+      - id: CVE-2023-5363
+        state: not_affected
+        justification: vulnerable_code_not_in_execute_path
+        detail: "Eval demo policy exception — cipher-init path not exercised in this image"
+        expires_at: 2099-12-31T23:59:59Z

@@ -55,7 +55,9 @@ curl -s -H "Authorization: Bearer demo" http://localhost:8080/api/v1/scans | hea
 | Registry | Bundled `registry:2` over HTTP — **not** for production |
 | Sources | `public.ecr.aws` (no auth). Docker Hub is optional via `.env` |
 | Signing | Cosign keypair auto-generated into `./keys/demo` on first start (does not touch existing `./keys/cosign.*`) |
-| Policies | Intentional demo CEL: `true` / `false` so pass+fail always show |
+| `demo-pass` / `demo-fail` | Intentional CEL `true` / `false` so pass+fail always show for the gate |
+| `demo-semver` | Repository sync with `semverRange: ">=3.20.0 <3.20.3"` + allow `^3\.20\.[0-2]$` → tags `3.20.0`, `3.20.1`, `3.20.2` |
+| `demo-vex` | Blocks `CVE-2023-5363` unless VEX-exempted; ships a `not_affected` exception so the image **passes** |
 | API key | Fixed `demo` — local eval only |
 
 Config lives in [`suppline.demo.yml`](https://github.com/daimoniac/suppline/blob/main/suppline.demo.yml).
@@ -65,6 +67,8 @@ Config lives in [`suppline.demo.yml`](https://github.com/daimoniac/suppline/blob
 - [ ] UI loads with key `demo`
 - [ ] `demo-pass` shows **passed** and attestations on the digest
 - [ ] `demo-fail` shows **failed** with the demo failure message
+- [ ] `demo-semver` shows **three** tags (`3.20.0`, `3.20.1`, `3.20.2`)
+- [ ] `demo-vex` shows **passed** with `CVE-2023-5363` exempted (tag `3.18.3`; VEX Statements / scan detail)
 - [ ] Attestation gate POC admits pass / denies fail:
 
 ```bash
