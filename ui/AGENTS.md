@@ -10,7 +10,7 @@
 | Language | TypeScript 6.0 (strict mode) |
 | Build tool | Vite 8 |
 | Styling | Tailwind CSS 4 (CSS-first config via `@tailwindcss/vite` — **no `tailwind.config.js`**) |
-| Routing | React Router DOM v7 (BrowserRouter + nested routes) |
+| Routing | React Router v8 (BrowserRouter + nested routes) |
 | Icons | lucide-react |
 | HTTP | Native `fetch` — no axios, no React Query |
 | State | Local `useState`/`useEffect` per page + React Context for auth/toast |

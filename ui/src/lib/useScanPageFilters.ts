@@ -1,5 +1,5 @@
 import { useCallback, useState } from 'react';
-import type { SetURLSearchParams } from 'react-router-dom';
+import type { SetURLSearchParams } from 'react-router';
 
 interface UseScanPageFiltersOptions {
   initialRepository: string;

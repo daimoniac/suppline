@@ -2,7 +2,7 @@ import { cn, severityColor, copyToClipboard, truncateDigest, getRuntimeClusterCo
 import { Loader2, AlertCircle, Search, ChevronUp, ChevronDown, Copy } from 'lucide-react';
 import type { ReactNode } from 'react';
 import type { RuntimeInventory } from '../lib/api';
-import { Link } from 'react-router-dom';
+import { Link } from 'react-router';
 import { useImageUsageFilter } from '../lib/imageUsageFilter';
 import { useToast } from '../lib/toast';
 

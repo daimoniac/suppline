@@ -1,4 +1,4 @@
-import { Link } from 'react-router-dom';
+import { Link } from 'react-router';
 import { PolicyAgentPromptCard } from './PolicyAgentPromptCard';
 import { PolicyDescriptionText } from './ui';
 import type { PolicyInfo, Scan } from '../lib/api';

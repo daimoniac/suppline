@@ -1,5 +1,5 @@
 import { useEffect, useState, useCallback } from 'react';
-import { Link, useSearchParams } from 'react-router-dom';
+import { Link, useSearchParams } from 'react-router';
 import { useAuth } from '../lib/auth';
 import { formatDate, isPast, isWithinDays, daysUntil } from '../lib/utils';
 import { LoadingState, ErrorState, PageHeader, Pagination, PageFiltersBar, FilterActionButton } from '../components/ui';

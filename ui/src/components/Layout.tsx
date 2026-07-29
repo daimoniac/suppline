@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { Link, NavLink, Outlet } from 'react-router-dom';
+import { Link, NavLink, Outlet } from 'react-router';
 import { useAuth } from '../lib/auth';
 import {
   LayoutDashboard, Layers, ScanSearch, ShieldAlert, Bug, ShieldCheck,
