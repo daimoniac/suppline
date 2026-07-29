@@ -255,36 +255,36 @@ imagePullSecrets: []
 # The bundled registry:3 is for labs / bootstrap only — do not treat it as a long-term prod registry.
 registry:
   enabled: false
-  
+
   # Image configuration
   image:
     repository: registry
     tag: 3.1.1
     pullPolicy: IfNotPresent
-  
+
   # Service configuration
   service:
     type: ClusterIP
     port: 5000
-  
+
   # Persistence for registry data
   persistence:
     enabled: true
     accessMode: ReadWriteOnce
     size: 10Gi
     storageClass: ""
-  
+
   # Registry credentials
   # If not provided, username defaults to "suppline" and password is auto-generated
   # credentials:
   #   username: ""  # Leave empty for default "suppline"
   #   password: ""  # Leave empty for auto-generated password
-  
+
   # Registry secrets
   # htpasswd will be automatically generated from credentials
   # secrets:
   #   haSharedSecret: ""  # Optional: shared secret for registry security
-  
+
   # Resources
   resources:
     requests:
@@ -293,7 +293,7 @@ registry:
     limits:
       memory: "512Mi"
       cpu: "500m"
-  
+
   # Security context
   securityContext:
     enabled: true
