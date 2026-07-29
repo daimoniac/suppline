@@ -104,6 +104,171 @@ func (s *SQLiteStore) CleanupArtifactTag(ctx context.Context, repository, digest
 	})
 }
 
+// CleanupRepository removes all artifacts and scan records for a repository, then
+// deletes the repository row. Used when a sync target is removed from configuration.
+func (s *SQLiteStore) CleanupRepository(ctx context.Context, repository string) error {
+	return s.executeCleanup(ctx, func(tx *sql.Tx) error {
+		var repositoryID int64
+		err := tx.QueryRowContext(ctx, `
+			SELECT id FROM repositories WHERE name = ?
+		`, repository).Scan(&repositoryID)
+		if err == sql.ErrNoRows {
+			return nil
+		}
+		if err != nil {
+			return errors.NewTransientf("failed to query repository for cleanup: %w", err)
+		}
+
+		artifactRows, err := tx.QueryContext(ctx, `
+			SELECT id FROM artifacts WHERE repository_id = ?
+		`, repositoryID)
+		if err != nil {
+			return errors.NewTransientf("failed to query artifacts for repository cleanup: %w", err)
+		}
+
+		var artifactIDs []int64
+		for artifactRows.Next() {
+			var id int64
+			if err := artifactRows.Scan(&id); err != nil {
+				_ = artifactRows.Close()
+				return errors.NewTransientf("failed to scan artifact id for repository cleanup: %w", err)
+			}
+			artifactIDs = append(artifactIDs, id)
+		}
+		if err := artifactRows.Err(); err != nil {
+			_ = artifactRows.Close()
+			return errors.NewTransientf("error iterating artifacts for repository cleanup: %w", err)
+		}
+		if err := artifactRows.Close(); err != nil {
+			return errors.NewTransientf("failed to close artifact rows for repository cleanup: %w", err)
+		}
+
+		if len(artifactIDs) > 0 {
+			placeholders := make([]string, len(artifactIDs))
+			args := make([]interface{}, len(artifactIDs))
+			for i, id := range artifactIDs {
+				placeholders[i] = "?"
+				args[i] = id
+			}
+			inClause := strings.Join(placeholders, ",")
+
+			scanRows, err := tx.QueryContext(ctx, fmt.Sprintf(`
+				SELECT id FROM scan_records WHERE artifact_id IN (%s)
+			`, inClause), args...)
+			if err != nil {
+				return errors.NewTransientf("failed to query scan records for repository cleanup: %w", err)
+			}
+
+			var scanIDs []int64
+			for scanRows.Next() {
+				var scanID int64
+				if err := scanRows.Scan(&scanID); err != nil {
+					_ = scanRows.Close()
+					return errors.NewTransientf("failed to scan scan record id for repository cleanup: %w", err)
+				}
+				scanIDs = append(scanIDs, scanID)
+			}
+			if err := scanRows.Err(); err != nil {
+				_ = scanRows.Close()
+				return errors.NewTransientf("error iterating scan records for repository cleanup: %w", err)
+			}
+			if err := scanRows.Close(); err != nil {
+				return errors.NewTransientf("failed to close scan rows for repository cleanup: %w", err)
+			}
+
+			if len(scanIDs) > 0 {
+				scanPlaceholders := make([]string, len(scanIDs))
+				scanArgs := make([]interface{}, len(scanIDs))
+				for i, scanID := range scanIDs {
+					scanPlaceholders[i] = "?"
+					scanArgs[i] = scanID
+				}
+				_, err = tx.ExecContext(ctx, fmt.Sprintf(`
+					UPDATE artifacts SET last_scan_id = NULL WHERE last_scan_id IN (%s)
+				`, strings.Join(scanPlaceholders, ",")), scanArgs...)
+				if err != nil {
+					return errors.NewTransientf("failed to clear last_scan_id for repository cleanup: %w", err)
+				}
+			}
+
+			_, err = tx.ExecContext(ctx, fmt.Sprintf(`
+				DELETE FROM scan_records WHERE artifact_id IN (%s)
+			`, inClause), args...)
+			if err != nil {
+				return errors.NewTransientf("failed to delete scan records for repository cleanup: %w", err)
+			}
+
+			_, err = tx.ExecContext(ctx, `
+				DELETE FROM artifacts WHERE repository_id = ?
+			`, repositoryID)
+			if err != nil {
+				return errors.NewTransientf("failed to delete artifacts for repository cleanup: %w", err)
+			}
+		}
+
+		_, err = tx.ExecContext(ctx, `
+			DELETE FROM repositories WHERE id = ?
+		`, repositoryID)
+		if err != nil {
+			return errors.NewTransientf("failed to delete repository: %w", err)
+		}
+
+		return nil
+	})
+}
+
+// ListArtifactTags returns all stored (tag, digest) bindings for a repository.
+func (s *SQLiteStore) ListArtifactTags(ctx context.Context, repository string) ([]ArtifactTagBinding, error) {
+	rows, err := s.db.QueryContext(ctx, `
+		SELECT a.tag, a.digest
+		FROM artifacts a
+		JOIN repositories r ON a.repository_id = r.id
+		WHERE r.name = ?
+		ORDER BY a.tag ASC, a.id ASC
+	`, repository)
+	if err != nil {
+		return nil, errors.NewTransientf("failed to list artifact tags: %w", err)
+	}
+	defer rows.Close()
+
+	var bindings []ArtifactTagBinding
+	for rows.Next() {
+		var binding ArtifactTagBinding
+		if err := rows.Scan(&binding.Tag, &binding.Digest); err != nil {
+			return nil, errors.NewTransientf("failed to scan artifact tag binding: %w", err)
+		}
+		bindings = append(bindings, binding)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, errors.NewTransientf("error iterating artifact tags: %w", err)
+	}
+	return bindings, nil
+}
+
+// ListStoredRepositoryNames returns every repository name present in the state store.
+func (s *SQLiteStore) ListStoredRepositoryNames(ctx context.Context) ([]string, error) {
+	rows, err := s.db.QueryContext(ctx, `
+		SELECT name FROM repositories ORDER BY name ASC
+	`)
+	if err != nil {
+		return nil, errors.NewTransientf("failed to list stored repository names: %w", err)
+	}
+	defer rows.Close()
+
+	var names []string
+	for rows.Next() {
+		var name string
+		if err := rows.Scan(&name); err != nil {
+			return nil, errors.NewTransientf("failed to scan repository name: %w", err)
+		}
+		names = append(names, name)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, errors.NewTransientf("error iterating repository names: %w", err)
+	}
+	return names, nil
+}
+
 func (s *SQLiteStore) CleanupArtifactScans(ctx context.Context, digest string) error {
 	return s.executeCleanup(ctx, func(tx *sql.Tx) error {
 		// First, get all artifact IDs and repository IDs for this digest

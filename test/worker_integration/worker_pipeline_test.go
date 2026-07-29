@@ -200,6 +200,22 @@ func (m *mockStateStore) CleanupArtifactTag(ctx context.Context, repository, dig
 	return nil
 }
 
+func (m *mockStateStore) CleanupRepository(ctx context.Context, repository string) error {
+	m.cleanupCalled["repository_"+repository] = true
+	if err, exists := m.cleanupErrors["repository_"+repository]; exists {
+		return err
+	}
+	return nil
+}
+
+func (m *mockStateStore) ListArtifactTags(ctx context.Context, repository string) ([]statestore.ArtifactTagBinding, error) {
+	return nil, nil
+}
+
+func (m *mockStateStore) ListStoredRepositoryNames(ctx context.Context) ([]string, error) {
+	return nil, nil
+}
+
 func (m *mockStateStore) CleanupOrphanedRepositories(ctx context.Context) ([]string, error) {
 	m.cleanupCalled["repositories"] = true
 	if err, exists := m.cleanupErrors["repositories"]; exists {

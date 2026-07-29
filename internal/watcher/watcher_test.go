@@ -851,3 +851,191 @@ func TestWatcher_Discover_SkipWhenManualRescanPending(t *testing.T) {
 		t.Error("Expected IsRescan to be true for manual task")
 	}
 }
+
+// reconcilingMockStore extends mockStateStore with cleanup/reconciliation support.
+type reconcilingMockStore struct {
+	mockStateStore
+	artifactTags   map[string][]statestore.ArtifactTagBinding // repo -> bindings
+	repoNames      []string
+	cleanedTags    []string // "repo:tag:digest"
+	cleanedRepos []string
+}
+
+func (m *reconcilingMockStore) ListArtifactTags(ctx context.Context, repository string) ([]statestore.ArtifactTagBinding, error) {
+	if m.err != nil {
+		return nil, m.err
+	}
+	return append([]statestore.ArtifactTagBinding(nil), m.artifactTags[repository]...), nil
+}
+
+func (m *reconcilingMockStore) ListStoredRepositoryNames(ctx context.Context) ([]string, error) {
+	if m.err != nil {
+		return nil, m.err
+	}
+	return append([]string(nil), m.repoNames...), nil
+}
+
+func (m *reconcilingMockStore) CleanupArtifactTag(ctx context.Context, repository, digest, tag string) error {
+	if m.err != nil {
+		return m.err
+	}
+	m.cleanedTags = append(m.cleanedTags, fmt.Sprintf("%s:%s:%s", repository, tag, digest))
+	bindings := m.artifactTags[repository]
+	filtered := bindings[:0]
+	for _, b := range bindings {
+		if !(b.Tag == tag && b.Digest == digest) {
+			filtered = append(filtered, b)
+		}
+	}
+	m.artifactTags[repository] = filtered
+	return nil
+}
+
+func (m *reconcilingMockStore) CleanupRepository(ctx context.Context, repository string) error {
+	if m.err != nil {
+		return m.err
+	}
+	m.cleanedRepos = append(m.cleanedRepos, repository)
+	delete(m.artifactTags, repository)
+	filtered := m.repoNames[:0]
+	for _, name := range m.repoNames {
+		if name != repository {
+			filtered = append(filtered, name)
+		}
+	}
+	m.repoNames = filtered
+	return nil
+}
+
+func (m *reconcilingMockStore) CleanupArtifactScans(ctx context.Context, digest string) error {
+	return nil
+}
+
+func (m *reconcilingMockStore) CleanupOrphanedRepositories(ctx context.Context) ([]string, error) {
+	return nil, nil
+}
+
+func (m *reconcilingMockStore) CleanupExcessScans(ctx context.Context, digest string, maxScansToKeep int) error {
+	return nil
+}
+
+func TestWatcher_Discover_ReconcilesStaleTags(t *testing.T) {
+	ctx := context.Background()
+	repo := "hostingmaloonde/n8nio_n8n"
+
+	mockRegistry := &mockRegistryClient{
+		repositories: []string{repo},
+		tags: map[string][]string{
+			repo: {"2.30.1", "2.33.0"},
+		},
+		digests: map[string]string{
+			repo + ":2.30.1": "sha256:live1",
+			repo + ":2.33.0": "sha256:live2",
+		},
+	}
+
+	mockStore := &reconcilingMockStore{
+		mockStateStore: mockStateStore{
+			scans: map[string]*statestore.ScanRecord{
+				"sha256:live1": {Digest: "sha256:live1", Repository: repo, Tag: "2.30.1", CreatedAt: time.Now().Unix()},
+				"sha256:live2": {Digest: "sha256:live2", Repository: repo, Tag: "2.33.0", CreatedAt: time.Now().Unix()},
+			},
+		},
+		artifactTags: map[string][]statestore.ArtifactTagBinding{
+			repo: {
+				{Tag: "2.22.3", Digest: "sha256:stale1"},
+				{Tag: "2.30.0", Digest: "sha256:stale2"},
+				{Tag: "2.30.1", Digest: "sha256:live1"},
+				{Tag: "2.33.0", Digest: "sha256:live2"},
+			},
+		},
+		repoNames: []string{repo},
+	}
+
+	mockQueue := queue.NewInMemoryQueue(100)
+	regsyncCfg := &config.RegsyncConfig{
+		Defaults: config.Defaults{RescanInterval: "24h"},
+		Sync:     []config.SyncEntry{{Target: repo}},
+	}
+	logger := observability.NewLogger("error")
+	w := NewWatcher(mockRegistry, regsyncCfg, mockStore, mockQueue, Config{
+		PollInterval:   5 * time.Second,
+		RescanInterval: 24 * time.Hour,
+	}, logger)
+
+	if err := w.Discover(ctx); err != nil {
+		t.Fatalf("Discover failed: %v", err)
+	}
+
+	if len(mockStore.cleanedTags) != 2 {
+		t.Fatalf("expected 2 stale tags cleaned, got %v", mockStore.cleanedTags)
+	}
+	want := map[string]bool{
+		repo + ":2.22.3:sha256:stale1": true,
+		repo + ":2.30.0:sha256:stale2": true,
+	}
+	for _, cleaned := range mockStore.cleanedTags {
+		if !want[cleaned] {
+			t.Errorf("unexpected cleaned tag %q", cleaned)
+		}
+	}
+	remaining := mockStore.artifactTags[repo]
+	if len(remaining) != 2 {
+		t.Fatalf("expected 2 live tags remaining, got %+v", remaining)
+	}
+}
+
+func TestWatcher_Discover_ReconcilesOrphanedRepositories(t *testing.T) {
+	ctx := context.Background()
+	liveRepo := "hostingmaloonde/n8nio_n8n"
+	orphanRepo := "hostingmaloonde/getmeili_meilisearch"
+
+	mockRegistry := &mockRegistryClient{
+		repositories: []string{liveRepo},
+		tags: map[string][]string{
+			liveRepo: {"2.33.0"},
+		},
+		digests: map[string]string{
+			liveRepo + ":2.33.0": "sha256:live",
+		},
+	}
+
+	mockStore := &reconcilingMockStore{
+		mockStateStore: mockStateStore{
+			scans: map[string]*statestore.ScanRecord{
+				"sha256:live": {Digest: "sha256:live", Repository: liveRepo, Tag: "2.33.0", CreatedAt: time.Now().Unix()},
+			},
+		},
+		artifactTags: map[string][]statestore.ArtifactTagBinding{
+			liveRepo:   {{Tag: "2.33.0", Digest: "sha256:live"}},
+			orphanRepo: {{Tag: "v1.51.0", Digest: "sha256:orphan"}},
+		},
+		repoNames: []string{liveRepo, orphanRepo},
+	}
+
+	mockQueue := queue.NewInMemoryQueue(100)
+	regsyncCfg := &config.RegsyncConfig{
+		Defaults: config.Defaults{RescanInterval: "24h"},
+		Sync:     []config.SyncEntry{{Target: liveRepo}},
+	}
+	logger := observability.NewLogger("error")
+	w := NewWatcher(mockRegistry, regsyncCfg, mockStore, mockQueue, Config{
+		PollInterval:   5 * time.Second,
+		RescanInterval: 24 * time.Hour,
+	}, logger)
+
+	if err := w.Discover(ctx); err != nil {
+		t.Fatalf("Discover failed: %v", err)
+	}
+
+	if len(mockStore.cleanedRepos) != 1 || mockStore.cleanedRepos[0] != orphanRepo {
+		t.Fatalf("expected orphaned repo %q cleaned, got %v", orphanRepo, mockStore.cleanedRepos)
+	}
+	if _, exists := mockStore.artifactTags[orphanRepo]; exists {
+		t.Fatal("expected orphaned repo artifacts removed")
+	}
+	if len(mockStore.repoNames) != 1 || mockStore.repoNames[0] != liveRepo {
+		t.Fatalf("expected only live repo remaining, got %v", mockStore.repoNames)
+	}
+}
+

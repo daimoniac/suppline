@@ -101,6 +101,11 @@ func (w *watcherImpl) Discover(ctx context.Context) error {
 	w.logger.Info("discovered target repositories",
 		"count", len(repositories))
 
+	configured := make(map[string]struct{}, len(repositories))
+	for _, repo := range repositories {
+		configured[repo] = struct{}{}
+	}
+
 	// Process each repository
 	// Note: Rescan interval checking is handled within processTag's shouldScanImage logic
 	for _, repo := range repositories {
@@ -111,6 +116,8 @@ func (w *watcherImpl) Discover(ctx context.Context) error {
 			continue
 		}
 	}
+
+	w.reconcileOrphanedRepositories(ctx, configured)
 
 	w.logger.Info("discovery cycle completed")
 	return nil
@@ -163,7 +170,94 @@ func (w *watcherImpl) processRepository(ctx context.Context, repo string) error 
 		}
 	}
 
+	w.reconcileStoredTags(ctx, repo, tags)
+
 	return nil
+}
+
+// reconcileStoredTags removes stored tag bindings that are no longer present in the
+// live (or configured) tag set for a managed repository.
+func (w *watcherImpl) reconcileStoredTags(ctx context.Context, repo string, liveTags []string) {
+	cleanupStore, ok := w.stateStore.(statestore.StateStoreCleanup)
+	if !ok {
+		return
+	}
+
+	stored, err := cleanupStore.ListArtifactTags(ctx, repo)
+	if err != nil {
+		w.logger.Warn("failed to list stored tags for reconciliation",
+			"repo", repo,
+			"error", err.Error())
+		return
+	}
+
+	liveSet := make(map[string]struct{}, len(liveTags))
+	for _, tag := range liveTags {
+		liveSet[tag] = struct{}{}
+	}
+
+	var removed int
+	for _, binding := range stored {
+		if _, exists := liveSet[binding.Tag]; exists {
+			continue
+		}
+		w.logger.Info("removing stale tag binding during discovery",
+			"repo", repo,
+			"tag", binding.Tag,
+			"digest", binding.Digest)
+		if cleanupErr := cleanupStore.CleanupArtifactTag(ctx, repo, binding.Digest, binding.Tag); cleanupErr != nil {
+			w.logger.Error("failed to cleanup stale tag during discovery",
+				"repo", repo,
+				"tag", binding.Tag,
+				"digest", binding.Digest,
+				"error", cleanupErr.Error())
+			continue
+		}
+		removed++
+	}
+
+	if removed > 0 {
+		w.logger.Info("reconciled stale tags for repository",
+			"repo", repo,
+			"removed", removed)
+	}
+}
+
+// reconcileOrphanedRepositories removes state for repositories that are no longer
+// configured as sync targets.
+func (w *watcherImpl) reconcileOrphanedRepositories(ctx context.Context, configured map[string]struct{}) {
+	cleanupStore, ok := w.stateStore.(statestore.StateStoreCleanup)
+	if !ok {
+		return
+	}
+
+	storedRepos, err := cleanupStore.ListStoredRepositoryNames(ctx)
+	if err != nil {
+		w.logger.Warn("failed to list stored repositories for reconciliation",
+			"error", err.Error())
+		return
+	}
+
+	var removed int
+	for _, repo := range storedRepos {
+		if _, ok := configured[repo]; ok {
+			continue
+		}
+		w.logger.Info("removing orphaned repository no longer in sync config",
+			"repo", repo)
+		if cleanupErr := cleanupStore.CleanupRepository(ctx, repo); cleanupErr != nil {
+			w.logger.Error("failed to cleanup orphaned repository",
+				"repo", repo,
+				"error", cleanupErr.Error())
+			continue
+		}
+		removed++
+	}
+
+	if removed > 0 {
+		w.logger.Info("reconciled orphaned repositories",
+			"removed", removed)
+	}
 }
 
 // shouldScanImage determines if an image should be scanned based on digest comparison and scan history
@@ -343,3 +437,4 @@ func (w *watcherImpl) checkExpiringVEXStatements(repo string, statements []types
 		}
 	}
 }
+

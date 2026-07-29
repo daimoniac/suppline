@@ -143,6 +143,16 @@ type StateStoreCleanup interface {
 	// Sibling tags for the same digest are preserved. Empty repositories are removed.
 	CleanupArtifactTag(ctx context.Context, repository, digest, tag string) error
 
+	// CleanupRepository removes all artifacts and scan records for a repository, then
+	// deletes the repository row. Used when a sync target is removed from configuration.
+	CleanupRepository(ctx context.Context, repository string) error
+
+	// ListArtifactTags returns all stored (tag, digest) bindings for a repository.
+	ListArtifactTags(ctx context.Context, repository string) ([]ArtifactTagBinding, error)
+
+	// ListStoredRepositoryNames returns every repository name present in the state store.
+	ListStoredRepositoryNames(ctx context.Context) ([]string, error)
+
 	// CleanupOrphanedRepositories removes repositories with no remaining artifacts.
 	// Returns a list of deleted repository names for logging purposes.
 	CleanupOrphanedRepositories(ctx context.Context) ([]string, error)
@@ -204,6 +214,13 @@ type TagRef struct {
 	Repository string
 	Tag        string
 	LastSeen   int64 // Unix timestamp in seconds
+}
+
+// ArtifactTagBinding is a stored (tag, digest) pair for a repository.
+// Used by watcher reconciliation to prune tags removed from the registry.
+type ArtifactTagBinding struct {
+	Tag    string
+	Digest string
 }
 
 // StateStoreQuery defines the extended interface for querying scan data.
