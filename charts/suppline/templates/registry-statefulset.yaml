@@ -169,6 +169,10 @@ spec:
           emptyDir: {}
         - name: certs
           emptyDir: {}
+        {{- if not .Values.registry.persistence.enabled }}
+        - name: data
+          emptyDir: {}
+        {{- end }}
       {{- with .Values.nodeSelector }}
       nodeSelector:
         {{- toYaml . | nindent 8 }}

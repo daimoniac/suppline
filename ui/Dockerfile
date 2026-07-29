@@ -14,14 +14,16 @@ FROM nginx:1.29.8-alpine3.23
 # Remove default nginx static assets
 RUN rm -rf /usr/share/nginx/html/*
 
-# Copy built assets from builder stage
-COPY --from=builder /app/dist /usr/share/nginx/html
+# Copy built assets (nginx user must own html so runtime can write config.json)
+COPY --from=builder --chown=nginx:nginx /app/dist /usr/share/nginx/html
 
-# Copy nginx config
-COPY nginx.conf /etc/nginx/conf.d/default.conf.template
+# Copy nginx config template (writable for envsubst at start)
+COPY --chown=nginx:nginx nginx.conf /etc/nginx/conf.d/default.conf.template
 
 # Copy environment injection script
-COPY docker-entrypoint.d/40-inject-env.sh /docker-entrypoint.d/40-inject-env.sh
-RUN chmod +x /docker-entrypoint.d/40-inject-env.sh
+COPY --chown=nginx:nginx docker-entrypoint.d/40-inject-env.sh /docker-entrypoint.d/40-inject-env.sh
+RUN chmod +x /docker-entrypoint.d/40-inject-env.sh \
+ && chown -R nginx:nginx /etc/nginx/conf.d /var/cache/nginx /var/log/nginx \
+ && touch /var/run/nginx.pid && chown nginx:nginx /var/run/nginx.pid
 
 EXPOSE 80
