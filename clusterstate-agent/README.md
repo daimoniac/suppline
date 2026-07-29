@@ -146,7 +146,7 @@ SUPPLINE_API_KEY=<key>
 CLUSTERSTATE_AGENT_IMAGE_TAG=latest
 ```
 
-No CGO. The binary is statically linked and runs in a minimal `alpine:3.21` image.
+No CGO. The binary is statically linked and runs in a minimal `alpine:3.24` image.
 
 ## Local development against a real cluster API
 
