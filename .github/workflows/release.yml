@@ -109,41 +109,11 @@ jobs:
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
-  build-trivy:
-    runs-on: ubuntu-latest
-    needs: create-release
-    steps:
-      - uses: actions/checkout@v4
-      - uses: docker/setup-qemu-action@v3
-      - uses: docker/setup-buildx-action@v3
-      - uses: docker/login-action@v3
-        with:
-          registry: ${{ env.REGISTRY }}
-          username: ${{ github.actor }}
-          password: ${{ secrets.GITHUB_TOKEN }}
-      - id: meta
-        uses: docker/metadata-action@v5
-        with:
-          images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}-trivy
-          tags: |
-            type=semver,pattern={{version}}
-            type=semver,pattern={{major}}.{{minor}}
-            type=semver,pattern={{major}}
-            type=raw,value=latest
-      - uses: docker/build-push-action@v6
-        with:
-          context: .
-          file: ./Dockerfile.trivy
-          platforms: linux/amd64,linux/arm64
-          push: true
-          tags: ${{ steps.meta.outputs.tags }}
-          labels: ${{ steps.meta.outputs.labels }}
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
+  # Trivy: use upstream aquasec/trivy (Compose + Helm). No custom image.
 
   mirror-dockerhub:
     runs-on: ubuntu-latest
-    needs: [create-release, build-backend, build-ui, build-trivy]
+    needs: [create-release, build-backend, build-ui]
     steps:
       - uses: docker/setup-buildx-action@v3
 
@@ -179,11 +149,10 @@ jobs:
           }
           mirror "ghcr.io/${{ github.repository }}" "daimon666/suppline"
           mirror "ghcr.io/${{ github.repository }}-ui" "daimon666/suppline-ui"
-          mirror "ghcr.io/${{ github.repository }}-trivy" "daimon666/suppline-trivy"
 
   package-helm:
     runs-on: ubuntu-latest
-    needs: [create-release, build-backend, build-ui, build-trivy]
+    needs: [create-release, build-backend, build-ui]
     steps:
       - uses: actions/checkout@v4
 

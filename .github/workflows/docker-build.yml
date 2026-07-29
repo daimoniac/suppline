@@ -31,10 +31,6 @@ jobs:
             context: ./ui
             file: ./ui/Dockerfile
             image_suffix: "-ui"
-          - name: trivy
-            context: .
-            file: ./Dockerfile.trivy
-            image_suffix: "-trivy"
 
     steps:
       - uses: actions/checkout@v4

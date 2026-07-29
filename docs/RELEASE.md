@@ -32,7 +32,7 @@ That triggers [`.github/workflows/release.yml`](../.github/workflows/release.yml
 |----------|----------|
 | Backend | `ghcr.io/daimoniac/suppline:<version>` and `daimon666/suppline:<version>` (+ `X.Y`, `X`, `latest`) |
 | UI | `ghcr.io/daimoniac/suppline-ui:<version>` and `daimon666/suppline-ui:<version>` |
-| Trivy sidecar | `ghcr.io/daimoniac/suppline-trivy:<version>` and `daimon666/suppline-trivy:<version>` |
+| Trivy | upstream `aquasec/trivy` (Compose + Helm) — not rebuilt |
 | Helm chart | `oci://ghcr.io/daimoniac/charts/suppline` (version = release) |
 
 Requires repo secrets `DOCKERHUB_USERNAME` and `DOCKERHUB_TOKEN` (Hub access token) so the release job can mirror multi-arch manifests to Docker Hub after GHCR publish.
