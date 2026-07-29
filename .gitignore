@@ -17,6 +17,8 @@ go.work
 
 # Configuration files with secrets
 suppline.yml
+# Chart ships a non-secret example consumed by Helm .Files.Get
+!charts/suppline/suppline.yml
 /keys/*
 !/keys/.gitkeep
 .env

@@ -1,158 +1,112 @@
 # Suppline Helm Chart
 
-This Helm chart deploys Suppline, a supply chain security scanner, to a Kubernetes cluster.
+Production install path for [suppline](https://suppline.cloud) — self-hosted image intake gateway (mirror → scan → gate → attest).
+
+**Try before you install:** zero-cred Compose eval — see [docs/EVAL.md](../../docs/EVAL.md).
+
+## Packaging choice
+
+Helm is the supported Kubernetes install. Raw manifests / Kustomize are not maintained as a second tree; generate them if needed:
+
+```bash
+helm template suppline ./charts/suppline \
+  -f values.yaml -f values-secrets.yaml > manifests.yaml
+```
 
 ## Prerequisites
 
 - Kubernetes 1.19+
-- Helm 3.0+
-- PV provisioner support in the underlying infrastructure (if persistence is enabled)
+- Helm 3
+- A **target registry you control** (Harbor, ECR, ACR, Artifactory, …) — preferred for production
+- PersistentVolume support if `persistence.data.enabled` (SQLite state)
+- Cosign keypair for attestation signing
 
-## Installing the Chart
-
-To install the chart with the release name `suppline`:
-
-```bash
-helm install suppline ./charts/suppline
-```
-
-To install with custom values:
+## Quick install (BYO registry)
 
 ```bash
-helm install suppline ./charts/suppline -f my-values.yaml
+cp charts/suppline/values-secrets.yaml.example charts/suppline/values-secrets.yaml
+# Edit secrets: SUPPLINE_API_KEY, ATTESTATION_KEY*, SUPPLINE_REGISTRY_*, upstream creds
+# Edit sync/policy: either charts/suppline/suppline.yml or backend.supplineConfig in values
+
+helm upgrade --install suppline ./charts/suppline \
+  -n suppline --create-namespace \
+  -f charts/suppline/values.yaml \
+  -f charts/suppline/values-secrets.yaml
 ```
 
-## Uninstalling the Chart
+Point `sync[].target` (and `creds`) at your registry. The chart example uses `{{ env "SUPPLINE_REGISTRY_URL" }}`.
 
-To uninstall/delete the `suppline` deployment:
-
-```bash
-helm uninstall suppline
-```
-
-## Configuration
-
-The following table lists the configurable parameters of the Suppline chart and their default values.
-
-### Global Settings
-
-| Parameter | Description | Default |
-|-----------|-------------|---------|
-| `global.namespace` | Namespace for deployment | `suppline` |
-
-### Backend Configuration
-
-| Parameter | Description | Default |
-|-----------|-------------|---------|
-| `backend.replicaCount` | Number of backend replicas | `1` |
-| `backend.image.repository` | Backend image repository | `suppline` |
-| `backend.image.tag` | Backend image tag | `latest` |
-| `backend.image.pullPolicy` | Image pull policy | `IfNotPresent` |
-| `backend.service.type` | Service type | `ClusterIP` |
-| `backend.service.port` | API service port | `8080` |
-| `backend.service.metricsPort` | Metrics service port | `9090` |
-| `backend.service.healthPort` | Health check port | `8081` |
-| `backend.resources.requests.memory` | Memory request | `512Mi` |
-| `backend.resources.requests.cpu` | CPU request | `500m` |
-| `backend.resources.limits.memory` | Memory limit | `1Gi` |
-| `backend.resources.limits.cpu` | CPU limit | `1000m` |
-| `backend.supplineConfig` | Suppline configuration (suppline.yml content) | See values.yaml |
-| `backend.attestationKey.enabled` | Enable attestation signing | `true` |
-| `backend.attestationKey.key` | Base64 encoded cosign key | `""` |
-| `backend.attestationKey.password` | Cosign key password | `""` |
-
-### Trivy Configuration
-
-| Parameter | Description | Default |
-|-----------|-------------|---------|
-| `trivy.image.repository` | Trivy image repository | `aquasec/trivy` |
-| `trivy.image.tag` | Trivy image tag | `0.72.0` |
-| `trivy.resources.requests.memory` | Memory request | `1Gi` |
-| `trivy.resources.limits.memory` | Memory limit | `2Gi` |
-
-### Frontend Configuration
-
-| Parameter | Description | Default |
-|-----------|-------------|---------|
-| `frontend.enabled` | Enable frontend deployment | `true` |
-| `frontend.replicaCount` | Number of frontend replicas | `2` |
-| `frontend.image.repository` | Frontend image repository | `nginx` |
-| `frontend.image.tag` | Frontend image tag | `alpine` |
-| `frontend.apiBaseURL` | Backend API URL for frontend | `http://suppline:8080` |
-| `frontend.ingress.enabled` | Enable ingress | `false` |
-| `frontend.ingress.className` | Ingress class name | `""` |
-| `frontend.ingress.hosts` | Ingress hosts configuration | See values.yaml |
-
-### Persistence Configuration
-
-| Parameter | Description | Default |
-|-----------|-------------|---------|
-| `persistence.data.enabled` | Enable data persistence | `true` |
-| `persistence.data.size` | Data volume size | `10Gi` |
-| `persistence.data.storageClassName` | Storage class name | `""` |
-| `persistence.trivyCache.enabled` | Enable Trivy cache persistence | `true` |
-| `persistence.trivyCache.size` | Trivy cache volume size | `5Gi` |
-
-### RBAC Configuration
-
-| Parameter | Description | Default |
-|-----------|-------------|---------|
-| `serviceAccount.create` | Create service account | `true` |
-| `serviceAccount.name` | Service account name | `suppline` |
-| `rbac.create` | Create RBAC resources | `true` |
-
-## Example: Custom Configuration
-
-Create a `my-values.yaml` file:
+### Override config without editing the chart
 
 ```yaml
+# my-values.yaml
 backend:
-  image:
-    repository: myregistry.example.com/suppline
-    tag: "v1.0.0"
+  supplineConfig: |
+    version: 1
+    creds:
+      - registry: '{{ env "SUPPLINE_REGISTRY_URL" }}'
+        user: '{{ env "SUPPLINE_REGISTRY_USERNAME" }}'
+        pass: '{{ env "SUPPLINE_REGISTRY_PASSWORD" }}'
+    defaults:
+      x-policy:
+        expression: "criticalCount == 0"
+    sync:
+      - source: public.ecr.aws/docker/library/alpine:3.20.3
+        target: '{{ env "SUPPLINE_REGISTRY_URL" }}/alpine:3.20.3'
+        type: image
+```
 
-frontend:
+## Bundled registry (optional / labs)
+
+Default is `registry.enabled: false`. To bootstrap without an external registry:
+
+```yaml
+registry:
   enabled: true
-  ingress:
-    enabled: true
-    className: nginx
-    hosts:
-      - host: suppline.example.com
-        paths:
-          - path: /
-            pathType: Prefix
-    tls:
-      - secretName: suppline-tls
-        hosts:
-          - suppline.example.com
-
-persistence:
-  data:
-    storageClassName: fast-ssd
-    size: 20Gi
 ```
 
-Then install:
+Do **not** treat the bundled `registry:2` as a long-term production registry. Details: [docs/REGISTRY.md](../../docs/REGISTRY.md).
+
+## Uninstall
 
 ```bash
-helm install suppline ./charts/suppline -f my-values.yaml
+helm uninstall suppline -n suppline
 ```
 
-## Upgrading
+Data PVCs may be retained (`helm.sh/resource-policy: keep`) so reinstalls can reuse SQLite state.
 
-To upgrade an existing release:
+## Configuration reference
 
-```bash
-helm upgrade suppline ./charts/suppline -f my-values.yaml
-```
+| Parameter | Description | Default |
+|-----------|-------------|---------|
+| `backend.image.repository` | Backend image | `daimon666/suppline` |
+| `backend.image.tag` | Backend tag | `latest` |
+| `backend.supplineConfig` | Inline `suppline.yml` (overrides chart file) | unset (use chart `suppline.yml`) |
+| `backend.attestationKey.enabled` | Sign attestations | `true` |
+| `backend.secrets.*` | API key, cosign key, registry creds | via secrets file |
+| `frontend.enabled` | Deploy web UI | `true` |
+| `frontend.image.repository` | UI image | `daimon666/suppline-ui` |
+| `frontend.ingress.enabled` | UI Ingress | `false` |
+| `regsync.enabled` | Deploy regsync | `true` |
+| `registry.enabled` | Bundled registry | `false` (BYO) |
+| `persistence.data.enabled` | SQLite PVC | `true` |
+| `trivy.image.tag` | Trivy sidecar | `0.72.0` |
+
+See `values.yaml` for the full set.
+
+## After install
+
+1. Port-forward or open Ingress to the UI; log in with `SUPPLINE_API_KEY`
+2. Confirm sync targets appear and scans complete
+3. Fetch admission policy: `GET /api/v1/integration/kyverno/policy`
+4. Apply Kyverno/OPA in Audit, then Enforce
 
 ## Notes
 
-- The backend uses SQLite by default, which requires `ReadWriteOnce` access mode and only supports a single replica
-- For production deployments, consider using a different database backend that supports multiple replicas
-- Make sure to update the `supplineConfig` with your actual registry credentials and sync configuration
-- The Trivy sidecar container requires significant memory for vulnerability database updates
+- Backend uses SQLite → single replica (`ReadWriteOnce`)
+- Chart ships an **example** `suppline.yml`, not a production site config
+- For OCI installs after a release tag: `oci://ghcr.io/daimoniac/charts/suppline` (see repo Helm workflow)
 
 ## Support
 
-For issues and questions, please visit: https://github.com/daimoniac/suppline
+https://github.com/daimoniac/suppline

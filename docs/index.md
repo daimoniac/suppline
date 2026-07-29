@@ -72,7 +72,7 @@ Open `http://localhost:3000` and log in with API key `demo`. Full checklist: [Ev
 - [Configuration reference](CONFIGURATION.md) — every environment variable and `suppline.yml` field
 - [Policy guide](POLICY.md) — CEL reference, policy recipes, VEX semantics
 - [State machine](STATE_MACHINE.md) — image lifecycle, rescan triggers, error handling
-- [Private registry setup](REGISTRY.md) — running the bundled registry in Kubernetes
+- [Private registry setup](REGISTRY.md) — Helm BYO registry (default) and optional bundled lab registry
 - [Discoverability backlog](DISCOVERABILITY.md) — Artifact Hub / awesome-lists (later)
 - [GitHub repository](https://github.com/daimoniac/suppline) — source, Helm chart, issues
 

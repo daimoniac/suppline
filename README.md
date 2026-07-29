@@ -210,16 +210,20 @@ Read-only by default (`list_scans`, `list_failed_images`, `query_vulnerabilities
 docker compose up --build -d && docker compose logs -f suppline
 ```
 
-**Kubernetes** — Helm chart with an optional bundled registry (see [docs/REGISTRY.md](docs/REGISTRY.md)). Prefer **bring-your-own registry** for production:
+**Kubernetes (production)** — Helm chart; **bring-your-own registry** by default (see [docs/REGISTRY.md](docs/REGISTRY.md)):
 
 ```bash
 cp charts/suppline/values-secrets.yaml.example charts/suppline/values-secrets.yaml
-$EDITOR charts/suppline/values.yaml charts/suppline/values-secrets.yaml
+# Set SUPPLINE_API_KEY, ATTESTATION_KEY*, SUPPLINE_REGISTRY_*, upstream creds
+# Override sync/policy via backend.supplineConfig or edit charts/suppline/suppline.yml
 
 helm upgrade --install suppline charts/suppline \
+  -n suppline --create-namespace \
   -f charts/suppline/values.yaml \
   -f charts/suppline/values-secrets.yaml
 ```
+
+Need raw YAML instead of applying with Helm? `helm template … > manifests.yaml` — there is no separate Kustomize tree.
 
 **Standalone binary** — CGO is required for SQLite, so you need a C toolchain:
 
@@ -284,7 +288,7 @@ Contributor notes are in [AGENTS.md](AGENTS.md) and [ui/AGENTS.md](ui/AGENTS.md)
 | [docs/CONFIGURATION.md](docs/CONFIGURATION.md) | Every environment variable and `suppline.yml` field |
 | [docs/POLICY.md](docs/POLICY.md) | CEL reference, policy recipes, VEX semantics |
 | [docs/STATE_MACHINE.md](docs/STATE_MACHINE.md) | Image lifecycle, rescan triggers, error handling |
-| [docs/REGISTRY.md](docs/REGISTRY.md) | Bundled registry in Helm (prod: prefer BYO) |
+| [docs/REGISTRY.md](docs/REGISTRY.md) | Helm registry: BYO default, optional bundled lab registry |
 | [docs/DISCOVERABILITY.md](docs/DISCOVERABILITY.md) | Later: Artifact Hub / awesome-lists |
 | http://localhost:8080/swagger | Live API reference |
 

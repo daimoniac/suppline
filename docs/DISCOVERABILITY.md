@@ -15,10 +15,11 @@ Do these **after** the [eval quick start](EVAL.md) works for strangers (`docker 
 
 ## Later step 1 — Helm / Artifact Hub
 
-- Ensure the chart packages cleanly from CI (already partly covered by Helm workflows)
-- Publish OCI chart to GHCR (or preferred registry) with a stable version tag
-- Submit / sync to [Artifact Hub](https://artifacthub.io/) with accurate keywords: image admission, cosign, trivy, regsync, supply chain, Kyverno
-- Chart `README.md`: lead with BYO registry for prod; link eval Compose as the try-before path
+- Chart metadata and BYO-registry defaults are in-repo (`charts/suppline`)
+- Ensure the chart packages cleanly from CI (Helm workflows already lint + push OCI on `v*` tags)
+- Publish / verify OCI chart at `oci://ghcr.io/daimoniac/charts/suppline`
+- Submit / sync to [Artifact Hub](https://artifacthub.io/) with keywords: image admission, cosign, trivy, regsync, supply chain, Kyverno
+- Chart README leads with BYO registry for prod; links Compose eval as the try-before path
 
 ## Later step 2 — awesome-lists (one-shot PRs)
 

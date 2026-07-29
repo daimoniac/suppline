@@ -3,19 +3,19 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <meta name="description" content="suppline is a self-hosted image intake gateway for Kubernetes. It mirrors upstream registries into your own, scans every digest with Trivy, gates it with CEL policy, and publishes signed Sigstore attestations your cluster can verify at admission.">
-    <meta name="keywords" content="Kubernetes, container security, supply chain security, image mirroring, vulnerability scanning, Trivy, CEL policy, VEX, Sigstore, cosign, attestation, Kyverno, air-gap">
+    <meta name="description" content="suppline is a self-hosted image intake gateway for Kubernetes. Mirror, scan, gate and attest third-party images. Zero-cred Docker Compose eval — no secrets required.">
+    <meta name="keywords" content="Kubernetes, container security, supply chain security, image mirroring, vulnerability scanning, Trivy, CEL policy, VEX, Sigstore, cosign, attestation, Kyverno, air-gap, docker compose">
     <meta name="author" content="suppline">
     <meta name="theme-color" content="#1e40af">
     <meta name="robots" content="index, follow">
     <meta property="og:title" content="suppline - Image Intake Gateway for Kubernetes">
-    <meta property="og:description" content="Mirror, scan, gate and attest every third-party image before it reaches your cluster. Self-hosted, one Go binary, air-gap compatible.">
+    <meta property="og:description" content="Mirror, scan, gate and attest every third-party image before it reaches your cluster. Try the zero-cred Compose eval in one afternoon.">
     <meta property="og:type" content="website">
     <meta property="og:url" content="https://suppline.cloud/">
     <meta property="og:image" content="https://suppline.cloud/suppline-icon-only.png">
     <meta name="twitter:card" content="summary_large_image">
     <meta name="twitter:title" content="suppline - Image Intake Gateway for Kubernetes">
-    <meta name="twitter:description" content="Mirror, scan, gate and attest every third-party image before it reaches your cluster. Self-hosted, one Go binary, air-gap compatible.">
+    <meta name="twitter:description" content="Mirror, scan, gate and attest every third-party image before it reaches your cluster. Try the zero-cred Compose eval in one afternoon.">
     <meta name="twitter:image" content="https://suppline.cloud/suppline-icon-only.png">
     <title>suppline - Self-hosted Image Intake Gateway for Kubernetes</title>
     <link rel="preload" href="css/style.css" as="style">
@@ -96,11 +96,12 @@
                     <span aria-hidden="true"></span>
                 </button>
                 <ul class="nav-menu" id="navMenu" role="menubar">
+                    <li class="nav-item" role="none"><a href="#in-production" class="nav-link" role="menuitem">In production</a></li>
                     <li class="nav-item" role="none"><a href="#pipeline" class="nav-link" role="menuitem">How it works</a></li>
                     <li class="nav-item" role="none"><a href="#features" class="nav-link" role="menuitem">Features</a></li>
                     <li class="nav-item" role="none"><a href="#architecture" class="nav-link" role="menuitem">Architecture</a></li>
                     <li class="nav-item" role="none"><a href="#policy" class="nav-link" role="menuitem">Policy</a></li>
-                    <li class="nav-item" role="none"><a href="#getting-started" class="nav-link" role="menuitem">Get Started</a></li>
+                    <li class="nav-item" role="none"><a href="#getting-started" class="nav-link" role="menuitem">Quick start</a></li>
                     <li class="nav-item" role="none"><a href="https://github.com/daimoniac/suppline" class="nav-link" role="menuitem" target="_blank" rel="noopener noreferrer">GitHub <span aria-label="opens in new window"></span></a></li>
                 </ul>
             </div>
@@ -129,10 +130,52 @@
                     <li>Run</li>
                 </ol>
                 <div class="hero-ctas" role="group" aria-label="Call to action buttons">
-                    <a href="#getting-started" class="cta-button cta-primary">Get Started</a>
+                    <a href="#getting-started" class="cta-button cta-primary">Try the eval</a>
                     <a href="https://github.com/daimoniac/suppline" class="cta-button cta-secondary" target="_blank" rel="noopener noreferrer">View on GitHub <span aria-label="opens in new window"></span></a>
                 </div>
                 <p class="hero-meta">Apache&nbsp;2.0 &middot; one Go binary &middot; SQLite state &middot; no SaaS dependency &middot; air-gap compatible</p>
+                <p class="hero-reference">
+                    Used in production at
+                    <a href="#in-production">SocialHub</a>
+                </p>
+            </div>
+        </section>
+
+        <!-- Production reference — SocialHub -->
+        <section id="in-production" class="reference socialhub-ci" aria-label="Used in production at SocialHub">
+            <div class="container">
+                <p class="reference-eyebrow">Used in production</p>
+                <figure class="reference-card">
+                    <blockquote class="reference-quote">
+                        <p>
+                            “Before suppline, every third-party image meant another glue script — mirror here, scan
+                            there, hope admission catches up. Now we have one gate: our registry, our policy, signed
+                            attestations. Clusters only run what passed.”
+                        </p>
+                    </blockquote>
+                    <figcaption class="reference-attribution">
+                        <a class="reference-logo-link" href="https://www.socialhub.io" target="_blank" rel="noopener noreferrer">
+                            <img
+                                class="reference-logo"
+                                src="images/socialhub/logo-grey.svg"
+                                width="180"
+                                height="50"
+                                alt="SocialHub"
+                            >
+                        </a>
+                        <div class="reference-meta">
+                            <cite class="reference-cite">Platform Engineering</cite>
+                            <span class="reference-org">SocialHub · maloon GmbH</span>
+                            <a class="reference-cta" href="https://www.socialhub.io" target="_blank" rel="noopener noreferrer">
+                                www.socialhub.io <span aria-label="opens in new window"></span>
+                            </a>
+                        </div>
+                    </figcaption>
+                    <p class="reference-context">
+                        SocialHub runs suppline as the intake gate for third-party images — continuous mirror → Trivy
+                        scan → CEL policy → Sigstore attestations, with cluster admission verifying the verdict.
+                    </p>
+                </figure>
             </div>
         </section>
 
@@ -455,67 +498,46 @@ kubectl apply -f suppline-policy.yaml</code></pre>
             </div>
         </section>
 
-        <!-- Getting Started Section -->
-        <section id="getting-started" class="getting-started" aria-label="Getting started guide">
+        <!-- Getting Started Section — zero-cred eval quick start -->
+        <section id="getting-started" class="getting-started" aria-label="Eval quick start">
             <div class="container">
-                <h2>Getting Started</h2>
+                <h2>Try it in one afternoon</h2>
                 <p class="section-lead">
-                    You need registry credentials and a cosign key pair. Docker Compose brings up suppline, the
-                    dashboard, a Trivy server and regsync.
+                    No credentials required. Bundled throwaway registry, demo pass + fail policies, and auto-generated
+                    cosign keys. Watch one image pass (with attestations) and one fail.
                 </p>
                 <div class="getting-started-content">
                     <ol class="steps" role="list">
                         <li role="listitem">
-                            <h3>Configure what to mirror and how to gate it</h3>
-                            <p>Start from the examples, then edit your sync rules, policies and VEX statements:</p>
+                            <h3>Clone and start</h3>
+                            <p>First boot pulls images and Trivy’s DB — give it a few minutes.</p>
                             <pre><code>git clone https://github.com/daimoniac/suppline.git &amp;&amp; cd suppline
-cp suppline.yml.example suppline.yml
-cp env.example .env</code></pre>
+docker compose up --build -d</code></pre>
                         </li>
                         <li role="listitem">
-                            <h3>Generate the signing key pair</h3>
-                            <p>suppline signs attestations with your own key:</p>
-                            <pre><code>mkdir -p keys
-cosign generate-key-pair
-mv cosign.key cosign.pub keys/</code></pre>
+                            <h3>Open the UI</h3>
+                            <p>Go to <code>http://localhost:3000</code> and log in with API key <code>demo</code>.</p>
                         </li>
                         <li role="listitem">
-                            <h3>Fill in the secrets</h3>
-                            <p>Registry credentials, an API key of your choice, the key password, and the private key as base64:</p>
-                            <pre><code>echo "ATTESTATION_KEY=$(base64 -w0 keys/cosign.key)" &gt;&gt; .env
-vim .env</code></pre>
-                        </li>
-                        <li role="listitem">
-                            <h3>Start</h3>
-                            <p>With Docker Compose:</p>
-                            <pre><code>docker compose up -d</code></pre>
-                            <p>Or with Helm, into your Kubernetes cluster:</p>
-                            <pre><code>cp charts/suppline/values-secrets.yaml.example \
-  charts/suppline/values-secrets.yaml
-vim charts/suppline/values.yaml charts/suppline/values-secrets.yaml
-
-helm upgrade --install suppline charts/suppline \
-  -f charts/suppline/values.yaml \
-  -f charts/suppline/values-secrets.yaml</code></pre>
-                        </li>
-                        <li role="listitem">
-                            <h3>Verify</h3>
-                            <p>Check health, then query the API with the key you just set:</p>
-                            <pre><code>curl http://localhost:8081/health
-curl -H "Authorization: Bearer &lt;your-api-key&gt;" \
-  http://localhost:8080/api/v1/scans</code></pre>
-                            <p>The dashboard is at <code>http://localhost:3000</code> — log in with the same API key. Swagger lives on port <code>8080</code>, Prometheus metrics on <code>9090</code>.</p>
-                        </li>
-                        <li role="listitem">
-                            <h3>Close the gate</h3>
-                            <p>When the dashboard looks right, generate the admission policy and switch it from audit to enforce:</p>
-                            <pre><code>curl -s http://localhost:8080/api/v1/integration/kyverno/policy \
-  | kubectl apply -f -</code></pre>
+                            <h3>Confirm the gate</h3>
+                            <p>
+                                Wait until repositories <code>demo-pass</code> and <code>demo-fail</code> appear.
+                                <code>demo-pass</code> should be policy-passed with attestations;
+                                <code>demo-fail</code> should be blocked.
+                            </p>
+                            <pre><code>curl -s http://localhost:8081/health
+curl -s -H "Authorization: Bearer demo" \
+  http://localhost:8080/api/v1/scans | head</code></pre>
                         </li>
                     </ol>
                     <div class="getting-started-cta">
-                        <p>Full configuration reference, policy recipes and the image lifecycle are documented in the repository:</p>
-                        <a href="https://github.com/daimoniac/suppline#readme" class="cta-button cta-primary" target="_blank" rel="noopener noreferrer">Read the Documentation <span aria-label="opens in new window"></span></a>
+                        <p>
+                            Full checklist (semver, VEX, attestation gate POC):
+                            <a href="https://github.com/daimoniac/suppline/blob/main/docs/EVAL.md" target="_blank" rel="noopener noreferrer">Eval quick start <span aria-label="opens in new window"></span></a>.
+                            Production installs use Helm with your own registry —
+                            <a href="https://github.com/daimoniac/suppline/blob/main/docs/REGISTRY.md" target="_blank" rel="noopener noreferrer">REGISTRY.md <span aria-label="opens in new window"></span></a>.
+                        </p>
+                        <a href="https://github.com/daimoniac/suppline/blob/main/docs/EVAL.md" class="cta-button cta-primary" target="_blank" rel="noopener noreferrer">Full eval checklist <span aria-label="opens in new window"></span></a>
                     </div>
                 </div>
             </div>
@@ -533,6 +555,7 @@ curl -H "Authorization: Bearer &lt;your-api-key&gt;" \
                 <div class="footer-section">
                     <h4>Resources</h4>
                     <ul role="list">
+                        <li role="listitem"><a href="https://www.socialhub.io" target="_blank" rel="noopener noreferrer">SocialHub (production) <span aria-label="opens in new window"></span></a></li>
                         <li role="listitem"><a href="https://github.com/daimoniac/suppline" target="_blank" rel="noopener noreferrer">GitHub Repository <span aria-label="opens in new window"></span></a></li>
                         <li role="listitem"><a href="https://github.com/daimoniac/suppline/issues" target="_blank" rel="noopener noreferrer">Issue Tracker <span aria-label="opens in new window"></span></a></li>
                         <li role="listitem"><a href="https://github.com/daimoniac/suppline/discussions" target="_blank" rel="noopener noreferrer">Discussions <span aria-label="opens in new window"></span></a></li>
@@ -541,10 +564,11 @@ curl -H "Authorization: Bearer &lt;your-api-key&gt;" \
                 <div class="footer-section">
                     <h4>Documentation</h4>
                     <ul role="list">
-                        <li role="listitem"><a href="https://github.com/daimoniac/suppline#readme" target="_blank" rel="noopener noreferrer">README <span aria-label="opens in new window"></span></a></li>
+                        <li role="listitem"><a href="https://github.com/daimoniac/suppline/blob/main/docs/EVAL.md" target="_blank" rel="noopener noreferrer">Eval quick start <span aria-label="opens in new window"></span></a></li>
                         <li role="listitem"><a href="https://github.com/daimoniac/suppline/blob/main/docs/CONFIGURATION.md" target="_blank" rel="noopener noreferrer">Configuration Guide <span aria-label="opens in new window"></span></a></li>
                         <li role="listitem"><a href="https://github.com/daimoniac/suppline/blob/main/docs/POLICY.md" target="_blank" rel="noopener noreferrer">Policy Guide <span aria-label="opens in new window"></span></a></li>
-                        <li role="listitem"><a href="https://github.com/daimoniac/suppline/blob/main/docs/STATE_MACHINE.md" target="_blank" rel="noopener noreferrer">Image Lifecycle <span aria-label="opens in new window"></span></a></li>
+                        <li role="listitem"><a href="https://github.com/daimoniac/suppline/blob/main/docs/REGISTRY.md" target="_blank" rel="noopener noreferrer">Helm / registry <span aria-label="opens in new window"></span></a></li>
+                        <li role="listitem"><a href="https://github.com/daimoniac/suppline#readme" target="_blank" rel="noopener noreferrer">README <span aria-label="opens in new window"></span></a></li>
                     </ul>
                 </div>
             </div>

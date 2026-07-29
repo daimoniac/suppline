@@ -1,0 +1,49 @@
+# Example sync/policy config shipped with the Helm chart.
+# Replace for production: set backend.supplineConfig in values, or overwrite this file
+# before packaging. Prefer bring-your-own registry via SUPPLINE_REGISTRY_* secrets.
+version: 1
+
+creds:
+  - registry: registry-1.docker.io
+    user: '{{ env "DOCKER_USERNAME" }}'
+    pass: '{{ env "DOCKER_PASSWORD" }}'
+    repoAuth: false
+    reqPerSec: 10
+    reqConcurrent: 10
+  - registry: docker.io
+    user: '{{ env "DOCKER_USERNAME" }}'
+    pass: '{{ env "DOCKER_PASSWORD" }}'
+    repoAuth: false
+    reqPerSec: 10
+    reqConcurrent: 10
+  - registry: '{{ env "SUPPLINE_REGISTRY_URL" }}'
+    user: '{{ env "SUPPLINE_REGISTRY_USERNAME" }}'
+    pass: '{{ env "SUPPLINE_REGISTRY_PASSWORD" }}'
+    repoAuth: false
+
+defaults:
+  parallel: 2
+  interval: 60m
+  cleanupTags: true
+  cleanupTagsExclude:
+    - ".*\\.sig$"
+    - ".*\\.att$"
+  x-rescanInterval: 7d
+  x-runtimeInUseWindow: 60m
+  x-worker-poll-interval: 5m
+  x-worker-concurrency: 3
+  x-worker-retry-attempts: 3
+  x-worker-retry-backoff: 10s
+  x-queue-buffer-size: 1000
+  x-scaiValidityExtension: 7d
+  x-vex-repo: false
+  x-policy:
+    expression: "criticalCount == 0"
+    failureMessage: "critical vulnerabilities found"
+
+sync:
+  # Point targets at YOUR registry (Harbor/ECR/ACR/… or the chart’s bundled registry URL).
+  - source: public.ecr.aws/docker/library/busybox:1.36.1
+    target: '{{ env "SUPPLINE_REGISTRY_URL" }}/busybox:1.36.1'
+    type: image
+    platform: linux/amd64

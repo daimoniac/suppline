@@ -47,11 +47,22 @@ To learn more about the release, try:
   
   Then visit http://127.0.0.1:9090/metrics
 
+{{- if .Values.registry.enabled }}
+
+NOTE: Bundled registry is enabled (lab/bootstrap). Prefer bring-your-own registry for production
+(set registry.enabled=false and SUPPLINE_REGISTRY_* secrets). See docs/REGISTRY.md.
+{{- else }}
+
+Registry: bring-your-own (registry.enabled=false). Ensure SUPPLINE_REGISTRY_* secrets and
+suppline.yml targets are set. Optional lab registry: --set registry.enabled=true
+{{- end }}
+
 {{- if not .Values.backend.attestationKey.enabled }}
 
 WARNING: Attestation signing is disabled. To enable it, set:
   backend.attestationKey.enabled=true
-  backend.attestationKey.key=<base64-encoded-cosign-key>
+  and provide ATTESTATION_KEY / ATTESTATION_KEY_PASSWORD in secrets
 {{- end }}
 
-For more information, visit: https://github.com/daimoniac/suppline
+Config: chart example suppline.yml, or override with backend.supplineConfig.
+Docs: https://suppline.cloud · https://github.com/daimoniac/suppline

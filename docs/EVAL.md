@@ -98,7 +98,7 @@ Then add Hub `creds` + `sync` entries (see `suppline.yml.example`). Compose load
 
 1. Point `target:` at **your** registry (Harbor, ECR, ACR, …)
 2. Replace demo policies with real CEL + VEX — [Policy guide](POLICY.md)
-3. Deploy with Helm; keep or disable the bundled chart registry — [REGISTRY.md](REGISTRY.md)
+3. Deploy with Helm (`registry.enabled: false` by default — BYO registry) — [REGISTRY.md](REGISTRY.md)
 4. Apply the generated Kyverno/OPA admission policy
 5. Generate your own cosign keys — never reuse `./keys/demo` from this eval
 

@@ -1,15 +1,18 @@
 apiVersion: v2
 name: suppline
-description: A Helm chart for Suppline - Supply Chain Security Scanner
+description: Self-hosted Kubernetes image intake gateway — mirror, Trivy scan, CEL policy, Sigstore attestations
 type: application
 version: 0.1.0
-appVersion: "1.0.0"
+appVersion: "0.1.0"
 keywords:
-  - security
-  - vulnerability-scanning
   - supply-chain
   - container-security
-home: https://github.com/daimoniac/suppline
+  - image-admission
+  - cosign
+  - trivy
+  - regsync
+  - kyverno
+home: https://suppline.cloud
 sources:
   - https://github.com/daimoniac/suppline
 maintainers:

@@ -59,15 +59,21 @@ backend:
     failureThreshold: 3
 
   env:
-    LOG_LEVEL: "debug"
+    LOG_LEVEL: "info"
     API_ENABLED: "true"
     API_READ_ONLY: "false"
     QUEUE_BUFFER_SIZE: "1000"
-    WORKER_POLL_RETRIEVAL: "5m"
+    WORKER_POLL_INTERVAL: "5m"
     WORKER_RETRY_ATTEMPTS: "3"
     WORKER_RETRY_BACKOFF: "10s"
     SCANNER_TIMEOUT: "5m"
     RESCAN_INTERVAL: "24h"
+
+  # Optional: inline suppline.yml content (overrides the chart’s example file).
+  # Prefer this for production so you do not edit files inside charts/suppline/.
+  # supplineConfig: |
+  #   version: 1
+  #   ...
 
   attestationKey:
     enabled: true
@@ -190,19 +196,15 @@ frontend:
   apiBaseURL: "/api"
 
   ingress:
-    enabled: true
+    enabled: false
     className: nginx
-    annotations:
-      cert-manager.io/cluster-issuer: letsencrypt-prod
+    annotations: {}
     hosts:
-      - host: suppline.development.socialhub.dev
+      - host: suppline.example.com
         paths:
           - path: /
             pathType: Prefix
-    tls:
-      - hosts:
-        - suppline.development.socialhub.dev
-        secretName: suppline-oauth2-proxy
+    tls: []
 
 # Persistence configuration
 persistence:
@@ -243,15 +245,13 @@ podAnnotations:
 # Image pull secrets
 imagePullSecrets: []
 
-# Private Docker Registry
-# Deploys a self-contained Docker registry for storing scanned images..
-# the helm chart will auto-generate credentials for accessing the registry.
-# if you bring your own registry,
-# you can disable this and provide registry credentials via values-secrets.yaml
-# and set the SUPPLINE_REGISTRY_* secrets accordingly.
-# these are then available in suppline.yml via {{ env}}
+# Private Docker Registry (optional convenience — not the production default)
+# Prefer bring-your-own Harbor/ECR/ACR/Artifactory: set registry.enabled=false (default)
+# and provide SUPPLINE_REGISTRY_* (+ upstream creds) via values-secrets.yaml.
+# Those env vars are available in suppline.yml via {{ env "…" }}.
+# The bundled registry:2 is for labs / bootstrap only — do not treat it as a long-term prod registry.
 registry:
-  enabled: true
+  enabled: false
   
   # Image configuration
   image:

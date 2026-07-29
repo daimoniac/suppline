@@ -13,4 +13,12 @@ data:
   {{- tpl (toYaml .Values.backend.env) . | nindent 2 }}
   {{- end }}
   suppline.yml: |
-{{ .Files.Get "suppline.yml" | indent 4 }}
+{{- if .Values.backend.supplineConfig }}
+{{ .Values.backend.supplineConfig | indent 4 }}
+{{- else }}
+{{- $cfg := .Files.Get "suppline.yml" }}
+{{- if not $cfg }}
+{{- fail "charts/suppline/suppline.yml is missing; set backend.supplineConfig or restore the chart example file" }}
+{{- end }}
+{{ $cfg | indent 4 }}
+{{- end }}
