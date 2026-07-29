@@ -1,0 +1,10 @@
+version: "2"
+
+linters:
+  exclusions:
+    presets:
+      # Upstream's curated errcheck exemptions: deferred Close, fmt.Fprint* to
+      # stdout/stderr, and similar conventionally-ignored returns.
+      - std-error-handling
+    paths:
+      - ui/node_modules

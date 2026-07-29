@@ -84,12 +84,13 @@ func TestHandleListTolerations_ReturnsAllConfiguredTolerations(t *testing.T) {
 
 		// Verify defaults appear for both repositories
 		for _, stmt := range vexStatements {
-			if stmt.CVEID == "CVE-2024-0001" || stmt.CVEID == "CVE-2024-0002" {
+			switch stmt.CVEID {
+			case "CVE-2024-0001", "CVE-2024-0002":
 				// Default VEX statements should apply to both nginx and alpine
 				if len(stmt.Repositories) != 2 {
 					t.Errorf("Expected default CVE %s to have 2 repositories, got %d", stmt.CVEID, len(stmt.Repositories))
 				}
-			} else if stmt.CVEID == "CVE-2024-0003" {
+			case "CVE-2024-0003":
 				// Nginx-specific should only have 1 repo
 				if len(stmt.Repositories) != 1 {
 					t.Errorf("Expected nginx-specific CVE to have 1 repository, got %d", len(stmt.Repositories))
@@ -97,7 +98,7 @@ func TestHandleListTolerations_ReturnsAllConfiguredTolerations(t *testing.T) {
 				if stmt.Repositories[0].Repository != "myregistry.com/nginx" {
 					t.Errorf("Expected nginx repository, got %s", stmt.Repositories[0].Repository)
 				}
-			} else if stmt.CVEID == "CVE-2024-0004" {
+			case "CVE-2024-0004":
 				// Alpine-specific should only have 1 repo
 				if len(stmt.Repositories) != 1 {
 					t.Errorf("Expected alpine-specific CVE to have 1 repository, got %d", len(stmt.Repositories))

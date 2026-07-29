@@ -81,11 +81,10 @@ jobs:
           mkdir -p build/swagger
           swag init -g internal/api/api.go -o build/swagger --parseDependency --parseInternal
 
-      - name: Install golangci-lint from source
-        run: |
-          git clone --depth 1 --branch master https://github.com/golangci/golangci-lint.git /tmp/golangci-lint
-          cd /tmp/golangci-lint
-          go build -o $(go env GOPATH)/bin/golangci-lint ./cmd/golangci-lint
-          
+      # Pinned: building from master made the enforced rule set drift with
+      # upstream, so untouched code could start failing on any given day.
       - name: Run golangci-lint
-        run: golangci-lint run --timeout=5m
+        uses: golangci/golangci-lint-action@v9
+        with:
+          version: v2.12.2
+          args: --timeout=5m

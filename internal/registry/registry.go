@@ -346,8 +346,8 @@ func (c *clientImpl) GetManifest(ctx context.Context, repo, digest string) (*Man
 		Annotations: make(map[string]string),
 	}
 
-	if !configFile.Created.Time.IsZero() {
-		createdAt := configFile.Created.Time.UTC()
+	if !configFile.Created.IsZero() {
+		createdAt := configFile.Created.UTC()
 		manifest.CreatedAt = &createdAt
 	}
 

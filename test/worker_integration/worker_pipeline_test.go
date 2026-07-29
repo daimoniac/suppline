@@ -195,7 +195,7 @@ func (m *mockStateStore) CleanupArtifactTag(ctx context.Context, repository, dig
 	if refs, ok := m.tagsForDigest[digest]; ok {
 		filtered := refs[:0]
 		for _, ref := range refs {
-			if !(ref.Repository == repository && ref.Tag == tag) {
+			if ref.Repository != repository || ref.Tag != tag {
 				filtered = append(filtered, ref)
 			}
 		}

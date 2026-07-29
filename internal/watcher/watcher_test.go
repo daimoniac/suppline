@@ -905,7 +905,7 @@ func (m *reconcilingMockStore) CleanupArtifactTag(ctx context.Context, repositor
 	bindings := m.artifactTags[repository]
 	filtered := bindings[:0]
 	for _, b := range bindings {
-		if !(b.Tag == tag && b.Digest == digest) {
+		if b.Tag != tag || b.Digest != digest {
 			filtered = append(filtered, b)
 		}
 	}
