@@ -112,6 +112,18 @@ func (m *mockStateStore) CountScans(ctx context.Context, filter statestore.ScanF
 	return 0, nil
 }
 
+func (m *mockStateStore) ListScansWithTotal(ctx context.Context, filter statestore.ScanFilter) ([]*statestore.ScanRecord, int, error) {
+	records, err := m.ListScans(ctx, filter)
+	if err != nil {
+		return nil, 0, err
+	}
+	total, err := m.CountScans(ctx, filter)
+	if err != nil {
+		return nil, 0, err
+	}
+	return records, total, nil
+}
+
 func (m *mockStateStore) ListVEXStatements(ctx context.Context, filter statestore.VEXFilter) ([]*types.VEXInfo, error) {
 	return nil, nil
 }
@@ -439,6 +451,14 @@ func (m *mockScansWithFindingsStore) CountScans(ctx context.Context, filter stat
 	_ = ctx
 	_ = filter
 	return 1, nil
+}
+
+func (m *mockScansWithFindingsStore) ListScansWithTotal(ctx context.Context, filter statestore.ScanFilter) ([]*statestore.ScanRecord, int, error) {
+	records, err := m.ListScans(ctx, filter)
+	if err != nil {
+		return nil, 0, err
+	}
+	return records, 1, nil
 }
 
 func TestListScans_IncludesPolicyFailureFindings(t *testing.T) {

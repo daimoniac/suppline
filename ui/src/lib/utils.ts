@@ -225,6 +225,19 @@ export async function loadAllRuntimeUnusedRepositories(apiClient: APIClient, pag
   };
 }
 
+/**
+ * Actionable unused-repo task count from a not_in_use list Total.
+ * The not_in_use view always includes whitelisted repos, so subtract the whitelist.
+ * Whitelist entries are expected to be existing repositories (added from the unused-task UI).
+ */
+export function countActionableRuntimeUnusedRepositories(
+  unusedTotal: number,
+  whitelist: string[],
+): number {
+  const whitelistCount = new Set(whitelist.map(entry => entry.trim()).filter(Boolean)).size;
+  return Math.max(0, unusedTotal - whitelistCount);
+}
+
 export function summarizeRuntimeUnusedRepositories(
   repositories: RepositoriesResponse['Repositories'],
   whitelist: string[],

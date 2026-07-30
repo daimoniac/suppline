@@ -271,6 +271,10 @@ type StateStoreQuery interface {
 	// Limit/Offset in ScanFilter are ignored for counting.
 	CountScans(ctx context.Context, filter ScanFilter) (int, error)
 
+	// ListScansWithTotal returns a page of scans and the total matching count.
+	// When ImageUsage requires an in-memory post-filter, both are computed in one pass.
+	ListScansWithTotal(ctx context.Context, filter ScanFilter) ([]*ScanRecord, int, error)
+
 	// ListVEXStatements returns applied VEX statements with optional filters
 	ListVEXStatements(ctx context.Context, filter VEXFilter) ([]*types.VEXInfo, error)
 

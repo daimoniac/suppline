@@ -277,8 +277,6 @@ func (s *SQLiteStore) GetTagsForDigest(ctx context.Context, digest string) ([]Ta
 	return tags, nil
 }
 
-// GetRuntimeUsageForScans returns runtime usage keyed by digest for scan list responses.
-
 func (s *SQLiteStore) loadVulnerabilitiesByScan(ctx context.Context, scanRecordID int64) ([]types.VulnerabilityRecord, error) {
 	rows, err := s.db.QueryContext(ctx, `
 		SELECT cve_id, severity, package_name, installed_version, fixed_version,
@@ -350,13 +348,129 @@ func buildScanFilterClause(filter ScanFilter) (string, []interface{}) {
 // surfacing superseded digest bindings after a tag was retargeted, as well as
 // stale historical scan_records that are no longer referenced by last_scan_id.
 func (s *SQLiteStore) ListScans(ctx context.Context, filter ScanFilter) ([]*ScanRecord, error) {
-	originalLimit := filter.Limit
-	originalOffset := filter.Offset
 	if needsInUsePostFilter(filter.ImageUsage) {
-		filter.Limit = 0
-		filter.Offset = 0
+		filtered, err := s.listScansFilteredByImageUsage(ctx, filter)
+		if err != nil {
+			return nil, err
+		}
+		return paginateScanRecords(filtered, filter.Limit, filter.Offset), nil
 	}
 
+	return s.queryScanRecords(ctx, filter)
+}
+
+// CountScans returns the total number of scan records that match the filters.
+// Pagination fields (Limit/Offset) are intentionally ignored.
+func (s *SQLiteStore) CountScans(ctx context.Context, filter ScanFilter) (int, error) {
+	if needsInUsePostFilter(filter.ImageUsage) {
+		filtered, err := s.listScansFilteredByImageUsage(ctx, filter)
+		if err != nil {
+			return 0, err
+		}
+		return len(filtered), nil
+	}
+
+	query := `
+		SELECT COUNT(*)
+		FROM artifacts a
+		JOIN repositories r ON a.repository_id = r.id
+		JOIN scan_records sr ON a.last_scan_id = sr.id
+		INNER JOIN (
+			SELECT a2.repository_id, a2.tag, MAX(a2.id) AS max_id
+			FROM artifacts a2
+			GROUP BY a2.repository_id, a2.tag
+		) latest ON a.repository_id = latest.repository_id
+			AND a.tag IS latest.tag
+			AND a.id = latest.max_id
+		WHERE 1=1
+	`
+	filterClause, args := buildScanFilterClause(filter)
+	query += filterClause
+
+	var total int
+	err := s.db.QueryRowContext(ctx, query, args...).Scan(&total)
+	if err != nil {
+		return 0, errors.NewTransientf("failed to count scans: %w", err)
+	}
+
+	return total, nil
+}
+
+// ListScansWithTotal returns a page of scans and the total matching count.
+// Image-usage post-filters are applied once and then paginated.
+func (s *SQLiteStore) ListScansWithTotal(ctx context.Context, filter ScanFilter) ([]*ScanRecord, int, error) {
+	if needsInUsePostFilter(filter.ImageUsage) {
+		filtered, err := s.listScansFilteredByImageUsage(ctx, filter)
+		if err != nil {
+			return nil, 0, err
+		}
+		return paginateScanRecords(filtered, filter.Limit, filter.Offset), len(filtered), nil
+	}
+
+	records, err := s.queryScanRecords(ctx, filter)
+	if err != nil {
+		return nil, 0, err
+	}
+	total, err := s.CountScans(ctx, filter)
+	if err != nil {
+		return nil, 0, err
+	}
+	return records, total, nil
+}
+
+// listScansFilteredByImageUsage loads all current scans matching non-usage filters,
+// annotates runtime usage, and applies the ImageUsage predicate. Limit/Offset are ignored.
+func (s *SQLiteStore) listScansFilteredByImageUsage(ctx context.Context, filter ScanFilter) ([]*ScanRecord, error) {
+	sqlFilter := filter
+	sqlFilter.Limit = 0
+	sqlFilter.Offset = 0
+	sqlFilter.ImageUsage = ImageUsageAll
+
+	records, err := s.queryScanRecords(ctx, sqlFilter)
+	if err != nil {
+		return nil, err
+	}
+
+	lookups := make([]RuntimeLookupInput, 0, len(records))
+	for _, record := range records {
+		lookups = append(lookups, RuntimeLookupInput{
+			Digest:     record.Digest,
+			Repository: record.Repository,
+			Tag:        record.Tag,
+		})
+	}
+
+	runtimeUsageByDigest, err := s.GetRuntimeUsageForScans(ctx, lookups)
+	if err != nil {
+		return nil, err
+	}
+
+	inUseRows := inUseTagRowsFromScanRecords(records, runtimeUsageByDigest)
+	minTagByRepo := minInUseImageTagByRepository(inUseRows)
+	return filterScanRecordsByImageUsage(records, runtimeUsageByDigest, minTagByRepo, filter.ImageUsage), nil
+}
+
+func paginateScanRecords(records []*ScanRecord, limit, offset int) []*ScanRecord {
+	start := offset
+	if start < 0 {
+		start = 0
+	}
+	if start > len(records) {
+		start = len(records)
+	}
+
+	end := len(records)
+	if limit > 0 {
+		candidateEnd := start + limit
+		if candidateEnd < end {
+			end = candidateEnd
+		}
+	}
+
+	return records[start:end]
+}
+
+func (s *SQLiteStore) queryScanRecords(ctx context.Context, filter ScanFilter) ([]*ScanRecord, error) {
 	query := `
 		SELECT sr.id, sr.artifact_id, sr.scan_duration_ms,
 			sr.critical_vuln_count, sr.high_vuln_count, sr.medium_vuln_count, sr.low_vuln_count,
@@ -453,86 +567,7 @@ func (s *SQLiteStore) ListScans(ctx context.Context, filter ScanFilter) ([]*Scan
 		return nil, errors.NewTransientf("error iterating rows: %w", err)
 	}
 
-	if needsInUsePostFilter(filter.ImageUsage) {
-		lookups := make([]RuntimeLookupInput, 0, len(records))
-		for _, record := range records {
-			lookups = append(lookups, RuntimeLookupInput{
-				Digest:     record.Digest,
-				Repository: record.Repository,
-				Tag:        record.Tag,
-			})
-		}
-
-		runtimeUsageByDigest, err := s.GetRuntimeUsageForScans(ctx, lookups)
-		if err != nil {
-			return nil, err
-		}
-
-		inUseRows := inUseTagRowsFromScanRecords(records, runtimeUsageByDigest)
-		minTagByRepo := minInUseImageTagByRepository(inUseRows)
-		filtered := filterScanRecordsByImageUsage(records, runtimeUsageByDigest, minTagByRepo, filter.ImageUsage)
-
-		start := originalOffset
-		if start < 0 {
-			start = 0
-		}
-		if start > len(filtered) {
-			start = len(filtered)
-		}
-
-		end := len(filtered)
-		if originalLimit > 0 {
-			candidateEnd := start + originalLimit
-			if candidateEnd < end {
-				end = candidateEnd
-			}
-		}
-
-		records = filtered[start:end]
-	}
-
 	return records, nil
-}
-
-// CountScans returns the total number of scan records that match the filters.
-// Pagination fields (Limit/Offset) are intentionally ignored.
-func (s *SQLiteStore) CountScans(ctx context.Context, filter ScanFilter) (int, error) {
-	if needsInUsePostFilter(filter.ImageUsage) {
-		fullFilter := filter
-		fullFilter.Limit = 0
-		fullFilter.Offset = 0
-
-		records, err := s.ListScans(ctx, fullFilter)
-		if err != nil {
-			return 0, err
-		}
-		return len(records), nil
-	}
-
-	query := `
-		SELECT COUNT(*)
-		FROM artifacts a
-		JOIN repositories r ON a.repository_id = r.id
-		JOIN scan_records sr ON a.last_scan_id = sr.id
-		INNER JOIN (
-			SELECT a2.repository_id, a2.tag, MAX(a2.id) AS max_id
-			FROM artifacts a2
-			GROUP BY a2.repository_id, a2.tag
-		) latest ON a.repository_id = latest.repository_id
-			AND a.tag IS latest.tag
-			AND a.id = latest.max_id
-		WHERE 1=1
-	`
-	filterClause, args := buildScanFilterClause(filter)
-	query += filterClause
-
-	var total int
-	err := s.db.QueryRowContext(ctx, query, args...).Scan(&total)
-	if err != nil {
-		return 0, errors.NewTransientf("failed to count scans: %w", err)
-	}
-
-	return total, nil
 }
 
 // ListVEXStatements returns unique VEX-exempted CVEs from scan history.

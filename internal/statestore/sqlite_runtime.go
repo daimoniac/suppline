@@ -297,37 +297,151 @@ func (s *SQLiteStore) GetRuntimeUsageForScans(ctx context.Context, scans []Runti
 		return nil, err
 	}
 
-	fallbackCache := make(map[string]RuntimeUsage)
+	fallbackPairs := make([]repoTagPair, 0)
+	fallbackPairSeen := make(map[string]struct{})
 	for _, scan := range scans {
 		digest := strings.TrimSpace(scan.Digest)
-		usage := byDigest[digest]
-
 		repo := strings.TrimSpace(scan.Repository)
 		tag := strings.TrimSpace(scan.Tag)
-		if repo == "" || tag == "" || digest == "" {
-			if usage.RuntimeUsed {
-				usageByDigest[digest] = usage
-			}
+		if digest == "" || repo == "" || tag == "" {
 			continue
 		}
 
 		cacheKey := normalizeRepositoryRef(repo) + "|" + tag
-		fallbackUsage, ok := fallbackCache[cacheKey]
-		if !ok {
-			fallbackUsage, err = s.queryRuntimeUsageByRepoTag(ctx, repo, tag)
-			if err != nil {
-				return nil, err
-			}
-			fallbackCache[cacheKey] = fallbackUsage
+		if _, ok := fallbackPairSeen[cacheKey]; ok {
+			continue
+		}
+		fallbackPairSeen[cacheKey] = struct{}{}
+		fallbackPairs = append(fallbackPairs, repoTagPair{
+			normalizedRepo: normalizeRepositoryRef(repo),
+			tag:            tag,
+		})
+	}
+
+	byRepoTag, err := s.queryRuntimeUsageByRepoTags(ctx, fallbackPairs)
+	if err != nil {
+		return nil, err
+	}
+
+	for _, scan := range scans {
+		digest := strings.TrimSpace(scan.Digest)
+		if digest == "" {
+			continue
 		}
 
-		usage = mergeRuntimeUsage(usage, fallbackUsage)
+		usage := byDigest[digest]
+		repo := strings.TrimSpace(scan.Repository)
+		tag := strings.TrimSpace(scan.Tag)
+		if repo != "" && tag != "" {
+			cacheKey := normalizeRepositoryRef(repo) + "|" + tag
+			usage = mergeRuntimeUsage(usage, byRepoTag[cacheKey])
+		}
 		if usage.RuntimeUsed {
 			usageByDigest[digest] = usage
 		}
 	}
 
 	return usageByDigest, nil
+}
+
+type repoTagPair struct {
+	normalizedRepo string
+	tag            string
+}
+
+// sqliteMaxVariableNumber is a conservative bound under SQLite's default SQLITE_MAX_VARIABLE_NUMBER (999).
+const sqliteMaxVariableNumber = 900
+
+func (s *SQLiteStore) queryRuntimeUsageByRepoTags(ctx context.Context, pairs []repoTagPair) (map[string]RuntimeUsage, error) {
+	result := make(map[string]RuntimeUsage)
+	if len(pairs) == 0 {
+		return result, nil
+	}
+
+	wanted := make(map[string]struct{}, len(pairs))
+	tags := make([]string, 0, len(pairs))
+	seenTags := make(map[string]struct{}, len(pairs))
+	for _, pair := range pairs {
+		if pair.normalizedRepo == "" || pair.tag == "" {
+			continue
+		}
+		wanted[pair.normalizedRepo+"|"+pair.tag] = struct{}{}
+		if _, ok := seenTags[pair.tag]; ok {
+			continue
+		}
+		seenTags[pair.tag] = struct{}{}
+		tags = append(tags, pair.tag)
+	}
+	if len(wanted) == 0 || len(tags) == 0 {
+		return result, nil
+	}
+
+	cutoffUnix := s.runtimeInUseCutoffUnix()
+	locationsByKey := make(map[string][]RuntimeLocation)
+
+	for start := 0; start < len(tags); start += sqliteMaxVariableNumber {
+		end := start + sqliteMaxVariableNumber
+		if end > len(tags) {
+			end = len(tags)
+		}
+		tagChunk := tags[start:end]
+
+		placeholders := strings.TrimSuffix(strings.Repeat("?,", len(tagChunk)), ",")
+		query := `
+			SELECT ci.image_ref, COALESCE(ci.tag, ''), COALESCE(ci.digest, ''), c.name, ci.namespace
+			FROM cluster_images_seen ci
+			JOIN clusters c ON c.id = ci.cluster_id
+			WHERE (
+				ci.last_seen_at >= ?
+				OR ci.last_seen_at >= COALESCE(c.last_reported_at, 0)
+			)
+			  AND COALESCE(ci.tag, '') IN (` + placeholders + `)
+		`
+		args := make([]interface{}, 0, len(tagChunk)+1)
+		args = append(args, cutoffUnix)
+		for _, tag := range tagChunk {
+			args = append(args, tag)
+		}
+
+		rows, err := s.db.QueryContext(ctx, query, args...)
+		if err != nil {
+			return nil, errors.NewTransientf("failed to query runtime fallback usage by repo tags: %w", err)
+		}
+
+		for rows.Next() {
+			var imageRef, imageTag, imageDigest, cluster, namespace string
+			if err := rows.Scan(&imageRef, &imageTag, &imageDigest, &cluster, &namespace); err != nil {
+				_ = rows.Close()
+				return nil, errors.NewTransientf("failed to scan runtime fallback usage by repo tags: %w", err)
+			}
+
+			key := normalizeRepositoryRef(imageRef) + "|" + imageTag
+			if _, ok := wanted[key]; !ok {
+				continue
+			}
+
+			locationsByKey[key] = append(locationsByKey[key], RuntimeLocation{
+				Cluster:   cluster,
+				Namespace: namespace,
+				ImageRef:  imageRef,
+				Tag:       imageTag,
+				Digest:    imageDigest,
+			})
+		}
+		if err := rows.Err(); err != nil {
+			_ = rows.Close()
+			return nil, errors.NewTransientf("error iterating runtime fallback usage by repo tags: %w", err)
+		}
+		if err := rows.Close(); err != nil {
+			return nil, errors.NewTransientf("failed to close runtime fallback usage rows: %w", err)
+		}
+	}
+
+	for key, locations := range locationsByKey {
+		result[key] = buildRuntimeUsage(locations)
+	}
+
+	return result, nil
 }
 
 // GetRuntimeUsageForScan returns runtime usage for one scan detail response.

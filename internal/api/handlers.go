@@ -129,16 +129,10 @@ func (s *APIServer) handleListScans(w http.ResponseWriter, r *http.Request) {
 		filter.PolicyPassed = parseQueryParamBool(r, "policy_passed")
 	}
 
-	// Get scans from state store
-	records, err := s.stateStore.ListScans(r.Context(), filter)
+	// Get scans from state store (one pass for image-usage filters that need post-filtering).
+	records, total, err := s.stateStore.ListScansWithTotal(r.Context(), filter)
 	if err != nil {
 		s.respondError(w, http.StatusInternalServerError, fmt.Sprintf("Failed to list scans: %v", err))
-		return
-	}
-
-	total, err := s.stateStore.CountScans(r.Context(), filter)
-	if err != nil {
-		s.respondError(w, http.StatusInternalServerError, fmt.Sprintf("Failed to count scans: %v", err))
 		return
 	}
 	if records == nil {
@@ -150,26 +144,29 @@ func (s *APIServer) handleListScans(w http.ResponseWriter, r *http.Request) {
 		s.enrichScanRecord(record)
 	}
 
-	lookupInputs := make([]statestore.RuntimeLookupInput, 0, len(records))
-	for _, record := range records {
-		lookupInputs = append(lookupInputs, statestore.RuntimeLookupInput{
-			Digest:     record.Digest,
-			Repository: record.Repository,
-			Tag:        record.Tag,
-		})
-	}
-
-	runtimeUsageByDigest, err := s.stateStore.GetRuntimeUsageForScans(r.Context(), lookupInputs)
-	if err != nil {
-		s.logger.Error("failed to get runtime usage for scan list", "error", err)
-	} else {
+	// Image-usage filtered lists already annotate RuntimeUsed/Runtime during the post-filter.
+	if filter.ImageUsage == statestore.ImageUsageAll {
+		lookupInputs := make([]statestore.RuntimeLookupInput, 0, len(records))
 		for _, record := range records {
-			usage, ok := runtimeUsageByDigest[record.Digest]
-			if !ok {
-				continue
+			lookupInputs = append(lookupInputs, statestore.RuntimeLookupInput{
+				Digest:     record.Digest,
+				Repository: record.Repository,
+				Tag:        record.Tag,
+			})
+		}
+
+		runtimeUsageByDigest, err := s.stateStore.GetRuntimeUsageForScans(r.Context(), lookupInputs)
+		if err != nil {
+			s.logger.Error("failed to get runtime usage for scan list", "error", err)
+		} else {
+			for _, record := range records {
+				usage, ok := runtimeUsageByDigest[record.Digest]
+				if !ok {
+					continue
+				}
+				record.RuntimeUsed = usage.RuntimeUsed
+				record.Runtime = usage.Runtime
 			}
-			record.RuntimeUsed = usage.RuntimeUsed
-			record.Runtime = usage.Runtime
 		}
 	}
 

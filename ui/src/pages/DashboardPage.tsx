@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { Link } from 'react-router';
 import { useAuth } from '../lib/auth';
-import { formatRelativeTime, loadAllRuntimeUnusedRepositories, summarizeRuntimeUnusedRepositories } from '../lib/utils';
+import { formatRelativeTime, countActionableRuntimeUnusedRepositories } from '../lib/utils';
 import { useImageUsageFilter } from '../lib/imageUsageFilter';
 import { fetchPolicyComplianceData, type PolicyComplianceSnapshot } from '../lib/policyComplianceData';
 import { scheduleEffectLoad } from '../lib/scheduleEffectLoad';
@@ -45,14 +45,18 @@ export default function DashboardPage() {
         apiClient.getInactiveVEXStatements(),
         apiClient.getVulnerabilityStats(),
         apiClient.getSemverUpdateTasks().catch(() => null as SemverUpdateTasksResponse | null),
-        loadAllRuntimeUnusedRepositories(apiClient).catch(() => null),
+        // limit=1: only need Total for the unused-task badge (full list lives on /tasks).
+        apiClient.getRepositories({ in_use_mode: 'not_in_use', limit: 1 }).catch(() => null),
         apiClient.getRuntimeUnusedWhitelist().catch(() => ({ repositories: [] })),
         apiClient.getVEXExpiryTasks().catch(() => null as VEXExpiryTasksResponse | null),
         apiClient.getPolicies().catch(() => ({}) as PoliciesResponse),
       ]);
 
       const runtimeUnusedTaskCount = runtimeUnusedReposResult
-        ? summarizeRuntimeUnusedRepositories(runtimeUnusedReposResult.Repositories, runtimeUnusedWhitelistResult.repositories).actionableRepositories.length
+        ? countActionableRuntimeUnusedRepositories(
+          runtimeUnusedReposResult.Total,
+          runtimeUnusedWhitelistResult.repositories,
+        )
         : 0;
       const outOfBoundsTaskCount = semverTasksResult?.entries?.filter(entry => entry.status === 'out_of_bounds').length ?? 0;
       const tightenTaskCount = semverTasksResult?.entries?.filter(entry => entry.status === 'tighten').length ?? 0;
