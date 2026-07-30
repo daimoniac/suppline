@@ -1809,30 +1809,63 @@ func (s *APIServer) groupVulnerabilitiesByCVE(vulnerabilities []*types.Vulnerabi
 	return result
 }
 
-// handleGetVulnerabilityStats returns unique vulnerability counts by severity
-// @Summary Get vulnerability stats
-// @Description Get counts of unique CVE IDs by severity across all latest scans
-// @Tags Vulnerabilities
-// @Accept json
+// CoverageResponse is returned by GET /api/v1/coverage.
+type CoverageResponse struct {
+	Clusters          []statestore.ClusterSummary `json:"Clusters"`
+	DueForRescanCount int                         `json:"DueForRescanCount"`
+	StaleAfterSeconds int64                       `json:"StaleAfterSeconds"`
+	StaleClusterCount int                         `json:"StaleClusterCount"`
+}
+
+const defaultClusterStaleAfter = 24 * time.Hour
+
+// handleGetCoverage returns runtime inventory and scan freshness signals for the dashboard.
+// @Summary Get coverage and freshness
+// @Description Cluster inventory sync status and count of digests due for rescan
+// @Tags Dashboard
 // @Produce json
-// @Success 200 {object} map[string]int
+// @Success 200 {object} CoverageResponse
 // @Failure 401 {object} map[string]string "Unauthorized"
 // @Failure 500 {object} map[string]string "Internal server error"
 // @Security BearerAuth
-// @Router /vulnerabilities/stats [get]
-func (s *APIServer) handleGetVulnerabilityStats(w http.ResponseWriter, r *http.Request) {
+// @Router /coverage [get]
+func (s *APIServer) handleGetCoverage(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {
 		s.respondError(w, http.StatusMethodNotAllowed, "Method not allowed")
 		return
 	}
 
-	counts, err := s.stateStore.GetUniqueVulnerabilityCounts(r.Context())
+	staleAfter := defaultClusterStaleAfter
+	dueCount, err := s.stateStore.CountDueForRescan(r.Context())
 	if err != nil {
-		s.logger.Error("failed to get unique vulnerability counts",
-			"error", err.Error())
-		s.respondError(w, http.StatusInternalServerError, fmt.Sprintf("Failed to get vulnerability stats: %v", err))
+		s.respondError(w, http.StatusInternalServerError, fmt.Sprintf("Failed to count due rescans: %v", err))
 		return
 	}
 
-	s.respondJSON(w, http.StatusOK, counts)
+	clusters := []statestore.ClusterSummary{}
+	if s.clusterInventory != nil {
+		summaries, err := s.clusterInventory.ListClusterSummaries(r.Context())
+		if err != nil {
+			s.respondError(w, http.StatusInternalServerError, fmt.Sprintf("Failed to list clusters: %v", err))
+			return
+		}
+		if summaries != nil {
+			clusters = summaries
+		}
+	}
+
+	cutoff := time.Now().UTC().Add(-staleAfter).Unix()
+	staleCount := 0
+	for _, cluster := range clusters {
+		if cluster.LastReported == nil || *cluster.LastReported < cutoff {
+			staleCount++
+		}
+	}
+
+	s.respondJSON(w, http.StatusOK, CoverageResponse{
+		Clusters:          clusters,
+		DueForRescanCount: dueCount,
+		StaleAfterSeconds: int64(staleAfter.Seconds()),
+		StaleClusterCount: staleCount,
+	})
 }

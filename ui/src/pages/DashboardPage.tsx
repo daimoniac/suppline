@@ -5,10 +5,10 @@ import { formatRelativeTime, countActionableRuntimeUnusedRepositories } from '..
 import { useImageUsageFilter } from '../lib/imageUsageFilter';
 import { fetchPolicyComplianceData, type PolicyComplianceSnapshot } from '../lib/policyComplianceData';
 import { scheduleEffectLoad } from '../lib/scheduleEffectLoad';
-import { LoadingState, ErrorState, StatusBadge, SeverityBadge, VulnCounts, DigestLinkWithCopy } from '../components/ui';
+import { LoadingState, ErrorState, StatusBadge, VulnCounts, DigestLinkWithCopy } from '../components/ui';
 import { PolicyCompliancePanel } from '../components/PolicyCompliancePanel';
-import type { PoliciesResponse, Scan, SemverUpdateTasksResponse, VEXExpiryTasksResponse } from '../lib/api';
-import { ShieldAlert, ShieldCheck, Clock, Clock3, ArrowRight, ClipboardList, Sparkles, Trash2, TriangleAlert } from 'lucide-react';
+import type { CoverageResponse, PoliciesResponse, Scan, SemverUpdateTasksResponse, VEXExpiryTasksResponse } from '../lib/api';
+import { ShieldAlert, ShieldCheck, Clock, Clock3, ArrowRight, ClipboardList, Sparkles, Trash2, TriangleAlert, Radar, Server } from 'lucide-react';
 
 interface DashboardData {
   recentScans: Scan[];
@@ -18,13 +18,27 @@ interface DashboardData {
   pendingCount: number;
   activeVEXStatements: number;
   inactiveVEXStatements: number;
-  vulnBreakdown: { critical: number; high: number; medium: number; low: number };
+  coverage: CoverageResponse;
   outOfBoundsTaskCount: number;
   tightenTaskCount: number;
   runtimeUnusedTaskCount: number;
   vexExpiredTaskCount: number;
   vexExpiringSoonTaskCount: number;
   defaultPolicy: PoliciesResponse['Default'];
+}
+
+function emptyCoverage(): CoverageResponse {
+  return {
+    Clusters: [],
+    DueForRescanCount: 0,
+    StaleAfterSeconds: 24 * 60 * 60,
+    StaleClusterCount: 0,
+  };
+}
+
+function isClusterStale(lastReported: number | undefined, staleAfterSeconds: number, nowSeconds: number): boolean {
+  if (lastReported == null) return true;
+  return lastReported < nowSeconds - staleAfterSeconds;
 }
 
 export default function DashboardPage() {
@@ -38,12 +52,12 @@ export default function DashboardPage() {
     setLoading(true);
     setError('');
     try {
-      const [recentScans, policySnap, allVEXStatements, inactiveVEXStatements, vulnStats, semverTasksResult, runtimeUnusedReposResult, runtimeUnusedWhitelistResult, vexExpiryTasksResult, policies] = await Promise.all([
+      const [recentScans, policySnap, allVEXStatements, inactiveVEXStatements, coverage, semverTasksResult, runtimeUnusedReposResult, runtimeUnusedWhitelistResult, vexExpiryTasksResult, policies] = await Promise.all([
         apiClient.getScans({ limit: 20, ...(inUseRequestParams && inUseRequestParams) }),
         fetchPolicyComplianceData(apiClient, inUseRequestParams),
         apiClient.getVEXStatements({}),
         apiClient.getInactiveVEXStatements(),
-        apiClient.getVulnerabilityStats(),
+        apiClient.getCoverage().catch(() => emptyCoverage()),
         apiClient.getSemverUpdateTasks().catch(() => null as SemverUpdateTasksResponse | null),
         // limit=1: only need Total for the unused-task badge (full list lives on /tasks).
         apiClient.getRepositories({ in_use_mode: 'not_in_use', limit: 1 }).catch(() => null),
@@ -71,12 +85,7 @@ export default function DashboardPage() {
         pendingCount: policySnap.pendingCount,
         activeVEXStatements: allVEXStatements.length,
         inactiveVEXStatements: inactiveVEXStatements.length,
-        vulnBreakdown: {
-          critical: vulnStats?.CRITICAL || 0,
-          high: vulnStats?.HIGH || 0,
-          medium: vulnStats?.MEDIUM || 0,
-          low: vulnStats?.LOW || 0,
-        },
+        coverage,
         outOfBoundsTaskCount,
         tightenTaskCount,
         runtimeUnusedTaskCount,
@@ -97,7 +106,9 @@ export default function DashboardPage() {
   if (error) return <ErrorState message={error} onRetry={load} />;
   if (!data) return null;
 
-  const totalVulns = data.vulnBreakdown.critical + data.vulnBreakdown.high + data.vulnBreakdown.medium + data.vulnBreakdown.low;
+  const nowSeconds = Math.floor(Date.now() / 1000);
+  const clusters = data.coverage.Clusters ?? [];
+  const staleAfter = data.coverage.StaleAfterSeconds || 24 * 60 * 60;
 
   return (
     <div className="space-y-6">
@@ -202,26 +213,82 @@ export default function DashboardPage() {
         defaultPolicy={data.defaultPolicy}
       />
 
-      {totalVulns > 0 && (
-        <div className="bg-bg-primary border border-border rounded-xl p-5">
-          <h2 className="text-sm font-semibold mb-4">Vulnerability Breakdown</h2>
-          <div className="h-3 rounded-full overflow-hidden flex bg-bg-tertiary mb-4">
-            {data.vulnBreakdown.critical > 0 && <div className="bg-severity-critical transition-all" style={{ width: `${(data.vulnBreakdown.critical / totalVulns) * 100}%` }} />}
-            {data.vulnBreakdown.high > 0 && <div className="bg-severity-high transition-all" style={{ width: `${(data.vulnBreakdown.high / totalVulns) * 100}%` }} />}
-            {data.vulnBreakdown.medium > 0 && <div className="bg-severity-medium transition-all" style={{ width: `${(data.vulnBreakdown.medium / totalVulns) * 100}%` }} />}
-            {data.vulnBreakdown.low > 0 && <div className="bg-severity-low transition-all" style={{ width: `${(data.vulnBreakdown.low / totalVulns) * 100}%` }} />}
+      <div className="bg-bg-primary border border-border rounded-xl p-5 space-y-4">
+        <div className="flex items-start justify-between gap-3">
+          <div>
+            <h2 className="text-sm font-semibold">Coverage & Freshness</h2>
+            <p className="text-xs text-text-muted mt-1">Runtime inventory sync and scan schedule health</p>
           </div>
-          <div className="grid grid-cols-4 gap-4">
-            {(['critical', 'high', 'medium', 'low'] as const).map(sev => (
-              <Link key={sev} to={`/vulnerabilities?severity=${sev}`} className="text-center rounded-lg p-2 -m-2 hover:bg-bg-secondary transition-colors">
-                <SeverityBadge severity={sev} />
-                <div className="text-lg font-bold mt-1">{data.vulnBreakdown[sev]}</div>
-                <div className="text-xs text-text-muted">{totalVulns > 0 ? ((data.vulnBreakdown[sev] / totalVulns) * 100).toFixed(0) : 0}%</div>
-              </Link>
-            ))}
+          <Link to="/integrations" className="inline-flex items-center gap-1.5 text-xs font-medium text-accent hover:text-accent-hover transition-colors">
+            Integrations
+            <ArrowRight className="w-3.5 h-3.5" />
+          </Link>
+        </div>
+
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+          <div className="rounded-lg border border-border bg-bg-secondary/40 px-3 py-3">
+            <div className="flex items-center gap-2 text-text-secondary text-xs mb-1">
+              <Server className="w-3.5 h-3.5" />
+              Clusters
+            </div>
+            <div className="text-xl font-bold">{clusters.length}</div>
+          </div>
+          <div className={`rounded-lg border px-3 py-3 ${data.coverage.StaleClusterCount > 0 ? 'border-warning/30 bg-warning-bg' : 'border-border bg-bg-secondary/40'}`}>
+            <div className="flex items-center gap-2 text-text-secondary text-xs mb-1">
+              <Radar className="w-3.5 h-3.5" />
+              Stale inventory
+            </div>
+            <div className={`text-xl font-bold ${data.coverage.StaleClusterCount > 0 ? 'text-warning' : ''}`}>
+              {data.coverage.StaleClusterCount}
+            </div>
+            <div className="text-xs text-text-muted mt-1">No sync in {Math.round(staleAfter / 3600)}h</div>
+          </div>
+          <div className={`rounded-lg border px-3 py-3 ${data.coverage.DueForRescanCount > 0 ? 'border-warning/30 bg-warning-bg' : 'border-border bg-bg-secondary/40'}`}>
+            <div className="flex items-center gap-2 text-text-secondary text-xs mb-1">
+              <Clock className="w-3.5 h-3.5" />
+              Due for rescan
+            </div>
+            <div className={`text-xl font-bold ${data.coverage.DueForRescanCount > 0 ? 'text-warning' : ''}`}>
+              {data.coverage.DueForRescanCount.toLocaleString()}
+            </div>
+            <div className="text-xs text-text-muted mt-1">Digests past next_scan_at</div>
           </div>
         </div>
-      )}
+
+        {clusters.length === 0 ? (
+          <div className="rounded-lg border border-border bg-bg-secondary/30 px-4 py-6 text-center text-sm text-text-secondary">
+            No cluster inventory reported yet. Connect a clusterstate agent under Integrations.
+          </div>
+        ) : (
+          <div className="space-y-2">
+            {clusters
+              .slice()
+              .sort((a, b) => (b.LastReported ?? 0) - (a.LastReported ?? 0))
+              .map(cluster => {
+                const stale = isClusterStale(cluster.LastReported, staleAfter, nowSeconds);
+                return (
+                  <div
+                    key={cluster.Name}
+                    className={`flex flex-wrap items-center justify-between gap-2 rounded-lg border px-3 py-2 text-sm ${stale ? 'border-warning/30 bg-warning-bg/40' : 'border-border bg-bg-secondary/30'}`}
+                  >
+                    <div className="min-w-0">
+                      <div className="font-medium truncate">{cluster.Name}</div>
+                      <div className="text-xs text-text-muted">
+                        {cluster.ImageCount.toLocaleString()} image{cluster.ImageCount === 1 ? '' : 's'}
+                      </div>
+                    </div>
+                    <div className="text-right">
+                      <div className={`text-xs ${stale ? 'text-warning' : 'text-text-secondary'}`}>
+                        {cluster.LastReported != null ? formatRelativeTime(cluster.LastReported) : 'Never synced'}
+                      </div>
+                      {stale && <div className="text-[11px] text-warning">Stale</div>}
+                    </div>
+                  </div>
+                );
+              })}
+          </div>
+        )}
+      </div>
 
       <div className="bg-bg-primary border border-border rounded-xl overflow-hidden">
         <div className="px-5 py-4 border-b border-border flex items-center justify-between gap-3">
@@ -282,4 +349,3 @@ function SummaryCard({ icon, value, label, detail, variant, to }: {
   const content = <><div className={`${iconColors[variant]} mb-3`}>{icon}</div><div className="text-2xl font-bold">{value.toLocaleString()}</div><div className="text-xs text-text-secondary mt-0.5">{label}</div>{detail && <div className="text-xs text-text-muted mt-1">{detail}</div>}</>;
   return to ? <Link to={to} className={className}>{content}</Link> : <div className={className}>{content}</div>;
 }
-

@@ -156,8 +156,8 @@ export class APIClient {
   async getVulnerabilityDetails(cveId: string, filters: Record<string, unknown> = {}) {
     return this.request<VulnerabilityGroup>(`/api/v1/vulnerabilities/${encodeURIComponent(cveId)}${this.qs(filters)}`);
   }
-  async getVulnerabilityStats() {
-    return this.request<Record<string, number>>('/api/v1/vulnerabilities/stats');
+  async getCoverage() {
+    return this.request<CoverageResponse>('/api/v1/coverage');
   }
 
   // VEX Statements
@@ -380,6 +380,13 @@ export interface KubernetesClusterSummary {
   Name: string;
   LastReported?: number;
   ImageCount: number;
+}
+
+export interface CoverageResponse {
+  Clusters: KubernetesClusterSummary[];
+  DueForRescanCount: number;
+  StaleAfterSeconds: number;
+  StaleClusterCount: number;
 }
 
 export interface KubernetesClusterImageSummary {

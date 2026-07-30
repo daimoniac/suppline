@@ -47,6 +47,9 @@ type StateStore interface {
 	// ListDueForRescan returns digests that need rescanning (where next_scan_at < now)
 	ListDueForRescan(ctx context.Context, interval time.Duration) ([]string, error)
 
+	// CountDueForRescan returns how many distinct digests are due for rescan (next_scan_at < now).
+	CountDueForRescan(ctx context.Context) (int, error)
+
 	// GetFailedArtifacts returns all artifacts whose most recent scan failed policy evaluation
 	GetFailedArtifacts(ctx context.Context) ([]*ScanRecord, error)
 

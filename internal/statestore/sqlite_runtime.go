@@ -840,7 +840,3 @@ func NormalizeRepositoryRef(imageRef string) string {
 func normalizeRepositoryRef(imageRef string) string {
 	return NormalizeRepositoryRef(imageRef)
 }
-
-// GetUniqueVulnerabilityCounts returns the count of unique CVE IDs by severity across all latest scans.
-// This deduplicates vulnerabilities so that a CVE ID is counted only once for the whole configuration,
-// even if it appears in multiple repositories or multiple tags.

@@ -166,6 +166,10 @@ func (m *mockStateStore) ListDueForRescan(ctx context.Context, interval time.Dur
 	return nil, nil
 }
 
+func (m *mockStateStore) CountDueForRescan(ctx context.Context) (int, error) {
+	return 0, nil
+}
+
 func (m *mockStateStore) GetFailedArtifacts(ctx context.Context) ([]*statestore.ScanRecord, error) {
 	return nil, nil
 }

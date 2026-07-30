@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"testing"
+	"time"
 
 	"github.com/daimoniac/suppline/internal/config"
 	"github.com/daimoniac/suppline/internal/observability"
@@ -290,12 +291,12 @@ func (m *mockStateStoreWithHistory) GetUniqueVulnerabilityCounts(ctx context.Con
 	}, nil
 }
 
-func TestHandleGetVulnerabilityStats(t *testing.T) {
-	mockStore := &mockStateStoreWithHistory{}
+func TestHandleGetCoverage(t *testing.T) {
+	mockStore := &mockStateStore{}
 	cfg := &config.APIConfig{Enabled: true}
 	server := NewAPIServer(cfg, nil, mockStore, nil, nil, observability.NewLogger("error"))
 
-	req := httptest.NewRequest(http.MethodGet, "/api/v1/vulnerabilities/stats", nil)
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/coverage", nil)
 	w := httptest.NewRecorder()
 
 	server.router.ServeHTTP(w, req)
@@ -304,12 +305,15 @@ func TestHandleGetVulnerabilityStats(t *testing.T) {
 		t.Fatalf("Expected status 200, got %d", w.Code)
 	}
 
-	var counts map[string]int
-	if err := json.NewDecoder(w.Body).Decode(&counts); err != nil {
+	var resp CoverageResponse
+	if err := json.NewDecoder(w.Body).Decode(&resp); err != nil {
 		t.Fatalf("Failed to decode response: %v", err)
 	}
 
-	if counts["CRITICAL"] != 5 || counts["HIGH"] != 10 {
-		t.Errorf("Unexpected counts: %v", counts)
+	if resp.Clusters == nil {
+		t.Fatalf("Expected Clusters array, got nil")
+	}
+	if resp.StaleAfterSeconds != int64((24 * time.Hour).Seconds()) {
+		t.Errorf("Unexpected StaleAfterSeconds: %d", resp.StaleAfterSeconds)
 	}
 }

@@ -123,6 +123,20 @@ func (s *SQLiteStore) ListDueForRescan(ctx context.Context, interval time.Durati
 	return digests, nil
 }
 
+// CountDueForRescan returns how many distinct digests are due for rescan.
+func (s *SQLiteStore) CountDueForRescan(ctx context.Context) (int, error) {
+	var count int
+	err := s.db.QueryRowContext(ctx, `
+		SELECT COUNT(DISTINCT digest)
+		FROM artifacts
+		WHERE last_scan_id IS NOT NULL AND next_scan_at < ?
+	`, time.Now().Unix()).Scan(&count)
+	if err != nil {
+		return 0, errors.NewTransientf("failed to count due for rescan: %w", err)
+	}
+	return count, nil
+}
+
 // GetFailedArtifacts returns all artifacts whose most recent scan failed policy evaluation
 func (s *SQLiteStore) GetFailedArtifacts(ctx context.Context) ([]*ScanRecord, error) {
 	query := `
