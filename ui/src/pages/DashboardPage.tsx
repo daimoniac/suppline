@@ -109,6 +109,7 @@ export default function DashboardPage() {
   const nowSeconds = Math.floor(Date.now() / 1000);
   const clusters = data.coverage.Clusters ?? [];
   const staleAfter = data.coverage.StaleAfterSeconds || 24 * 60 * 60;
+  const staleClusters = clusters.filter(cluster => isClusterStale(cluster.LastReported, staleAfter, nowSeconds));
 
   return (
     <div className="space-y-6">
@@ -259,35 +260,21 @@ export default function DashboardPage() {
           <div className="rounded-lg border border-border bg-bg-secondary/30 px-4 py-6 text-center text-sm text-text-secondary">
             No cluster inventory reported yet. Connect a clusterstate agent under Integrations.
           </div>
-        ) : (
-          <div className="space-y-2">
-            {clusters
-              .slice()
-              .sort((a, b) => (b.LastReported ?? 0) - (a.LastReported ?? 0))
-              .map(cluster => {
-                const stale = isClusterStale(cluster.LastReported, staleAfter, nowSeconds);
-                return (
-                  <div
-                    key={cluster.Name}
-                    className={`flex flex-wrap items-center justify-between gap-2 rounded-lg border px-3 py-2 text-sm ${stale ? 'border-warning/30 bg-warning-bg/40' : 'border-border bg-bg-secondary/30'}`}
-                  >
-                    <div className="min-w-0">
-                      <div className="font-medium truncate">{cluster.Name}</div>
-                      <div className="text-xs text-text-muted">
-                        {cluster.ImageCount.toLocaleString()} image{cluster.ImageCount === 1 ? '' : 's'}
-                      </div>
-                    </div>
-                    <div className="text-right">
-                      <div className={`text-xs ${stale ? 'text-warning' : 'text-text-secondary'}`}>
-                        {cluster.LastReported != null ? formatRelativeTime(cluster.LastReported) : 'Never synced'}
-                      </div>
-                      {stale && <div className="text-[11px] text-warning">Stale</div>}
-                    </div>
-                  </div>
-                );
-              })}
+        ) : staleClusters.length > 0 ? (
+          <div className="rounded-lg border border-warning/30 bg-warning-bg/40 px-3 py-3 space-y-2">
+            <div className="text-xs font-medium text-warning">Stale clusters</div>
+            <ul className="space-y-1">
+              {staleClusters.map(cluster => (
+                <li key={cluster.Name} className="text-sm text-text-primary truncate">
+                  {cluster.Name}
+                  <span className="text-xs text-text-muted ml-2">
+                    {cluster.LastReported != null ? formatRelativeTime(cluster.LastReported) : 'Never synced'}
+                  </span>
+                </li>
+              ))}
+            </ul>
           </div>
-        )}
+        ) : null}
       </div>
 
       <div className="bg-bg-primary border border-border rounded-xl overflow-hidden">
