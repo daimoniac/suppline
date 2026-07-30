@@ -42,12 +42,16 @@ RUN mkdir -p /build/data /build/config
 # Stage 2: Create minimal runtime image
 FROM alpine:3.24.1
 
-# Install runtime dependencies including trivy client
-RUN apk add --no-cache ca-certificates sqlite-libs wget cosign && \
+# Install runtime dependencies including trivy and cosign clients.
+# cosign is pinned rather than installed from apk: its CLI contract changes between patch
+# releases, and an unpinned upgrade silently breaks the attestation pipeline.
+RUN apk add --no-cache ca-certificates sqlite-libs wget && \
     wget https://github.com/aquasecurity/trivy/releases/download/v0.72.0/trivy_0.72.0_Linux-64bit.tar.gz && \
     tar zxvf trivy_0.72.0_Linux-64bit.tar.gz trivy && \
     mv trivy /usr/local/bin/ && \
-    rm trivy_0.72.0_Linux-64bit.tar.gz
+    rm trivy_0.72.0_Linux-64bit.tar.gz && \
+    wget -O /usr/local/bin/cosign https://github.com/sigstore/cosign/releases/download/v3.1.2/cosign-linux-amd64 && \
+    chmod 0755 /usr/local/bin/cosign
 
 # Create non-root user
 RUN addgroup -g 1000 suppline && \

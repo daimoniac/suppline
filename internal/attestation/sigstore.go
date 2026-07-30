@@ -44,6 +44,49 @@ func resolveCosignAttestTimeout(logger *slog.Logger) time.Duration {
 	return timeout
 }
 
+// attestArgs builds a key-based cosign attest invocation.
+//
+// --use-signing-config=false is required: cosign v3 defaults to a TUF-provided signing config,
+// which rejects --tlog-upload=false outright (and silently ignored it before v3.0.3).
+func (a *SigstoreAttestor) attestArgs(predicateType, predicatePath, imageRef string) []string {
+	return []string{
+		"attest",
+		"--key", a.keyPath,
+		"--type", predicateType,
+		"--predicate", predicatePath,
+		"--replace=true",
+		"--yes",
+		"--tlog-upload=false",
+		"--use-signing-config=false",
+		imageRef,
+	}
+}
+
+// cosignUsageErrorMarkers identify invocations cosign rejects before doing any work, such as
+// unknown flags or unsupported flag combinations. Retrying those can never succeed, so they are
+// classified permanent to surface the image as FAILED instead of retrying silently forever.
+// Markers stay narrow on purpose: registry and network output is free-form, so a loose match like
+// a bare "invalid argument" would misclassify retryable failures as permanent.
+var cosignUsageErrorMarkers = []string{
+	"unknown flag",
+	"unknown shorthand flag",
+	"flag needs an argument",
+	`invalid argument "`,
+	"is not supported with",
+	"cannot specify service urls",
+	"must provide --",
+}
+
+func isCosignUsageError(output string) bool {
+	lowered := strings.ToLower(output)
+	for _, marker := range cosignUsageErrorMarkers {
+		if strings.Contains(lowered, marker) {
+			return true
+		}
+	}
+	return false
+}
+
 func (a *SigstoreAttestor) runCosignAttest(ctx context.Context, operation string, args ...string) ([]byte, error) {
 	attestCtx, cancel := context.WithTimeout(ctx, a.attestTimeout)
 	defer cancel()
@@ -63,6 +106,9 @@ func (a *SigstoreAttestor) runCosignAttest(ctx context.Context, operation string
 	if err != nil {
 		if stderrors.Is(attestCtx.Err(), context.DeadlineExceeded) {
 			return nil, errors.NewTransientf("%s timed out after %s: %w (output: %s)", operation, a.attestTimeout, err, string(output))
+		}
+		if isCosignUsageError(string(output)) {
+			return nil, errors.NewPermanentf("failed to %s: %w (output: %s)", operation, err, string(output))
 		}
 		return nil, errors.NewTransientf("failed to %s: %w (output: %s)", operation, err, string(output))
 	}
@@ -157,14 +203,7 @@ func (a *SigstoreAttestor) AttestSBOM(ctx context.Context, imageRef string, sbom
 
 	// Use cosign CLI to attest
 	_, err = a.runCosignAttest(ctx, "attest SBOM",
-		"attest",
-		"--key", a.keyPath,
-		"--type", "https://cyclonedx.org/bom",
-		"--predicate", tmpFile.Name(),
-		"--replace=true",
-		"--yes",
-		"--tlog-upload=false",
-		imageRef,
+		a.attestArgs("https://cyclonedx.org/bom", tmpFile.Name(), imageRef)...,
 	)
 	if err != nil {
 		a.logger.Error("cosign SBOM attestation failed",
@@ -208,14 +247,7 @@ func (a *SigstoreAttestor) AttestVulnerabilities(ctx context.Context, imageRef s
 
 	// Use cosign CLI to attest
 	_, err = a.runCosignAttest(ctx, "attest vulnerabilities",
-		"attest",
-		"--key", a.keyPath,
-		"--type", "vuln",
-		"--predicate", tmpFile.Name(),
-		"--replace=true",
-		"--yes",
-		"--tlog-upload=false",
-		imageRef,
+		a.attestArgs("vuln", tmpFile.Name(), imageRef)...,
 	)
 	if err != nil {
 		a.logger.Error("cosign vulnerability attestation failed",
@@ -289,14 +321,7 @@ func (a *SigstoreAttestor) AttestVEX(ctx context.Context, imageRef string, state
 
 	// Use cosign CLI to attest with CycloneDX VEX type
 	_, err = a.runCosignAttest(ctx, "attest VEX",
-		"attest",
-		"--key", a.keyPath,
-		"--type", "https://cyclonedx.org/vex",
-		"--predicate", tmpFile.Name(),
-		"--replace=true",
-		"--yes",
-		"--tlog-upload=false",
-		imageRef,
+		a.attestArgs("https://cyclonedx.org/vex", tmpFile.Name(), imageRef)...,
 	)
 	if err != nil {
 		a.logger.Error("cosign VEX attestation failed",
@@ -343,14 +368,7 @@ func (a *SigstoreAttestor) AttestSCAI(ctx context.Context, imageRef string, scai
 
 	// Use cosign CLI to attest
 	_, err = a.runCosignAttest(ctx, "attest SCAI",
-		"attest",
-		"--key", a.keyPath,
-		"--type", "https://in-toto.io/attestation/scai/attribute-report/v0.3",
-		"--predicate", tmpFile.Name(),
-		"--replace=true",
-		"--yes",
-		"--tlog-upload=false",
-		imageRef,
+		a.attestArgs("https://in-toto.io/attestation/scai/attribute-report/v0.3", tmpFile.Name(), imageRef)...,
 	)
 	if err != nil {
 		a.logger.Error("cosign SCAI attestation failed",

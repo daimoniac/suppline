@@ -12,6 +12,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/daimoniac/suppline/internal/errors"
 	"github.com/daimoniac/suppline/internal/scanner"
 )
 
@@ -230,6 +231,96 @@ func TestAttestSBOM_CosignCommandConstruction(t *testing.T) {
 			t.Errorf("unexpected validation error: %v", err)
 		}
 		// Expected: "failed to attest SBOM with cosign" or similar execution error
+	}
+}
+
+func testSBOM(t *testing.T) *scanner.SBOM {
+	t.Helper()
+
+	sbomJSON, err := json.Marshal(map[string]any{
+		"bomFormat":   "CycloneDX",
+		"specVersion": "1.5",
+		"version":     1,
+	})
+	if err != nil {
+		t.Fatalf("failed to marshal test SBOM: %v", err)
+	}
+
+	return &scanner.SBOM{
+		Format:  "cyclonedx",
+		Version: "1.5",
+		Data:    sbomJSON,
+		Created: time.Now(),
+	}
+}
+
+func testAttestor(t *testing.T) *SigstoreAttestor {
+	t.Helper()
+
+	attestor, err := NewSigstoreAttestor(AttestationConfig{
+		KeyBased: KeyBasedConfig{
+			Key: base64.StdEncoding.EncodeToString([]byte("test-key-content")),
+		},
+	}, testLogger())
+	if err != nil {
+		t.Fatalf("failed to create attestor: %v", err)
+	}
+	t.Cleanup(func() { _ = attestor.Close() })
+
+	return attestor
+}
+
+// cosign v3 defaults to a TUF signing config, which rejects --tlog-upload=false, so both flags
+// have to be passed together for key-based signing to stay off the transparency log.
+func TestAttestSBOM_DisablesSigningConfigAndTlogUpload(t *testing.T) {
+	argsFile := filepath.Join(t.TempDir(), "args.txt")
+	fakeBinDir := writeFakeCosign(t, "#!/bin/sh\necho \"$@\" > "+argsFile+"\n")
+	t.Setenv("PATH", fakeBinDir+string(os.PathListSeparator)+os.Getenv("PATH"))
+
+	if err := testAttestor(t).AttestSBOM(context.Background(), "test-image:latest", testSBOM(t)); err != nil {
+		t.Fatalf("AttestSBOM: %v", err)
+	}
+
+	recorded, err := os.ReadFile(argsFile)
+	if err != nil {
+		t.Fatalf("failed to read recorded args: %v", err)
+	}
+
+	for _, flag := range []string{"--tlog-upload=false", "--use-signing-config=false"} {
+		if !strings.Contains(string(recorded), flag) {
+			t.Errorf("expected cosign args to contain %s, got %s", flag, recorded)
+		}
+	}
+}
+
+// A rejected invocation can never succeed on retry, so it must surface as a permanent failure
+// instead of being retried until the queue gives up and the digest silently stays stale.
+func TestAttestSBOM_UsageErrorIsPermanent(t *testing.T) {
+	fakeBinDir := writeFakeCosign(t, "#!/bin/sh\n"+
+		"echo 'Error: --tlog-upload=false is not supported with --signing-config or --use-signing-config' >&2\n"+
+		"exit 1\n")
+	t.Setenv("PATH", fakeBinDir+string(os.PathListSeparator)+os.Getenv("PATH"))
+
+	err := testAttestor(t).AttestSBOM(context.Background(), "test-image:latest", testSBOM(t))
+	if err == nil {
+		t.Fatal("expected error, got nil")
+	}
+	if !errors.IsPermanent(err) {
+		t.Fatalf("expected permanent error, got transient=%v: %v", errors.IsTransient(err), err)
+	}
+}
+
+// Registry and network failures must stay retryable.
+func TestAttestSBOM_RuntimeFailureStaysTransient(t *testing.T) {
+	fakeBinDir := writeFakeCosign(t, "#!/bin/sh\necho 'Error: GET https://registry/v2/: 503 Service Unavailable' >&2\nexit 1\n")
+	t.Setenv("PATH", fakeBinDir+string(os.PathListSeparator)+os.Getenv("PATH"))
+
+	err := testAttestor(t).AttestSBOM(context.Background(), "test-image:latest", testSBOM(t))
+	if err == nil {
+		t.Fatal("expected error, got nil")
+	}
+	if !errors.IsTransient(err) {
+		t.Fatalf("expected transient error, got %v", err)
 	}
 }
 
