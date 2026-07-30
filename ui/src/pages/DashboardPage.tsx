@@ -8,7 +8,7 @@ import { scheduleEffectLoad } from '../lib/scheduleEffectLoad';
 import { LoadingState, ErrorState, StatusBadge, VulnCounts, DigestLinkWithCopy } from '../components/ui';
 import { PolicyCompliancePanel } from '../components/PolicyCompliancePanel';
 import type { CoverageResponse, PoliciesResponse, Scan, SemverUpdateTasksResponse, VEXExpiryTasksResponse } from '../lib/api';
-import { ShieldAlert, ShieldCheck, Clock, Clock3, ArrowRight, ClipboardList, Sparkles, Trash2, TriangleAlert, Radar, Server } from 'lucide-react';
+import { ShieldAlert, ShieldCheck, Clock, Clock3, ArrowRight, ClipboardList, Sparkles, Trash2, TriangleAlert, Radar, Server, Layers } from 'lucide-react';
 
 interface DashboardData {
   recentScans: Scan[];
@@ -31,6 +31,9 @@ function emptyCoverage(): CoverageResponse {
   return {
     Clusters: [],
     DueForRescanCount: 0,
+    RescanIntervalSeconds: 7 * 24 * 60 * 60,
+    DigestCount: 0,
+    InUseDigestCount: 0,
     StaleAfterSeconds: 24 * 60 * 60,
     StaleClusterCount: 0,
   };
@@ -39,6 +42,20 @@ function emptyCoverage(): CoverageResponse {
 function isClusterStale(lastReported: number | undefined, staleAfterSeconds: number, nowSeconds: number): boolean {
   if (lastReported == null) return true;
   return lastReported < nowSeconds - staleAfterSeconds;
+}
+
+function formatDurationLabel(seconds: number): string {
+  if (seconds >= 86400 && seconds % 86400 === 0) {
+    const days = seconds / 86400;
+    return `${days}d`;
+  }
+  if (seconds >= 3600 && seconds % 3600 === 0) {
+    return `${seconds / 3600}h`;
+  }
+  if (seconds >= 60 && seconds % 60 === 0) {
+    return `${seconds / 60}m`;
+  }
+  return `${seconds}s`;
 }
 
 export default function DashboardPage() {
@@ -226,7 +243,7 @@ export default function DashboardPage() {
           </Link>
         </div>
 
-        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
           <div className="rounded-lg border border-border bg-bg-secondary/40 px-3 py-3">
             <div className="flex items-center gap-2 text-text-secondary text-xs mb-1">
               <Server className="w-3.5 h-3.5" />
@@ -244,6 +261,17 @@ export default function DashboardPage() {
             </div>
             <div className="text-xs text-text-muted mt-1">No sync in {Math.round(staleAfter / 3600)}h</div>
           </div>
+          <div className="rounded-lg border border-border bg-bg-secondary/40 px-3 py-3">
+            <div className="flex items-center gap-2 text-text-secondary text-xs mb-1">
+              <Layers className="w-3.5 h-3.5" />
+              Digests
+            </div>
+            <div className="text-xl font-bold">
+              {data.coverage.DigestCount.toLocaleString()}
+              <span className="text-sm font-normal text-text-secondary"> / {data.coverage.InUseDigestCount.toLocaleString()} in use</span>
+            </div>
+            <div className="text-xs text-text-muted mt-1">Current tags · observed in runtime</div>
+          </div>
           <div className={`rounded-lg border px-3 py-3 ${data.coverage.DueForRescanCount > 0 ? 'border-warning/30 bg-warning-bg' : 'border-border bg-bg-secondary/40'}`}>
             <div className="flex items-center gap-2 text-text-secondary text-xs mb-1">
               <Clock className="w-3.5 h-3.5" />
@@ -252,7 +280,9 @@ export default function DashboardPage() {
             <div className={`text-xl font-bold ${data.coverage.DueForRescanCount > 0 ? 'text-warning' : ''}`}>
               {data.coverage.DueForRescanCount.toLocaleString()}
             </div>
-            <div className="text-xs text-text-muted mt-1">Digests past next_scan_at</div>
+            <div className="text-xs text-text-muted mt-1">
+              Last scan older than {formatDurationLabel(data.coverage.RescanIntervalSeconds || 7 * 24 * 60 * 60)}
+            </div>
           </div>
         </div>
 

@@ -123,18 +123,87 @@ func (s *SQLiteStore) ListDueForRescan(ctx context.Context, interval time.Durati
 	return digests, nil
 }
 
-// CountDueForRescan returns how many distinct digests are due for rescan.
-func (s *SQLiteStore) CountDueForRescan(ctx context.Context) (int, error) {
+// CountDueForRescan returns how many distinct current digests are due for rescan
+// because their last scan is older than olderThan (same basis as the watcher).
+func (s *SQLiteStore) CountDueForRescan(ctx context.Context, olderThan time.Duration) (int, error) {
+	if olderThan <= 0 {
+		olderThan = 7 * 24 * time.Hour
+	}
+	cutoffUnix := time.Now().UTC().Add(-olderThan).Unix()
+
 	var count int
 	err := s.db.QueryRowContext(ctx, `
-		SELECT COUNT(DISTINCT digest)
-		FROM artifacts
-		WHERE last_scan_id IS NOT NULL AND next_scan_at < ?
-	`, time.Now().Unix()).Scan(&count)
+		SELECT COUNT(DISTINCT a.digest)
+		FROM artifacts a
+		JOIN scan_records sr ON a.last_scan_id = sr.id
+		INNER JOIN (
+			SELECT a2.repository_id, a2.tag, MAX(a2.id) AS max_id
+			FROM artifacts a2
+			GROUP BY a2.repository_id, a2.tag
+		) latest ON a.repository_id = latest.repository_id
+			AND a.tag IS latest.tag
+			AND a.id = latest.max_id
+		WHERE sr.created_at < ?
+	`, cutoffUnix).Scan(&count)
 	if err != nil {
 		return 0, errors.NewTransientf("failed to count due for rescan: %w", err)
 	}
 	return count, nil
+}
+
+// CountCurrentDigests returns distinct digests among current latest-per-tag artifacts
+// and how many are in runtime use. Usage matching goes through GetRuntimeUsageForScans so
+// the count includes the repository+tag fallback and matches the in_use list filters.
+func (s *SQLiteStore) CountCurrentDigests(ctx context.Context) (total int, inUse int, err error) {
+	rows, err := s.db.QueryContext(ctx, `
+		SELECT DISTINCT a.digest, COALESCE(a.tag, ''), r.name
+		FROM artifacts a
+		JOIN repositories r ON a.repository_id = r.id
+		INNER JOIN (
+			SELECT a2.repository_id, a2.tag, MAX(a2.id) AS max_id
+			FROM artifacts a2
+			GROUP BY a2.repository_id, a2.tag
+		) latest ON a.repository_id = latest.repository_id
+			AND a.tag IS latest.tag
+			AND a.id = latest.max_id
+		WHERE a.last_scan_id IS NOT NULL
+		  AND a.digest != ''
+	`)
+	if err != nil {
+		return 0, 0, errors.NewTransientf("failed to query current digests: %w", err)
+	}
+	defer rows.Close()
+
+	lookups := make([]RuntimeLookupInput, 0)
+	digests := make(map[string]struct{})
+	for rows.Next() {
+		var digest, tag, repository string
+		if err := rows.Scan(&digest, &tag, &repository); err != nil {
+			return 0, 0, errors.NewTransientf("failed to scan current digest row: %w", err)
+		}
+		digests[digest] = struct{}{}
+		lookups = append(lookups, RuntimeLookupInput{
+			Digest:     digest,
+			Repository: repository,
+			Tag:        tag,
+		})
+	}
+	if err := rows.Err(); err != nil {
+		return 0, 0, errors.NewTransientf("error iterating current digest rows: %w", err)
+	}
+
+	usageByDigest, err := s.GetRuntimeUsageForScans(ctx, lookups)
+	if err != nil {
+		return 0, 0, err
+	}
+
+	for digest := range digests {
+		if usage, ok := usageByDigest[digest]; ok && usage.RuntimeUsed {
+			inUse++
+		}
+	}
+
+	return len(digests), inUse, nil
 }
 
 // GetFailedArtifacts returns all artifacts whose most recent scan failed policy evaluation

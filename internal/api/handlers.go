@@ -1811,17 +1811,21 @@ func (s *APIServer) groupVulnerabilitiesByCVE(vulnerabilities []*types.Vulnerabi
 
 // CoverageResponse is returned by GET /api/v1/coverage.
 type CoverageResponse struct {
-	Clusters          []statestore.ClusterSummary `json:"Clusters"`
-	DueForRescanCount int                         `json:"DueForRescanCount"`
-	StaleAfterSeconds int64                       `json:"StaleAfterSeconds"`
-	StaleClusterCount int                         `json:"StaleClusterCount"`
+	Clusters              []statestore.ClusterSummary `json:"Clusters"`
+	DueForRescanCount     int                         `json:"DueForRescanCount"`
+	RescanIntervalSeconds int64                       `json:"RescanIntervalSeconds"`
+	DigestCount           int                         `json:"DigestCount"`
+	InUseDigestCount      int                         `json:"InUseDigestCount"`
+	StaleAfterSeconds     int64                       `json:"StaleAfterSeconds"`
+	StaleClusterCount     int                         `json:"StaleClusterCount"`
 }
 
 const defaultClusterStaleAfter = 24 * time.Hour
+const defaultRescanInterval = 7 * 24 * time.Hour
 
 // handleGetCoverage returns runtime inventory and scan freshness signals for the dashboard.
 // @Summary Get coverage and freshness
-// @Description Cluster inventory sync status and count of digests due for rescan
+// @Description Cluster inventory sync status, digest coverage, and digests due for rescan
 // @Tags Dashboard
 // @Produce json
 // @Success 200 {object} CoverageResponse
@@ -1836,9 +1840,22 @@ func (s *APIServer) handleGetCoverage(w http.ResponseWriter, r *http.Request) {
 	}
 
 	staleAfter := defaultClusterStaleAfter
-	dueCount, err := s.stateStore.CountDueForRescan(r.Context())
+	rescanInterval := defaultRescanInterval
+	if s.regsyncConfig != nil {
+		if interval, err := s.regsyncConfig.GetRescanInterval(""); err == nil && interval > 0 {
+			rescanInterval = interval
+		}
+	}
+
+	dueCount, err := s.stateStore.CountDueForRescan(r.Context(), rescanInterval)
 	if err != nil {
 		s.respondError(w, http.StatusInternalServerError, fmt.Sprintf("Failed to count due rescans: %v", err))
+		return
+	}
+
+	digestCount, inUseDigestCount, err := s.stateStore.CountCurrentDigests(r.Context())
+	if err != nil {
+		s.respondError(w, http.StatusInternalServerError, fmt.Sprintf("Failed to count digests: %v", err))
 		return
 	}
 
@@ -1863,9 +1880,12 @@ func (s *APIServer) handleGetCoverage(w http.ResponseWriter, r *http.Request) {
 	}
 
 	s.respondJSON(w, http.StatusOK, CoverageResponse{
-		Clusters:          clusters,
-		DueForRescanCount: dueCount,
-		StaleAfterSeconds: int64(staleAfter.Seconds()),
-		StaleClusterCount: staleCount,
+		Clusters:              clusters,
+		DueForRescanCount:     dueCount,
+		RescanIntervalSeconds: int64(rescanInterval.Seconds()),
+		DigestCount:           digestCount,
+		InUseDigestCount:      inUseDigestCount,
+		StaleAfterSeconds:     int64(staleAfter.Seconds()),
+		StaleClusterCount:     staleCount,
 	})
 }

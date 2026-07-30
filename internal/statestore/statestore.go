@@ -47,8 +47,13 @@ type StateStore interface {
 	// ListDueForRescan returns digests that need rescanning (where next_scan_at < now)
 	ListDueForRescan(ctx context.Context, interval time.Duration) ([]string, error)
 
-	// CountDueForRescan returns how many distinct digests are due for rescan (next_scan_at < now).
-	CountDueForRescan(ctx context.Context) (int, error)
+	// CountDueForRescan returns how many distinct current digests have a last scan
+	// older than olderThan (aligned with watcher rescan-interval checks).
+	CountDueForRescan(ctx context.Context, olderThan time.Duration) (int, error)
+
+	// CountCurrentDigests returns distinct digests among current latest-per-tag
+	// artifacts, and how many of those are in runtime use (same matching as in_use filters).
+	CountCurrentDigests(ctx context.Context) (total int, inUse int, err error)
 
 	// GetFailedArtifacts returns all artifacts whose most recent scan failed policy evaluation
 	GetFailedArtifacts(ctx context.Context) ([]*ScanRecord, error)

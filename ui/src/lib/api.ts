@@ -385,6 +385,9 @@ export interface KubernetesClusterSummary {
 export interface CoverageResponse {
   Clusters: KubernetesClusterSummary[];
   DueForRescanCount: number;
+  RescanIntervalSeconds: number;
+  DigestCount: number;
+  InUseDigestCount: number;
   StaleAfterSeconds: number;
   StaleClusterCount: number;
 }

@@ -2078,8 +2078,13 @@ func (m *mockWorkerStateStore) ListDueForRescan(ctx context.Context, interval ti
 	return nil, nil
 }
 
-func (m *mockWorkerStateStore) CountDueForRescan(ctx context.Context) (int, error) {
+func (m *mockWorkerStateStore) CountDueForRescan(ctx context.Context, olderThan time.Duration) (int, error) {
+	_ = olderThan
 	return 0, nil
+}
+
+func (m *mockWorkerStateStore) CountCurrentDigests(ctx context.Context) (total int, inUse int, err error) {
+	return 0, 0, nil
 }
 
 func (m *mockWorkerStateStore) GetFailedArtifacts(ctx context.Context) ([]*statestore.ScanRecord, error) {

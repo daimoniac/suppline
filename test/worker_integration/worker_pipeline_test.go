@@ -166,8 +166,13 @@ func (m *mockStateStore) ListDueForRescan(ctx context.Context, interval time.Dur
 	return nil, nil
 }
 
-func (m *mockStateStore) CountDueForRescan(ctx context.Context) (int, error) {
+func (m *mockStateStore) CountDueForRescan(ctx context.Context, olderThan time.Duration) (int, error) {
+	_ = olderThan
 	return 0, nil
+}
+
+func (m *mockStateStore) CountCurrentDigests(ctx context.Context) (total int, inUse int, err error) {
+	return 0, 0, nil
 }
 
 func (m *mockStateStore) GetFailedArtifacts(ctx context.Context) ([]*statestore.ScanRecord, error) {
