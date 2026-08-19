@@ -286,10 +286,50 @@ func TestAttestSBOM_DisablesSigningConfigAndTlogUpload(t *testing.T) {
 		t.Fatalf("failed to read recorded args: %v", err)
 	}
 
-	for _, flag := range []string{"--tlog-upload=false", "--use-signing-config=false"} {
+	for _, flag := range []string{"--tlog-upload=false", "--use-signing-config=false", "--new-bundle-format=false"} {
 		if !strings.Contains(string(recorded), flag) {
 			t.Errorf("expected cosign args to contain %s, got %s", flag, recorded)
 		}
+	}
+}
+
+func TestAttestSBOM_NewBundleFormatEnv(t *testing.T) {
+	tests := []struct {
+		name string
+		env  string
+		want string
+	}{
+		{name: "unset defaults to classic att tags", env: "", want: "--new-bundle-format=false"},
+		{name: "explicit false", env: "false", want: "--new-bundle-format=false"},
+		{name: "true enables protobuf bundles", env: "true", want: "--new-bundle-format=true"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			argsFile := filepath.Join(t.TempDir(), "args.txt")
+			fakeBinDir := writeFakeCosign(t, "#!/bin/sh\necho \"$@\" > "+argsFile+"\n")
+			t.Setenv("PATH", fakeBinDir+string(os.PathListSeparator)+os.Getenv("PATH"))
+			if tt.env == "" {
+				t.Setenv("ATTESTATION_NEW_BUNDLE_FORMAT", "")
+			} else {
+				t.Setenv("ATTESTATION_NEW_BUNDLE_FORMAT", tt.env)
+			}
+
+			if err := testAttestor(t).AttestSBOM(context.Background(), "test-image:latest", testSBOM(t)); err != nil {
+				t.Fatalf("AttestSBOM: %v", err)
+			}
+
+			recorded, err := os.ReadFile(argsFile)
+			if err != nil {
+				t.Fatalf("failed to read recorded args: %v", err)
+			}
+			if !strings.Contains(string(recorded), tt.want) {
+				t.Errorf("expected %s, got %s", tt.want, recorded)
+			}
+			if tt.want == "--new-bundle-format=false" && strings.Contains(string(recorded), "--new-bundle-format=true") {
+				t.Errorf("did not expect --new-bundle-format=true, got %s", recorded)
+			}
+		})
 	}
 }
 
