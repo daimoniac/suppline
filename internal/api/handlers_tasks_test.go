@@ -250,6 +250,76 @@ func TestHandleGetSemverUpdateTasks_BitnamiRevisionNotOutOfBounds(t *testing.T) 
 	}
 }
 
+func TestHandleGetSemverUpdateTasks_FlavorSuffixNotOutOfBounds(t *testing.T) {
+	// RabbitMQ ships "-management" variant tags. SemVer reads the suffix as a
+	// pre-release and would exclude it from >=4.1.1, but 4.1.3-management is the
+	// released 4.1.3 and therefore inside the range.
+	regsync := regsyncWithSemver(
+		"docker.io/library/rabbitmq",
+		"hostingmaloonde/rabbitmq",
+		[]string{">=4.1.1"},
+	)
+	store := &mockClusterInventoryStore{
+		mockStateStore: &mockStateStore{},
+		summaries:      []statestore.ClusterSummary{{Name: "prod"}},
+		clusterImages: []statestore.ClusterImageSummary{
+			{Namespace: "default", ImageRef: "hostingmaloonde/rabbitmq", Tag: "4.1.3-management"},
+		},
+	}
+	server := tasksTestServer(t, store, regsync)
+
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/tasks/semver-updates", nil)
+	w := httptest.NewRecorder()
+	server.router.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", w.Code, w.Body.String())
+	}
+
+	var resp SemverUpdateTasksResponse
+	if err := json.NewDecoder(w.Body).Decode(&resp); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if len(resp.Entries) != 1 {
+		t.Fatalf("expected 1 entry, got %d", len(resp.Entries))
+	}
+	entry := resp.Entries[0]
+	if entry.Status == "out_of_bounds" {
+		t.Fatalf("expected flavor tag in range, got out_of_bounds=%v", entry.OutOfRangeVersions)
+	}
+	if len(entry.OutOfRangeVersions) != 0 {
+		t.Fatalf("expected no out-of-range versions, got %v", entry.OutOfRangeVersions)
+	}
+}
+
+func TestHandleGetSemverUpdateTasks_PrereleaseStaysOutOfBounds(t *testing.T) {
+	// A real pre-release keeps strict SemVer semantics: 4.2.0-rc.1 is not in >=4.1.1.
+	regsync := regsyncWithSemver("docker.io/library/rabbitmq", "hostingmaloonde/rabbitmq", []string{">=4.1.1"})
+	store := &mockClusterInventoryStore{
+		mockStateStore: &mockStateStore{},
+		summaries:      []statestore.ClusterSummary{{Name: "prod"}},
+		clusterImages: []statestore.ClusterImageSummary{
+			{Namespace: "default", ImageRef: "hostingmaloonde/rabbitmq", Tag: "4.2.0-rc.1"},
+		},
+	}
+	server := tasksTestServer(t, store, regsync)
+
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/tasks/semver-updates", nil)
+	w := httptest.NewRecorder()
+	server.router.ServeHTTP(w, req)
+
+	var resp SemverUpdateTasksResponse
+	if err := json.NewDecoder(w.Body).Decode(&resp); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if len(resp.Entries) != 1 {
+		t.Fatalf("expected 1 entry, got %d", len(resp.Entries))
+	}
+	if resp.Entries[0].Status != "out_of_bounds" {
+		t.Fatalf("expected out_of_bounds for pre-release tag, got %q", resp.Entries[0].Status)
+	}
+}
+
 func TestHandleGetSemverUpdateTasks_OutdatedRange(t *testing.T) {
 	// 1.27.2 is outside >=1.20.0 <1.26.0 → should suggest >=1.25.3.
 	regsync := regsyncWithSemver("docker.io/nginx", "registry.example.com/nginx", []string{">=1.20.0 <1.26.0"})

@@ -210,7 +210,7 @@ func (s *APIServer) handleGetSemverUpdateTasks(w http.ResponseWriter, r *http.Re
 				continue
 			}
 			allTags = append(allTags, tag)
-			if !constraint.Check(v) {
+			if !semverutil.Satisfies(constraint, v) {
 				outOfRangeTags = append(outOfRangeTags, tag)
 				c.OutOfRangeVersions = append(c.OutOfRangeVersions, tag)
 			}
@@ -491,7 +491,7 @@ func suggestedRangesForTighten(currentRanges []string, runtimeTags []string) ([]
 
 		matching := make([]taggedVersion, 0, len(runtime))
 		for _, tv := range runtime {
-			if constraint.Check(tv.ver) {
+			if semverutil.Satisfies(constraint, tv.ver) {
 				matching = append(matching, tv)
 			}
 		}
