@@ -5,7 +5,7 @@ This directory contains integration tests that verify the components work togeth
 ## Prerequisites
 
 - Docker and Docker Compose installed
-- Go 1.21 or later
+- Go 1.27 or later
 - Make (optional, but recommended)
 
 ## Running Integration Tests

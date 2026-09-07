@@ -19,6 +19,7 @@ interface DashboardData {
   activeVEXStatements: number;
   inactiveVEXStatements: number;
   coverage: CoverageResponse;
+  staleClusters: CoverageResponse['Clusters'];
   outOfBoundsTaskCount: number;
   tightenTaskCount: number;
   runtimeUnusedTaskCount: number;
@@ -89,6 +90,11 @@ export default function DashboardPage() {
           runtimeUnusedWhitelistResult.repositories,
         )
         : 0;
+      const nowSeconds = Math.floor(Date.now() / 1000);
+      const staleAfter = coverage.StaleAfterSeconds || 24 * 60 * 60;
+      const staleClusters = (coverage.Clusters ?? []).filter(cluster =>
+        isClusterStale(cluster.LastReported, staleAfter, nowSeconds),
+      );
       const outOfBoundsTaskCount = semverTasksResult?.entries?.filter(entry => entry.status === 'out_of_bounds').length ?? 0;
       const tightenTaskCount = semverTasksResult?.entries?.filter(entry => entry.status === 'tighten').length ?? 0;
       const vexExpiredTaskCount = vexExpiryTasksResult?.entries?.filter(entry => entry.status === 'expired').length ?? 0;
@@ -103,6 +109,7 @@ export default function DashboardPage() {
         activeVEXStatements: allVEXStatements.length,
         inactiveVEXStatements: inactiveVEXStatements.length,
         coverage,
+        staleClusters,
         outOfBoundsTaskCount,
         tightenTaskCount,
         runtimeUnusedTaskCount,
@@ -123,10 +130,9 @@ export default function DashboardPage() {
   if (error) return <ErrorState message={error} onRetry={load} />;
   if (!data) return null;
 
-  const nowSeconds = Math.floor(Date.now() / 1000);
   const clusters = data.coverage.Clusters ?? [];
   const staleAfter = data.coverage.StaleAfterSeconds || 24 * 60 * 60;
-  const staleClusters = clusters.filter(cluster => isClusterStale(cluster.LastReported, staleAfter, nowSeconds));
+  const staleClusters = data.staleClusters;
 
   return (
     <div className="space-y-6">

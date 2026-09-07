@@ -9,7 +9,7 @@ COPY . .
 RUN npm run build
 
 # Serve stage
-FROM nginx:1.31.3-alpine3.24
+FROM nginx:1.31.5-alpine3.24
 
 # Remove default nginx static assets; directory must be writable by nginx (config.json)
 RUN rm -rf /usr/share/nginx/html/* \

@@ -104,7 +104,7 @@ Data PVCs may be retained (`helm.sh/resource-policy: keep`) so reinstalls can re
 | `regsync.enabled` | Deploy regsync | `true` |
 | `registry.enabled` | Bundled registry | `false` (BYO) |
 | `persistence.data.enabled` | SQLite PVC | `true` |
-| `trivy.image.tag` | Trivy sidecar | `0.72.0` |
+| `trivy.image.tag` | Trivy sidecar | `0.74.0` |
 
 See `values.yaml` for the full set.
 

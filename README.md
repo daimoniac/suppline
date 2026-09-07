@@ -9,7 +9,7 @@
 
 <p align="center">
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-Apache%202.0-blue.svg" alt="Apache 2.0"/></a>
-  <img src="https://img.shields.io/badge/go-1.26-00ADD8.svg" alt="Go 1.26"/>
+  <img src="https://img.shields.io/badge/go-1.27-00ADD8.svg" alt="Go 1.27"/>
   <img src="https://img.shields.io/badge/deploy-Docker%20Compose%20%7C%20Helm-2496ED.svg" alt="Docker Compose or Helm"/>
   <a href="https://suppline.cloud"><img src="https://img.shields.io/badge/docs-suppline.cloud-6f42c1.svg" alt="Documentation"/></a>
 </p>

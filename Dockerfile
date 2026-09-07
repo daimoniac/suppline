@@ -1,6 +1,6 @@
 # Multi-stage Dockerfile for suppline
 # Stage 1: Build the Go binary
-FROM golang:1.26.5-alpine AS builder
+FROM golang:1.27.1-alpine AS builder
 
 # Install build dependencies
 RUN apk add --no-cache git ca-certificates gcc musl-dev sqlite-dev
@@ -46,11 +46,11 @@ FROM alpine:3.24.1
 # cosign is pinned rather than installed from apk: its CLI contract changes between patch
 # releases, and an unpinned upgrade silently breaks the attestation pipeline.
 RUN apk add --no-cache ca-certificates sqlite-libs wget && \
-    wget https://github.com/aquasecurity/trivy/releases/download/v0.72.0/trivy_0.72.0_Linux-64bit.tar.gz && \
-    tar zxvf trivy_0.72.0_Linux-64bit.tar.gz trivy && \
+    wget https://github.com/aquasecurity/trivy/releases/download/v0.74.0/trivy_0.74.0_Linux-64bit.tar.gz && \
+    tar zxvf trivy_0.74.0_Linux-64bit.tar.gz trivy && \
     mv trivy /usr/local/bin/ && \
-    rm trivy_0.72.0_Linux-64bit.tar.gz && \
-    wget -O /usr/local/bin/cosign https://github.com/sigstore/cosign/releases/download/v3.1.2/cosign-linux-amd64 && \
+    rm trivy_0.74.0_Linux-64bit.tar.gz && \
+    wget -O /usr/local/bin/cosign https://github.com/sigstore/cosign/releases/download/v3.1.3/cosign-linux-amd64 && \
     chmod 0755 /usr/local/bin/cosign
 
 # Create non-root user
