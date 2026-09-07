@@ -268,7 +268,7 @@ func (e *Engine) Evaluate(ctx context.Context, imageRef string, result *scanner.
 			exemptedCount++
 			decision.ExemptedCVEs = append(decision.ExemptedCVEs, vuln.ID)
 
-			e.logger.Info("vulnerability exempted by VEX",
+			e.logger.Debug("vulnerability exempted by VEX",
 				"cve_id", vuln.ID,
 				"severity", vuln.Severity,
 				"vex_state", stmt.State,

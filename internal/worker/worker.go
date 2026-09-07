@@ -192,7 +192,7 @@ func (w *ImageWorker) processLoop(ctx context.Context, workerID int) {
 				metrics.WorkerErrors.Inc()
 				_ = w.queue.Fail(ctx, task.ID, err)
 			} else {
-				w.logger.Info("task processing completed",
+				w.logger.Debug("task processing completed",
 					"worker_id", workerID,
 					"task_id", task.ID,
 					"digest", task.Digest,

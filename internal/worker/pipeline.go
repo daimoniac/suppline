@@ -491,7 +491,7 @@ func (p *Pipeline) performScanCleanup(ctx context.Context, digest string) error 
 		return nil
 	}
 
-	p.logger.Info("cleaning up excess scans after scan recording",
+	p.logger.Debug("cleaning up excess scans after scan recording",
 		"digest", digest,
 		"keep_scan_id", lastScan.ID)
 
@@ -508,7 +508,7 @@ func (p *Pipeline) performScanCleanup(ctx context.Context, digest string) error 
 			"error", err)
 		// Continue with repository cleanup despite permanent error
 	} else {
-		p.logger.Info("excess scan cleanup completed", "digest", digest)
+		p.logger.Debug("excess scan cleanup completed", "digest", digest)
 	}
 
 	// Cleanup orphaned repositories after scan cleanup
