@@ -53,6 +53,15 @@ Configuration is loaded from multiple sources in this priority order:
 | `POSTGRES_URL` | string | `` | PostgreSQL connection URL (if type=postgres) |
 | `RESCAN_INTERVAL` | duration | `24h` | Default rescan interval for unchanged images |
 
+### SQLite schema reset
+
+The normalized vulnerability schema stores CVE descriptions once in `cve_catalog`
+and package occurrences in `scan_findings`. It intentionally does not migrate the
+legacy `vulnerabilities` table. When upgrading from a version that used that table,
+stop all Suppline writers, remove the SQLite database plus its `-wal` and `-shm`
+files, and restart Suppline. Registry discovery and cluster inventory will refill
+the empty database. Suppline refuses to start if it detects the legacy table.
+
 ### Attestation
 
 | Variable | Type | Default | Description |

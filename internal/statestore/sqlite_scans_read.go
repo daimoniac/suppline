@@ -362,11 +362,12 @@ func (s *SQLiteStore) GetTagsForDigest(ctx context.Context, digest string) ([]Ta
 
 func (s *SQLiteStore) loadVulnerabilitiesByScan(ctx context.Context, scanRecordID int64) ([]types.VulnerabilityRecord, error) {
 	rows, err := s.db.QueryContext(ctx, `
-		SELECT cve_id, severity, package_name, installed_version, fixed_version,
-			title, description, primary_url
-		FROM vulnerabilities
-		WHERE scan_record_id = ?
-		ORDER BY severity, cve_id
+		SELECT f.cve_id, c.severity, f.package_name, f.installed_version, f.fixed_version,
+			c.title, c.description, c.primary_url
+		FROM scan_findings f
+		JOIN cve_catalog c ON c.cve_id = f.cve_id
+		WHERE f.scan_record_id = ?
+		ORDER BY c.severity, f.cve_id
 	`, scanRecordID)
 	if err != nil {
 		return nil, errors.NewTransientf("failed to query vulnerabilities: %w", err)

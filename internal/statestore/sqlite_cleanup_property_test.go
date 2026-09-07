@@ -216,7 +216,7 @@ func countVulnerabilities(store *SQLiteStore, digest string) int {
 	var count int
 	err := store.db.QueryRow(`
 		SELECT COUNT(v.id)
-		FROM vulnerabilities v
+		FROM scan_findings v
 		JOIN scan_records sr ON v.scan_record_id = sr.id
 		JOIN artifacts a ON sr.artifact_id = a.id
 		WHERE a.digest = ?

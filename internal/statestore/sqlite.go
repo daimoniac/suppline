@@ -89,6 +89,17 @@ func (s *SQLiteStore) SetRuntimeInUseWindow(window time.Duration) {
 
 // initSchema creates the database schema with all tables and indexes
 func (s *SQLiteStore) initSchema() error {
+	var legacyVulnerabilitiesTable int
+	if err := s.db.QueryRow(`
+		SELECT COUNT(*) FROM sqlite_master
+		WHERE type = 'table' AND name = 'vulnerabilities'
+	`).Scan(&legacyVulnerabilitiesTable); err != nil {
+		return fmt.Errorf("inspect legacy schema: %w", err)
+	}
+	if legacyVulnerabilitiesTable != 0 {
+		return fmt.Errorf("legacy vulnerabilities table detected; stop suppline and remove the SQLite database before starting this version")
+	}
+
 	schema := `
 	CREATE TABLE IF NOT EXISTS repositories (
 		id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -136,19 +147,33 @@ func (s *SQLiteStore) initSchema() error {
 		FOREIGN KEY (artifact_id) REFERENCES artifacts(id) ON DELETE CASCADE
 	);
 
-	CREATE TABLE IF NOT EXISTS vulnerabilities (
+	CREATE TABLE IF NOT EXISTS cve_catalog (
+		cve_id TEXT PRIMARY KEY,
+		severity TEXT NOT NULL,
+		title TEXT,
+		description TEXT,
+		primary_url TEXT
+	);
+
+	CREATE TABLE IF NOT EXISTS scan_findings (
 		id INTEGER PRIMARY KEY AUTOINCREMENT,
 		scan_record_id INTEGER NOT NULL,
 		cve_id TEXT NOT NULL,
-		severity TEXT NOT NULL,
 		package_name TEXT NOT NULL,
 		installed_version TEXT,
 		fixed_version TEXT,
-		title TEXT,
-		description TEXT,
-		primary_url TEXT,
 		created_at INTEGER NOT NULL DEFAULT (cast(strftime('%s', 'now') as integer)),
-		FOREIGN KEY (scan_record_id) REFERENCES scan_records(id) ON DELETE CASCADE
+		FOREIGN KEY (scan_record_id) REFERENCES scan_records(id) ON DELETE CASCADE,
+		FOREIGN KEY (cve_id) REFERENCES cve_catalog(cve_id)
+	);
+
+	CREATE TABLE IF NOT EXISTS cve_first_seen (
+		artifact_id INTEGER NOT NULL,
+		cve_id TEXT NOT NULL,
+		first_seen_at INTEGER NOT NULL,
+		PRIMARY KEY (artifact_id, cve_id),
+		FOREIGN KEY (artifact_id) REFERENCES artifacts(id) ON DELETE CASCADE,
+		FOREIGN KEY (cve_id) REFERENCES cve_catalog(cve_id)
 	);
 
 	CREATE TABLE IF NOT EXISTS clusters (
@@ -192,12 +217,13 @@ func (s *SQLiteStore) initSchema() error {
 	CREATE INDEX IF NOT EXISTS idx_artifacts_next_scan ON artifacts(next_scan_at);
 	CREATE INDEX IF NOT EXISTS idx_scan_records_artifact ON scan_records(artifact_id);
 	CREATE INDEX IF NOT EXISTS idx_scan_records_created ON scan_records(created_at);
-	CREATE INDEX IF NOT EXISTS idx_vulnerabilities_scan ON vulnerabilities(scan_record_id);
-	CREATE INDEX IF NOT EXISTS idx_vulnerabilities_cve ON vulnerabilities(cve_id);
-	CREATE INDEX IF NOT EXISTS idx_vulnerabilities_cve_scan ON vulnerabilities(cve_id, scan_record_id);
-	CREATE INDEX IF NOT EXISTS idx_vulnerabilities_severity ON vulnerabilities(severity);
+	CREATE INDEX IF NOT EXISTS idx_scan_findings_scan ON scan_findings(scan_record_id);
+	CREATE INDEX IF NOT EXISTS idx_scan_findings_cve ON scan_findings(cve_id);
+	CREATE INDEX IF NOT EXISTS idx_scan_findings_cve_scan ON scan_findings(cve_id, scan_record_id);
+	CREATE INDEX IF NOT EXISTS idx_cve_catalog_severity ON cve_catalog(severity);
+	CREATE INDEX IF NOT EXISTS idx_cve_first_seen_cve ON cve_first_seen(cve_id);
 	CREATE INDEX IF NOT EXISTS idx_artifacts_last_scan ON artifacts(last_scan_id);
-	CREATE INDEX IF NOT EXISTS idx_vulnerabilities_scan_severity_cve ON vulnerabilities(scan_record_id, severity, cve_id);
+	CREATE INDEX IF NOT EXISTS idx_scan_findings_scan_cve ON scan_findings(scan_record_id, cve_id);
 	CREATE INDEX IF NOT EXISTS idx_artifacts_last_scan_repo_digest ON artifacts(last_scan_id, repository_id, digest);
 	CREATE INDEX IF NOT EXISTS idx_cluster_images_cluster ON cluster_images(cluster_id);
 	CREATE INDEX IF NOT EXISTS idx_cluster_images_digest ON cluster_images(digest);

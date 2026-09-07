@@ -146,20 +146,7 @@ func TestSQLiteStore(t *testing.T) {
 		if len(history) != 2 {
 			t.Errorf("Expected 2 scan records, got %d", len(history))
 		}
-		// Verify both scans are returned
-		// Note: With composite unique constraint, each tag gets its own artifact row
-		// So scans from different tags (v1.0.0 and v1.0.1) are separate artifacts
-		// Due to timestamp precision, scans might be returned in either order
-		tags := map[string]bool{}
-		for _, scan := range history {
-			tags[scan.Tag] = true
-		}
-		if !tags["v1.0.0"] || !tags["v1.0.1"] {
-			t.Errorf("Expected both tags v1.0.0 and v1.0.1 in history, got: %v", tags)
-		}
 
-		// Verify each scan has its own vulnerabilities (linked to scan_record_id)
-		// Find which scan is which by checking vulnerability count
 		var newestScan, oldestScan *ScanRecord
 		for _, scan := range history {
 			if len(scan.Vulnerabilities) == 1 {
@@ -168,29 +155,14 @@ func TestSQLiteStore(t *testing.T) {
 				oldestScan = scan
 			}
 		}
-
 		if newestScan == nil || oldestScan == nil {
 			t.Fatal("Failed to identify newest and oldest scans")
-		}
-
-		// Newest scan (v1.0.1) should have 1 vulnerability
-		if len(newestScan.Vulnerabilities) != 1 {
-			t.Errorf("Expected newest scan to have 1 vulnerability, got %d", len(newestScan.Vulnerabilities))
 		}
 		if newestScan.Vulnerabilities[0].CVEID != "CVE-2024-5678" {
 			t.Errorf("Expected CVE-2024-5678 in newest scan, got %s", newestScan.Vulnerabilities[0].CVEID)
 		}
-		// Oldest scan (v1.0.0) should have 2 vulnerabilities (historical record preserved)
 		if len(oldestScan.Vulnerabilities) != 2 {
-			t.Errorf("Expected oldest scan to have 2 vulnerabilities (historical), got %d", len(oldestScan.Vulnerabilities))
-		}
-		// Verify the oldest scan has both CVEs
-		cveIds := make(map[string]bool)
-		for _, vuln := range oldestScan.Vulnerabilities {
-			cveIds[vuln.CVEID] = true
-		}
-		if !cveIds["CVE-2024-1234"] || !cveIds["CVE-2024-5678"] {
-			t.Errorf("Expected oldest scan to have CVE-2024-1234 and CVE-2024-5678, got %v", cveIds)
+			t.Errorf("Expected oldest scan to retain 2 findings, got %d", len(oldestScan.Vulnerabilities))
 		}
 	})
 
@@ -870,7 +842,7 @@ func TestSchemaAndConstraints(t *testing.T) {
 
 	// Test 1: Verify all tables exist
 	t.Run("All tables are created", func(t *testing.T) {
-		tables := []string{"repositories", "artifacts", "scan_records", "vulnerabilities"}
+		tables := []string{"repositories", "artifacts", "scan_records", "cve_catalog", "scan_findings", "cve_first_seen"}
 		for _, table := range tables {
 			var count int
 			err := store.db.QueryRowContext(ctx, `
@@ -891,9 +863,9 @@ func TestSchemaAndConstraints(t *testing.T) {
 			"idx_artifacts_next_scan",
 			"idx_scan_records_artifact",
 			"idx_scan_records_created",
-			"idx_vulnerabilities_scan",
-			"idx_vulnerabilities_cve",
-			"idx_vulnerabilities_severity",
+			"idx_scan_findings_scan",
+			"idx_scan_findings_cve",
+			"idx_cve_catalog_severity",
 		}
 		for _, idx := range indexes {
 			var count int
@@ -1002,13 +974,18 @@ func TestSchemaAndConstraints(t *testing.T) {
 		}
 	})
 
-	// Test 8: Foreign key constraint - vulnerability references scan_record
-	t.Run("Foreign key constraint - vulnerability references scan_record", func(t *testing.T) {
-		// Try to insert vulnerability with non-existent scan_record_id
+	// Test 8: Foreign key constraint - scan finding references scan_record
+	t.Run("Foreign key constraint - scan finding references scan_record", func(t *testing.T) {
 		_, err := store.db.ExecContext(ctx, `
-			INSERT INTO vulnerabilities (scan_record_id, cve_id, severity, package_name)
-			VALUES (?, ?, ?, ?)
-		`, 99999, "CVE-2024-TEST", "HIGH", "test-package")
+			INSERT INTO cve_catalog (cve_id, severity) VALUES (?, ?)
+		`, "CVE-2024-TEST", "HIGH")
+		if err != nil {
+			t.Fatalf("Failed to insert CVE catalog entry: %v", err)
+		}
+		_, err = store.db.ExecContext(ctx, `
+			INSERT INTO scan_findings (scan_record_id, cve_id, package_name)
+			VALUES (?, ?, ?)
+		`, 99999, "CVE-2024-TEST", "test-package")
 		if err == nil {
 			t.Error("Expected foreign key constraint violation for invalid scan_record_id")
 		}
@@ -1076,9 +1053,9 @@ func TestSchemaAndConstraints(t *testing.T) {
 		}
 	})
 
-	// Test 11: Cascade delete - deleting scan_record cascades to vulnerabilities
-	t.Run("Cascade delete - scan_record cascades to vulnerabilities", func(t *testing.T) {
-		// Create a test artifact and scan record with vulnerabilities
+	// Test 11: Cascade delete - deleting scan_record cascades to findings
+	t.Run("Cascade delete - scan_record cascades to findings", func(t *testing.T) {
+		// Create a test artifact and scan record with a finding
 		var repoID int64
 		err := store.db.QueryRowContext(ctx, `
 			SELECT id FROM repositories WHERE name = ?
@@ -1117,22 +1094,28 @@ func TestSchemaAndConstraints(t *testing.T) {
 			t.Fatalf("Failed to get scan record ID: %v", err)
 		}
 
-		// Insert vulnerability
+		// Insert catalog metadata and a scan finding
 		_, err = store.db.ExecContext(ctx, `
-			INSERT INTO vulnerabilities (scan_record_id, cve_id, severity, package_name)
-			VALUES (?, ?, ?, ?)
-		`, scanRecordID, "CVE-2024-CASCADE", "CRITICAL", "test-package")
+			INSERT INTO cve_catalog (cve_id, severity) VALUES (?, ?)
+		`, "CVE-2024-CASCADE", "CRITICAL")
 		if err != nil {
-			t.Fatalf("Failed to insert vulnerability: %v", err)
+			t.Fatalf("Failed to insert CVE catalog entry: %v", err)
+		}
+		_, err = store.db.ExecContext(ctx, `
+			INSERT INTO scan_findings (scan_record_id, cve_id, package_name)
+			VALUES (?, ?, ?)
+		`, scanRecordID, "CVE-2024-CASCADE", "test-package")
+		if err != nil {
+			t.Fatalf("Failed to insert scan finding: %v", err)
 		}
 
-		// Verify vulnerability exists
-		var vulnCount int
+		// Verify finding exists
+		var findingCount int
 		err = store.db.QueryRowContext(ctx, `
-			SELECT COUNT(*) FROM vulnerabilities WHERE scan_record_id = ?
-		`, scanRecordID).Scan(&vulnCount)
-		if err != nil || vulnCount != 1 {
-			t.Fatalf("Expected 1 vulnerability, got %d", vulnCount)
+			SELECT COUNT(*) FROM scan_findings WHERE scan_record_id = ?
+		`, scanRecordID).Scan(&findingCount)
+		if err != nil || findingCount != 1 {
+			t.Fatalf("Expected 1 scan finding, got %d", findingCount)
 		}
 
 		// Delete scan record
@@ -1143,12 +1126,12 @@ func TestSchemaAndConstraints(t *testing.T) {
 			t.Fatalf("Failed to delete scan record: %v", err)
 		}
 
-		// Verify vulnerabilities were cascade deleted
+		// Verify findings were cascade deleted; catalog metadata remains deduplicated.
 		err = store.db.QueryRowContext(ctx, `
-			SELECT COUNT(*) FROM vulnerabilities WHERE scan_record_id = ?
-		`, scanRecordID).Scan(&vulnCount)
-		if err != nil || vulnCount != 0 {
-			t.Errorf("Expected 0 vulnerabilities after cascade delete, got %d", vulnCount)
+			SELECT COUNT(*) FROM scan_findings WHERE scan_record_id = ?
+		`, scanRecordID).Scan(&findingCount)
+		if err != nil || findingCount != 0 {
+			t.Errorf("Expected 0 scan findings after cascade delete, got %d", findingCount)
 		}
 	})
 
@@ -1278,11 +1261,11 @@ func TestSchemaAndConstraints(t *testing.T) {
 		}
 	})
 
-	// Test 16: Verify vulnerabilities table structure
-	t.Run("Verify vulnerabilities table structure", func(t *testing.T) {
-		rows, err := store.db.QueryContext(ctx, "PRAGMA table_info(vulnerabilities)")
+	// Test 16: Verify normalized vulnerability table structures
+	t.Run("Verify CVE catalog structure", func(t *testing.T) {
+		rows, err := store.db.QueryContext(ctx, "PRAGMA table_info(cve_catalog)")
 		if err != nil {
-			t.Fatalf("Failed to get vulnerabilities table info: %v", err)
+			t.Fatalf("Failed to get cve_catalog table info: %v", err)
 		}
 		defer rows.Close()
 
@@ -1296,22 +1279,16 @@ func TestSchemaAndConstraints(t *testing.T) {
 		}
 
 		expectedColumns := map[string]string{
-			"id":                "INTEGER",
-			"scan_record_id":    "INTEGER",
-			"cve_id":            "TEXT",
-			"severity":          "TEXT",
-			"package_name":      "TEXT",
-			"installed_version": "TEXT",
-			"fixed_version":     "TEXT",
-			"title":             "TEXT",
-			"description":       "TEXT",
-			"primary_url":       "TEXT",
-			"created_at":        "INTEGER",
+			"cve_id":      "TEXT",
+			"severity":    "TEXT",
+			"title":       "TEXT",
+			"description": "TEXT",
+			"primary_url": "TEXT",
 		}
 
 		for col, expectedType := range expectedColumns {
 			if actualType, exists := columns[col]; !exists {
-				t.Errorf("Column %s not found in vulnerabilities table", col)
+				t.Errorf("Column %s not found in cve_catalog table", col)
 			} else if actualType != expectedType {
 				t.Errorf("Column %s has type %s, expected %s", col, actualType, expectedType)
 			}

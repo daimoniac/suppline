@@ -154,26 +154,55 @@ func (s *SQLiteStore) RecordScan(ctx context.Context, record *ScanRecord) error 
 		return errors.NewTransientf("failed to update artifact last_scan_id and next_scan_at: %w", err)
 	}
 
-	// Insert vulnerabilities linked to this scan record
+	// Store CVE metadata once, then keep only package/version occurrences per scan.
 	if len(record.Vulnerabilities) > 0 {
-		vulnStmt, err := tx.PrepareContext(ctx, `
-			INSERT INTO vulnerabilities (
-				scan_record_id, cve_id, severity, package_name,
-				installed_version, fixed_version, title, description, primary_url
-			) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+		catalogStmt, err := tx.PrepareContext(ctx, `
+			INSERT INTO cve_catalog (cve_id, severity, title, description, primary_url)
+			VALUES (?, ?, ?, ?, ?)
+			ON CONFLICT(cve_id) DO UPDATE SET
+				severity = excluded.severity,
+				title = CASE WHEN excluded.title != '' THEN excluded.title ELSE cve_catalog.title END,
+				description = CASE WHEN excluded.description != '' THEN excluded.description ELSE cve_catalog.description END,
+				primary_url = CASE WHEN excluded.primary_url != '' THEN excluded.primary_url ELSE cve_catalog.primary_url END
 		`)
 		if err != nil {
-			return errors.NewTransientf("failed to prepare vulnerability statement: %w", err)
+			return errors.NewTransientf("failed to prepare CVE catalog statement: %w", err)
 		}
-		defer vulnStmt.Close()
+		defer catalogStmt.Close()
+
+		findingStmt, err := tx.PrepareContext(ctx, `
+			INSERT INTO scan_findings (
+				scan_record_id, cve_id, package_name, installed_version, fixed_version
+			) VALUES (?, ?, ?, ?, ?)
+		`)
+		if err != nil {
+			return errors.NewTransientf("failed to prepare scan finding statement: %w", err)
+		}
+		defer findingStmt.Close()
+
+		firstSeenStmt, err := tx.PrepareContext(ctx, `
+			INSERT INTO cve_first_seen (artifact_id, cve_id, first_seen_at)
+			VALUES (?, ?, ?)
+			ON CONFLICT(artifact_id, cve_id) DO NOTHING
+		`)
+		if err != nil {
+			return errors.NewTransientf("failed to prepare CVE first-seen statement: %w", err)
+		}
+		defer firstSeenStmt.Close()
 
 		for _, vuln := range record.Vulnerabilities {
-			_, err := vulnStmt.ExecContext(ctx,
-				scanRecordID, vuln.CVEID, vuln.Severity, vuln.PackageName,
-				vuln.InstalledVersion, vuln.FixedVersion, vuln.Title, vuln.Description, vuln.PrimaryURL,
-			)
-			if err != nil {
-				return errors.NewTransientf("failed to insert vulnerability: %w", err)
+			if _, err := catalogStmt.ExecContext(ctx,
+				vuln.CVEID, vuln.Severity, vuln.Title, vuln.Description, vuln.PrimaryURL,
+			); err != nil {
+				return errors.NewTransientf("failed to upsert CVE catalog entry: %w", err)
+			}
+			if _, err := findingStmt.ExecContext(ctx,
+				scanRecordID, vuln.CVEID, vuln.PackageName, vuln.InstalledVersion, vuln.FixedVersion,
+			); err != nil {
+				return errors.NewTransientf("failed to insert scan finding: %w", err)
+			}
+			if _, err := firstSeenStmt.ExecContext(ctx, artifactID, vuln.CVEID, nowUnix); err != nil {
+				return errors.NewTransientf("failed to record CVE first-seen time: %w", err)
 			}
 		}
 	}

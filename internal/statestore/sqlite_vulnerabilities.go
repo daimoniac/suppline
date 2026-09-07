@@ -12,17 +12,17 @@ import (
 
 func (s *SQLiteStore) GetUniqueVulnerabilityCounts(ctx context.Context) (map[string]int, error) {
 	// Use a subquery to first collect the set of active scan IDs from artifacts, then
-	// filter vulnerabilities by that set. This avoids a full JOIN + sort and allows
-	// SQLite to use idx_artifacts_last_scan + idx_vulnerabilities_scan_severity_cve.
+	// filter findings by that set. The catalog stores CVE metadata only once.
 	// The inner SELECT DISTINCT also ensures each CVE is counted only once even when
 	// the same scan_record_id is referenced by multiple artifact rows (multi-tag digests).
 	query := `
-		SELECT severity, COUNT(DISTINCT cve_id)
-		FROM vulnerabilities
-		WHERE scan_record_id IN (
+		SELECT c.severity, COUNT(DISTINCT f.cve_id)
+		FROM scan_findings f
+		JOIN cve_catalog c ON c.cve_id = f.cve_id
+		WHERE f.scan_record_id IN (
 			SELECT last_scan_id FROM artifacts WHERE last_scan_id IS NOT NULL
 		)
-		GROUP BY severity
+		GROUP BY c.severity
 	`
 
 	rows, err := s.db.QueryContext(ctx, query)
@@ -57,21 +57,16 @@ func (s *SQLiteStore) GetUniqueVulnerabilityCounts(ctx context.Context) (map[str
 // QueryVulnerabilities searches vulnerabilities across all scans
 func (s *SQLiteStore) QueryVulnerabilities(ctx context.Context, filter VulnFilter) ([]*types.VulnerabilityRecord, error) {
 	query := `
-		WITH first_seen AS (
-			SELECT sr2.artifact_id, v2.cve_id, MIN(sr2.created_at) AS first_seen_at
-			FROM scan_records sr2
-			JOIN vulnerabilities v2 ON v2.scan_record_id = sr2.id
-			GROUP BY sr2.artifact_id, v2.cve_id
-		)
-		SELECT v.cve_id, v.severity, v.package_name,
-			v.installed_version, v.fixed_version, v.title, v.description, v.primary_url,
+		SELECT v.cve_id, c.severity, v.package_name,
+			v.installed_version, v.fixed_version, c.title, c.description, c.primary_url,
 			r.name, a.tag, a.digest, sr.created_at,
 			COALESCE(fs.first_seen_at, sr.created_at) AS first_seen_at
-		FROM vulnerabilities v
+		FROM scan_findings v
+		JOIN cve_catalog c ON c.cve_id = v.cve_id
 		JOIN scan_records sr ON v.scan_record_id = sr.id
 		JOIN artifacts a ON sr.artifact_id = a.id
 		JOIN repositories r ON a.repository_id = r.id
-		LEFT JOIN first_seen fs ON fs.artifact_id = a.id AND fs.cve_id = v.cve_id
+		LEFT JOIN cve_first_seen fs ON fs.artifact_id = a.id AND fs.cve_id = v.cve_id
 		WHERE sr.id = a.last_scan_id
 	`
 	args := []interface{}{}
@@ -82,7 +77,7 @@ func (s *SQLiteStore) QueryVulnerabilities(ctx context.Context, filter VulnFilte
 	}
 
 	if filter.Severity != "" {
-		query += " AND v.severity = ?"
+		query += " AND c.severity = ?"
 		args = append(args, filter.Severity)
 	}
 
@@ -96,7 +91,7 @@ func (s *SQLiteStore) QueryVulnerabilities(ctx context.Context, filter VulnFilte
 		args = append(args, "%"+filter.Repository+"%")
 	}
 
-	query += " ORDER BY v.severity, v.cve_id, r.name, a.tag"
+	query += " ORDER BY c.severity, v.cve_id, r.name, a.tag"
 
 	if filter.Limit > 0 {
 		query += " LIMIT ?"
@@ -146,7 +141,8 @@ func (s *SQLiteStore) ListVulnerabilityCVEPage(ctx context.Context, filter VulnF
 			FROM artifacts
 			WHERE last_scan_id IS NOT NULL
 		) la
-		JOIN vulnerabilities v ON v.scan_record_id = la.scan_record_id
+		JOIN scan_findings v ON v.scan_record_id = la.scan_record_id
+		JOIN cve_catalog c ON c.cve_id = v.cve_id
 		JOIN repositories r ON la.repository_id = r.id
 		WHERE 1 = 1
 	`
@@ -158,7 +154,7 @@ func (s *SQLiteStore) ListVulnerabilityCVEPage(ctx context.Context, filter VulnF
 	}
 
 	if filter.Severity != "" {
-		base += " AND v.severity = ?"
+		base += " AND c.severity = ?"
 		args = append(args, filter.Severity)
 	}
 
@@ -204,7 +200,7 @@ func (s *SQLiteStore) ListVulnerabilityCVEPage(ctx context.Context, filter VulnF
 		SELECT cve_id
 		FROM (
 			SELECT v.cve_id,
-				MIN(CASE v.severity
+				MIN(CASE c.severity
 					WHEN 'CRITICAL' THEN 0
 					WHEN 'HIGH' THEN 1
 					WHEN 'MEDIUM' THEN 2
@@ -250,36 +246,27 @@ func (s *SQLiteStore) QueryVulnerabilitiesByCVEIDs(ctx context.Context, filter V
 
 	placeholders := strings.TrimSuffix(strings.Repeat("?,", len(cveIDs)), ",")
 	query := `
-		WITH first_seen AS (
-			SELECT sr2.artifact_id, v2.cve_id, MIN(sr2.created_at) AS first_seen_at
-			FROM scan_records sr2
-			JOIN vulnerabilities v2 ON v2.scan_record_id = sr2.id
-			WHERE v2.cve_id IN (` + placeholders + `)
-			GROUP BY sr2.artifact_id, v2.cve_id
-		)
-		SELECT v.cve_id, v.severity, v.package_name,
-			v.installed_version, v.fixed_version, v.title, v.description, v.primary_url,
+		SELECT v.cve_id, c.severity, v.package_name,
+			v.installed_version, v.fixed_version, c.title, c.description, c.primary_url,
 			r.name, a.tag, a.digest, sr.created_at,
 			COALESCE(fs.first_seen_at, sr.created_at) AS first_seen_at
-		FROM vulnerabilities v
+		FROM scan_findings v
+		JOIN cve_catalog c ON c.cve_id = v.cve_id
 		JOIN scan_records sr ON v.scan_record_id = sr.id
 		JOIN artifacts a ON sr.artifact_id = a.id
 		JOIN repositories r ON a.repository_id = r.id
-		LEFT JOIN first_seen fs ON fs.artifact_id = a.id AND fs.cve_id = v.cve_id
+		LEFT JOIN cve_first_seen fs ON fs.artifact_id = a.id AND fs.cve_id = v.cve_id
 		WHERE sr.id = a.last_scan_id
 			AND v.cve_id IN (` + placeholders + `)
 	`
 
-	args := make([]interface{}, 0, len(cveIDs)*2+4)
-	for _, cveID := range cveIDs {
-		args = append(args, cveID)
-	}
+	args := make([]interface{}, 0, len(cveIDs)+4)
 	for _, cveID := range cveIDs {
 		args = append(args, cveID)
 	}
 
 	if filter.Severity != "" {
-		query += " AND v.severity = ?"
+		query += " AND c.severity = ?"
 		args = append(args, filter.Severity)
 	}
 
@@ -334,7 +321,7 @@ func (s *SQLiteStore) ListVulnerabilityGroupSummariesByCVEIDs(ctx context.Contex
 	placeholders := strings.TrimSuffix(strings.Repeat("?,", len(cveIDs)), ",")
 	query := `
 		SELECT v.cve_id,
-			CASE MIN(CASE v.severity
+			CASE MIN(CASE c.severity
 				WHEN 'CRITICAL' THEN 0
 				WHEN 'HIGH' THEN 1
 				WHEN 'MEDIUM' THEN 2
@@ -350,16 +337,17 @@ func (s *SQLiteStore) ListVulnerabilityGroupSummariesByCVEIDs(ctx context.Contex
 			MIN(v.package_name) AS package_name,
 			MIN(v.installed_version) AS installed_version,
 			MIN(v.fixed_version) AS fixed_version,
-			MIN(v.title) AS title,
-			MIN(v.description) AS description,
-			MIN(v.primary_url) AS primary_url,
+			MIN(c.title) AS title,
+			MIN(c.description) AS description,
+			MIN(c.primary_url) AS primary_url,
 			COUNT(DISTINCT la.digest) AS affected_image_count
 		FROM (
 			SELECT DISTINCT last_scan_id AS scan_record_id, repository_id, digest
 			FROM artifacts
 			WHERE last_scan_id IS NOT NULL
 		) la
-		JOIN vulnerabilities v ON v.scan_record_id = la.scan_record_id
+		JOIN scan_findings v ON v.scan_record_id = la.scan_record_id
+		JOIN cve_catalog c ON c.cve_id = v.cve_id
 		JOIN repositories r ON la.repository_id = r.id
 		WHERE 1 = 1
 			AND v.cve_id IN (` + placeholders + `)
@@ -371,7 +359,7 @@ func (s *SQLiteStore) ListVulnerabilityGroupSummariesByCVEIDs(ctx context.Contex
 	}
 
 	if filter.Severity != "" {
-		query += " AND v.severity = ?"
+		query += " AND c.severity = ?"
 		args = append(args, filter.Severity)
 	}
 
@@ -436,7 +424,7 @@ func (s *SQLiteStore) GetImagesByCVE(ctx context.Context, cveID string) ([]*Scan
 		FROM scan_records sr
 		JOIN artifacts a ON sr.artifact_id = a.id
 		JOIN repositories r ON a.repository_id = r.id
-		JOIN vulnerabilities v ON sr.id = v.scan_record_id
+		JOIN scan_findings v ON sr.id = v.scan_record_id
 		WHERE v.cve_id = ?
 		ORDER BY sr.created_at DESC
 	`
