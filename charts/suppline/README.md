@@ -18,7 +18,7 @@ helm template suppline ./charts/suppline \
 - Kubernetes 1.19+
 - Helm 3 or 4
 - A **target registry you control** (Harbor, ECR, ACR, Artifactory, …) — preferred for production
-- PersistentVolume support if `persistence.data.enabled` (SQLite state)
+- PersistentVolume support for bundled PostgreSQL (`postgres.enabled`, default) or SQLite (`postgres.enabled=false` and `persistence.data.enabled`)
 - Cosign keypair for attestation signing
 
 ## Quick install (BYO registry)
@@ -86,7 +86,7 @@ Do **not** treat the bundled `registry:3` as a long-term production registry. De
 helm uninstall suppline -n suppline
 ```
 
-Data PVCs may be retained (`helm.sh/resource-policy: keep`) so reinstalls can reuse SQLite state.
+Data PVCs may be retained (`helm.sh/resource-policy: keep`) so reinstalls can reuse database volumes.
 
 ## Configuration reference
 
@@ -103,7 +103,8 @@ Data PVCs may be retained (`helm.sh/resource-policy: keep`) so reinstalls can re
 | `frontend.ingress.enabled` | UI Ingress | `false` |
 | `regsync.enabled` | Deploy regsync | `true` |
 | `registry.enabled` | Bundled registry | `false` (BYO) |
-| `persistence.data.enabled` | SQLite PVC | `true` |
+| `postgres.enabled` | Bundled PostgreSQL | `true` |
+| `persistence.data.enabled` | SQLite PVC (ignored while Postgres is enabled) | `true` |
 | `backend.resources` | CPU/memory for the suppline container | `1Gi` request / `4Gi` limit (attestation spikes + page cache; not a heap leak) |
 | `trivy.image.tag` | Trivy sidecar | `0.74.0` |
 
@@ -118,7 +119,7 @@ See `values.yaml` for the full set.
 
 ## Notes
 
-- Backend uses SQLite → single replica (`ReadWriteOnce`)
+- Backend is a single replica (SQLite, or one Postgres writer in this chart)
 - Chart ships an **example** `suppline.yml`, not a production site config
 - OCI chart: `oci://ghcr.io/daimoniac/charts/suppline` — cut releases with [docs/RELEASE.md](../../docs/RELEASE.md)
 

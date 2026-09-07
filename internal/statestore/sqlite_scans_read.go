@@ -20,7 +20,7 @@ func (s *SQLiteStore) GetLastScan(ctx context.Context, digest string) (*ScanReco
 		SELECT sr.id, sr.artifact_id, sr.scan_duration_ms,
 			sr.critical_vuln_count, sr.high_vuln_count, sr.medium_vuln_count, sr.low_vuln_count,
 			sr.policy_passed, sr.policy_status, sr.policy_reason, sr.policy_failure_findings_json, sr.release_age_seconds, sr.minimum_release_age_seconds, sr.release_age_source,
-			sr.sbom_attested, sr.vuln_attested, sr.scai_attested, COALESCE(sr.vex_attested, 0), sr.error_message, sr.created_at,
+			sr.sbom_attested, sr.vuln_attested, sr.scai_attested, COALESCE(sr.vex_attested, FALSE), sr.error_message, sr.created_at,
 			COALESCE(a.image_created_at, 0) as image_created_at,
 			a.digest, a.tag, r.name,
 			sr.vex_statements_json
@@ -219,7 +219,7 @@ func (s *SQLiteStore) GetFailedArtifacts(ctx context.Context) ([]*ScanRecord, er
 		JOIN artifacts a ON sr.artifact_id = a.id
 		JOIN repositories r ON a.repository_id = r.id
 		WHERE sr.id = a.last_scan_id
-			AND sr.policy_passed = 0
+			AND NOT sr.policy_passed
 		ORDER BY sr.created_at DESC
 	`
 
@@ -265,7 +265,7 @@ func (s *SQLiteStore) GetScanHistory(ctx context.Context, digest string, limit i
 		SELECT sr.id, sr.artifact_id, sr.scan_duration_ms,
 			sr.critical_vuln_count, sr.high_vuln_count, sr.medium_vuln_count, sr.low_vuln_count,
 			sr.policy_passed, sr.policy_status, sr.policy_reason, sr.policy_failure_findings_json, sr.release_age_seconds, sr.minimum_release_age_seconds, sr.release_age_source,
-			sr.sbom_attested, sr.vuln_attested, sr.scai_attested, COALESCE(sr.vex_attested, 0), sr.error_message, sr.created_at,
+			sr.sbom_attested, sr.vuln_attested, sr.scai_attested, COALESCE(sr.vex_attested, FALSE), sr.error_message, sr.created_at,
 			COALESCE(a.image_created_at, 0) as image_created_at,
 			a.digest, a.tag, r.name,
 			sr.vex_statements_json
@@ -395,12 +395,12 @@ func (s *SQLiteStore) loadVulnerabilitiesByScan(ctx context.Context, scanRecordI
 	return vulnerabilities, nil
 }
 
-func buildScanFilterClause(filter ScanFilter) (string, []interface{}) {
+func (s *SQLiteStore) buildScanFilterClause(filter ScanFilter) (string, []interface{}) {
 	clause := ""
 	args := []interface{}{}
 
 	if filter.Repository != "" {
-		clause += " AND r.name LIKE ?"
+		clause += " AND LOWER(r.name) LIKE LOWER(?)"
 		args = append(args, "%"+filter.Repository+"%")
 	}
 
@@ -408,9 +408,9 @@ func buildScanFilterClause(filter ScanFilter) (string, []interface{}) {
 	case "pending":
 		clause += " AND sr.policy_status = 'pending'"
 	case "passed":
-		clause += " AND sr.policy_passed = 1 AND sr.policy_status != 'pending'"
+		clause += " AND sr.policy_passed = " + s.boolTrue() + " AND sr.policy_status != 'pending'"
 	case "failed":
-		clause += " AND sr.policy_passed = 0 AND sr.policy_status != 'pending'"
+		clause += " AND sr.policy_passed = " + s.boolFalse() + " AND sr.policy_status != 'pending'"
 	default:
 		if filter.PolicyPassed != nil {
 			clause += " AND sr.policy_passed = ?"
@@ -419,8 +419,8 @@ func buildScanFilterClause(filter ScanFilter) (string, []interface{}) {
 	}
 
 	if filter.MaxAge > 0 {
-		clause += " AND sr.created_at >= strftime('%s', 'now', '-' || ? || ' seconds')"
-		args = append(args, filter.MaxAge)
+		clause += " AND sr.created_at >= ?"
+		args = append(args, time.Now().Unix()-int64(filter.MaxAge))
 	}
 
 	return clause, args
@@ -468,7 +468,7 @@ func (s *SQLiteStore) CountScans(ctx context.Context, filter ScanFilter) (int, e
 			AND a.id = latest.max_id
 		WHERE 1=1
 	`
-	filterClause, args := buildScanFilterClause(filter)
+	filterClause, args := s.buildScanFilterClause(filter)
 	query += filterClause
 
 	var total int
@@ -574,7 +574,7 @@ func (s *SQLiteStore) queryScanRecords(ctx context.Context, filter ScanFilter) (
 			AND a.id = latest.max_id
 		WHERE 1=1
 	`
-	filterClause, args := buildScanFilterClause(filter)
+	filterClause, args := s.buildScanFilterClause(filter)
 	query += filterClause
 
 	// Add sorting for scans list views

@@ -21,7 +21,7 @@ func (s *SQLiteStore) ListRepositories(ctx context.Context, filter RepositoryFil
 	countArgs := []interface{}{}
 
 	if filter.Search != "" {
-		countQuery += " AND r.name LIKE ?"
+		countQuery += " AND LOWER(r.name) LIKE LOWER(?)"
 		countArgs = append(countArgs, "%"+filter.Search+"%")
 	}
 
@@ -49,11 +49,11 @@ func (s *SQLiteStore) ListRepositories(ctx context.Context, filter RepositoryFil
 			MAX(sr.high_vuln_count) as max_high,
 			MAX(sr.medium_vuln_count) as max_medium,
 			MAX(sr.low_vuln_count) as max_low,
-			CASE WHEN COUNT(CASE WHEN sr.policy_passed = 0 THEN 1 END) > 0 THEN 0 ELSE 1 END as policy_passed,
+			CASE WHEN COUNT(CASE WHEN NOT sr.policy_passed THEN 1 END) > 0 THEN 0 ELSE 1 END as policy_passed,
 			CASE
 				WHEN COUNT(CASE WHEN sr.policy_status = 'failed' THEN 1 END) > 0 THEN 'failed'
 				WHEN COUNT(CASE WHEN sr.policy_status = 'pending' THEN 1 END) > 0 THEN 'pending'
-				WHEN COUNT(CASE WHEN sr.policy_passed = 0 THEN 1 END) > 0 THEN 'failed'
+				WHEN COUNT(CASE WHEN NOT sr.policy_passed THEN 1 END) > 0 THEN 'failed'
 				ELSE 'passed'
 			END as policy_status,
 			CASE WHEN EXISTS (SELECT 1 FROM artifacts ai JOIN cluster_images ci ON ci.digest = ai.digest WHERE ai.repository_id = r.id) THEN 1 ELSE 0 END as runtime_used
@@ -65,7 +65,7 @@ func (s *SQLiteStore) ListRepositories(ctx context.Context, filter RepositoryFil
 	args := []interface{}{}
 
 	if filter.Search != "" {
-		query += " AND r.name LIKE ?"
+		query += " AND LOWER(r.name) LIKE LOWER(?)"
 		args = append(args, "%"+filter.Search+"%")
 	}
 
@@ -417,7 +417,7 @@ func (s *SQLiteStore) GetRepository(ctx context.Context, name string, filter Rep
 			COALESCE(sr.high_vuln_count, 0) as high,
 			COALESCE(sr.medium_vuln_count, 0) as medium,
 			COALESCE(sr.low_vuln_count, 0) as low,
-			COALESCE(sr.policy_passed, 1) as policy_passed,
+			CASE WHEN sr.policy_passed IS NULL THEN 1 WHEN sr.policy_passed THEN 1 ELSE 0 END as policy_passed,
 			COALESCE(sr.policy_status, '') as policy_status,
 			COALESCE(sr.policy_reason, '') as policy_reason,
 			COALESCE(sr.release_age_seconds, 0) as release_age_seconds,

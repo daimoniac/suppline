@@ -42,15 +42,11 @@ func (s *SQLiteStore) RecordScan(ctx context.Context, record *ScanRecord) error 
 	`, record.Repository).Scan(&repositoryID)
 	if err == sql.ErrNoRows {
 		// Repository doesn't exist, create it
-		result, err := tx.ExecContext(ctx, `
+		repositoryID, err = s.insertReturningID(ctx, tx, `
 			INSERT INTO repositories (name) VALUES (?)
 		`, record.Repository)
 		if err != nil {
 			return errors.NewTransientf("failed to insert repository: %w", err)
-		}
-		repositoryID, err = result.LastInsertId()
-		if err != nil {
-			return errors.NewTransientf("failed to get repository ID: %w", err)
 		}
 	} else if err != nil {
 		return errors.NewTransientf("failed to query repository: %w", err)
@@ -65,16 +61,12 @@ func (s *SQLiteStore) RecordScan(ctx context.Context, record *ScanRecord) error 
 	`, repositoryID, record.Digest, record.Tag).Scan(&existingArtifactID)
 	if err == sql.ErrNoRows {
 		// Artifact doesn't exist, create it
-		result, err := tx.ExecContext(ctx, `
+		artifactID, err = s.insertReturningID(ctx, tx, `
 			INSERT INTO artifacts (repository_id, digest, tag, first_seen, last_seen, image_created_at)
 			VALUES (?, ?, ?, ?, ?, ?)
 		`, repositoryID, record.Digest, record.Tag, nowUnix, nowUnix, nullableInt64(record.ImageCreatedAt))
 		if err != nil {
 			return errors.NewTransientf("failed to insert artifact: %w", err)
-		}
-		artifactID, err = result.LastInsertId()
-		if err != nil {
-			return errors.NewTransientf("failed to get artifact ID: %w", err)
 		}
 	} else if err != nil {
 		return errors.NewTransientf("failed to query artifact: %w", err)
@@ -118,7 +110,7 @@ func (s *SQLiteStore) RecordScan(ctx context.Context, record *ScanRecord) error 
 		failureFindingsJSON = string(jsonBytes)
 	}
 
-	result, err := tx.ExecContext(ctx, `
+	scanRecordID, err := s.insertReturningID(ctx, tx, `
 		INSERT INTO scan_records (
 			artifact_id, scan_duration_ms,
 			critical_vuln_count, high_vuln_count, medium_vuln_count, low_vuln_count,
@@ -135,11 +127,6 @@ func (s *SQLiteStore) RecordScan(ctx context.Context, record *ScanRecord) error 
 	)
 	if err != nil {
 		return errors.NewTransientf("failed to insert scan record: %w", err)
-	}
-
-	scanRecordID, err := result.LastInsertId()
-	if err != nil {
-		return errors.NewTransientf("failed to get scan record ID: %w", err)
 	}
 
 	// Update all artifacts for this repository and digest to point to the new scan
@@ -216,7 +203,7 @@ func (s *SQLiteStore) RecordScan(ctx context.Context, record *ScanRecord) error 
 
 // pruneSupersededTagBindingsTx deletes older artifact rows for the same repository+tag
 // that point at a different digest. Empty tags are left untouched.
-func pruneSupersededTagBindingsTx(ctx context.Context, tx *sql.Tx, repositoryID int64, digest, tag string) error {
+func pruneSupersededTagBindingsTx(ctx context.Context, tx *Tx, repositoryID int64, digest, tag string) error {
 	if tag == "" {
 		return nil
 	}
@@ -257,13 +244,13 @@ func pruneSupersededTagBindingsTx(ctx context.Context, tx *sql.Tx, repositoryID 
 // deleteArtifactWithScansTx removes one artifact. Scan records still referenced as
 // last_scan_id by sibling aliases are reassigned to a surviving artifact; only
 // unreferenced scans owned by this artifact are deleted.
-func deleteArtifactWithScansTx(ctx context.Context, tx *sql.Tx, artifactID int64) error {
+func deleteArtifactWithScansTx(ctx context.Context, tx *Tx, artifactID int64) error {
 	return deleteArtifactPreservingSharedScansTx(ctx, tx, artifactID)
 }
 
 // deleteArtifactPreservingSharedScansTx removes one artifact binding while keeping
 // scan results that sibling tags on the same digest still need.
-func deleteArtifactPreservingSharedScansTx(ctx context.Context, tx *sql.Tx, artifactID int64) error {
+func deleteArtifactPreservingSharedScansTx(ctx context.Context, tx *Tx, artifactID int64) error {
 	_, err := tx.ExecContext(ctx, `
 		UPDATE artifacts SET last_scan_id = NULL WHERE id = ?
 	`, artifactID)
@@ -400,15 +387,11 @@ func (s *SQLiteStore) EnsureArtifactTagBinding(ctx context.Context, repository, 
 		return false, errors.NewTransientf("failed to load sibling artifact for tag binding: %w", err)
 	}
 
-	result, err := tx.ExecContext(ctx, `
+	if _, err := s.insertReturningID(ctx, tx, `
 		INSERT INTO artifacts (repository_id, digest, tag, first_seen, last_seen, image_created_at, last_scan_id, next_scan_at)
 		VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-	`, repositoryID, digest, tag, nowUnix, nowUnix, imageCreatedAt, lastScanID, nextScanAt)
-	if err != nil {
+	`, repositoryID, digest, tag, nowUnix, nowUnix, imageCreatedAt, lastScanID, nextScanAt); err != nil {
 		return false, errors.NewTransientf("failed to insert alias artifact tag binding: %w", err)
-	}
-	if _, err := result.LastInsertId(); err != nil {
-		return false, errors.NewTransientf("failed to get alias artifact id: %w", err)
 	}
 
 	if err := pruneSupersededTagBindingsTx(ctx, tx, repositoryID, digest, tag); err != nil {

@@ -9,9 +9,9 @@ import (
 	_ "github.com/mattn/go-sqlite3"
 )
 
-// SQLiteStore implements StateStore using SQLite
+// SQLiteStore implements StateStore using SQLite or PostgreSQL.
 type SQLiteStore struct {
-	db                 *sql.DB
+	db                 *DB
 	runtimeInUseWindow time.Duration
 }
 
@@ -61,7 +61,7 @@ func NewSQLiteStore(dbPath string) (*SQLiteStore, error) {
 		return nil, errors.NewTransientf("foreign keys are not enabled (got %d, expected 1)", fkEnabled)
 	}
 
-	store := &SQLiteStore{db: db, runtimeInUseWindow: defaultRuntimeInUseWindow}
+	store := &SQLiteStore{db: wrapDB(db, dialectSQLite), runtimeInUseWindow: defaultRuntimeInUseWindow}
 
 	// Initialize schema
 	if err := store.initSchema(); err != nil {
@@ -89,6 +89,10 @@ func (s *SQLiteStore) SetRuntimeInUseWindow(window time.Duration) {
 
 // initSchema creates the database schema with all tables and indexes
 func (s *SQLiteStore) initSchema() error {
+	if s.db.dialect == dialectPostgres {
+		return s.initPostgresSchema()
+	}
+
 	var legacyVulnerabilitiesTable int
 	if err := s.db.QueryRow(`
 		SELECT COUNT(*) FROM sqlite_master

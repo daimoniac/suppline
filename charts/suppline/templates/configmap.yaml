@@ -6,8 +6,12 @@ metadata:
     {{- include "suppline.labels" . | nindent 4 }}
 data:
   TRIVY_SERVER_ADDR: "localhost:4954"
+  {{- if .Values.postgres.enabled }}
+  STATE_STORE_TYPE: "postgres"
+  {{- else }}
   STATE_STORE_TYPE: "sqlite"
   SQLITE_PATH: "/data/suppline.db"
+  {{- end }}
   SUPPLINE_CONFIG: "/config/suppline.yml"
   {{- if .Values.backend.env }}
   {{- tpl (toYaml .Values.backend.env) . | nindent 2 }}

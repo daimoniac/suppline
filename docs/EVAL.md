@@ -23,7 +23,7 @@ git clone https://github.com/daimoniac/suppline.git && cd suppline
 docker compose up --build -d
 ```
 
-`--build` picks up the current tree (needed for HTTP demo-registry support). First boot pulls images and Trivy’s DB — give it a few minutes.
+`--build` picks up the current tree (needed for HTTP demo-registry support). First boot starts Postgres, pulls images, and downloads Trivy’s DB — give it a few minutes.
 
 Then:
 

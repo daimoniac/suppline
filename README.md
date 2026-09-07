@@ -20,7 +20,7 @@ Your cluster runs dozens of third-party images you didn't build. Every one of th
 
 suppline is the gate in front of that. **Stop maintaining supply-chain glue** — mirror, scan, policy, and cosign attestations in one system, and admit only what passed. Your clusters then pull only from the mirror — and can refuse to run anything without a valid, fresh attestation.
 
-One Go binary. SQLite state. No SaaS, no phone-home, air-gap compatible by design.
+One Go binary. SQLite or PostgreSQL state. No SaaS, no phone-home, air-gap compatible by design.
 
 **Used in production at [SocialHub](https://www.socialhub.io)** to gate third-party images before admission.
 
@@ -268,7 +268,7 @@ internal/
   scanner/             Trivy integration
   policy/              CEL engine and VEX handling
   attestation/         cosign / Sigstore
-  statestore/          SQLite persistence
+  statestore/          SQLite or PostgreSQL persistence
   api/                 REST API and Swagger
 clusterstate-agent/    Kubernetes inventory reporter
 charts/suppline/       Helm chart

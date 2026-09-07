@@ -15,6 +15,9 @@ spec:
       annotations:
         checksum/config: {{ include (print $.Template.BasePath "/configmap.yaml") . | sha256sum }}
         checksum/secret: {{ include (print $.Template.BasePath "/secret.yaml") . | sha256sum }}
+        {{- if .Values.postgres.enabled }}
+        checksum/postgres: {{ include (print $.Template.BasePath "/postgres-secret.yaml") . | sha256sum }}
+        {{- end }}
         {{- with .Values.podAnnotations }}
         {{- toYaml . | nindent 8 }}
         {{- end }}
@@ -31,9 +34,23 @@ spec:
         runAsUser: {{ .Values.backend.securityContext.runAsUser }}
         runAsGroup: {{ .Values.backend.securityContext.runAsGroup }}
         fsGroup: {{ .Values.backend.securityContext.fsGroup }}
-      {{- if .Values.registry.enabled }}
+      {{- if or .Values.postgres.enabled .Values.registry.enabled }}
       initContainers:
+      {{- if .Values.postgres.enabled }}
+      - name: wait-postgres
+        image: {{ .Values.postgres.image | quote }}
+        imagePullPolicy: IfNotPresent
+        command:
+          - sh
+          - -c
+          - until pg_isready -h {{ include "suppline.fullname" . }}-postgres -p 5432 -U {{ .Values.postgres.auth.username }}; do sleep 2; done
+        securityContext:
+          runAsUser: {{ .Values.postgres.securityContext.runAsUser }}
+          allowPrivilegeEscalation: false
+      {{- end }}
+      {{- if .Values.registry.enabled }}
       {{- include "suppline.registryCertInitContainer" . | nindent 6 }}
+      {{- end }}
       {{- end }}
       containers:
       # Main application container
@@ -55,6 +72,10 @@ spec:
             name: {{ include "suppline.fullname" . }}-config
         - secretRef:
             name: {{ include "suppline.fullname" . }}-secrets
+        {{- if .Values.postgres.enabled }}
+        - secretRef:
+            name: {{ include "suppline.fullname" . }}-postgres
+        {{- end }}
         env:
         # Keep SBOM/vuln predicates off the SQLite PVC so Longhorn dirty pages
         # do not collide with the cosign RSS spike (see backend.resources).
@@ -130,7 +151,7 @@ spec:
         securityContext:
           {{- toYaml .Values.trivy.securityContext | nindent 10 }}
       volumes:
-      {{- if not .Values.persistence.data.enabled }}
+      {{- if not (and .Values.persistence.data.enabled (not .Values.postgres.enabled)) }}
       - name: data
         emptyDir: {}
       {{- end }}
@@ -165,7 +186,7 @@ spec:
         {{- toYaml . | nindent 8 }}
       {{- end }}
   volumeClaimTemplates:
-  {{- if .Values.persistence.data.enabled }}
+  {{- if and .Values.persistence.data.enabled (not .Values.postgres.enabled) }}
   - metadata:
       name: data
       labels:

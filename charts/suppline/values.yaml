@@ -215,11 +215,33 @@ frontend:
             pathType: Prefix
     tls: []
 
+# Bundled PostgreSQL (default). Set enabled=false and persistence.data.enabled=true for SQLite.
+postgres:
+  enabled: true
+  image: postgres:16-alpine
+  auth:
+    database: suppline
+    username: suppline
+    password: ""
+  persistence:
+    enabled: true
+    storageClassName: ""
+    accessMode: ReadWriteOnce
+    size: 10Gi
+  resources:
+    requests:
+      memory: "256Mi"
+      cpu: "100m"
+    limits:
+      memory: "1Gi"
+      cpu: "500m"
+  securityContext:
+    runAsUser: 70
+    fsGroup: 70
+
 # Persistence configuration
 persistence:
-  # Data volume for SQLite database
-  # Note: The PVC will be retained after helm uninstall to preserve data
-  # If reinstalling, the existing PVC will be reused automatically
+  # Data volume for SQLite when postgres.enabled is false.
   data:
     enabled: true
     storageClassName: ""

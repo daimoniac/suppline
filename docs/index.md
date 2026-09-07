@@ -16,7 +16,7 @@ Your cluster runs dozens of third-party images you didn't build. Every one is a 
 
 suppline is the gate in front of that. It continuously mirrors upstream images into **your** registry, scans every digest with Trivy, evaluates a policy you wrote, and publishes signed Sigstore attestations. Clusters then pull only from the mirror — and can refuse to run anything without a valid, fresh attestation.
 
-One Go binary. SQLite state. No SaaS, no phone-home, air-gap compatible by design.
+One Go binary. SQLite or PostgreSQL state. No SaaS, no phone-home, air-gap compatible by design.
 
 **[Try the zero-cred eval →](EVAL.md)** · [GitHub](https://github.com/daimoniac/suppline)
 

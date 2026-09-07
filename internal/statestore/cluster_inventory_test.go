@@ -966,7 +966,7 @@ type clusterImageRow struct {
 	digest    string
 }
 
-func queryClusterImages(db *sql.DB, cluster string) ([]clusterImageRow, error) {
+func queryClusterImages(db *DB, cluster string) ([]clusterImageRow, error) {
 	rows, err := db.Query(`
 		SELECT ci.namespace, ci.image_ref, COALESCE(ci.tag, ''), COALESCE(ci.digest, '')
 		FROM cluster_images ci
@@ -991,7 +991,7 @@ func queryClusterImages(db *sql.DB, cluster string) ([]clusterImageRow, error) {
 	return result, rows.Err()
 }
 
-func queryClusterLastReportedAt(db *sql.DB, cluster string) (int64, error) {
+func queryClusterLastReportedAt(db *DB, cluster string) (int64, error) {
 	var lastReportedAt sql.NullInt64
 	err := db.QueryRow(`SELECT last_reported_at FROM clusters WHERE name = ?`, cluster).Scan(&lastReportedAt)
 	if err != nil {

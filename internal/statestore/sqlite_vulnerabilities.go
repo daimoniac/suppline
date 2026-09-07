@@ -72,7 +72,7 @@ func (s *SQLiteStore) QueryVulnerabilities(ctx context.Context, filter VulnFilte
 	args := []interface{}{}
 
 	if filter.CVEID != "" {
-		query += " AND v.cve_id LIKE ?"
+		query += " AND LOWER(v.cve_id) LIKE LOWER(?)"
 		args = append(args, "%"+filter.CVEID+"%")
 	}
 
@@ -82,12 +82,12 @@ func (s *SQLiteStore) QueryVulnerabilities(ctx context.Context, filter VulnFilte
 	}
 
 	if filter.PackageName != "" {
-		query += " AND v.package_name LIKE ?"
+		query += " AND LOWER(v.package_name) LIKE LOWER(?)"
 		args = append(args, "%"+filter.PackageName+"%")
 	}
 
 	if filter.Repository != "" {
-		query += " AND r.name LIKE ?"
+		query += " AND LOWER(r.name) LIKE LOWER(?)"
 		args = append(args, "%"+filter.Repository+"%")
 	}
 
@@ -149,7 +149,7 @@ func (s *SQLiteStore) ListVulnerabilityCVEPage(ctx context.Context, filter VulnF
 	args := []interface{}{}
 
 	if filter.CVEID != "" {
-		base += " AND v.cve_id LIKE ?"
+		base += " AND LOWER(v.cve_id) LIKE LOWER(?)"
 		args = append(args, "%"+filter.CVEID+"%")
 	}
 
@@ -159,12 +159,12 @@ func (s *SQLiteStore) ListVulnerabilityCVEPage(ctx context.Context, filter VulnF
 	}
 
 	if filter.PackageName != "" {
-		base += " AND v.package_name LIKE ?"
+		base += " AND LOWER(v.package_name) LIKE LOWER(?)"
 		args = append(args, "%"+filter.PackageName+"%")
 	}
 
 	if filter.Repository != "" {
-		base += " AND r.name LIKE ?"
+		base += " AND LOWER(r.name) LIKE LOWER(?)"
 		args = append(args, "%"+filter.Repository+"%")
 	}
 
@@ -271,12 +271,12 @@ func (s *SQLiteStore) QueryVulnerabilitiesByCVEIDs(ctx context.Context, filter V
 	}
 
 	if filter.PackageName != "" {
-		query += " AND v.package_name LIKE ?"
+		query += " AND LOWER(v.package_name) LIKE LOWER(?)"
 		args = append(args, "%"+filter.PackageName+"%")
 	}
 
 	if filter.Repository != "" {
-		query += " AND r.name LIKE ?"
+		query += " AND LOWER(r.name) LIKE LOWER(?)"
 		args = append(args, "%"+filter.Repository+"%")
 	}
 
@@ -364,12 +364,12 @@ func (s *SQLiteStore) ListVulnerabilityGroupSummariesByCVEIDs(ctx context.Contex
 	}
 
 	if filter.PackageName != "" {
-		query += " AND v.package_name LIKE ?"
+		query += " AND LOWER(v.package_name) LIKE LOWER(?)"
 		args = append(args, "%"+filter.PackageName+"%")
 	}
 
 	if filter.Repository != "" {
-		query += " AND r.name LIKE ?"
+		query += " AND LOWER(r.name) LIKE LOWER(?)"
 		args = append(args, "%"+filter.Repository+"%")
 	}
 
@@ -417,7 +417,7 @@ func (s *SQLiteStore) GetImagesByCVE(ctx context.Context, cveID string) ([]*Scan
 		SELECT DISTINCT sr.id, sr.artifact_id, sr.scan_duration_ms,
 			sr.critical_vuln_count, sr.high_vuln_count, sr.medium_vuln_count, sr.low_vuln_count,
 			sr.policy_passed, sr.policy_status, sr.policy_reason, sr.release_age_seconds, sr.minimum_release_age_seconds, sr.release_age_source,
-			sr.sbom_attested, sr.vuln_attested, sr.scai_attested, COALESCE(sr.vex_attested, 0), sr.error_message, sr.created_at,
+			sr.sbom_attested, sr.vuln_attested, sr.scai_attested, COALESCE(sr.vex_attested, FALSE), sr.error_message, sr.created_at,
 			COALESCE(a.image_created_at, 0) as image_created_at,
 			a.digest, a.tag, r.name,
 			sr.vex_statements_json

@@ -49,8 +49,8 @@ Configuration is loaded from multiple sources in this priority order:
 | Variable | Type | Default | Description |
 |----------|------|---------|-------------|
 | `STATE_STORE_TYPE` | string | `sqlite` | State store type: `sqlite`, `postgres`, or `memory` |
-| `SQLITE_PATH` | string | `suppline.db` | SQLite database file path |
-| `POSTGRES_URL` | string | `` | PostgreSQL connection URL (if type=postgres) |
+| `SQLITE_PATH` | string | `suppline.db` | SQLite database file path (when `STATE_STORE_TYPE=sqlite`) |
+| `POSTGRES_URL` | string | `` | PostgreSQL connection URL (required when `STATE_STORE_TYPE=postgres`) |
 | `RESCAN_INTERVAL` | duration | `24h` | Default rescan interval for unchanged images |
 
 ### SQLite schema reset
@@ -61,6 +61,23 @@ legacy `vulnerabilities` table. When upgrading from a version that used that tab
 stop all Suppline writers, remove the SQLite database plus its `-wal` and `-shm`
 files, and restart Suppline. Registry discovery and cluster inventory will refill
 the empty database. Suppline refuses to start if it detects the legacy table.
+
+### PostgreSQL
+
+Set `STATE_STORE_TYPE=postgres` and `POSTGRES_URL` (for example
+`postgres://user:pass@host:5432/suppline?sslmode=disable`). Compose and the Helm
+chart default to a bundled PostgreSQL 16 instance.
+
+To copy an existing catalog-schema SQLite database into an empty Postgres
+database without starting the full worker pipeline:
+
+```bash
+SQLITE_PATH=/data/suppline.db POSTGRES_URL=postgres://... /app/suppline copy-sqlite
+```
+
+The command preserves row IDs and refuses to run if the destination already has
+repositories. Do not switch a live backend to `postgres` until this copy
+succeeds.
 
 ### Attestation
 
@@ -472,8 +489,8 @@ RESCAN_INTERVAL=24h
 QUEUE_BUFFER_SIZE=2000
 TRIVY_SERVER_ADDR=trivy:4954
 TRIVY_TIMEOUT=10m
-STATE_STORE_TYPE=sqlite
-SQLITE_PATH=/data/suppline.db
+STATE_STORE_TYPE=postgres
+POSTGRES_URL=postgres://suppline:suppline@postgres:5432/suppline?sslmode=disable
 LOG_LEVEL=info
 METRICS_PORT=9090
 HEALTH_CHECK_PORT=8081

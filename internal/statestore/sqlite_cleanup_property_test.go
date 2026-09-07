@@ -2,7 +2,6 @@ package statestore
 
 import (
 	"context"
-	"database/sql"
 	"fmt"
 	"os"
 	"testing"
@@ -601,7 +600,7 @@ func TestTransactionAtomicityProperty(t *testing.T) {
 			
 			// Try to execute a cleanup operation that will fail due to constraint violation
 			// We'll attempt to delete from a non-existent table to force a failure
-			err = sqliteStore.executeCleanup(ctx, func(tx *sql.Tx) error {
+			err = sqliteStore.executeCleanup(ctx, func(tx *Tx) error {
 				// First, do a valid operation
 				_, err := tx.ExecContext(ctx, `
 					UPDATE artifacts SET last_scan_id = NULL WHERE digest = ?

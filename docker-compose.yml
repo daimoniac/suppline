@@ -21,6 +21,24 @@ services:
       retries: 5
       start_period: 5s
 
+  postgres:
+    image: postgres:16-alpine
+    container_name: suppline-postgres
+    environment:
+      POSTGRES_DB: suppline
+      POSTGRES_USER: suppline
+      POSTGRES_PASSWORD: suppline
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    networks:
+      - suppline
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U suppline -d suppline"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
   suppline:
     # Docker Hub is the day-to-day push target (cluster pulls daimon666/*).
     # Extra tag keeps GHCR in sync when logged into both registries.
@@ -38,6 +56,8 @@ services:
         condition: service_healthy
       trivy:
         condition: service_started
+      postgres:
+        condition: service_healthy
     ports:
       - "8080:8080" # API
       - "9090:9090" # Metrics
@@ -61,14 +81,13 @@ services:
       - TRIVY_SERVER_ADDR=trivy:4954
       - TRIVY_INSECURE=true
       - SCANNER_TIMEOUT=5m
-      - STATE_STORE_TYPE=sqlite
-      - SQLITE_PATH=/data/suppline.db
+      - STATE_STORE_TYPE=postgres
+      - POSTGRES_URL=postgres://suppline:suppline@postgres:5432/suppline?sslmode=disable
       - RESCAN_INTERVAL=24h
       - ATTESTATION_ALLOW_HTTP_REGISTRY=true
       - ATTESTATION_KEY_PASSWORD=demo
       - KEYS_DIR=/keys/demo
     volumes:
-      - ./data:/data
       - ./keys:/keys
       - ./suppline.demo.yml:/config/suppline.yml:ro
       - ./scripts/compose-suppline-entrypoint.sh:/compose-suppline-entrypoint.sh:ro
@@ -222,6 +241,8 @@ volumes:
   trivy-cache:
     driver: local
   registry-data:
+    driver: local
+  postgres-data:
     driver: local
   ui-html:
     driver: local
