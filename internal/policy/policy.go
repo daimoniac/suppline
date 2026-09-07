@@ -7,10 +7,10 @@ import (
 	"math/rand"
 	"time"
 
+	"cel.dev/cel-go/cel"
 	"github.com/daimoniac/suppline/internal/errors"
 	"github.com/daimoniac/suppline/internal/scanner"
 	"github.com/daimoniac/suppline/internal/types"
-	"github.com/google/cel-go/cel"
 )
 
 // PolicyEngine defines the interface for policy evaluation
