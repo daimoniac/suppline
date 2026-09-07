@@ -104,6 +104,7 @@ Data PVCs may be retained (`helm.sh/resource-policy: keep`) so reinstalls can re
 | `regsync.enabled` | Deploy regsync | `true` |
 | `registry.enabled` | Bundled registry | `false` (BYO) |
 | `persistence.data.enabled` | SQLite PVC | `true` |
+| `backend.resources` | CPU/memory for the suppline container | `1Gi` request / `4Gi` limit (attestation spikes + page cache; not a heap leak) |
 | `trivy.image.tag` | Trivy sidecar | `0.74.0` |
 
 See `values.yaml` for the full set.

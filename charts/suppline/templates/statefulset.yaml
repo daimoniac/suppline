@@ -55,8 +55,12 @@ spec:
             name: {{ include "suppline.fullname" . }}-config
         - secretRef:
             name: {{ include "suppline.fullname" . }}-secrets
-        {{- if .Values.registry.enabled }}
         env:
+        # Keep SBOM/vuln predicates off the SQLite PVC so Longhorn dirty pages
+        # do not collide with the cosign RSS spike (see backend.resources).
+        - name: TMPDIR
+          value: /tmp
+        {{- if .Values.registry.enabled }}
         - name: SSL_CERT_FILE
           value: /registry-certs/ca-bundle.crt
         - name: REQUESTS_CA_BUNDLE
@@ -67,6 +71,8 @@ spec:
         volumeMounts:
         - name: data
           mountPath: /data
+        - name: tmp
+          mountPath: /tmp
         - name: config
           mountPath: /config
           readOnly: true
@@ -132,6 +138,8 @@ spec:
       - name: trivy-cache
         emptyDir: {}
       {{- end }}
+      - name: tmp
+        emptyDir: {}
       - name: cache
         emptyDir: {}
       {{- if .Values.registry.enabled }}

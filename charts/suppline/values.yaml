@@ -23,12 +23,18 @@ backend:
     metricsPort: 9090
     healthPort: 8081
 
+  # Memory is dominated by attestation spikes, not the Go heap. A large SBOM/vuln
+  # predicate is written to disk, then cosign parses it while Longhorn may still
+  # hold dirty pages; those pages are not reclaimable until writeback, so the
+  # cgroup OOMs instead of dropping cache. 1Gi/1536Mi limits clamp working set
+  # and look like a leak. GOMEMLIMIT only covers heap (~hundreds of MiB) and
+  # will not prevent these kills. Size for RSS + dirty cache + worker concurrency.
   resources:
     requests:
-      memory: "512Mi"
+      memory: "1Gi"
       cpu: "500m"
     limits:
-      memory: "1Gi"
+      memory: "4Gi"
       cpu: "1000m"
 
   securityContext:

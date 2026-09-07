@@ -400,3 +400,21 @@ func TestAttestSBOM_TimesOutCosignCommand(t *testing.T) {
 		t.Fatalf("expected timeout error, got %v", err)
 	}
 }
+
+func TestWriteSyncedTempFile(t *testing.T) {
+	t.Parallel()
+
+	path, cleanup, err := writeSyncedTempFile("predicate-*.json", []byte(`{"ok":true}`))
+	if err != nil {
+		t.Fatalf("writeSyncedTempFile: %v", err)
+	}
+	t.Cleanup(cleanup)
+
+	got, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("read temp file: %v", err)
+	}
+	if string(got) != `{"ok":true}` {
+		t.Fatalf("temp file contents = %q", got)
+	}
+}

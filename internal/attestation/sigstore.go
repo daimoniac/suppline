@@ -141,6 +141,37 @@ func boolString(v bool) string {
 	return "false"
 }
 
+// writeSyncedTempFile writes predicate bytes and fsyncs before returning the path.
+// Syncing first lets dirty pages flush before cosign's RSS spike; otherwise the
+// cgroup can OOM when writeback to a slow PVC has not finished.
+func writeSyncedTempFile(pattern string, data []byte) (string, func(), error) {
+	tmpFile, err := os.CreateTemp("", pattern)
+	if err != nil {
+		return "", nil, errors.NewTransientf("failed to create temp file: %w", err)
+	}
+
+	cleanup := func() {
+		_ = os.Remove(tmpFile.Name())
+	}
+
+	if _, err := tmpFile.Write(data); err != nil {
+		tmpFile.Close()
+		cleanup()
+		return "", nil, errors.NewTransientf("failed to write temp file: %w", err)
+	}
+	if err := tmpFile.Sync(); err != nil {
+		tmpFile.Close()
+		cleanup()
+		return "", nil, errors.NewTransientf("failed to sync temp file: %w", err)
+	}
+	if err := tmpFile.Close(); err != nil {
+		cleanup()
+		return "", nil, errors.NewTransientf("failed to close temp file: %w", err)
+	}
+
+	return tmpFile.Name(), cleanup, nil
+}
+
 // NewSigstoreAttestor creates a new Sigstore attestor
 // Note: Registry authentication should be handled separately during initialization
 func NewSigstoreAttestor(config AttestationConfig, logger *slog.Logger) (*SigstoreAttestor, error) {
@@ -203,27 +234,19 @@ func (a *SigstoreAttestor) AttestSBOM(ctx context.Context, imageRef string, sbom
 		return errors.NewPermanentf("SBOM data is empty")
 	}
 
-	var jsonCheck interface{}
-	if err := json.Unmarshal(sbom.Data, &jsonCheck); err != nil {
-		return errors.NewPermanentf("SBOM data is not valid JSON: %w", err)
+	if !json.Valid(sbom.Data) {
+		return errors.NewPermanentf("SBOM data is not valid JSON")
 	}
 
-	// Write SBOM data to temporary file
-	tmpFile, err := os.CreateTemp("", "sbom-*.json")
+	predicatePath, cleanup, err := writeSyncedTempFile("sbom-*.json", sbom.Data)
 	if err != nil {
-		return errors.NewTransientf("failed to create temp file: %w", err)
+		return err
 	}
-	defer os.Remove(tmpFile.Name())
-	defer tmpFile.Close()
-
-	if _, err := tmpFile.Write(sbom.Data); err != nil {
-		return errors.NewTransientf("failed to write SBOM to temp file: %w", err)
-	}
-	tmpFile.Close()
+	defer cleanup()
 
 	// Use cosign CLI to attest
 	_, err = a.runCosignAttest(ctx, "attest SBOM",
-		a.attestArgs("https://cyclonedx.org/bom", tmpFile.Name(), imageRef)...,
+		a.attestArgs("https://cyclonedx.org/bom", predicatePath, imageRef)...,
 	)
 	if err != nil {
 		a.logger.Error("cosign SBOM attestation failed",
@@ -252,22 +275,15 @@ func (a *SigstoreAttestor) AttestVulnerabilities(ctx context.Context, imageRef s
 		return errors.NewPermanentf("cosign-vuln data is missing from scan result")
 	}
 
-	// Write cosign-vuln data to temp file
-	tmpFile, err := os.CreateTemp("", "vuln-*.json")
+	predicatePath, cleanup, err := writeSyncedTempFile("vuln-*.json", result.CosignVulnData)
 	if err != nil {
-		return errors.NewTransientf("failed to create temp file: %w", err)
+		return err
 	}
-	defer os.Remove(tmpFile.Name())
-
-	if _, err := tmpFile.Write(result.CosignVulnData); err != nil {
-		tmpFile.Close()
-		return errors.NewTransientf("failed to write cosign-vuln data: %w", err)
-	}
-	tmpFile.Close()
+	defer cleanup()
 
 	// Use cosign CLI to attest
 	_, err = a.runCosignAttest(ctx, "attest vulnerabilities",
-		a.attestArgs("vuln", tmpFile.Name(), imageRef)...,
+		a.attestArgs("vuln", predicatePath, imageRef)...,
 	)
 	if err != nil {
 		a.logger.Error("cosign vulnerability attestation failed",
@@ -326,22 +342,15 @@ func (a *SigstoreAttestor) AttestVEX(ctx context.Context, imageRef string, state
 		return errors.NewPermanentf("failed to serialize VEX predicate: %w", err)
 	}
 
-	// Write to temp file
-	tmpFile, err := os.CreateTemp("", "vex-*.json")
+	predicatePath, cleanup, err := writeSyncedTempFile("vex-*.json", vexJSON)
 	if err != nil {
-		return errors.NewTransientf("failed to create temp file: %w", err)
+		return err
 	}
-	defer os.Remove(tmpFile.Name())
-	defer tmpFile.Close()
-
-	if _, err := tmpFile.Write(vexJSON); err != nil {
-		return errors.NewTransientf("failed to write VEX to temp file: %w", err)
-	}
-	tmpFile.Close()
+	defer cleanup()
 
 	// Use cosign CLI to attest with CycloneDX VEX type
 	_, err = a.runCosignAttest(ctx, "attest VEX",
-		a.attestArgs("https://cyclonedx.org/vex", tmpFile.Name(), imageRef)...,
+		a.attestArgs("https://cyclonedx.org/vex", predicatePath, imageRef)...,
 	)
 	if err != nil {
 		a.logger.Error("cosign VEX attestation failed",
@@ -373,22 +382,15 @@ func (a *SigstoreAttestor) AttestSCAI(ctx context.Context, imageRef string, scai
 		return errors.NewPermanentf("failed to serialize SCAI: %w", err)
 	}
 
-	// Write to temp file
-	tmpFile, err := os.CreateTemp("", "scai-*.json")
+	predicatePath, cleanup, err := writeSyncedTempFile("scai-*.json", scaiJSON)
 	if err != nil {
-		return errors.NewTransientf("failed to create temp file: %w", err)
+		return err
 	}
-	defer os.Remove(tmpFile.Name())
-	defer tmpFile.Close()
-
-	if _, err := tmpFile.Write(scaiJSON); err != nil {
-		return errors.NewTransientf("failed to write SCAI to temp file: %w", err)
-	}
-	tmpFile.Close()
+	defer cleanup()
 
 	// Use cosign CLI to attest
 	_, err = a.runCosignAttest(ctx, "attest SCAI",
-		a.attestArgs("https://in-toto.io/attestation/scai/attribute-report/v0.3", tmpFile.Name(), imageRef)...,
+		a.attestArgs("https://in-toto.io/attestation/scai/attribute-report/v0.3", predicatePath, imageRef)...,
 	)
 	if err != nil {
 		a.logger.Error("cosign SCAI attestation failed",
