@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
-	"math/rand"
 	"time"
 
 	"cel.dev/cel-go/cel"
@@ -388,28 +387,132 @@ func (e *Engine) findPolicyFailureFindings(imageRef string, enrichedVulns []map[
 		return nil
 	}
 
+	candidatePosByIndex := make(map[int]int, len(candidateIndexes))
+	for pos, idx := range candidateIndexes {
+		candidatePosByIndex[idx] = pos
+	}
+
+	evaluate := func(included []bool) (bool, error) {
+		return e.evaluateSubset(imageRef, enrichedVulns, candidatePosByIndex, included)
+	}
+
+	// If the fixed baseline (for example exempted vulnerabilities and imageRef)
+	// already fails, no non-exempted vulnerability can be attributed to the failure.
+	included := make([]bool, len(candidateIndexes))
+	baselinePassed, err := evaluate(included)
+	if err != nil {
+		e.logger.Warn("failed to evaluate CEL attribution baseline",
+			"image", imageRef,
+			"error", err)
+		return nil
+	}
+	if !baselinePassed {
+		return nil
+	}
+
 	contributor := make([]bool, len(candidateIndexes))
 
-	// Direct contributors: removing this vulnerability alone flips fail -> pass.
-	for i, idx := range candidateIndexes {
-		passed, err := e.evaluateSubset(imageRef, enrichedVulns, candidateIndexes, func(pos int, originalIdx int) bool {
-			return originalIdx != idx
-		})
-		if err != nil {
-			e.logger.Warn("failed to evaluate direct CEL contributor",
+	// Sufficient contributors fail the policy by themselves. This exactly and
+	// cheaply handles the common "no matching vulnerabilities" policy shape.
+	for pos, idx := range candidateIndexes {
+		included[pos] = true
+		passed, evalErr := evaluate(included)
+		included[pos] = false
+		if evalErr != nil {
+			e.logger.Warn("failed to evaluate sufficient CEL contributor",
 				"image", imageRef,
 				"index", idx,
-				"error", err)
+				"error", evalErr)
 			continue
 		}
-		if passed {
-			contributor[i] = true
+		if !passed {
+			contributor[pos] = true
 		}
 	}
 
-	// Cooperative contributors: in sampled permutations, vulnerability acts as
-	// the pivot where evaluation transitions from pass -> fail when added.
-	contributor = e.markCooperativeContributors(imageRef, enrichedVulns, candidateIndexes, contributor)
+	// Necessary contributors make the full input pass when removed.
+	for pos := range included {
+		included[pos] = true
+	}
+	for pos, idx := range candidateIndexes {
+		included[pos] = false
+		passed, evalErr := evaluate(included)
+		included[pos] = true
+		if evalErr != nil {
+			e.logger.Warn("failed to evaluate necessary CEL contributor",
+				"image", imageRef,
+				"index", idx,
+				"error", evalErr)
+			continue
+		}
+		if passed {
+			contributor[pos] = true
+		}
+	}
+
+	// Isolate any remaining cooperative failure mechanisms deterministically.
+	// Each iteration removes already-attributed vulnerabilities, shrinks the
+	// remaining failing set to a one-minimal witness, then finds candidates that
+	// can substitute for a witness member. This preserves threshold attribution
+	// without repeatedly evaluating random full-size permutations.
+	for {
+		active := make([]bool, len(candidateIndexes))
+		for pos := range active {
+			active[pos] = !contributor[pos]
+		}
+
+		passed, evalErr := evaluate(active)
+		if evalErr != nil {
+			e.logger.Warn("failed to evaluate cooperative CEL contributors",
+				"image", imageRef,
+				"error", evalErr)
+			break
+		}
+		if passed {
+			break
+		}
+
+		witness := append([]bool(nil), active...)
+		for pos, isIncluded := range witness {
+			if !isIncluded {
+				continue
+			}
+			witness[pos] = false
+			passed, evalErr = evaluate(witness)
+			if evalErr != nil || passed {
+				witness[pos] = true
+			}
+		}
+
+		witnessPositions := make([]int, 0)
+		for pos, isIncluded := range witness {
+			if isIncluded {
+				witnessPositions = append(witnessPositions, pos)
+				contributor[pos] = true
+			}
+		}
+		if len(witnessPositions) == 0 {
+			break
+		}
+
+		for candidatePos, isActive := range active {
+			if !isActive || witness[candidatePos] {
+				continue
+			}
+
+			witness[candidatePos] = true
+			for _, witnessPos := range witnessPositions {
+				witness[witnessPos] = false
+				passed, evalErr = evaluate(witness)
+				witness[witnessPos] = true
+				if evalErr == nil && !passed {
+					contributor[candidatePos] = true
+					break
+				}
+			}
+			witness[candidatePos] = false
+		}
+	}
 
 	findings := make([]types.PolicyFailureFinding, 0, len(candidateIndexes))
 	seen := make(map[string]struct{})
@@ -431,73 +534,11 @@ func (e *Engine) findPolicyFailureFindings(imageRef string, enrichedVulns []map[
 	return findings
 }
 
-func (e *Engine) markCooperativeContributors(imageRef string, enrichedVulns []map[string]interface{}, candidateIndexes []int, contributor []bool) []bool {
-	n := len(candidateIndexes)
-	if n == 0 {
-		return contributor
-	}
-
-	trials := 24
-	if n > 24 {
-		trials = 40
-	}
-	if n > 60 {
-		trials = 64
-	}
-
-	rng := rand.New(rand.NewSource(42))
-	baseOrder := make([]int, n)
-	for i := range baseOrder {
-		baseOrder[i] = i
-	}
-
-	for t := 0; t < trials; t++ {
-		order := append([]int(nil), baseOrder...)
-		rng.Shuffle(len(order), func(i, j int) {
-			order[i], order[j] = order[j], order[i]
-		})
-
-		included := make([]bool, n)
-		prevPassed, err := e.evaluateSubset(imageRef, enrichedVulns, candidateIndexes, func(pos int, originalIdx int) bool {
-			return included[pos]
-		})
-		if err != nil {
-			e.logger.Warn("failed to evaluate CEL permutation baseline", "image", imageRef, "error", err)
-			continue
-		}
-		if !prevPassed {
-			continue
-		}
-
-		for _, candidatePos := range order {
-			included[candidatePos] = true
-			nextPassed, err := e.evaluateSubset(imageRef, enrichedVulns, candidateIndexes, func(pos int, originalIdx int) bool {
-				return included[pos]
-			})
-			if err != nil {
-				e.logger.Warn("failed to evaluate CEL permutation step", "image", imageRef, "error", err)
-				break
-			}
-			if prevPassed && !nextPassed {
-				contributor[candidatePos] = true
-			}
-			prevPassed = nextPassed
-		}
-	}
-
-	return contributor
-}
-
-func (e *Engine) evaluateSubset(imageRef string, enrichedVulns []map[string]interface{}, candidateIndexes []int, include func(candidatePos int, originalIdx int) bool) (bool, error) {
+func (e *Engine) evaluateSubset(imageRef string, enrichedVulns []map[string]interface{}, candidatePosByIndex map[int]int, included []bool) (bool, error) {
 	counterfactual := make([]map[string]interface{}, 0, len(enrichedVulns))
-	candidatePosByIndex := make(map[int]int, len(candidateIndexes))
-	for pos, idx := range candidateIndexes {
-		candidatePosByIndex[idx] = pos
-	}
-
 	for idx, vuln := range enrichedVulns {
 		pos, isCandidate := candidatePosByIndex[idx]
-		if isCandidate && !include(pos, idx) {
+		if isCandidate && !included[pos] {
 			continue
 		}
 		counterfactual = append(counterfactual, vuln)
