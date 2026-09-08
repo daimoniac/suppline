@@ -103,6 +103,33 @@ func TestListScans_OnlyLatestArtifactPerRepositoryTag(t *testing.T) {
 		t.Fatal("expected current passing 13.1 in ListScans")
 	}
 
+	detail, err := sqliteStore.GetRepository(ctx, repo, RepositoryTagFilter{Limit: 100})
+	if err != nil {
+		t.Fatalf("GetRepository: %v", err)
+	}
+	if detail.Total != 1 || len(detail.Tags) != 1 {
+		t.Fatalf("GetRepository returned total=%d tags=%d, want one current binding", detail.Total, len(detail.Tags))
+	}
+	if detail.Tags[0].Digest != newDigest {
+		t.Fatalf("GetRepository returned superseded digest %q, want %q", detail.Tags[0].Digest, newDigest)
+	}
+
+	latestRows, err := sqliteStore.allLatestArtifactTagRows(ctx)
+	if err != nil {
+		t.Fatalf("allLatestArtifactTagRows: %v", err)
+	}
+	if len(latestRows) != 1 || latestRows[0].digest != newDigest {
+		t.Fatalf("allLatestArtifactTagRows returned %+v, want only current digest %q", latestRows, newDigest)
+	}
+
+	currentTotal, _, err := sqliteStore.CountCurrentDigests(ctx)
+	if err != nil {
+		t.Fatalf("CountCurrentDigests: %v", err)
+	}
+	if currentTotal != 1 {
+		t.Fatalf("CountCurrentDigests=%d, want 1 current digest", currentTotal)
+	}
+
 	failedCount, err := sqliteStore.CountScans(ctx, ScanFilter{PolicyPassed: &policyFailed})
 	if err != nil {
 		t.Fatalf("CountScans(failed): %v", err)

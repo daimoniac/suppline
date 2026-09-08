@@ -137,13 +137,7 @@ func (s *SQLiteStore) CountDueForRescan(ctx context.Context, olderThan time.Dura
 		SELECT COUNT(DISTINCT a.digest)
 		FROM artifacts a
 		JOIN scan_records sr ON a.last_scan_id = sr.id
-		INNER JOIN (
-			SELECT a2.repository_id, a2.tag, MAX(a2.id) AS max_id
-			FROM artifacts a2
-			GROUP BY a2.repository_id, a2.tag
-		) latest ON a.repository_id = latest.repository_id
-			AND a.tag IS NOT DISTINCT FROM latest.tag
-			AND a.id = latest.max_id
+	`+currentArtifactTagBindingJoin+`
 		WHERE sr.created_at < ?
 	`, cutoffUnix).Scan(&count)
 	if err != nil {
@@ -160,13 +154,7 @@ func (s *SQLiteStore) CountCurrentDigests(ctx context.Context) (total int, inUse
 		SELECT DISTINCT a.digest, COALESCE(a.tag, ''), r.name
 		FROM artifacts a
 		JOIN repositories r ON a.repository_id = r.id
-		INNER JOIN (
-			SELECT a2.repository_id, a2.tag, MAX(a2.id) AS max_id
-			FROM artifacts a2
-			GROUP BY a2.repository_id, a2.tag
-		) latest ON a.repository_id = latest.repository_id
-			AND a.tag IS NOT DISTINCT FROM latest.tag
-			AND a.id = latest.max_id
+	`+currentArtifactTagBindingJoin+`
 		WHERE a.last_scan_id IS NOT NULL
 		  AND a.digest != ''
 	`)
@@ -518,13 +506,7 @@ func (s *SQLiteStore) CountScans(ctx context.Context, filter ScanFilter) (int, e
 		FROM artifacts a
 		JOIN repositories r ON a.repository_id = r.id
 		JOIN scan_records sr ON a.last_scan_id = sr.id
-		INNER JOIN (
-			SELECT a2.repository_id, a2.tag, MAX(a2.id) AS max_id
-			FROM artifacts a2
-			GROUP BY a2.repository_id, a2.tag
-		) latest ON a.repository_id = latest.repository_id
-			AND a.tag IS NOT DISTINCT FROM latest.tag
-			AND a.id = latest.max_id
+	` + currentArtifactTagBindingJoin + `
 		WHERE 1=1
 	`
 	filterClause, args := s.buildScanFilterClause(filter)
@@ -651,13 +633,7 @@ func (s *SQLiteStore) queryScanRecords(ctx context.Context, filter ScanFilter) (
 		FROM artifacts a
 		JOIN repositories r ON a.repository_id = r.id
 		JOIN scan_records sr ON a.last_scan_id = sr.id
-		INNER JOIN (
-			SELECT a2.repository_id, a2.tag, MAX(a2.id) AS max_id
-			FROM artifacts a2
-			GROUP BY a2.repository_id, a2.tag
-		) latest ON a.repository_id = latest.repository_id
-			AND a.tag IS NOT DISTINCT FROM latest.tag
-			AND a.id = latest.max_id
+	` + currentArtifactTagBindingJoin + `
 		WHERE 1=1
 	`
 	filterClause, args := s.buildScanFilterClause(filter)

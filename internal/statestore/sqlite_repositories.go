@@ -382,6 +382,7 @@ func (s *SQLiteStore) GetRepository(ctx context.Context, name string, filter Rep
 		SELECT COUNT(DISTINCT a.tag)
 		FROM artifacts a
 		JOIN repositories r ON a.repository_id = r.id
+	` + currentArtifactTagBindingJoin + `
 		WHERE r.name = ?
 	`
 	countArgs := []interface{}{name}
@@ -427,16 +428,10 @@ func (s *SQLiteStore) GetRepository(ctx context.Context, name string, filter Rep
 		FROM artifacts a
 		JOIN repositories r ON a.repository_id = r.id
 		LEFT JOIN scan_records sr ON a.last_scan_id = sr.id
-		INNER JOIN (
-			SELECT a2.tag, MAX(a2.id) as max_id
-			FROM artifacts a2
-			JOIN repositories r2 ON a2.repository_id = r2.id
-			WHERE r2.name = ?
-			GROUP BY a2.tag
-		) latest ON a.tag = latest.tag AND a.id = latest.max_id
+	` + currentArtifactTagBindingJoin + `
 		WHERE r.name = ?
 	`
-	args := []interface{}{name, name}
+	args := []interface{}{name}
 
 	if filter.Search != "" {
 		if filter.ExactMatch {
@@ -573,11 +568,7 @@ func (s *SQLiteStore) allLatestArtifactTagRows(ctx context.Context) ([]latestArt
 		SELECT r.name, a.tag, a.digest
 		FROM artifacts a
 		JOIN repositories r ON a.repository_id = r.id
-		INNER JOIN (
-			SELECT a2.repository_id, a2.tag, MAX(a2.id) AS max_id
-			FROM artifacts a2
-			GROUP BY a2.repository_id, a2.tag
-		) latest ON a.repository_id = latest.repository_id AND a.tag = latest.tag AND a.id = latest.max_id
+	` + currentArtifactTagBindingJoin + `
 		ORDER BY r.name, a.tag
 	`
 	rows, err := s.db.QueryContext(ctx, query)
