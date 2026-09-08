@@ -864,7 +864,7 @@ func TestSchemaAndConstraints(t *testing.T) {
 			"idx_scan_records_artifact",
 			"idx_scan_records_created",
 			"idx_scan_findings_scan",
-			"idx_scan_findings_cve",
+			"idx_scan_findings_cve_scan",
 			"idx_cve_catalog_severity",
 		}
 		for _, idx := range indexes {

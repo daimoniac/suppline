@@ -11,17 +11,18 @@ import (
 )
 
 func (s *SQLiteStore) GetUniqueVulnerabilityCounts(ctx context.Context) (map[string]int, error) {
-	// Use a subquery to first collect the set of active scan IDs from artifacts, then
-	// filter findings by that set. The catalog stores CVE metadata only once.
-	// The inner SELECT DISTINCT also ensures each CVE is counted only once even when
-	// the same scan_record_id is referenced by multiple artifact rows (multi-tag digests).
+	// Distinct CVE IDs on current last scans first (~catalog size), then count by
+	// catalog severity. COUNT(DISTINCT) over the full findings join sorts millions
+	// of rows on disk; this keeps the aggregate in memory.
 	query := `
-		SELECT c.severity, COUNT(DISTINCT f.cve_id)
-		FROM scan_findings f
-		JOIN cve_catalog c ON c.cve_id = f.cve_id
-		WHERE f.scan_record_id IN (
-			SELECT last_scan_id FROM artifacts WHERE last_scan_id IS NOT NULL
-		)
+		SELECT c.severity, COUNT(*)
+		FROM (
+			SELECT DISTINCT f.cve_id
+			FROM artifacts a
+			JOIN scan_findings f ON f.scan_record_id = a.last_scan_id
+			WHERE a.last_scan_id IS NOT NULL
+		) current_cves
+		JOIN cve_catalog c ON c.cve_id = current_cves.cve_id
 		GROUP BY c.severity
 	`
 

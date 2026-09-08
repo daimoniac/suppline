@@ -114,3 +114,43 @@ func TestRecordScanDeduplicatesCVEMetadataAndPreservesFirstSeen(t *testing.T) {
 		t.Fatalf("first-seen changed from %d to %d", firstSeen, preservedFirstSeen)
 	}
 }
+
+func TestGetUniqueVulnerabilityCountsUsesLatestScansOnly(t *testing.T) {
+	store, err := NewSQLiteStore(t.TempDir() + "/unique-counts.db")
+	if err != nil {
+		t.Fatalf("create store: %v", err)
+	}
+	defer store.Close()
+
+	ctx := context.Background()
+	scan := func(repo, digest, tag string, vulns []types.VulnerabilityRecord) {
+		t.Helper()
+		if err := store.RecordScan(ctx, &ScanRecord{
+			Repository:      repo,
+			Digest:          digest,
+			Tag:             tag,
+			PolicyPassed:    true,
+			Vulnerabilities: vulns,
+		}); err != nil {
+			t.Fatalf("RecordScan %s: %v", repo, err)
+		}
+	}
+
+	shared := types.VulnerabilityRecord{CVEID: "CVE-2026-1001", Severity: "HIGH", PackageName: "openssl"}
+	onlyA := types.VulnerabilityRecord{CVEID: "CVE-2026-1002", Severity: "LOW", PackageName: "musl"}
+	onlyB := types.VulnerabilityRecord{CVEID: "CVE-2026-1003", Severity: "CRITICAL", PackageName: "glibc"}
+	stale := types.VulnerabilityRecord{CVEID: "CVE-2026-1999", Severity: "MEDIUM", PackageName: "stale"}
+
+	scan("example/a", "sha256:aaaa", "1.0", []types.VulnerabilityRecord{shared, onlyA, stale})
+	scan("example/a", "sha256:aaaa", "1.0", []types.VulnerabilityRecord{shared, onlyA})
+	scan("example/b", "sha256:bbbb", "1.0", []types.VulnerabilityRecord{shared, onlyB})
+
+	got, err := store.GetUniqueVulnerabilityCounts(ctx)
+	if err != nil {
+		t.Fatalf("GetUniqueVulnerabilityCounts: %v", err)
+	}
+	want := map[string]int{"CRITICAL": 1, "HIGH": 1, "MEDIUM": 0, "LOW": 1}
+	if got["CRITICAL"] != want["CRITICAL"] || got["HIGH"] != want["HIGH"] || got["MEDIUM"] != want["MEDIUM"] || got["LOW"] != want["LOW"] {
+		t.Fatalf("unique counts = %#v, want %#v", got, want)
+	}
+}

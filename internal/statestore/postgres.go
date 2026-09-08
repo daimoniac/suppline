@@ -135,12 +135,9 @@ func (s *SQLiteStore) initPostgresSchema() error {
 		`CREATE INDEX IF NOT EXISTS idx_scan_records_artifact ON scan_records(artifact_id)`,
 		`CREATE INDEX IF NOT EXISTS idx_scan_records_created ON scan_records(created_at)`,
 		`CREATE INDEX IF NOT EXISTS idx_scan_findings_scan ON scan_findings(scan_record_id)`,
-		`CREATE INDEX IF NOT EXISTS idx_scan_findings_cve ON scan_findings(cve_id)`,
 		`CREATE INDEX IF NOT EXISTS idx_scan_findings_cve_scan ON scan_findings(cve_id, scan_record_id)`,
 		`CREATE INDEX IF NOT EXISTS idx_cve_catalog_severity ON cve_catalog(severity)`,
-		`CREATE INDEX IF NOT EXISTS idx_cve_first_seen_cve ON cve_first_seen(cve_id)`,
 		`CREATE INDEX IF NOT EXISTS idx_artifacts_last_scan ON artifacts(last_scan_id)`,
-		`CREATE INDEX IF NOT EXISTS idx_scan_findings_scan_cve ON scan_findings(scan_record_id, cve_id)`,
 		`CREATE INDEX IF NOT EXISTS idx_artifacts_last_scan_repo_digest ON artifacts(last_scan_id, repository_id, digest)`,
 		`CREATE INDEX IF NOT EXISTS idx_cluster_images_cluster ON cluster_images(cluster_id)`,
 		`CREATE INDEX IF NOT EXISTS idx_cluster_images_digest ON cluster_images(digest)`,
@@ -155,6 +152,17 @@ func (s *SQLiteStore) initPostgresSchema() error {
 	for _, stmt := range stmts {
 		if _, err := s.db.Exec(stmt); err != nil {
 			return fmt.Errorf("postgres schema: %w", err)
+		}
+	}
+
+	// Drop SQLite-era indexes that Postgres does not use (prefix or covering duplicates).
+	for _, name := range []string{
+		"idx_scan_findings_cve",
+		"idx_scan_findings_scan_cve",
+		"idx_cve_first_seen_cve",
+	} {
+		if _, err := s.db.Exec(`DROP INDEX IF EXISTS ` + name); err != nil {
+			return fmt.Errorf("drop redundant index %s: %w", name, err)
 		}
 	}
 
