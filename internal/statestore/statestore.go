@@ -51,6 +51,10 @@ type StateStore interface {
 	// older than olderThan (aligned with watcher rescan-interval checks).
 	CountDueForRescan(ctx context.Context, olderThan time.Duration) (int, error)
 
+	// ListDueForRescanArtifacts returns the artifacts counted by CountDueForRescan,
+	// including the repository and tag needed to enqueue a scan.
+	ListDueForRescanArtifacts(ctx context.Context, olderThan time.Duration) ([]*ScanRecord, error)
+
 	// CountCurrentDigests returns distinct digests among current latest-per-tag
 	// artifacts, and how many of those are in runtime use (same matching as in_use filters).
 	CountCurrentDigests(ctx context.Context) (total int, inUse int, err error)

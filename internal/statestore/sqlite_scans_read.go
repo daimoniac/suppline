@@ -146,6 +146,54 @@ func (s *SQLiteStore) CountDueForRescan(ctx context.Context, olderThan time.Dura
 	return count, nil
 }
 
+// ListDueForRescanArtifacts returns the current artifacts counted by CountDueForRescan,
+// carrying the repository and tag needed to enqueue a scan. Records are deduplicated by
+// digest, annotated with runtime usage, and ordered oldest scan first.
+func (s *SQLiteStore) ListDueForRescanArtifacts(ctx context.Context, olderThan time.Duration) ([]*ScanRecord, error) {
+	if olderThan <= 0 {
+		olderThan = 7 * 24 * time.Hour
+	}
+	cutoffUnix := time.Now().UTC().Add(-olderThan).Unix()
+
+	rows, err := s.db.QueryContext(ctx, `
+		SELECT a.digest, COALESCE(a.tag, ''), r.name, sr.created_at
+		FROM artifacts a
+		JOIN scan_records sr ON a.last_scan_id = sr.id
+		JOIN repositories r ON a.repository_id = r.id
+	`+currentArtifactTagBindingJoin+`
+		WHERE sr.created_at < ? AND a.digest != ''
+		ORDER BY sr.created_at ASC, a.digest ASC
+	`, cutoffUnix)
+	if err != nil {
+		return nil, errors.NewTransientf("failed to query artifacts due for rescan: %w", err)
+	}
+	defer rows.Close()
+
+	records := make([]*ScanRecord, 0)
+	seenDigests := make(map[string]struct{})
+	for rows.Next() {
+		var record ScanRecord
+		if err := rows.Scan(&record.Digest, &record.Tag, &record.Repository, &record.CreatedAt); err != nil {
+			return nil, errors.NewTransientf("failed to scan due for rescan row: %w", err)
+		}
+		if _, duplicate := seenDigests[record.Digest]; duplicate {
+			continue
+		}
+		seenDigests[record.Digest] = struct{}{}
+		records = append(records, &record)
+	}
+
+	if err := rows.Err(); err != nil {
+		return nil, errors.NewTransientf("error iterating due for rescan rows: %w", err)
+	}
+
+	if err := s.annotateScanRecordsWithRuntimeUsage(ctx, records); err != nil {
+		return nil, err
+	}
+
+	return records, nil
+}
+
 // CountCurrentDigests returns distinct digests among current latest-per-tag artifacts
 // and how many are in runtime use. Usage matching goes through getRuntimeUsageForScans so
 // the count includes the repository+tag fallback and matches the in_use list filters.

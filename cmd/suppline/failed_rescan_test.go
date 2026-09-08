@@ -6,13 +6,13 @@ import (
 	"github.com/daimoniac/suppline/internal/statestore"
 )
 
-func TestPartitionFailedArtifactsByRuntimeUsage(t *testing.T) {
+func TestPartitionArtifactsByRuntimeUsage(t *testing.T) {
 	a := &statestore.ScanRecord{Digest: "sha256:a", Repository: "repo/a", Tag: "1"}
 	b := &statestore.ScanRecord{Digest: "sha256:b", Repository: "repo/b", Tag: "1", RuntimeUsed: true}
 	c := &statestore.ScanRecord{Digest: "sha256:c", Repository: "repo/c", Tag: "1"}
 	d := &statestore.ScanRecord{Digest: "sha256:d", Repository: "repo/d", Tag: "1", RuntimeUsed: true}
 
-	inUse, notInUse := partitionFailedArtifactsByRuntimeUsage([]*statestore.ScanRecord{a, b, c, d, nil})
+	inUse, notInUse := partitionArtifactsByRuntimeUsage([]*statestore.ScanRecord{a, b, c, d, nil})
 
 	if len(inUse) != 2 || inUse[0] != b || inUse[1] != d {
 		t.Fatalf("in-use order: got %+v, want [b, d]", digests(inUse))
@@ -22,8 +22,8 @@ func TestPartitionFailedArtifactsByRuntimeUsage(t *testing.T) {
 	}
 }
 
-func TestPartitionFailedArtifactsByRuntimeUsage_empty(t *testing.T) {
-	inUse, notInUse := partitionFailedArtifactsByRuntimeUsage(nil)
+func TestPartitionArtifactsByRuntimeUsage_empty(t *testing.T) {
+	inUse, notInUse := partitionArtifactsByRuntimeUsage(nil)
 	if len(inUse) != 0 || len(notInUse) != 0 {
 		t.Fatalf("expected empty buckets, got inUse=%d notInUse=%d", len(inUse), len(notInUse))
 	}

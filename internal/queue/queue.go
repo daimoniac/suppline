@@ -38,8 +38,11 @@ type TaskQueue interface {
 type TaskPriority int
 
 const (
-	PriorityNormal TaskPriority = iota
-	PriorityHigh                // For rescans and urgent tasks
+	// PriorityUnspecified is the zero value and lets Enqueue derive the priority
+	// from the task flags. Callers that care about ordering set one explicitly.
+	PriorityUnspecified TaskPriority = iota
+	PriorityNormal
+	PriorityHigh // For rescans and urgent tasks
 )
 
 // ScanTask represents a container image scanning task
@@ -128,12 +131,15 @@ func (q *InMemoryQueue) Enqueue(ctx context.Context, task *ScanTask) error {
 	q.pending[task.Digest] = true
 	q.pendingMu.Unlock()
 
-	// Set priority based on task type
+	// An explicit priority from the caller wins. Only fall back to task-type
+	// routing when the caller left it unspecified.
 	// High priority for: rescans and first-time scans of new repositories
-	if task.IsRescan || task.IsFirstScan {
-		task.Priority = PriorityHigh
-	} else {
-		task.Priority = PriorityNormal
+	if task.Priority == PriorityUnspecified {
+		if task.IsRescan || task.IsFirstScan {
+			task.Priority = PriorityHigh
+		} else {
+			task.Priority = PriorityNormal
+		}
 	}
 
 	// Enqueue to appropriate priority queue

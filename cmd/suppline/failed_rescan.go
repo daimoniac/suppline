@@ -9,9 +9,9 @@ import (
 	"github.com/daimoniac/suppline/internal/statestore"
 )
 
-// partitionFailedArtifactsByRuntimeUsage splits failed artifacts into in-use and
-// not-in-use buckets. Relative order within each bucket is preserved.
-func partitionFailedArtifactsByRuntimeUsage(
+// partitionArtifactsByRuntimeUsage splits artifacts into in-use and not-in-use
+// buckets. Relative order within each bucket is preserved.
+func partitionArtifactsByRuntimeUsage(
 	artifacts []*statestore.ScanRecord,
 ) (inUse, notInUse []*statestore.ScanRecord) {
 	inUse = make([]*statestore.ScanRecord, 0, len(artifacts))
@@ -46,7 +46,7 @@ func enqueueFailedArtifacts(ctx context.Context, store statestore.StateStoreQuer
 
 	logger.Info("found failed artifacts to consider for startup rescan", "count", len(failedArtifacts))
 
-	inUse, notInUse := partitionFailedArtifactsByRuntimeUsage(failedArtifacts)
+	inUse, notInUse := partitionArtifactsByRuntimeUsage(failedArtifacts)
 	if len(inUse) == 0 {
 		logger.Info("no in-use failed artifacts to rescan on startup",
 			"skipped_not_in_use", len(notInUse),
