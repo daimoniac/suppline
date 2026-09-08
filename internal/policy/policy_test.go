@@ -2,6 +2,7 @@ package policy
 
 import (
 	"context"
+	"fmt"
 	"log/slog"
 	"testing"
 	"time"
@@ -572,6 +573,82 @@ func TestEngine_CEL_PolicyFailureFindings_CooperativeContributors(t *testing.T) 
 	}
 	if len(decision.PolicyFailureFindings) != 2 {
 		t.Fatalf("expected two cooperative contributors, got %+v", decision.PolicyFailureFindings)
+	}
+}
+
+func TestEngine_CEL_PolicyFailureFindings_AllExpressionMatches(t *testing.T) {
+	engine, err := NewEngine(slog.Default(), PolicyConfig{
+		Expression: `vulnerabilities.filter(v,
+			v.severity == "CRITICAL" &&
+			v.fixedVersion != "" &&
+			!v.exempted
+		).size() == 0`,
+	})
+	if err != nil {
+		t.Fatalf("failed to create engine: %v", err)
+	}
+
+	const count = 100
+	vulnerabilities := make([]types.Vulnerability, 0, count+1)
+	for i := 0; i < count; i++ {
+		vulnerabilities = append(vulnerabilities, types.Vulnerability{
+			ID:           fmt.Sprintf("CVE-2026-%04d", i),
+			Severity:     "CRITICAL",
+			PackageName:  fmt.Sprintf("pkg-%03d", i),
+			FixedVersion: "2.0.0",
+		})
+	}
+	vulnerabilities = append(vulnerabilities, types.Vulnerability{
+		ID:          "CVE-2026-9999",
+		Severity:    "CRITICAL",
+		PackageName: "unfixed",
+	})
+
+	decision, err := engine.Evaluate(context.Background(), "test/image:v1", &scanner.ScanResult{
+		ImageRef:        "test/image:v1",
+		Vulnerabilities: vulnerabilities,
+	}, nil)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if decision.Passed {
+		t.Fatal("expected policy failure")
+	}
+	if len(decision.PolicyFailureFindings) != count {
+		t.Fatalf("expected all %d fixable critical findings, got %d", count, len(decision.PolicyFailureFindings))
+	}
+}
+
+func TestEngine_CEL_PolicyFailureFindings_ThresholdAlternatives(t *testing.T) {
+	engine, err := NewEngine(slog.Default(), PolicyConfig{
+		Expression: "highCount < 5",
+	})
+	if err != nil {
+		t.Fatalf("failed to create engine: %v", err)
+	}
+
+	const count = 10
+	vulnerabilities := make([]types.Vulnerability, 0, count)
+	for i := 0; i < count; i++ {
+		vulnerabilities = append(vulnerabilities, types.Vulnerability{
+			ID:          fmt.Sprintf("CVE-2026-%04d", i),
+			Severity:    "HIGH",
+			PackageName: fmt.Sprintf("pkg-%03d", i),
+		})
+	}
+
+	decision, err := engine.Evaluate(context.Background(), "test/image:v1", &scanner.ScanResult{
+		ImageRef:        "test/image:v1",
+		Vulnerabilities: vulnerabilities,
+	}, nil)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if decision.Passed {
+		t.Fatal("expected policy failure")
+	}
+	if len(decision.PolicyFailureFindings) != count {
+		t.Fatalf("expected all %d interchangeable threshold findings, got %+v", count, decision.PolicyFailureFindings)
 	}
 }
 
