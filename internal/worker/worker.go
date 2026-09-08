@@ -47,17 +47,11 @@ func DefaultConfig() Config {
 // ImageWorker implements the Worker interface
 type ImageWorker struct {
 	queue         queue.TaskQueue
-	scanner       scanner.Scanner
-	policy        policy.PolicyEngine
-	attestor      attestation.Attestor
-	registry      registry.Client
 	stateStore    statestore.StateStore
 	config        Config
 	logger        *slog.Logger
 	wg            sync.WaitGroup
-	regsyncCfg    *config.RegsyncConfig
 	policyCatalog catalog.Catalog
-	scaiGenerator *attestation.SCAIGenerator
 	pipeline      *Pipeline
 }
 
@@ -103,20 +97,21 @@ func NewImageWorkerWithCatalog(
 
 	worker := &ImageWorker{
 		queue:         queue,
-		scanner:       scanner,
-		policy:        policy,
-		attestor:      attestor,
-		registry:      registry,
 		stateStore:    stateStore,
 		config:        config,
 		logger:        logger,
-		regsyncCfg:    regsyncCfg,
 		policyCatalog: policyCatalog,
-		scaiGenerator: scaiGenerator,
+		pipeline: NewPipeline(
+			registry,
+			scanner,
+			policy,
+			policyCatalog,
+			attestor,
+			stateStore,
+			scaiGenerator,
+			logger,
+		),
 	}
-
-	// Initialize pipeline
-	worker.pipeline = NewPipeline(worker, logger)
 
 	return worker
 }

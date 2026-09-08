@@ -6,9 +6,11 @@ import (
 	"log/slog"
 	"time"
 
+	"github.com/daimoniac/suppline/internal/attestation"
 	"github.com/daimoniac/suppline/internal/errors"
 	"github.com/daimoniac/suppline/internal/observability"
 	"github.com/daimoniac/suppline/internal/policy"
+	"github.com/daimoniac/suppline/internal/policy/catalog"
 	"github.com/daimoniac/suppline/internal/queue"
 	"github.com/daimoniac/suppline/internal/registry"
 	"github.com/daimoniac/suppline/internal/scanner"
@@ -18,15 +20,40 @@ import (
 
 // Pipeline orchestrates the complete scan workflow
 type Pipeline struct {
-	worker *ImageWorker
-	logger *slog.Logger
+	registry      registry.Client
+	scanner       scanner.Scanner
+	defaultPolicy policy.PolicyEngine
+	policyCatalog catalog.Catalog
+	attestor      attestation.Attestor
+	stateStore    statestore.StateStore
+	scaiGenerator *attestation.SCAIGenerator
+	logger        *slog.Logger
 }
 
 // NewPipeline creates a new pipeline instance
-func NewPipeline(worker *ImageWorker, logger *slog.Logger) *Pipeline {
+func NewPipeline(
+	registry registry.Client,
+	scanner scanner.Scanner,
+	defaultPolicy policy.PolicyEngine,
+	policyCatalog catalog.Catalog,
+	attestor attestation.Attestor,
+	stateStore statestore.StateStore,
+	scaiGenerator *attestation.SCAIGenerator,
+	logger *slog.Logger,
+) *Pipeline {
+	if logger == nil {
+		logger = slog.Default()
+	}
+
 	return &Pipeline{
-		worker: worker,
-		logger: logger,
+		registry:      registry,
+		scanner:       scanner,
+		defaultPolicy: defaultPolicy,
+		policyCatalog: policyCatalog,
+		attestor:      attestor,
+		stateStore:    stateStore,
+		scaiGenerator: scaiGenerator,
+		logger:        logger,
 	}
 }
 
@@ -105,19 +132,19 @@ func (p *Pipeline) Execute(ctx context.Context, task *queue.ScanTask) error {
 
 // validateDependencies ensures all required components are configured
 func (p *Pipeline) validateDependencies() error {
-	if p.worker.registry == nil {
+	if p.registry == nil {
 		return errors.NewPermanentf("registry client is not configured")
 	}
-	if p.worker.scanner == nil {
+	if p.scanner == nil {
 		return errors.NewPermanentf("scanner is not configured")
 	}
-	if p.worker.policy == nil {
+	if p.defaultPolicy == nil {
 		return errors.NewPermanentf("policy engine is not configured")
 	}
-	if p.worker.attestor == nil {
+	if p.attestor == nil {
 		return errors.NewPermanentf("attestor is not configured")
 	}
-	if p.worker.stateStore == nil {
+	if p.stateStore == nil {
 		return errors.NewPermanentf("state store is not configured")
 	}
 	return nil
@@ -143,7 +170,7 @@ func (p *Pipeline) scanPhase(ctx context.Context, task *queue.ScanTask, imageRef
 	// Generate SBOM
 	sbomStart := time.Now()
 	p.logger.Debug("generating SBOM", "image_ref", imageRef)
-	sbom, err := p.worker.scanner.GenerateSBOM(ctx, imageRef)
+	sbom, err := p.scanner.GenerateSBOM(ctx, imageRef)
 	if err != nil {
 		// Classify scanner errors to detect MANIFEST_UNKNOWN
 		classifiedErr := errors.ClassifyRegistryError(err)
@@ -160,7 +187,7 @@ func (p *Pipeline) scanPhase(ctx context.Context, task *queue.ScanTask, imageRef
 	// Scan vulnerabilities
 	vulnStart := time.Now()
 	p.logger.Debug("scanning vulnerabilities", "image_ref", imageRef)
-	scanResult, err := p.worker.scanner.ScanVulnerabilities(ctx, imageRef, task.UseVEXRepo)
+	scanResult, err := p.scanner.ScanVulnerabilities(ctx, imageRef, task.UseVEXRepo)
 	if err != nil {
 		// Classify scanner errors to detect MANIFEST_UNKNOWN
 		classifiedErr := errors.ClassifyRegistryError(err)
@@ -251,7 +278,7 @@ func (p *Pipeline) attestationPhase(ctx context.Context, task *queue.ScanTask, i
 	// SBOM attestation
 	sbomStart := time.Now()
 	p.logger.Debug("creating SBOM attestation", "image_ref", imageRef)
-	if err := p.worker.attestor.AttestSBOM(ctx, imageRef, sbom); err != nil {
+	if err := p.attestor.AttestSBOM(ctx, imageRef, sbom); err != nil {
 		metrics.AttestationsFailed.WithLabelValues("sbom").Inc()
 		return nil, nil, fmt.Errorf("failed to create SBOM attestation: %w", err)
 	}
@@ -262,7 +289,7 @@ func (p *Pipeline) attestationPhase(ctx context.Context, task *queue.ScanTask, i
 	// Vulnerability attestation
 	vulnStart := time.Now()
 	p.logger.Debug("creating vulnerability attestation", "image_ref", imageRef)
-	if err := p.worker.attestor.AttestVulnerabilities(ctx, imageRef, scanResult); err != nil {
+	if err := p.attestor.AttestVulnerabilities(ctx, imageRef, scanResult); err != nil {
 		metrics.AttestationsFailed.WithLabelValues("vulnerability").Inc()
 		return nil, nil, fmt.Errorf("failed to create vulnerability attestation: %w", err)
 	}
@@ -293,7 +320,7 @@ func (p *Pipeline) attestationPhase(ctx context.Context, task *queue.ScanTask, i
 			}
 		}
 
-		if err := p.worker.attestor.AttestVEX(ctx, imageRef, appliedStatements); err != nil {
+		if err := p.attestor.AttestVEX(ctx, imageRef, appliedStatements); err != nil {
 			p.logger.Error("failed to create VEX attestation", "image_ref", imageRef, "error", err)
 			metrics.AttestationsFailed.WithLabelValues("vex").Inc()
 		} else {
@@ -305,16 +332,16 @@ func (p *Pipeline) attestationPhase(ctx context.Context, task *queue.ScanTask, i
 	}
 
 	// SCAI attestation (optional)
-	if p.worker.scaiGenerator != nil {
+	if p.scaiGenerator != nil {
 		scaiStart := time.Now()
 		p.logger.Debug("generating SCAI attestation", "image_ref", imageRef)
 
-		scai, err := p.worker.scaiGenerator.GenerateSCAI(ctx, imageRef, scanResult, task.Repository, policyDecision)
+		scai, err := p.scaiGenerator.GenerateSCAI(ctx, imageRef, scanResult, task.Repository, policyDecision)
 		if err != nil {
 			p.logger.Error("failed to generate SCAI attestation", "image_ref", imageRef, "error", err)
 			metrics.AttestationsFailed.WithLabelValues("scai").Inc()
 		} else {
-			if err := p.worker.attestor.AttestSCAI(ctx, imageRef, scai); err != nil {
+			if err := p.attestor.AttestSCAI(ctx, imageRef, scai); err != nil {
 				p.logger.Error("failed to attest SCAI", "image_ref", imageRef, "error", err)
 				metrics.AttestationsFailed.WithLabelValues("scai").Inc()
 			} else {
@@ -341,7 +368,7 @@ func (p *Pipeline) persistencePhase(ctx context.Context, task *queue.ScanTask, s
 	updateScanRecordWithDuration(scanRecord, scanDuration)
 
 	p.logger.Debug("recording scan results", "image_ref", fmt.Sprintf("%s@%s", task.Repository, task.Digest))
-	if err := p.worker.stateStore.RecordScan(ctx, scanRecord); err != nil {
+	if err := p.stateStore.RecordScan(ctx, scanRecord); err != nil {
 		return err
 	}
 
@@ -385,7 +412,7 @@ func (p *Pipeline) checkPolicyFailures(ctx context.Context, task *queue.ScanTask
 
 	// Alert if rescan shows policy failure
 	if task.IsRescan && !policyDecision.Passed {
-		lastScan, err := p.worker.stateStore.GetLastScan(ctx, task.Digest)
+		lastScan, err := p.stateStore.GetLastScan(ctx, task.Digest)
 		if err == nil && lastScan != nil && lastScan.PolicyPassed {
 			p.logger.Error("ALERT: previously passing image now fails policy",
 				"digest", task.Digest,
@@ -418,11 +445,11 @@ func (p *Pipeline) logCompletion(task *queue.ScanTask, imageRef string, startTim
 // recordScanError persists a failed-scan record so the image appears as FAILED in the UI.
 // Errors here are only logged – we don't want to change the original error being returned.
 func (p *Pipeline) recordScanError(ctx context.Context, task *queue.ScanTask, scanErr error) {
-	if p.worker.stateStore == nil {
+	if p.stateStore == nil {
 		return
 	}
 	errRecord := buildErrorScanRecord(task, scanErr)
-	if err := p.worker.stateStore.RecordScan(ctx, errRecord); err != nil {
+	if err := p.stateStore.RecordScan(ctx, errRecord); err != nil {
 		p.logger.Error("failed to record scan error in state store",
 			"image_ref", fmt.Sprintf("%s@%s", task.Repository, task.Digest),
 			"error", err)
@@ -432,7 +459,7 @@ func (p *Pipeline) recordScanError(ctx context.Context, task *queue.ScanTask, sc
 // performManifestCleanup handles cleanup when MANIFEST_UNKNOWN errors occur
 func (p *Pipeline) performManifestCleanup(ctx context.Context, digest string) error {
 	// Cast to cleanup interface
-	cleanupStore, ok := p.worker.stateStore.(statestore.StateStoreCleanup)
+	cleanupStore, ok := p.stateStore.(statestore.StateStoreCleanup)
 	if !ok {
 		p.logger.Warn("state store does not support cleanup operations", "digest", digest)
 		return nil // Not an error - just log and continue
@@ -471,14 +498,14 @@ func (p *Pipeline) performManifestCleanup(ctx context.Context, digest string) er
 // performScanCleanup handles cleanup after scan recording (success or failure)
 func (p *Pipeline) performScanCleanup(ctx context.Context, digest string) error {
 	// Cast to cleanup interface
-	cleanupStore, ok := p.worker.stateStore.(statestore.StateStoreCleanup)
+	cleanupStore, ok := p.stateStore.(statestore.StateStoreCleanup)
 	if !ok {
 		p.logger.Warn("state store does not support cleanup operations", "digest", digest)
 		return nil // Not an error - just log and continue
 	}
 
 	// Get the most recent scan to use as the keepScanID
-	lastScan, err := p.worker.stateStore.GetLastScan(ctx, digest)
+	lastScan, err := p.stateStore.GetLastScan(ctx, digest)
 	if err != nil {
 		// Classify GetLastScan error for proper retry behavior
 		if errors.IsTransient(err) {
@@ -561,7 +588,7 @@ func (p *Pipeline) fetchImageMetadata(ctx context.Context, task *queue.ScanTask,
 		"image_ref", imageRef,
 		"digest", digest)
 
-	manifest, err := p.worker.registry.GetManifest(ctx, repo, digest)
+	manifest, err := p.registry.GetManifest(ctx, repo, digest)
 	if err != nil {
 		return nil, errors.ClassifyRegistryError(err)
 	}
@@ -576,13 +603,13 @@ func (p *Pipeline) fetchImageMetadata(ctx context.Context, task *queue.ScanTask,
 // reconcileStoredTags removes stored tag bindings that no longer point at this digest
 // in the registry, and retargets the scan task to a still-valid tag when needed.
 func (p *Pipeline) reconcileStoredTags(ctx context.Context, task *queue.ScanTask, repository, digest string) error {
-	tagStore, ok := p.worker.stateStore.(interface {
+	tagStore, ok := p.stateStore.(interface {
 		GetTagsForDigest(ctx context.Context, digest string) ([]statestore.TagRef, error)
 	})
 	if !ok {
 		return nil
 	}
-	cleanupStore, ok := p.worker.stateStore.(statestore.StateStoreCleanup)
+	cleanupStore, ok := p.stateStore.(statestore.StateStoreCleanup)
 	if !ok {
 		p.logger.Warn("state store does not support tag cleanup during reconciliation",
 			"repository", repository,
@@ -611,7 +638,7 @@ func (p *Pipeline) reconcileStoredTags(ctx context.Context, task *queue.ScanTask
 
 	liveTagSet := map[string]struct{}{}
 	if len(repoTags) > 0 {
-		liveTags, listErr := p.worker.registry.ListTags(ctx, repository)
+		liveTags, listErr := p.registry.ListTags(ctx, repository)
 		if listErr != nil {
 			classified := errors.ClassifyRegistryError(listErr)
 			if errors.IsTransient(classified) {
@@ -663,7 +690,7 @@ func (p *Pipeline) isStoredTagStale(ctx context.Context, repository, digest, tag
 		return true, nil
 	}
 
-	currentDigest, err := p.worker.registry.GetDigest(ctx, repository, tag)
+	currentDigest, err := p.registry.GetDigest(ctx, repository, tag)
 	if err != nil {
 		classified := errors.ClassifyRegistryError(err)
 		if errors.IsManifestNotFound(classified) {
@@ -694,7 +721,7 @@ func (p *Pipeline) retargetTaskTag(ctx context.Context, task *queue.ScanTask, re
 		}
 
 		// Task tag may be new (not yet stored) or may have just been pruned. Verify against registry.
-		currentDigest, err := p.worker.registry.GetDigest(ctx, repository, task.Tag)
+		currentDigest, err := p.registry.GetDigest(ctx, repository, task.Tag)
 		if err == nil && currentDigest == digest {
 			return nil
 		}
@@ -714,7 +741,7 @@ func (p *Pipeline) retargetTaskTag(ctx context.Context, task *queue.ScanTask, re
 			"repository", repository,
 			"digest", digest,
 			"old_tag", task.Tag)
-		if cleanupStore, ok := p.worker.stateStore.(statestore.StateStoreCleanup); ok {
+		if cleanupStore, ok := p.stateStore.(statestore.StateStoreCleanup); ok {
 			if cleanupErr := cleanupStore.CleanupArtifactScans(ctx, digest); cleanupErr != nil {
 				if errors.IsTransient(cleanupErr) {
 					return fmt.Errorf("failed to cleanup digest with no live tags: %w", cleanupErr)
@@ -751,18 +778,18 @@ func pickReplacementTag(validStoredTags map[string]struct{}) string {
 
 // getPolicyEngineForRepository returns a policy engine for the given repository
 func (p *Pipeline) getPolicyEngineForRepository(repository string) (policy.PolicyEngine, error) {
-	if p.worker.policyCatalog == nil {
-		return p.worker.policy, nil
+	if p.policyCatalog == nil {
+		return p.defaultPolicy, nil
 	}
 
-	policyConfig, err := p.worker.policyCatalog.ResolvePolicy(repository)
+	policyConfig, err := p.policyCatalog.ResolvePolicy(repository)
 	if err != nil {
 		return nil, errors.NewPermanentf("failed to resolve minimum release age for %s: %w", repository, err)
 	}
 
 	// If neither custom expression nor minimum release age is configured, use default from worker
 	if policyConfig.Expression == "" && policyConfig.MinimumReleaseAge <= 0 {
-		return p.worker.policy, nil
+		return p.defaultPolicy, nil
 	}
 
 	p.logger.Debug("using repository-specific policy",
@@ -774,7 +801,7 @@ func (p *Pipeline) getPolicyEngineForRepository(repository string) (policy.Polic
 }
 
 func (p *Pipeline) getArtifactFirstSeen(ctx context.Context, task *queue.ScanTask) (*time.Time, error) {
-	metadataStore, ok := p.worker.stateStore.(statestore.ArtifactMetadataStore)
+	metadataStore, ok := p.stateStore.(statestore.ArtifactMetadataStore)
 	if !ok {
 		return nil, nil
 	}

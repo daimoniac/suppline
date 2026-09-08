@@ -9,6 +9,7 @@ import (
 	supperrors "github.com/daimoniac/suppline/internal/errors"
 	"github.com/daimoniac/suppline/internal/observability"
 	"github.com/daimoniac/suppline/internal/policy"
+	"github.com/daimoniac/suppline/internal/policy/catalog"
 	"github.com/daimoniac/suppline/internal/types"
 )
 
@@ -30,9 +31,10 @@ func TestGetPolicyEngineForRepository_InvalidMinimumReleaseAge(t *testing.T) {
 			VEX:    []types.VEXStatement{{ID: "CVE-2024-1234", State: types.VEXStateNotAffected}},
 		}},
 	}
-	worker := NewImageWorker(newMockQueue(1), nil, defaultEngine, nil, nil, nil, DefaultConfig(), logger, regsyncCfg)
+	policyCatalog := catalog.NewConfigCatalog(regsyncCfg)
+	pipeline := NewPipeline(nil, nil, defaultEngine, policyCatalog, nil, nil, nil, logger)
 
-	engine, err := worker.pipeline.getPolicyEngineForRepository("myorg/app")
+	engine, err := pipeline.getPolicyEngineForRepository("myorg/app")
 	if err == nil {
 		t.Fatalf("getPolicyEngineForRepository() error = nil, want invalid minimumReleaseAge error (engine %+v)", engine)
 	}
@@ -47,11 +49,11 @@ func TestGetPolicyEngineForRepository_InvalidMinimumReleaseAge(t *testing.T) {
 	}
 
 	// The same repository's exemption evidence stays usable for SCAI.
-	exempted, statement := worker.policyCatalog.IsExempted("myorg/app", "CVE-2024-1234", time.Now())
+	exempted, statement := policyCatalog.IsExempted("myorg/app", "CVE-2024-1234", time.Now())
 	if !exempted || statement == nil {
 		t.Errorf("IsExempted() = %t (%+v), want exempted statement", exempted, statement)
 	}
-	if got := strings.Join(worker.policyCatalog.StatementIDs(), ","); got != "CVE-2024-1234" {
+	if got := strings.Join(policyCatalog.StatementIDs(), ","); got != "CVE-2024-1234" {
 		t.Errorf("StatementIDs() = %q, want CVE-2024-1234", got)
 	}
 }

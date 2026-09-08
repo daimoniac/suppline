@@ -245,13 +245,13 @@ func (m *mockStateStore) CleanupExcessScans(ctx context.Context, digest string, 
 	return nil
 }
 
+func newPipeline(reg *mockRegistry, scan *mockScanner, policyEngine *mockPolicyEngine, attestor *mockAttestor, store *mockStateStore) *worker.Pipeline {
+	return worker.NewPipeline(reg, scan, policyEngine, nil, attestor, store, nil, slog.Default())
+}
+
 // Pipeline integration tests
 
 func TestPipeline_ManifestNotFoundCleanup(t *testing.T) {
-	// Setup mocks
-	mockQ := queue.NewInMemoryQueue(10)
-	defer mockQ.Close()
-
 	mockReg := &mockRegistry{
 		manifestError: supplineErrors.NewManifestNotFound(errors.New("MANIFEST_UNKNOWN")),
 	}
@@ -260,10 +260,7 @@ func TestPipeline_ManifestNotFoundCleanup(t *testing.T) {
 	mockAtt := &mockAttestor{}
 	mockStore := newMockStateStore()
 
-	logger := slog.Default()
-	config := worker.DefaultConfig()
-
-	w := worker.NewImageWorker(mockQ, mockScan, mockPol, mockAtt, mockReg, mockStore, config, logger, nil)
+	pipeline := newPipeline(mockReg, mockScan, mockPol, mockAtt, mockStore)
 
 	task := &queue.ScanTask{
 		ID:         "test-1",
@@ -274,7 +271,7 @@ func TestPipeline_ManifestNotFoundCleanup(t *testing.T) {
 	}
 
 	// Execute pipeline
-	err := w.ProcessTask(context.Background(), task)
+	err := pipeline.Execute(context.Background(), task)
 
 	// Should return the manifest error
 	if err == nil {
@@ -296,20 +293,13 @@ func TestPipeline_ManifestNotFoundCleanup(t *testing.T) {
 }
 
 func TestPipeline_SuccessfulScanCleanup(t *testing.T) {
-	// Setup mocks
-	mockQ := queue.NewInMemoryQueue(10)
-	defer mockQ.Close()
-
 	mockReg := &mockRegistry{}
 	mockScan := &mockScanner{}
 	mockPol := &mockPolicyEngine{}
 	mockAtt := &mockAttestor{}
 	mockStore := newMockStateStore()
 
-	logger := slog.Default()
-	config := worker.DefaultConfig()
-
-	w := worker.NewImageWorker(mockQ, mockScan, mockPol, mockAtt, mockReg, mockStore, config, logger, nil)
+	pipeline := newPipeline(mockReg, mockScan, mockPol, mockAtt, mockStore)
 
 	task := &queue.ScanTask{
 		ID:         "test-1",
@@ -320,7 +310,7 @@ func TestPipeline_SuccessfulScanCleanup(t *testing.T) {
 	}
 
 	// Execute pipeline
-	err := w.ProcessTask(context.Background(), task)
+	err := pipeline.Execute(context.Background(), task)
 
 	// Should succeed
 	if err != nil {
@@ -338,10 +328,6 @@ func TestPipeline_SuccessfulScanCleanup(t *testing.T) {
 }
 
 func TestPipeline_CleanupErrorHandling(t *testing.T) {
-	// Setup mocks with cleanup errors
-	mockQ := queue.NewInMemoryQueue(10)
-	defer mockQ.Close()
-
 	mockReg := &mockRegistry{
 		manifestError: supplineErrors.NewManifestNotFound(errors.New("MANIFEST_UNKNOWN")),
 	}
@@ -353,10 +339,7 @@ func TestPipeline_CleanupErrorHandling(t *testing.T) {
 	// Set cleanup to fail
 	mockStore.cleanupErrors["artifact_sha256:abc123"] = errors.New("cleanup failed")
 
-	logger := slog.Default()
-	config := worker.DefaultConfig()
-
-	w := worker.NewImageWorker(mockQ, mockScan, mockPol, mockAtt, mockReg, mockStore, config, logger, nil)
+	pipeline := newPipeline(mockReg, mockScan, mockPol, mockAtt, mockStore)
 
 	task := &queue.ScanTask{
 		ID:         "test-1",
@@ -367,7 +350,7 @@ func TestPipeline_CleanupErrorHandling(t *testing.T) {
 	}
 
 	// Execute pipeline
-	err := w.ProcessTask(context.Background(), task)
+	err := pipeline.Execute(context.Background(), task)
 
 	// Should still return the original manifest error, not the cleanup error
 	if err == nil {
@@ -385,10 +368,6 @@ func TestPipeline_CleanupErrorHandling(t *testing.T) {
 }
 
 func TestPipeline_SuccessfulScanCleanupError(t *testing.T) {
-	// Setup mocks
-	mockQ := queue.NewInMemoryQueue(10)
-	defer mockQ.Close()
-
 	mockReg := &mockRegistry{}
 	mockScan := &mockScanner{}
 	mockPol := &mockPolicyEngine{}
@@ -398,10 +377,7 @@ func TestPipeline_SuccessfulScanCleanupError(t *testing.T) {
 	// Set excess scan cleanup to fail
 	mockStore.cleanupErrors["excess_sha256:abc123"] = errors.New("cleanup failed")
 
-	logger := slog.Default()
-	config := worker.DefaultConfig()
-
-	w := worker.NewImageWorker(mockQ, mockScan, mockPol, mockAtt, mockReg, mockStore, config, logger, nil)
+	pipeline := newPipeline(mockReg, mockScan, mockPol, mockAtt, mockStore)
 
 	task := &queue.ScanTask{
 		ID:         "test-1",
@@ -412,7 +388,7 @@ func TestPipeline_SuccessfulScanCleanupError(t *testing.T) {
 	}
 
 	// Execute pipeline
-	err := w.ProcessTask(context.Background(), task)
+	err := pipeline.Execute(context.Background(), task)
 
 	// Should still succeed despite cleanup error
 	if err != nil {
@@ -715,9 +691,6 @@ func TestProcessTask_ErrorClassificationIntegration(t *testing.T) {
 }
 
 func TestPipeline_ReconcilesStaleTagsOnDigestScan(t *testing.T) {
-	mockQ := queue.NewInMemoryQueue(10)
-	defer mockQ.Close()
-
 	digest := "sha256:1234"
 	repo := "library/nginx"
 
@@ -736,7 +709,7 @@ func TestPipeline_ReconcilesStaleTagsOnDigestScan(t *testing.T) {
 		{Repository: repo, Tag: "8.8.0"},
 	}
 
-	w := worker.NewImageWorker(mockQ, mockScan, mockPol, mockAtt, mockReg, mockStore, worker.DefaultConfig(), slog.Default(), nil)
+	pipeline := newPipeline(mockReg, mockScan, mockPol, mockAtt, mockStore)
 
 	task := &queue.ScanTask{
 		ID:         "test-reconcile",
@@ -747,7 +720,7 @@ func TestPipeline_ReconcilesStaleTagsOnDigestScan(t *testing.T) {
 		IsRescan:   true,
 	}
 
-	if err := w.ProcessTask(context.Background(), task); err != nil {
+	if err := pipeline.Execute(context.Background(), task); err != nil {
 		t.Fatalf("expected successful scan, got: %v", err)
 	}
 
@@ -771,9 +744,6 @@ func TestPipeline_ReconcilesStaleTagsOnDigestScan(t *testing.T) {
 }
 
 func TestPipeline_RetargetsTaskWhenOwnTagDeleted(t *testing.T) {
-	mockQ := queue.NewInMemoryQueue(10)
-	defer mockQ.Close()
-
 	digest := "sha256:1234"
 	repo := "library/nginx"
 
@@ -789,7 +759,7 @@ func TestPipeline_RetargetsTaskWhenOwnTagDeleted(t *testing.T) {
 		{Repository: repo, Tag: "8.8.0"},
 	}
 
-	w := worker.NewImageWorker(mockQ, &mockScanner{}, &mockPolicyEngine{}, &mockAttestor{}, mockReg, mockStore, worker.DefaultConfig(), slog.Default(), nil)
+	pipeline := newPipeline(mockReg, &mockScanner{}, &mockPolicyEngine{}, &mockAttestor{}, mockStore)
 
 	task := &queue.ScanTask{
 		ID:         "test-retarget",
@@ -800,7 +770,7 @@ func TestPipeline_RetargetsTaskWhenOwnTagDeleted(t *testing.T) {
 		IsRescan:   true,
 	}
 
-	if err := w.ProcessTask(context.Background(), task); err != nil {
+	if err := pipeline.Execute(context.Background(), task); err != nil {
 		t.Fatalf("expected successful scan after retarget, got: %v", err)
 	}
 
@@ -817,9 +787,6 @@ func TestPipeline_RetargetsTaskWhenOwnTagDeleted(t *testing.T) {
 }
 
 func TestPipeline_CleansDigestWhenNoLiveTagsRemain(t *testing.T) {
-	mockQ := queue.NewInMemoryQueue(10)
-	defer mockQ.Close()
-
 	digest := "sha256:orphan"
 	repo := "hostingmaloonde/n8nio_n8n"
 
@@ -832,7 +799,7 @@ func TestPipeline_CleansDigestWhenNoLiveTagsRemain(t *testing.T) {
 		{Repository: repo, Tag: "2.22.3"},
 	}
 
-	w := worker.NewImageWorker(mockQ, &mockScanner{}, &mockPolicyEngine{}, &mockAttestor{}, mockReg, mockStore, worker.DefaultConfig(), slog.Default(), nil)
+	pipeline := newPipeline(mockReg, &mockScanner{}, &mockPolicyEngine{}, &mockAttestor{}, mockStore)
 
 	task := &queue.ScanTask{
 		ID:         "test-no-live-tags",
@@ -843,7 +810,7 @@ func TestPipeline_CleansDigestWhenNoLiveTagsRemain(t *testing.T) {
 		IsRescan:   true,
 	}
 
-	err := w.ProcessTask(context.Background(), task)
+	err := pipeline.Execute(context.Background(), task)
 	if err == nil {
 		t.Fatal("expected error when digest has no live tags")
 	}
@@ -861,4 +828,3 @@ func TestPipeline_CleansDigestWhenNoLiveTagsRemain(t *testing.T) {
 		t.Fatal("task tag must not be rewritten to empty string")
 	}
 }
-
