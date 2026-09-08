@@ -61,8 +61,30 @@ emit_json() {
   printf '}\n'
 }
 
-exec 3>&1
-set -o pipefail
-trivy "$@" 2>&1 1>&3 | while IFS= read -r line || [ -n "$line" ]; do
+fifo="${TMPDIR:-/tmp}/trivy-json-logs.fifo"
+rm -f "$fifo"
+mkfifo "$fifo"
+
+# Format Trivy's stderr from a background reader over a FIFO rather than a
+# pipeline: a pipeline hides Trivy's PID, and a PID 1 shell without a trap
+# ignores SIGTERM, so Trivy would only ever die from the post-grace SIGKILL.
+while IFS= read -r line || [ -n "$line" ]; do
   emit_json "$line"
+done <"$fifo" &
+formatter_pid=$!
+
+trivy "$@" 2>"$fifo" &
+trivy_pid=$!
+
+trap 'kill -TERM "$trivy_pid" 2>/dev/null || true' TERM INT HUP
+
+# wait returns early whenever a trapped signal arrives, so keep waiting until
+# Trivy is really gone, then drain the formatter and report Trivy's own status.
+rc=0
+while :; do
+  wait "$trivy_pid" && rc=0 || rc=$?
+  kill -0 "$trivy_pid" 2>/dev/null || break
 done
+
+wait "$formatter_pid" 2>/dev/null || true
+exit "$rc"
