@@ -12,7 +12,7 @@ import (
 	"time"
 
 	"github.com/daimoniac/suppline/internal/integration"
-	"github.com/daimoniac/suppline/internal/queue"
+	"github.com/daimoniac/suppline/internal/scanenqueue"
 	"github.com/daimoniac/suppline/internal/statestore"
 	"github.com/daimoniac/suppline/internal/types"
 	"github.com/daimoniac/suppline/internal/version"
@@ -606,24 +606,12 @@ func (s *APIServer) handleTriggerScan(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 
-		// Load regsync config to get VEX statements
-		// Get VEX statements for this repository from in-memory config
-		vexStatements := s.regsyncConfig.GetVEXStatementsForTarget(lastScan.Repository)
-
-		// Create and enqueue task
-		task := &queue.ScanTask{
-			ID:            fmt.Sprintf("%s-%d", req.Digest, time.Now().Unix()),
-			Repository:    lastScan.Repository,
-			Digest:        req.Digest,
-			Tag:           lastScan.Tag,
-			EnqueuedAt:    time.Now(),
-			Attempts:      0,
-			IsRescan:      true,
-			VEXStatements: vexStatements,
-			UseVEXRepo:    s.regsyncConfig.GetVEXRepoForTarget(lastScan.Repository),
-		}
-
-		if err := s.taskQueue.Enqueue(ctx, task); err != nil {
+		task, err := s.scanEnqueuer.EnqueueRescan(ctx, scanenqueue.Image{
+			Repository: lastScan.Repository,
+			Digest:     req.Digest,
+			Tag:        lastScan.Tag,
+		})
+		if err != nil {
 			s.respondError(w, http.StatusInternalServerError, fmt.Sprintf("Failed to enqueue task: %v", err))
 			return
 		}
@@ -653,24 +641,13 @@ func (s *APIServer) handleTriggerScan(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 
-		// Get VEX statements for this repository from in-memory config
-		vexStatements := s.regsyncConfig.GetVEXStatementsForTarget(req.Repository)
-
 		// Enqueue tasks for all scans
 		for _, scan := range scans {
-			task := &queue.ScanTask{
-				ID:            fmt.Sprintf("%s-%d", scan.Digest, time.Now().Unix()),
-				Repository:    scan.Repository,
-				Digest:        scan.Digest,
-				Tag:           scan.Tag,
-				EnqueuedAt:    time.Now(),
-				Attempts:      0,
-				IsRescan:      true,
-				VEXStatements: vexStatements,
-				UseVEXRepo:    s.regsyncConfig.GetVEXRepoForTarget(scan.Repository),
-			}
-
-			if err := s.taskQueue.Enqueue(ctx, task); err != nil {
+			if _, err := s.scanEnqueuer.EnqueueRescan(ctx, scanenqueue.Image{
+				Repository: scan.Repository,
+				Digest:     scan.Digest,
+				Tag:        scan.Tag,
+			}); err != nil {
 				s.logger.Error("failed to enqueue task",
 					"digest", scan.Digest,
 					"error", err.Error())
@@ -764,23 +741,11 @@ func (s *APIServer) handleReevaluatePolicy(w http.ResponseWriter, r *http.Reques
 
 	// Enqueue rescan tasks for all matching images with updated VEX statements
 	for _, scan := range scans {
-		// Get updated VEX statements for this repository from in-memory config
-		vexStatements := s.regsyncConfig.GetVEXStatementsForTarget(scan.Repository)
-
-		// Create rescan task with updated VEX statements
-		task := &queue.ScanTask{
-			ID:            fmt.Sprintf("%s-%d", scan.Digest, time.Now().Unix()),
-			Repository:    scan.Repository,
-			Digest:        scan.Digest,
-			Tag:           scan.Tag,
-			EnqueuedAt:    time.Now(),
-			Attempts:      0,
-			IsRescan:      true,
-			VEXStatements: vexStatements,
-			UseVEXRepo:    s.regsyncConfig.GetVEXRepoForTarget(scan.Repository),
-		}
-
-		if err := s.taskQueue.Enqueue(ctx, task); err != nil {
+		if _, err := s.scanEnqueuer.EnqueueRescan(ctx, scanenqueue.Image{
+			Repository: scan.Repository,
+			Digest:     scan.Digest,
+			Tag:        scan.Tag,
+		}); err != nil {
 			s.logger.Error("failed to enqueue task for policy re-evaluation",
 				"digest", scan.Digest,
 				"error", err.Error())
@@ -1234,25 +1199,14 @@ func (s *APIServer) handleRescanRepository(w http.ResponseWriter, r *http.Reques
 		return
 	}
 
-	// Get VEX statements for this repository from in-memory config
-	vexStatements := s.regsyncConfig.GetVEXStatementsForTarget(name)
-
 	// Enqueue tasks for all scans
 	queuedCount := 0
 	for _, scan := range scans {
-		task := &queue.ScanTask{
-			ID:            fmt.Sprintf("%s-%d", scan.Digest, time.Now().Unix()),
-			Repository:    scan.Repository,
-			Digest:        scan.Digest,
-			Tag:           scan.Tag,
-			EnqueuedAt:    time.Now(),
-			Attempts:      0,
-			IsRescan:      true,
-			VEXStatements: vexStatements,
-			UseVEXRepo:    s.regsyncConfig.GetVEXRepoForTarget(scan.Repository),
-		}
-
-		if err := s.taskQueue.Enqueue(ctx, task); err != nil {
+		if _, err := s.scanEnqueuer.EnqueueRescan(ctx, scanenqueue.Image{
+			Repository: scan.Repository,
+			Digest:     scan.Digest,
+			Tag:        scan.Tag,
+		}); err != nil {
 			s.logger.Error("failed to enqueue task",
 				"digest", scan.Digest,
 				"error", err.Error())
@@ -1378,23 +1332,12 @@ func (s *APIServer) handleRescanTag(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Get VEX statements for this repository from in-memory config
-	vexStatements := s.regsyncConfig.GetVEXStatementsForTarget(lastScan.Repository)
-
-	// Create and enqueue task
-	task := &queue.ScanTask{
-		ID:            fmt.Sprintf("%s-%d", digest, time.Now().Unix()),
-		Repository:    lastScan.Repository,
-		Digest:        digest,
-		Tag:           lastScan.Tag,
-		EnqueuedAt:    time.Now(),
-		Attempts:      0,
-		IsRescan:      true,
-		VEXStatements: vexStatements,
-		UseVEXRepo:    s.regsyncConfig.GetVEXRepoForTarget(lastScan.Repository),
-	}
-
-	if err := s.taskQueue.Enqueue(ctx, task); err != nil {
+	task, err := s.scanEnqueuer.EnqueueRescan(ctx, scanenqueue.Image{
+		Repository: lastScan.Repository,
+		Digest:     digest,
+		Tag:        lastScan.Tag,
+	})
+	if err != nil {
 		s.respondError(w, http.StatusInternalServerError, fmt.Sprintf("Failed to enqueue task: %v", err))
 		return
 	}

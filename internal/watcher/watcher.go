@@ -10,6 +10,7 @@ import (
 	"github.com/daimoniac/suppline/internal/config"
 	"github.com/daimoniac/suppline/internal/queue"
 	"github.com/daimoniac/suppline/internal/registry"
+	"github.com/daimoniac/suppline/internal/scanenqueue"
 	"github.com/daimoniac/suppline/internal/statestore"
 	"github.com/daimoniac/suppline/internal/types"
 )
@@ -29,6 +30,7 @@ type watcherImpl struct {
 	regsyncConfig  *config.RegsyncConfig
 	stateStore     statestore.StateStore
 	taskQueue      queue.TaskQueue
+	scanEnqueuer   *scanenqueue.Enqueuer
 	pollInterval   time.Duration
 	rescanInterval time.Duration
 	logger         *slog.Logger
@@ -49,11 +51,33 @@ func NewWatcher(
 	config Config,
 	logger *slog.Logger,
 ) Watcher {
+	return NewWatcherWithEnqueuer(
+		registryClient,
+		regsyncConfig,
+		stateStore,
+		taskQueue,
+		scanenqueue.New(taskQueue, regsyncConfig),
+		config,
+		logger,
+	)
+}
+
+// NewWatcherWithEnqueuer creates a registry watcher with a shared scan enqueuer.
+func NewWatcherWithEnqueuer(
+	registryClient registry.Client,
+	regsyncConfig *config.RegsyncConfig,
+	stateStore statestore.StateStore,
+	taskQueue queue.TaskQueue,
+	scanEnqueuer *scanenqueue.Enqueuer,
+	config Config,
+	logger *slog.Logger,
+) Watcher {
 	return &watcherImpl{
 		registryClient: registryClient,
 		regsyncConfig:  regsyncConfig,
 		stateStore:     stateStore,
 		taskQueue:      taskQueue,
+		scanEnqueuer:   scanEnqueuer,
 		pollInterval:   config.PollInterval,
 		rescanInterval: config.RescanInterval,
 		logger:         logger,
@@ -131,9 +155,6 @@ func (w *watcherImpl) processRepository(ctx context.Context, repo string) error 
 	// Check for expiring VEX statements and log warnings
 	w.checkExpiringVEXStatements(repo, vexStatements)
 
-	// Resolve VEX repo flag once per repository (not per tag)
-	useVEXRepo := w.regsyncConfig.GetVEXRepoForTarget(repo)
-
 	// Check if this repository has specific tags defined (type=image entries)
 	specificTags := w.regsyncConfig.GetTagsForRepository(repo)
 
@@ -164,7 +185,7 @@ func (w *watcherImpl) processRepository(ctx context.Context, repo string) error 
 		if tag == "" {
 			continue
 		}
-		if err := w.processTag(ctx, repo, tag, vexStatements, useVEXRepo); err != nil {
+		if err := w.processTag(ctx, repo, tag); err != nil {
 			w.logger.Error("failed to process tag",
 				"repo", repo,
 				"tag", tag,
@@ -310,7 +331,7 @@ func (w *watcherImpl) shouldScanImage(
 }
 
 // processTag processes a single image tag
-func (w *watcherImpl) processTag(ctx context.Context, repo, tag string, vexStatements []types.VEXStatement, useVEXRepo bool) error {
+func (w *watcherImpl) processTag(ctx context.Context, repo, tag string) error {
 	// Get current digest from registry
 	currentDigest, err := w.registryClient.GetDigest(ctx, repo, tag)
 	if err != nil {
@@ -406,21 +427,18 @@ func (w *watcherImpl) processTag(ctx context.Context, repo, tag string, vexState
 		return nil
 	}
 
-	// Enqueue task
-	task := &queue.ScanTask{
-		ID:            fmt.Sprintf("%s-%d", currentDigest, time.Now().Unix()),
-		Repository:    repo,
-		Digest:        currentDigest,
-		Tag:           tag,
-		EnqueuedAt:    time.Now(),
-		Attempts:      0,
-		IsRescan:      isRescan,
-		IsFirstScan:   !isRescan && reason == "never scanned before",
-		VEXStatements: vexStatements,
-		UseVEXRepo:    useVEXRepo,
+	discoveryKind := scanenqueue.DiscoveryScan
+	if isRescan {
+		discoveryKind = scanenqueue.DiscoveryRescan
+	} else if reason == "never scanned before" {
+		discoveryKind = scanenqueue.DiscoveryFirstScan
 	}
 
-	if err := w.taskQueue.Enqueue(ctx, task); err != nil {
+	if _, err := w.scanEnqueuer.EnqueueDiscovery(ctx, scanenqueue.Image{
+		Repository: repo,
+		Digest:     currentDigest,
+		Tag:        tag,
+	}, discoveryKind); err != nil {
 		// Error already classified in queue package
 		return fmt.Errorf("failed to enqueue task: %w", err)
 	}
@@ -466,4 +484,3 @@ func (w *watcherImpl) checkExpiringVEXStatements(repo string, statements []types
 		}
 	}
 }
-

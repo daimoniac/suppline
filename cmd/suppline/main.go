@@ -20,6 +20,7 @@ import (
 	"github.com/daimoniac/suppline/internal/policy"
 	"github.com/daimoniac/suppline/internal/queue"
 	"github.com/daimoniac/suppline/internal/registry"
+	"github.com/daimoniac/suppline/internal/scanenqueue"
 	"github.com/daimoniac/suppline/internal/scanner"
 	"github.com/daimoniac/suppline/internal/statestore"
 	"github.com/daimoniac/suppline/internal/watcher"
@@ -137,6 +138,7 @@ func run() error {
 	logger.Debug("initializing task queue",
 		"buffer_size", cfg.Queue.BufferSize)
 	taskQueue := queue.NewInMemoryQueue(cfg.Queue.BufferSize)
+	scanEnqueuer := scanenqueue.New(taskQueue, regsyncCfg)
 	healthChecker.UpdateComponentHealth("queue", observability.StatusHealthy, "")
 	logger.Debug("task queue initialized")
 
@@ -204,11 +206,12 @@ func run() error {
 		PollInterval:   cfg.Worker.PollInterval,
 		RescanInterval: cfg.StateStore.RescanInterval,
 	}
-	registryWatcher := watcher.NewWatcher(
+	registryWatcher := watcher.NewWatcherWithEnqueuer(
 		registryClient,
 		regsyncCfg,
 		store,
 		taskQueue,
+		scanEnqueuer,
 		watcherConfig,
 		logger,
 	)
@@ -217,7 +220,7 @@ func run() error {
 
 	// Enqueue failed artifacts for immediate rescanning on startup
 	logger.Info("checking for failed artifacts to rescan")
-	if err := enqueueFailedArtifacts(ctx, store, taskQueue, regsyncCfg, logger); err != nil {
+	if err := enqueueFailedArtifacts(ctx, store, scanEnqueuer, logger); err != nil {
 		logger.Error("failed to enqueue failed artifacts", "error", err)
 		// Don't fail startup - this is a best-effort operation
 	}
@@ -250,11 +253,12 @@ func run() error {
 		logger.Debug("initializing API server",
 			"port", cfg.API.Port,
 			"read_only", cfg.API.ReadOnly)
-		apiServer = api.NewAPIServer(
+		apiServer = api.NewAPIServerWithEnqueuer(
 			&cfg.API,
 			&cfg.Attestation,
 			store,
 			taskQueue,
+			scanEnqueuer,
 			regsyncCfg,
 			logger,
 		)

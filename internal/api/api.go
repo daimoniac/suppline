@@ -11,6 +11,7 @@ import (
 
 	"github.com/daimoniac/suppline/internal/config"
 	"github.com/daimoniac/suppline/internal/queue"
+	"github.com/daimoniac/suppline/internal/scanenqueue"
 	"github.com/daimoniac/suppline/internal/statestore"
 	httpSwagger "github.com/swaggo/http-swagger"
 
@@ -47,6 +48,7 @@ type APIServer struct {
 	stateStore        statestore.StateStoreQuery
 	clusterInventory  statestore.ClusterInventoryStore
 	taskQueue         queue.TaskQueue
+	scanEnqueuer      *scanenqueue.Enqueuer
 	regsyncConfig     *config.RegsyncConfig
 	router            *http.ServeMux
 	server            *http.Server
@@ -54,7 +56,20 @@ type APIServer struct {
 }
 
 // NewAPIServer creates a new API server instance
-func NewAPIServer(cfg *config.APIConfig, attestationCfg *config.AttestationConfig, store statestore.StateStoreQuery, queue queue.TaskQueue, regsyncConfig *config.RegsyncConfig, logger *slog.Logger) *APIServer {
+func NewAPIServer(cfg *config.APIConfig, attestationCfg *config.AttestationConfig, store statestore.StateStoreQuery, taskQueue queue.TaskQueue, regsyncConfig *config.RegsyncConfig, logger *slog.Logger) *APIServer {
+	return NewAPIServerWithEnqueuer(
+		cfg,
+		attestationCfg,
+		store,
+		taskQueue,
+		scanenqueue.New(taskQueue, regsyncConfig),
+		regsyncConfig,
+		logger,
+	)
+}
+
+// NewAPIServerWithEnqueuer creates an API server with a shared scan enqueuer.
+func NewAPIServerWithEnqueuer(cfg *config.APIConfig, attestationCfg *config.AttestationConfig, store statestore.StateStoreQuery, taskQueue queue.TaskQueue, scanEnqueuer *scanenqueue.Enqueuer, regsyncConfig *config.RegsyncConfig, logger *slog.Logger) *APIServer {
 	var clusterInventoryStore statestore.ClusterInventoryStore
 	if inventoryStore, ok := store.(statestore.ClusterInventoryStore); ok {
 		clusterInventoryStore = inventoryStore
@@ -65,7 +80,8 @@ func NewAPIServer(cfg *config.APIConfig, attestationCfg *config.AttestationConfi
 		attestationConfig: attestationCfg,
 		stateStore:        store,
 		clusterInventory:  clusterInventoryStore,
-		taskQueue:         queue,
+		taskQueue:         taskQueue,
+		scanEnqueuer:      scanEnqueuer,
 		regsyncConfig:     regsyncConfig,
 		router:            http.NewServeMux(),
 		logger:            logger,

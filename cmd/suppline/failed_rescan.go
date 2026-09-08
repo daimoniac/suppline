@@ -4,10 +4,8 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
-	"time"
 
-	"github.com/daimoniac/suppline/internal/config"
-	"github.com/daimoniac/suppline/internal/queue"
+	"github.com/daimoniac/suppline/internal/scanenqueue"
 	"github.com/daimoniac/suppline/internal/statestore"
 )
 
@@ -35,7 +33,7 @@ func partitionFailedArtifactsByRuntimeUsage(
 // enqueues in-use ones for immediate high-priority rescanning on startup.
 // Unused policy-failed digests are skipped so they are not prioritized over
 // regular watcher scans; they continue via normal interval/rescan scheduling.
-func enqueueFailedArtifacts(ctx context.Context, store statestore.StateStoreQuery, taskQueue queue.TaskQueue, regsyncCfg *config.RegsyncConfig, logger *slog.Logger) error {
+func enqueueFailedArtifacts(ctx context.Context, store statestore.StateStoreQuery, scanEnqueuer *scanenqueue.Enqueuer, logger *slog.Logger) error {
 	failedArtifacts, err := store.GetFailedArtifacts(ctx)
 	if err != nil {
 		return fmt.Errorf("failed to get failed artifacts: %w", err)
@@ -58,22 +56,11 @@ func enqueueFailedArtifacts(ctx context.Context, store statestore.StateStoreQuer
 
 	enqueuedCount := 0
 	for _, artifact := range inUse {
-		vexStatements := regsyncCfg.GetVEXStatementsForTarget(artifact.Repository)
-
-		task := &queue.ScanTask{
-			ID:            fmt.Sprintf("%s-%d", artifact.Digest, time.Now().Unix()),
-			Repository:    artifact.Repository,
-			Digest:        artifact.Digest,
-			Tag:           artifact.Tag,
-			EnqueuedAt:    time.Now(),
-			IsRescan:      true,
-			IsFirstScan:   false,
-			Priority:      queue.PriorityHigh,
-			VEXStatements: vexStatements,
-			UseVEXRepo:    regsyncCfg.GetVEXRepoForTarget(artifact.Repository),
-		}
-
-		if err := taskQueue.Enqueue(ctx, task); err != nil {
+		if _, err := scanEnqueuer.EnqueueUrgentRescan(ctx, scanenqueue.Image{
+			Repository: artifact.Repository,
+			Digest:     artifact.Digest,
+			Tag:        artifact.Tag,
+		}); err != nil {
 			logger.Error("failed to enqueue failed artifact",
 				"repository", artifact.Repository,
 				"digest", artifact.Digest,
