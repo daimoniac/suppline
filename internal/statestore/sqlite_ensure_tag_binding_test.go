@@ -3,6 +3,7 @@ package statestore
 import (
 	"context"
 	"testing"
+	"time"
 )
 
 func TestEnsureArtifactTagBinding_CreatesAliasFromSiblingScan(t *testing.T) {
@@ -73,6 +74,52 @@ func TestEnsureArtifactTagBinding_CreatesAliasFromSiblingScan(t *testing.T) {
 	}
 }
 
+func TestEnsureArtifactTagBinding_ExistingAliasDoesNotUpgradeReadTransaction(t *testing.T) {
+	store, cleanup := createTestStore(t)
+	defer cleanup()
+
+	sqliteStore := store.(*SQLiteStore)
+	ctx := context.Background()
+	repo := "hostingmaloonde/supabase_edge-runtime"
+	digest := "sha256:e8d000000000000000000000000000000000000000000000000000000000000"
+
+	if err := store.RecordScan(ctx, &ScanRecord{
+		Repository:   repo,
+		Digest:       digest,
+		Tag:          "v1.73.12",
+		PolicyPassed: true,
+		PolicyStatus: "passed",
+	}); err != nil {
+		t.Fatalf("RecordScan: %v", err)
+	}
+
+	// Hold a concurrent SQLite writer open. The old implementation first read the
+	// alias in a deferred transaction, then tried to upgrade that stale snapshot
+	// to UPDATE after this writer committed, which returned SQLITE_BUSY.
+	writer, err := sqliteStore.db.BeginTx(ctx, nil)
+	if err != nil {
+		t.Fatalf("begin writer: %v", err)
+	}
+	if _, err := writer.ExecContext(ctx, `UPDATE repositories SET registry = ? WHERE name = ?`, "test", repo); err != nil {
+		t.Fatalf("hold write lock: %v", err)
+	}
+
+	errCh := make(chan error, 1)
+	go func() {
+		_, err := store.EnsureArtifactTagBinding(ctx, repo, digest, "v1.73.12")
+		errCh <- err
+	}()
+
+	time.Sleep(100 * time.Millisecond)
+	if err := writer.Commit(); err != nil {
+		t.Fatalf("commit writer: %v", err)
+	}
+
+	if err := <-errCh; err != nil {
+		t.Fatalf("EnsureArtifactTagBinding with concurrent writer: %v", err)
+	}
+}
+
 func TestEnsureArtifactTagBinding_NoopForEmptyTag(t *testing.T) {
 	store, cleanup := createTestStore(t)
 	defer cleanup()
@@ -114,4 +161,3 @@ func TestRecordScan_RejectsEmptyTag(t *testing.T) {
 		t.Fatal("expected error recording empty tag")
 	}
 }
-

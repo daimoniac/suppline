@@ -359,7 +359,7 @@ func (a *SigstoreAttestor) AttestVEX(ctx context.Context, imageRef string, state
 		return err
 	}
 
-	a.logger.Info("VEX attestation completed",
+	a.logger.Debug("VEX attestation completed",
 		"image_ref", imageRef,
 		"statement_count", len(statements),
 		"duration", time.Since(startTime))
@@ -399,7 +399,7 @@ func (a *SigstoreAttestor) AttestSCAI(ctx context.Context, imageRef string, scai
 		return err
 	}
 
-	a.logger.Info("SCAI attestation completed",
+	a.logger.Debug("SCAI attestation completed",
 		"image_ref", imageRef,
 		"duration", time.Since(startTime))
 

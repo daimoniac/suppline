@@ -330,6 +330,25 @@ func (s *SQLiteStore) EnsureArtifactTagBinding(ctx context.Context, repository, 
 		return false, nil
 	}
 
+	nowUnix := time.Now().Unix()
+	result, err := s.db.ExecContext(ctx, `
+		UPDATE artifacts
+		SET last_seen = ?
+		WHERE repository_id = (SELECT id FROM repositories WHERE name = ?)
+			AND digest = ?
+			AND tag = ?
+	`, nowUnix, repository, digest, tag)
+	if err != nil {
+		return false, errors.NewTransientf("failed to touch artifact last_seen: %w", err)
+	}
+	rowsAffected, err := result.RowsAffected()
+	if err != nil {
+		return false, errors.NewTransientf("failed to inspect artifact last_seen update: %w", err)
+	}
+	if rowsAffected > 0 {
+		return false, nil
+	}
+
 	tx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {
 		return false, errors.NewTransientf("failed to begin tag binding transaction: %w", err)
@@ -346,27 +365,6 @@ func (s *SQLiteStore) EnsureArtifactTagBinding(ctx context.Context, repository, 
 	}
 	if err != nil {
 		return false, errors.NewTransientf("failed to query repository for tag binding: %w", err)
-	}
-
-	nowUnix := time.Now().Unix()
-	var existingID sql.NullInt64
-	err = tx.QueryRowContext(ctx, `
-		SELECT id FROM artifacts WHERE repository_id = ? AND digest = ? AND tag = ?
-	`, repositoryID, digest, tag).Scan(&existingID)
-	if err == nil {
-		_, err = tx.ExecContext(ctx, `
-			UPDATE artifacts SET last_seen = ? WHERE id = ?
-		`, nowUnix, existingID.Int64)
-		if err != nil {
-			return false, errors.NewTransientf("failed to touch artifact last_seen: %w", err)
-		}
-		if err := tx.Commit(); err != nil {
-			return false, errors.NewTransientf("failed to commit tag binding touch: %w", err)
-		}
-		return false, nil
-	}
-	if err != sql.ErrNoRows {
-		return false, errors.NewTransientf("failed to query artifact for tag binding: %w", err)
 	}
 
 	var lastScanID sql.NullInt64

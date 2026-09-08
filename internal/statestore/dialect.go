@@ -105,13 +105,6 @@ func (t *Tx) PrepareContext(ctx context.Context, query string) (*sql.Stmt, error
 	return t.Tx.PrepareContext(ctx, t.rewrite(query))
 }
 
-func (s *SQLiteStore) like() string {
-	if s.db != nil && s.db.dialect == dialectPostgres {
-		return "ILIKE"
-	}
-	return "LIKE"
-}
-
 func (s *SQLiteStore) boolTrue() string {
 	if s.db != nil && s.db.dialect == dialectPostgres {
 		return "TRUE"
