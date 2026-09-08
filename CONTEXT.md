@@ -11,3 +11,7 @@ _Avoid_: limit (API query param), per-list page size, items-per-page as a separa
 **Runtime usage**:
 The current presence of an image in the inventory reported by one or more clusters, including where the image is running.
 _Avoid_: deployment status, scan activity, registry presence
+
+**Scan request**:
+An expressed intent to scan a specific container image, whether discovered automatically or initiated as a rescan.
+_Avoid_: queue task, worker job

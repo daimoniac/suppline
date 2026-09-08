@@ -12,6 +12,7 @@ import (
 	"github.com/daimoniac/suppline/internal/observability"
 	"github.com/daimoniac/suppline/internal/queue"
 	"github.com/daimoniac/suppline/internal/registry"
+	"github.com/daimoniac/suppline/internal/scanenqueue"
 	"github.com/daimoniac/suppline/internal/statestore"
 )
 
@@ -771,11 +772,12 @@ func TestProcessTag_FailSafeBehavior(t *testing.T) {
 		regsyncConfig:  regsyncCfg,
 		stateStore:     mockStore,
 		taskQueue:      mockQueue,
+		scanEnqueuer:   scanenqueue.New(mockQueue, regsyncCfg),
 		logger:         logger,
 	}
 
 	// Process tag - should enqueue despite error (fail-safe)
-	err := w.processTag(ctx, "myorg/app1", "v1.0", nil, false)
+	err := w.processTag(ctx, "myorg/app1", "v1.0")
 	if err != nil {
 		t.Fatalf("processTag failed: %v", err)
 	}
@@ -892,9 +894,9 @@ func TestWatcher_Discover_SkipWhenManualRescanPending(t *testing.T) {
 // reconcilingMockStore extends mockStateStore with cleanup/reconciliation support.
 type reconcilingMockStore struct {
 	mockStateStore
-	artifactTags   map[string][]statestore.ArtifactTagBinding // repo -> bindings
-	repoNames      []string
-	cleanedTags    []string // "repo:tag:digest"
+	artifactTags map[string][]statestore.ArtifactTagBinding // repo -> bindings
+	repoNames    []string
+	cleanedTags  []string // "repo:tag:digest"
 	cleanedRepos []string
 }
 
@@ -1131,5 +1133,3 @@ func TestWatcher_Discover_BindsAliasTagsForSharedDigest(t *testing.T) {
 		t.Fatalf("expected 0 scan tasks for already-scanned digest, got %d", queueDepth)
 	}
 }
-
-
