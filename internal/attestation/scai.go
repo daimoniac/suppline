@@ -9,24 +9,32 @@ import (
 	"github.com/daimoniac/suppline/internal/config"
 	"github.com/daimoniac/suppline/internal/errors"
 	"github.com/daimoniac/suppline/internal/policy"
+	"github.com/daimoniac/suppline/internal/policy/catalog"
 	"github.com/daimoniac/suppline/internal/scanner"
 )
 
 // SCAIGenerator creates SCAI attestation predicates
 type SCAIGenerator struct {
-	config *config.RegsyncConfig
-	logger *slog.Logger
+	config  *config.RegsyncConfig
+	catalog catalog.Catalog
+	logger  *slog.Logger
 }
 
 // NewSCAIGenerator creates a new SCAI generator
 func NewSCAIGenerator(config *config.RegsyncConfig, logger *slog.Logger) *SCAIGenerator {
+	return NewSCAIGeneratorWithCatalog(config, catalog.NewConfigCatalog(config), logger)
+}
+
+// NewSCAIGeneratorWithCatalog creates an SCAI generator with a shared policy catalog.
+func NewSCAIGeneratorWithCatalog(config *config.RegsyncConfig, policyCatalog catalog.Catalog, logger *slog.Logger) *SCAIGenerator {
 	if logger == nil {
 		logger = slog.Default()
 	}
 
 	return &SCAIGenerator{
-		config: config,
-		logger: logger,
+		config:  config,
+		catalog: policyCatalog,
+		logger:  logger,
 	}
 }
 
@@ -83,7 +91,7 @@ func (g *SCAIGenerator) matchExemptedVulnerabilities(scanResult *scanner.ScanRes
 	var attributes []SCAIAttributeItem
 
 	for _, vuln := range scanResult.Vulnerabilities {
-		exempted, stmt := g.config.IsVEXExempted(target, vuln.ID)
+		exempted, stmt := g.catalog.IsExempted(target, vuln.ID, time.Now())
 		if exempted && stmt != nil {
 			evidence := SCAIExemptedVulnEvidence{
 				CVEID:         vuln.ID,

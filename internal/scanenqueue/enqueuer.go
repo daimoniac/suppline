@@ -7,15 +7,15 @@ import (
 	"time"
 
 	"github.com/daimoniac/suppline/internal/config"
+	"github.com/daimoniac/suppline/internal/policy/catalog"
 	"github.com/daimoniac/suppline/internal/queue"
-	"github.com/daimoniac/suppline/internal/types"
 )
 
 // Enqueuer constructs and submits scan tasks.
 type Enqueuer struct {
-	taskQueue     queue.TaskQueue
-	regsyncConfig *config.RegsyncConfig
-	now           func() time.Time
+	taskQueue queue.TaskQueue
+	catalog   catalog.Catalog
+	now       func() time.Time
 }
 
 // Image identifies the image to scan.
@@ -40,10 +40,15 @@ const (
 
 // New creates an Enqueuer backed by taskQueue.
 func New(taskQueue queue.TaskQueue, regsyncConfig *config.RegsyncConfig) *Enqueuer {
+	return NewWithCatalog(taskQueue, catalog.NewConfigCatalog(regsyncConfig))
+}
+
+// NewWithCatalog creates an Enqueuer using the repository-policy catalog.
+func NewWithCatalog(taskQueue queue.TaskQueue, policyCatalog catalog.Catalog) *Enqueuer {
 	return &Enqueuer{
-		taskQueue:     taskQueue,
-		regsyncConfig: regsyncConfig,
-		now:           time.Now,
+		taskQueue: taskQueue,
+		catalog:   policyCatalog,
+		now:       time.Now,
 	}
 }
 
@@ -69,6 +74,11 @@ func (e *Enqueuer) enqueue(ctx context.Context, image Image, isRescan, isFirstSc
 	idTime := e.now()
 	enqueuedAt := e.now()
 
+	var evidence catalog.Evidence
+	if e.catalog != nil {
+		evidence = e.catalog.ResolveEvidence(image.Repository)
+	}
+
 	task := &queue.ScanTask{
 		ID:            fmt.Sprintf("%s-%d", image.Digest, idTime.Unix()),
 		Repository:    image.Repository,
@@ -79,26 +89,12 @@ func (e *Enqueuer) enqueue(ctx context.Context, image Image, isRescan, isFirstSc
 		IsRescan:      isRescan,
 		IsFirstScan:   isFirstScan,
 		Priority:      priority,
-		VEXStatements: e.vexStatementsFor(image.Repository),
-		UseVEXRepo:    e.useVEXRepoFor(image.Repository),
+		VEXStatements: evidence.VEXStatements,
+		UseVEXRepo:    evidence.UseVEXRepo,
 	}
 
 	if err := e.taskQueue.Enqueue(ctx, task); err != nil {
 		return nil, err
 	}
 	return task, nil
-}
-
-func (e *Enqueuer) vexStatementsFor(repository string) []types.VEXStatement {
-	if e.regsyncConfig == nil {
-		return nil
-	}
-	return e.regsyncConfig.GetVEXStatementsForTarget(repository)
-}
-
-func (e *Enqueuer) useVEXRepoFor(repository string) bool {
-	if e.regsyncConfig == nil {
-		return false
-	}
-	return e.regsyncConfig.GetVEXRepoForTarget(repository)
 }

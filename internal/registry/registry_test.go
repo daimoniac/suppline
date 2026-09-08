@@ -269,16 +269,6 @@ func TestClientWithVEX(t *testing.T) {
 	if client == nil {
 		t.Errorf("expected client but got nil")
 	}
-
-	// Verify VEX statements are accessible through regsync config.
-	vexStatements := config.GetVEXStatementsForTarget("myregistry.com/nginx")
-	if len(vexStatements) != 1 {
-		t.Errorf("expected 1 VEX statement but got %d", len(vexStatements))
-	}
-
-	if vexStatements[0].ID != "CVE-2024-12345" {
-		t.Errorf("expected CVE-2024-12345 but got %s", vexStatements[0].ID)
-	}
 }
 
 func TestFilterSigstoreArtifacts(t *testing.T) {

@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/daimoniac/suppline/internal/config"
+	"github.com/daimoniac/suppline/internal/policy/catalog"
 	"github.com/daimoniac/suppline/internal/statestore"
 	"github.com/prometheus/client_golang/prometheus"
 )
@@ -18,9 +19,9 @@ var (
 
 // ConfigCollector collects metrics from the configuration on-demand when /metrics is scraped
 type ConfigCollector struct {
-	regsyncCfg *config.RegsyncConfig
-	store      statestore.StateStore
-	logger     *slog.Logger
+	catalog catalog.Catalog
+	store   statestore.StateStore
+	logger  *slog.Logger
 
 	// Metric descriptors
 	exemptedCVEsDesc     *prometheus.Desc
@@ -38,8 +39,13 @@ type ConfigCollector struct {
 
 // NewConfigCollector creates a new configuration metrics collector
 func NewConfigCollector(regsyncCfg *config.RegsyncConfig, store statestore.StateStore, logger *slog.Logger) *ConfigCollector {
+	return NewConfigCollectorWithCatalog(catalog.NewConfigCatalog(regsyncCfg), store, logger)
+}
+
+// NewConfigCollectorWithCatalog creates a collector using the policy catalog.
+func NewConfigCollectorWithCatalog(policyCatalog catalog.Catalog, store statestore.StateStore, logger *slog.Logger) *ConfigCollector {
 	return &ConfigCollector{
-		regsyncCfg:     regsyncCfg,
+		catalog:        policyCatalog,
 		store:          store,
 		logger:         logger,
 		inactiveVEXTTL: 10 * time.Minute,
@@ -78,8 +84,13 @@ func NewConfigCollector(regsyncCfg *config.RegsyncConfig, store statestore.State
 
 // RegisterConfigCollector registers the configuration collector exactly once
 func RegisterConfigCollector(regsyncCfg *config.RegsyncConfig, store statestore.StateStore, logger *slog.Logger) {
+	RegisterConfigCollectorWithCatalog(catalog.NewConfigCatalog(regsyncCfg), store, logger)
+}
+
+// RegisterConfigCollectorWithCatalog registers a collector using the shared policy catalog.
+func RegisterConfigCollectorWithCatalog(policyCatalog catalog.Catalog, store statestore.StateStore, logger *slog.Logger) {
 	configCollectorOnce.Do(func() {
-		configCollectorInstance = NewConfigCollector(regsyncCfg, store, logger)
+		configCollectorInstance = NewConfigCollectorWithCatalog(policyCatalog, store, logger)
 		prometheus.MustRegister(configCollectorInstance)
 		logger.Info("configuration metrics collector registered")
 	})
@@ -96,7 +107,7 @@ func (c *ConfigCollector) Describe(ch chan<- *prometheus.Desc) {
 
 // Collect sends current metrics from configuration to the provided channel
 func (c *ConfigCollector) Collect(ch chan<- prometheus.Metric) {
-	if c.regsyncCfg == nil {
+	if c.catalog == nil {
 		return
 	}
 
@@ -122,9 +133,9 @@ func (c *ConfigCollector) Collect(ch chan<- prometheus.Metric) {
 
 func (c *ConfigCollector) collectExemptedCVEs(ch chan<- prometheus.Metric) {
 	total := 0
-	targets := c.regsyncCfg.GetTargetRepositories()
+	targets := c.catalog.Repositories()
 	for _, target := range targets {
-		total += len(c.regsyncCfg.GetVEXStatementsForTarget(target))
+		total += len(c.catalog.ResolveEvidence(target).VEXStatements)
 	}
 
 	ch <- prometheus.MustNewConstMetric(
@@ -137,10 +148,10 @@ func (c *ConfigCollector) collectExemptedCVEs(ch chan<- prometheus.Metric) {
 func (c *ConfigCollector) collectVEXExpiry(ch chan<- prometheus.Metric) {
 	now := time.Now()
 	threshold := now.Add(7 * 24 * time.Hour)
-	targets := c.regsyncCfg.GetTargetRepositories()
+	targets := c.catalog.Repositories()
 
 	for _, target := range targets {
-		vexStatements := c.regsyncCfg.GetVEXStatementsForTarget(target)
+		vexStatements := c.catalog.ResolveEvidence(target).VEXStatements
 		expired := 0
 		expiring := 0
 
@@ -173,10 +184,10 @@ func (c *ConfigCollector) collectVEXExpiry(ch chan<- prometheus.Metric) {
 }
 
 func (c *ConfigCollector) collectVEXWithoutExpiry(ch chan<- prometheus.Metric) {
-	targets := c.regsyncCfg.GetTargetRepositories()
+	targets := c.catalog.Repositories()
 
 	for _, target := range targets {
-		vexStatements := c.regsyncCfg.GetVEXStatementsForTarget(target)
+		vexStatements := c.catalog.ResolveEvidence(target).VEXStatements
 		noExpiryCount := 0
 
 		for _, s := range vexStatements {
@@ -208,24 +219,7 @@ func (c *ConfigCollector) collectInactiveVEX(ctx context.Context, store statesto
 	}
 	c.inactiveVEXMutex.RUnlock()
 
-	definedCVEIDs := make(map[string]bool)
-	for _, stmt := range c.regsyncCfg.Defaults.VEX {
-		definedCVEIDs[stmt.ID] = true
-	}
-	if c.regsyncCfg.Sync != nil {
-		for _, sync := range c.regsyncCfg.Sync {
-			for _, stmt := range sync.VEX {
-				definedCVEIDs[stmt.ID] = true
-			}
-		}
-	}
-
-	cveIDSlice := make([]string, 0, len(definedCVEIDs))
-	for cveID := range definedCVEIDs {
-		cveIDSlice = append(cveIDSlice, cveID)
-	}
-
-	inactiveCount, err := store.GetInactiveVEXCount(ctx, cveIDSlice)
+	inactiveCount, err := store.GetInactiveVEXCount(ctx, c.catalog.StatementIDs())
 	if err != nil {
 		if ctx.Err() != nil {
 			c.logger.Debug("inactive VEX metric collection timed out", "error", err)
