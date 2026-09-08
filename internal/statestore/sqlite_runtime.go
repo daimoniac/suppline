@@ -272,7 +272,7 @@ func (s *SQLiteStore) DeleteClusterInventory(ctx context.Context, clusterName st
 
 // RecordScan saves scan results with full vulnerability details in a transaction
 
-func (s *SQLiteStore) GetRuntimeUsageForScans(ctx context.Context, scans []RuntimeLookupInput) (map[string]RuntimeUsage, error) {
+func (s *SQLiteStore) getRuntimeUsageForScans(ctx context.Context, scans []runtimeLookupInput) (map[string]RuntimeUsage, error) {
 	usageByDigest := make(map[string]RuntimeUsage)
 	if len(scans) == 0 {
 		return usageByDigest, nil
@@ -475,10 +475,10 @@ func (s *SQLiteStore) GetRuntimeUsageForScan(ctx context.Context, digest, reposi
 	return &usage, nil
 }
 
-// GetMinInUseImageTagByRepositories returns the minimum in-use image tag per repository name using
+// getMinInUseImageTagByRepositories returns the minimum in-use image tag per repository name using
 // cluster inventory (same tag ordering as the "in use + newer" filter floor). Repositories with no
 // in-use image are omitted from the result.
-func (s *SQLiteStore) GetMinInUseImageTagByRepositories(ctx context.Context, repositories []string) (map[string]string, error) {
+func (s *SQLiteStore) getMinInUseImageTagByRepositories(ctx context.Context, repositories []string) (map[string]string, error) {
 	if len(repositories) == 0 {
 		return map[string]string{}, nil
 	}

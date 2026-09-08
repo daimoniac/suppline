@@ -144,32 +144,6 @@ func (s *APIServer) handleListScans(w http.ResponseWriter, r *http.Request) {
 		s.enrichScanRecord(record)
 	}
 
-	// Image-usage filtered lists already annotate RuntimeUsed/Runtime during the post-filter.
-	if filter.ImageUsage == statestore.ImageUsageAll {
-		lookupInputs := make([]statestore.RuntimeLookupInput, 0, len(records))
-		for _, record := range records {
-			lookupInputs = append(lookupInputs, statestore.RuntimeLookupInput{
-				Digest:     record.Digest,
-				Repository: record.Repository,
-				Tag:        record.Tag,
-			})
-		}
-
-		runtimeUsageByDigest, err := s.stateStore.GetRuntimeUsageForScans(r.Context(), lookupInputs)
-		if err != nil {
-			s.logger.Error("failed to get runtime usage for scan list", "error", err)
-		} else {
-			for _, record := range records {
-				usage, ok := runtimeUsageByDigest[record.Digest]
-				if !ok {
-					continue
-				}
-				record.RuntimeUsed = usage.RuntimeUsed
-				record.Runtime = usage.Runtime
-			}
-		}
-	}
-
 	// Stream JSON response to avoid buffering large payloads
 	w.Header().Set("X-Total-Count", fmt.Sprintf("%d", total))
 	w.Header().Set("Content-Type", "application/json")
@@ -1195,29 +1169,6 @@ func (s *APIServer) handleGetRepository(w http.ResponseWriter, r *http.Request) 
 	if detail.Total == 0 && filter.Search == "" && (filter.ImageUsage == statestore.ImageUsageAll || filter.ImageUsage == statestore.ImageUsageNotInUse) {
 		s.respondError(w, http.StatusNotFound, "Repository not found")
 		return
-	}
-
-	lookups := make([]statestore.RuntimeLookupInput, 0, len(detail.Tags))
-	for _, tag := range detail.Tags {
-		lookups = append(lookups, statestore.RuntimeLookupInput{
-			Digest:     tag.Digest,
-			Repository: name,
-			Tag:        tag.Name,
-		})
-	}
-
-	runtimeUsageByDigest, err := s.stateStore.GetRuntimeUsageForScans(r.Context(), lookups)
-	if err != nil {
-		s.logger.Error("failed to get runtime usage for repository tags", "repository", name, "error", err)
-	} else {
-		for i := range detail.Tags {
-			usage, ok := runtimeUsageByDigest[detail.Tags[i].Digest]
-			if !ok {
-				continue
-			}
-			detail.Tags[i].RuntimeUsed = usage.RuntimeUsed
-			detail.Tags[i].Runtime = usage.Runtime
-		}
 	}
 
 	expr, desc := s.enrichRepositoryPolicy(name)

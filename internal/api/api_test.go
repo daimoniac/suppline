@@ -195,16 +195,12 @@ func (m *mockStateStore) GetUniqueVulnerabilityCounts(ctx context.Context) (map[
 	}, nil
 }
 
-func (m *mockStateStore) GetRuntimeUsageForScans(ctx context.Context, scans []statestore.RuntimeLookupInput) (map[string]statestore.RuntimeUsage, error) {
-	return map[string]statestore.RuntimeUsage{}, nil
-}
-
-func (m *mockStateStore) GetMinInUseImageTagByRepositories(ctx context.Context, repositories []string) (map[string]string, error) {
-	return map[string]string{}, nil
-}
-
 func (m *mockStateStore) GetRuntimeUsageForScan(ctx context.Context, digest, repository, tag string) (*statestore.RuntimeUsage, error) {
 	return &statestore.RuntimeUsage{}, nil
+}
+
+func (m *mockStateStore) GetPolicyOutcomeSummary(ctx context.Context) (statestore.PolicyOutcomeSummary, error) {
+	return statestore.PolicyOutcomeSummary{}, nil
 }
 
 func (m *mockStateStore) ListRuntimeUnusedRepositoryWhitelist(ctx context.Context) ([]statestore.RuntimeUnusedRepositoryWhitelistEntry, error) {
