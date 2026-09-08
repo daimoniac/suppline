@@ -12,6 +12,10 @@ _Avoid_: limit (API query param), per-list page size, items-per-page as a separa
 The current presence of an image in the inventory reported by one or more clusters, including where the image is running.
 _Avoid_: deployment status, scan activity, registry presence
 
+**Current tag binding**:
+The digest a repository tag currently identifies. A tag has one current binding even when it previously identified other digests.
+_Avoid_: latest scan, newest tag, tag history
+
 **Scan request**:
 An expressed intent to scan a specific container image, whether discovered automatically or initiated as a rescan.
 _Avoid_: queue task, worker job
