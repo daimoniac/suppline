@@ -38,22 +38,6 @@ func (m *mockStateStore) DeleteClusterInventory(ctx context.Context, clusterName
 	return nil
 }
 
-func (m *mockStateStore) GetRuntimeUsageForScans(ctx context.Context, scans []statestore.RuntimeLookupInput) (map[string]statestore.RuntimeUsage, error) {
-	usage := make(map[string]statestore.RuntimeUsage)
-	runtimeByDigest := make(map[string]bool, len(m.scans))
-	for _, s := range m.scans {
-		runtimeByDigest[s.Digest] = s.RuntimeUsed
-	}
-
-	for _, scan := range scans {
-		if runtimeByDigest[scan.Digest] {
-			usage[scan.Digest] = statestore.RuntimeUsage{RuntimeUsed: true}
-		}
-	}
-
-	return usage, nil
-}
-
 func (m *mockStateStore) GetFailedArtifacts(ctx context.Context) ([]*statestore.ScanRecord, error) {
 	var failed []*statestore.ScanRecord
 	for _, s := range m.scans {
@@ -72,8 +56,11 @@ func (m *mockStateStore) GetUniqueVulnerabilityCounts(ctx context.Context) (map[
 	return m.counts, nil
 }
 
-func (m *mockStateStore) GetMinInUseImageTagByRepositories(ctx context.Context, repositories []string) (map[string]string, error) {
-	return map[string]string{"r": "1.0.0"}, nil
+func (m *mockStateStore) GetPolicyOutcomeSummary(ctx context.Context) (statestore.PolicyOutcomeSummary, error) {
+	return statestore.PolicyOutcomeSummary{
+		Failed:  statestore.PolicyOutcomeCounts{All: 3, Runtime: 1, RuntimeAndNewer: 2},
+		Pending: statestore.PolicyOutcomeCounts{All: 1},
+	}, nil
 }
 
 func TestDatabaseCollector(t *testing.T) {

@@ -107,8 +107,8 @@ type RuntimeImage struct {
 // RuntimeInventory groups runtime matches by cluster then namespace.
 type RuntimeInventory map[string]map[string][]RuntimeImage
 
-// RuntimeLookupInput identifies a scanned image for runtime matching.
-type RuntimeLookupInput struct {
+// runtimeLookupInput identifies a scanned image for runtime matching.
+type runtimeLookupInput struct {
 	Digest     string
 	Repository string
 	Tag        string
@@ -118,6 +118,19 @@ type RuntimeLookupInput struct {
 type RuntimeUsage struct {
 	RuntimeUsed bool
 	Runtime     RuntimeInventory
+}
+
+// PolicyOutcomeCounts groups current policy outcomes by artifact relevance.
+type PolicyOutcomeCounts struct {
+	All             int
+	Runtime         int
+	RuntimeAndNewer int
+}
+
+// PolicyOutcomeSummary contains failed and pending current policy outcomes.
+type PolicyOutcomeSummary struct {
+	Failed  PolicyOutcomeCounts
+	Pending PolicyOutcomeCounts
 }
 
 // ClusterInventoryStore persists runtime cluster image inventory snapshots.
@@ -310,16 +323,12 @@ type StateStoreQuery interface {
 	// GetUniqueVulnerabilityCounts returns the count of unique CVE IDs by severity across all latest scans
 	GetUniqueVulnerabilityCounts(ctx context.Context) (map[string]int, error)
 
-	// GetRuntimeUsageForScans returns runtime usage keyed by digest for a list endpoint.
-	GetRuntimeUsageForScans(ctx context.Context, scans []RuntimeLookupInput) (map[string]RuntimeUsage, error)
-
-	// GetMinInUseImageTagByRepositories returns the minimum in-use image tag per repository (cluster
-	// inventory; same ordering as the "in use + newer" filter floor). Repositories with no in-use image
-	// are omitted from the map.
-	GetMinInUseImageTagByRepositories(ctx context.Context, repositories []string) (map[string]string, error)
-
 	// GetRuntimeUsageForScan returns runtime usage for a single image detail endpoint.
 	GetRuntimeUsageForScan(ctx context.Context, digest, repository, tag string) (*RuntimeUsage, error)
+
+	// GetPolicyOutcomeSummary returns current failed and pending policy outcomes grouped by
+	// registry presence, runtime use, and runtime use plus cluster-wide newer semver tags.
+	GetPolicyOutcomeSummary(ctx context.Context) (PolicyOutcomeSummary, error)
 
 	// ListRuntimeUnusedRepositoryWhitelist returns repositories excluded from
 	// runtime-unused housekeeping tasks.
@@ -389,16 +398,16 @@ type ScanRecord struct {
 	MinimumReleaseAgeSeconds int64
 	ReleaseAgeSource         string
 	// Denormalized for convenience (loaded via joins)
-	Digest               string
-	Repository           string
-	Tag                  string                      // Primary tag from the artifact that was scanned
-	Tags                 []TagRef                    // All tags pointing to this digest (loaded separately)
-	Vulnerabilities      []types.VulnerabilityRecord // Using canonical type
-	AppliedVEXStatements []types.AppliedVEXStatement // VEX statements applied during this scan
+	Digest                string
+	Repository            string
+	Tag                   string                      // Primary tag from the artifact that was scanned
+	Tags                  []TagRef                    // All tags pointing to this digest (loaded separately)
+	Vulnerabilities       []types.VulnerabilityRecord // Using canonical type
+	AppliedVEXStatements  []types.AppliedVEXStatement // VEX statements applied during this scan
 	PolicyFailureFindings []types.PolicyFailureFinding
-	VEXAttested          bool
-	RuntimeUsed          bool
-	Runtime              RuntimeInventory
+	VEXAttested           bool
+	RuntimeUsed           bool
+	Runtime               RuntimeInventory
 }
 
 // VulnFilter defines criteria for querying vulnerabilities
@@ -416,7 +425,7 @@ type ScanFilter struct {
 	PolicyPassed *bool  // kept for backward-compat callers; PolicyStatus takes precedence when set
 	PolicyStatus string // "passed", "failed", or "pending"; empty = no filter
 	ImageUsage   ImageUsage
-	MaxAge       int // Maximum age of scans in seconds (0 = no limit)
+	MaxAge       int    // Maximum age of scans in seconds (0 = no limit)
 	SortBy       string // Sorting option: "age_desc" (default)
 	Limit        int
 	Offset       int

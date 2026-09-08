@@ -12,11 +12,9 @@ import (
 )
 
 // partitionFailedArtifactsByRuntimeUsage splits failed artifacts into in-use and
-// not-in-use buckets based on runtime usage keyed by digest. Relative order within
-// each bucket is preserved.
+// not-in-use buckets. Relative order within each bucket is preserved.
 func partitionFailedArtifactsByRuntimeUsage(
 	artifacts []*statestore.ScanRecord,
-	usageByDigest map[string]statestore.RuntimeUsage,
 ) (inUse, notInUse []*statestore.ScanRecord) {
 	inUse = make([]*statestore.ScanRecord, 0, len(artifacts))
 	notInUse = make([]*statestore.ScanRecord, 0, len(artifacts))
@@ -24,7 +22,7 @@ func partitionFailedArtifactsByRuntimeUsage(
 		if artifact == nil {
 			continue
 		}
-		if usageByDigest[artifact.Digest].RuntimeUsed {
+		if artifact.RuntimeUsed {
 			inUse = append(inUse, artifact)
 		} else {
 			notInUse = append(notInUse, artifact)
@@ -50,24 +48,7 @@ func enqueueFailedArtifacts(ctx context.Context, store statestore.StateStoreQuer
 
 	logger.Info("found failed artifacts to consider for startup rescan", "count", len(failedArtifacts))
 
-	lookups := make([]statestore.RuntimeLookupInput, 0, len(failedArtifacts))
-	for _, artifact := range failedArtifacts {
-		lookups = append(lookups, statestore.RuntimeLookupInput{
-			Digest:     artifact.Digest,
-			Repository: artifact.Repository,
-			Tag:        artifact.Tag,
-		})
-	}
-
-	usageByDigest, err := store.GetRuntimeUsageForScans(ctx, lookups)
-	if err != nil {
-		logger.Warn("failed to look up runtime usage for failed artifacts; skipping startup rescan of unused-or-unknown digests",
-			"error", err,
-			"total", len(failedArtifacts))
-		return nil
-	}
-
-	inUse, notInUse := partitionFailedArtifactsByRuntimeUsage(failedArtifacts, usageByDigest)
+	inUse, notInUse := partitionFailedArtifactsByRuntimeUsage(failedArtifacts)
 	if len(inUse) == 0 {
 		logger.Info("no in-use failed artifacts to rescan on startup",
 			"skipped_not_in_use", len(notInUse),

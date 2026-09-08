@@ -3,7 +3,6 @@ package observability
 import (
 	"context"
 	"log/slog"
-	"strings"
 	"sync"
 	"time"
 
@@ -124,7 +123,7 @@ func (c *DatabaseCollector) collectClusterLastSync(ctx context.Context, store st
 }
 
 func (c *DatabaseCollector) collectPolicyOutcomes(ctx context.Context, store statestore.StateStoreQuery, ch chan<- prometheus.Metric) {
-	scans, err := store.GetFailedArtifacts(ctx)
+	summary, err := store.GetPolicyOutcomeSummary(ctx)
 	if err != nil {
 		if ctx.Err() != nil {
 			c.logger.Debug("policy outcome metric collection timed out", "error", err)
@@ -134,127 +133,45 @@ func (c *DatabaseCollector) collectPolicyOutcomes(ctx context.Context, store sta
 		return
 	}
 
-	failedScans := make([]*statestore.ScanRecord, 0, len(scans))
-	pendingScans := make([]*statestore.ScanRecord, 0, len(scans))
-
-	for _, scan := range scans {
-		if scan.PolicyStatus == "pending" {
-			pendingScans = append(pendingScans, scan)
-			continue
-		}
-
-		// Backward compatibility: records with empty/non-pending status that did not pass policy are counted as failed.
-		failedScans = append(failedScans, scan)
-	}
-
-	registryFailedCount := len(failedScans)
-	registryPendingCount := len(pendingScans)
-	runtimeFailedCount := 0
-	runtimePendingCount := 0
-	runtimeNewerFailedCount := 0
-	runtimeNewerPendingCount := 0
-
-	if len(scans) > 0 {
-		runtimeInputs := make([]statestore.RuntimeLookupInput, 0, len(scans))
-		reposSeen := make(map[string]struct{}, len(scans))
-		var distinctRepos []string
-		for _, scan := range scans {
-			runtimeInputs = append(runtimeInputs, statestore.RuntimeLookupInput{
-				Digest:     scan.Digest,
-				Repository: scan.Repository,
-				Tag:        scan.Tag,
-			})
-			repo := strings.TrimSpace(scan.Repository)
-			if repo != "" {
-				if _, ok := reposSeen[repo]; !ok {
-					reposSeen[repo] = struct{}{}
-					distinctRepos = append(distinctRepos, repo)
-				}
-			}
-		}
-
-		runtimeUsageByDigest, err := store.GetRuntimeUsageForScans(ctx, runtimeInputs)
-		if err != nil {
-			if ctx.Err() != nil {
-				c.logger.Debug("runtime policy failed metric collection timed out", "error", err)
-			} else {
-				c.logger.Error("failed to collect runtime policy failed metric", "error", err)
-			}
-			return
-		}
-
-		minInUseByRepo, err := store.GetMinInUseImageTagByRepositories(ctx, distinctRepos)
-		if err != nil {
-			if ctx.Err() != nil {
-				c.logger.Debug("in-use+newer policy metric collection timed out", "error", err)
-			} else {
-				c.logger.Error("failed to collect in-use+newer policy metrics", "error", err)
-			}
-			return
-		}
-
-		for _, scan := range failedScans {
-			usage := runtimeUsageByDigest[scan.Digest]
-			used := usage.RuntimeUsed
-			if used {
-				runtimeFailedCount++
-			}
-			if statestore.PolicyArtifactMatchesInUseOrNewer(used, scan.Repository, scan.Tag, minInUseByRepo) {
-				runtimeNewerFailedCount++
-			}
-		}
-
-		for _, scan := range pendingScans {
-			usage := runtimeUsageByDigest[scan.Digest]
-			used := usage.RuntimeUsed
-			if used {
-				runtimePendingCount++
-			}
-			if statestore.PolicyArtifactMatchesInUseOrNewer(used, scan.Repository, scan.Tag, minInUseByRepo) {
-				runtimeNewerPendingCount++
-			}
-		}
-	}
-
 	ch <- prometheus.MustNewConstMetric(
 		c.policyFailedDesc,
 		prometheus.GaugeValue,
-		float64(registryFailedCount),
+		float64(summary.Failed.All),
 		"registry",
 	)
 
 	ch <- prometheus.MustNewConstMetric(
 		c.policyFailedDesc,
 		prometheus.GaugeValue,
-		float64(runtimeFailedCount),
+		float64(summary.Failed.Runtime),
 		"runtime",
 	)
 
 	ch <- prometheus.MustNewConstMetric(
 		c.policyFailedDesc,
 		prometheus.GaugeValue,
-		float64(runtimeNewerFailedCount),
+		float64(summary.Failed.RuntimeAndNewer),
 		"runtime+newer",
 	)
 
 	ch <- prometheus.MustNewConstMetric(
 		c.policyPendingDesc,
 		prometheus.GaugeValue,
-		float64(registryPendingCount),
+		float64(summary.Pending.All),
 		"registry",
 	)
 
 	ch <- prometheus.MustNewConstMetric(
 		c.policyPendingDesc,
 		prometheus.GaugeValue,
-		float64(runtimePendingCount),
+		float64(summary.Pending.Runtime),
 		"runtime",
 	)
 
 	ch <- prometheus.MustNewConstMetric(
 		c.policyPendingDesc,
 		prometheus.GaugeValue,
-		float64(runtimeNewerPendingCount),
+		float64(summary.Pending.RuntimeAndNewer),
 		"runtime+newer",
 	)
 }

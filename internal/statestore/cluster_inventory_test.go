@@ -308,13 +308,13 @@ func TestGetRuntimeUsageForScan_DigestMatch(t *testing.T) {
 		t.Fatalf("Unexpected runtime payload: %+v", usage.Runtime)
 	}
 
-	bulk, err := store.GetRuntimeUsageForScans(ctx, []RuntimeLookupInput{{
+	bulk, err := store.getRuntimeUsageForScans(ctx, []runtimeLookupInput{{
 		Digest:     record.Digest,
 		Repository: record.Repository,
 		Tag:        record.Tag,
 	}})
 	if err != nil {
-		t.Fatalf("GetRuntimeUsageForScans failed: %v", err)
+		t.Fatalf("getRuntimeUsageForScans failed: %v", err)
 	}
 
 	bulkUsage, ok := bulk[record.Digest]
@@ -428,13 +428,13 @@ func TestGetRuntimeUsageForScan_MergesDigestAndDigestlessTagFallback(t *testing.
 		t.Fatalf("Unexpected runtime clusters: got %+v want %+v", got, wantClusters)
 	}
 
-	bulk, err := store.GetRuntimeUsageForScans(ctx, []RuntimeLookupInput{{
+	bulk, err := store.getRuntimeUsageForScans(ctx, []runtimeLookupInput{{
 		Digest:     record.Digest,
 		Repository: record.Repository,
 		Tag:        record.Tag,
 	}})
 	if err != nil {
-		t.Fatalf("GetRuntimeUsageForScans failed: %v", err)
+		t.Fatalf("getRuntimeUsageForScans failed: %v", err)
 	}
 
 	bulkUsage, ok := bulk[record.Digest]
@@ -481,13 +481,13 @@ func TestGetRuntimeUsageForScan_IncludesDistinctDigestVariantForMatchingTag(t *t
 		t.Fatalf("Expected runtime payload to include the distinct digest variant, got %+v", usage.Runtime)
 	}
 
-	bulk, err := store.GetRuntimeUsageForScans(ctx, []RuntimeLookupInput{{
+	bulk, err := store.getRuntimeUsageForScans(ctx, []runtimeLookupInput{{
 		Digest:     "sha256:expected-digest",
 		Repository: "docker.io/library/nginx",
 		Tag:        "1.29",
 	}})
 	if err != nil {
-		t.Fatalf("GetRuntimeUsageForScans failed: %v", err)
+		t.Fatalf("getRuntimeUsageForScans failed: %v", err)
 	}
 	bulkUsage, ok := bulk["sha256:expected-digest"]
 	if !ok || !bulkUsage.RuntimeUsed {
@@ -664,6 +664,107 @@ func TestListScans_InUseOrNewerSemver(t *testing.T) {
 	if n != 2 {
 		t.Fatalf("CountScans in_use+newer: want 2, got %d", n)
 	}
+}
+
+func TestRuntimeAnnotationsAndPolicyOutcomeSummary(t *testing.T) {
+	dbPath := "test_runtime_annotations_" + t.Name() + ".db"
+	_ = os.Remove(dbPath)
+	defer os.Remove(dbPath)
+
+	store, err := NewSQLiteStore(dbPath)
+	if err != nil {
+		t.Fatalf("NewSQLiteStore failed: %v", err)
+	}
+	defer store.Close()
+
+	const repo = "docker.io/lib/runtime-summary"
+	ctx := context.Background()
+	records := []*ScanRecord{
+		{Repository: repo, Tag: "1.0.0", Digest: "sha256:runtime-passing", PolicyPassed: true, PolicyStatus: "passed"},
+		{Repository: repo, Tag: "0.9.0", Digest: "sha256:failed-older", PolicyPassed: false, PolicyStatus: "failed"},
+		{Repository: repo, Tag: "1.1.0", Digest: "sha256:failed-newer", PolicyPassed: false, PolicyStatus: "failed"},
+		{Repository: repo, Tag: "1.2.0", Digest: "sha256:pending-newer", PolicyPassed: false, PolicyStatus: "pending"},
+		{Repository: "docker.io/lib/runtime-failed", Tag: "2.0.0", Digest: "sha256:runtime-failed", PolicyPassed: false, PolicyStatus: "failed"},
+	}
+	for _, record := range records {
+		record.Vulnerabilities = []types.VulnerabilityRecord{}
+		record.AppliedVEXStatements = []types.AppliedVEXStatement{}
+		if err := store.RecordScan(ctx, record); err != nil {
+			t.Fatalf("RecordScan(%s) failed: %v", record.Tag, err)
+		}
+	}
+	if err := store.RecordClusterInventory(ctx, "cluster-runtime", []ClusterImageEntry{
+		{Namespace: "default", ImageRef: repo, Tag: "1.0.0", Digest: "sha256:runtime-passing"},
+		{Namespace: "default", ImageRef: "docker.io/lib/runtime-failed", Tag: "2.0.0", Digest: "sha256:runtime-failed"},
+	}, time.Now().UTC()); err != nil {
+		t.Fatalf("RecordClusterInventory failed: %v", err)
+	}
+
+	scans, total, err := store.ListScansWithTotal(ctx, ScanFilter{ImageUsage: ImageUsageAll, Limit: 100})
+	if err != nil {
+		t.Fatalf("ListScansWithTotal failed: %v", err)
+	}
+	if total != 5 || len(scans) != 5 {
+		t.Fatalf("ListScansWithTotal got len=%d total=%d, want 5/5", len(scans), total)
+	}
+	assertRuntimeAnnotation(t, scans, "sha256:runtime-passing", true)
+	assertRuntimeAnnotation(t, scans, "sha256:failed-newer", false)
+
+	listed, err := store.ListScans(ctx, ScanFilter{ImageUsage: ImageUsageAll, Limit: 100})
+	if err != nil {
+		t.Fatalf("ListScans failed: %v", err)
+	}
+	assertRuntimeAnnotation(t, listed, "sha256:runtime-failed", true)
+
+	detail, err := store.GetRepository(ctx, repo, RepositoryTagFilter{ImageUsage: ImageUsageAll, Limit: 100})
+	if err != nil {
+		t.Fatalf("GetRepository failed: %v", err)
+	}
+	if len(detail.Tags) != 4 {
+		t.Fatalf("GetRepository got %d tags, want 4", len(detail.Tags))
+	}
+	for _, tag := range detail.Tags {
+		if tag.Name == "1.0.0" && (!tag.RuntimeUsed || len(tag.Runtime) == 0) {
+			t.Fatalf("runtime tag was not annotated: %+v", tag)
+		}
+	}
+
+	failed, err := store.GetFailedArtifacts(ctx)
+	if err != nil {
+		t.Fatalf("GetFailedArtifacts failed: %v", err)
+	}
+	if len(failed) != 4 {
+		t.Fatalf("GetFailedArtifacts got %d records, want 4", len(failed))
+	}
+	assertRuntimeAnnotation(t, failed, "sha256:runtime-failed", true)
+	assertRuntimeAnnotation(t, failed, "sha256:failed-newer", false)
+
+	summary, err := store.GetPolicyOutcomeSummary(ctx)
+	if err != nil {
+		t.Fatalf("GetPolicyOutcomeSummary failed: %v", err)
+	}
+	wantFailed := (PolicyOutcomeCounts{All: 3, Runtime: 1, RuntimeAndNewer: 2})
+	wantPending := (PolicyOutcomeCounts{All: 1, Runtime: 0, RuntimeAndNewer: 1})
+	if summary.Failed != wantFailed || summary.Pending != wantPending {
+		t.Fatalf("GetPolicyOutcomeSummary got %+v, want failed=%+v pending=%+v", summary, wantFailed, wantPending)
+	}
+}
+
+func assertRuntimeAnnotation(t *testing.T, records []*ScanRecord, digest string, wantUsed bool) {
+	t.Helper()
+	for _, record := range records {
+		if record.Digest != digest {
+			continue
+		}
+		if record.RuntimeUsed != wantUsed {
+			t.Fatalf("RuntimeUsed for %s = %v, want %v", digest, record.RuntimeUsed, wantUsed)
+		}
+		if wantUsed && len(record.Runtime) == 0 {
+			t.Fatalf("Runtime payload for %s is empty", digest)
+		}
+		return
+	}
+	t.Fatalf("scan %s not found", digest)
 }
 
 // When multiple tags are in use, "in use + newer" uses the minimum in-use tag as the floor so

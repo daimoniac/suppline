@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/daimoniac/suppline/internal/errors"
@@ -152,7 +153,7 @@ func (s *SQLiteStore) CountDueForRescan(ctx context.Context, olderThan time.Dura
 }
 
 // CountCurrentDigests returns distinct digests among current latest-per-tag artifacts
-// and how many are in runtime use. Usage matching goes through GetRuntimeUsageForScans so
+// and how many are in runtime use. Usage matching goes through getRuntimeUsageForScans so
 // the count includes the repository+tag fallback and matches the in_use list filters.
 func (s *SQLiteStore) CountCurrentDigests(ctx context.Context) (total int, inUse int, err error) {
 	rows, err := s.db.QueryContext(ctx, `
@@ -174,7 +175,7 @@ func (s *SQLiteStore) CountCurrentDigests(ctx context.Context) (total int, inUse
 	}
 	defer rows.Close()
 
-	lookups := make([]RuntimeLookupInput, 0)
+	lookups := make([]runtimeLookupInput, 0)
 	digests := make(map[string]struct{})
 	for rows.Next() {
 		var digest, tag, repository string
@@ -182,7 +183,7 @@ func (s *SQLiteStore) CountCurrentDigests(ctx context.Context) (total int, inUse
 			return 0, 0, errors.NewTransientf("failed to scan current digest row: %w", err)
 		}
 		digests[digest] = struct{}{}
-		lookups = append(lookups, RuntimeLookupInput{
+		lookups = append(lookups, runtimeLookupInput{
 			Digest:     digest,
 			Repository: repository,
 			Tag:        tag,
@@ -192,7 +193,7 @@ func (s *SQLiteStore) CountCurrentDigests(ctx context.Context) (total int, inUse
 		return 0, 0, errors.NewTransientf("error iterating current digest rows: %w", err)
 	}
 
-	usageByDigest, err := s.GetRuntimeUsageForScans(ctx, lookups)
+	usageByDigest, err := s.getRuntimeUsageForScans(ctx, lookups)
 	if err != nil {
 		return 0, 0, err
 	}
@@ -256,7 +257,58 @@ func (s *SQLiteStore) GetFailedArtifacts(ctx context.Context) ([]*ScanRecord, er
 		return nil, errors.NewTransientf("error iterating rows: %w", err)
 	}
 
+	if err := s.annotateScanRecordsWithRuntimeUsage(ctx, records); err != nil {
+		return nil, err
+	}
+
 	return records, nil
+}
+
+// GetPolicyOutcomeSummary returns current failed and pending policy outcomes grouped by
+// registry presence, runtime use, and runtime use plus cluster-wide newer semver tags.
+func (s *SQLiteStore) GetPolicyOutcomeSummary(ctx context.Context) (PolicyOutcomeSummary, error) {
+	records, err := s.GetFailedArtifacts(ctx)
+	if err != nil {
+		return PolicyOutcomeSummary{}, err
+	}
+
+	repositories := make([]string, 0, len(records))
+	seenRepositories := make(map[string]struct{}, len(records))
+	for _, record := range records {
+		repository := strings.TrimSpace(record.Repository)
+		if repository == "" {
+			continue
+		}
+		if _, seen := seenRepositories[repository]; seen {
+			continue
+		}
+		seenRepositories[repository] = struct{}{}
+		repositories = append(repositories, repository)
+	}
+
+	// This floor intentionally comes from the complete cluster inventory. Batch list
+	// filtering computes its floor only from the batch's annotated scan rows.
+	minInUseTagByRepository, err := s.getMinInUseImageTagByRepositories(ctx, repositories)
+	if err != nil {
+		return PolicyOutcomeSummary{}, err
+	}
+
+	var summary PolicyOutcomeSummary
+	for _, record := range records {
+		counts := &summary.Failed
+		if record.PolicyStatus == "pending" {
+			counts = &summary.Pending
+		}
+		counts.All++
+		if record.RuntimeUsed {
+			counts.Runtime++
+		}
+		if matchesInUseOrNewer(record.RuntimeUsed, record.Repository, record.Tag, minInUseTagByRepository) {
+			counts.RuntimeAndNewer++
+		}
+	}
+
+	return summary, nil
 }
 
 // GetScanHistory returns scan history for a digest with full details
@@ -440,7 +492,14 @@ func (s *SQLiteStore) ListScans(ctx context.Context, filter ScanFilter) ([]*Scan
 		return paginateScanRecords(filtered, filter.Limit, filter.Offset), nil
 	}
 
-	return s.queryScanRecords(ctx, filter)
+	records, err := s.queryScanRecords(ctx, filter)
+	if err != nil {
+		return nil, err
+	}
+	if err := s.annotateScanRecordsWithRuntimeUsage(ctx, records); err != nil {
+		return nil, err
+	}
+	return records, nil
 }
 
 // CountScans returns the total number of scan records that match the filters.
@@ -495,6 +554,9 @@ func (s *SQLiteStore) ListScansWithTotal(ctx context.Context, filter ScanFilter)
 	if err != nil {
 		return nil, 0, err
 	}
+	if err := s.annotateScanRecordsWithRuntimeUsage(ctx, records); err != nil {
+		return nil, 0, err
+	}
 	total, err := s.CountScans(ctx, filter)
 	if err != nil {
 		return nil, 0, err
@@ -515,16 +577,16 @@ func (s *SQLiteStore) listScansFilteredByImageUsage(ctx context.Context, filter 
 		return nil, err
 	}
 
-	lookups := make([]RuntimeLookupInput, 0, len(records))
+	lookups := make([]runtimeLookupInput, 0, len(records))
 	for _, record := range records {
-		lookups = append(lookups, RuntimeLookupInput{
+		lookups = append(lookups, runtimeLookupInput{
 			Digest:     record.Digest,
 			Repository: record.Repository,
 			Tag:        record.Tag,
 		})
 	}
 
-	runtimeUsageByDigest, err := s.GetRuntimeUsageForScans(ctx, lookups)
+	runtimeUsageByDigest, err := s.getRuntimeUsageForScans(ctx, lookups)
 	if err != nil {
 		return nil, err
 	}
@@ -532,6 +594,30 @@ func (s *SQLiteStore) listScansFilteredByImageUsage(ctx context.Context, filter 
 	inUseRows := inUseTagRowsFromScanRecords(records, runtimeUsageByDigest)
 	minTagByRepo := minInUseImageTagByRepository(inUseRows)
 	return filterScanRecordsByImageUsage(records, runtimeUsageByDigest, minTagByRepo, filter.ImageUsage), nil
+}
+
+func (s *SQLiteStore) annotateScanRecordsWithRuntimeUsage(ctx context.Context, records []*ScanRecord) error {
+	lookups := make([]runtimeLookupInput, 0, len(records))
+	for _, record := range records {
+		lookups = append(lookups, runtimeLookupInput{
+			Digest:     record.Digest,
+			Repository: record.Repository,
+			Tag:        record.Tag,
+		})
+	}
+
+	usageByDigest, err := s.getRuntimeUsageForScans(ctx, lookups)
+	if err != nil {
+		return err
+	}
+	for _, record := range records {
+		used, usage := runtimeUseForDigest(usageByDigest, record.Digest)
+		record.RuntimeUsed = used
+		if used {
+			record.Runtime = usage.Runtime
+		}
+	}
+	return nil
 }
 
 func paginateScanRecords(records []*ScanRecord, limit, offset int) []*ScanRecord {

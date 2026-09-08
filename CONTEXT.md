@@ -7,3 +7,7 @@ Supply-chain scanning of container images: repositories, tags, scans, vulnerabil
 **Page Size**:
 The number of items shown on one page of any paged list in the UI. One Page Size applies to all paged lists for a given browser.
 _Avoid_: limit (API query param), per-list page size, items-per-page as a separate setting per list
+
+**Runtime usage**:
+The current presence of an image in the inventory reported by one or more clusters, including where the image is running.
+_Avoid_: deployment status, scan activity, registry presence

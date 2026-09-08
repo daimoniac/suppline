@@ -35,8 +35,7 @@ type latestArtifactTagRow struct {
 	repo, tag, digest string
 }
 
-// runtimeUseForDigest returns in-use state and the merged runtime payload for a digest
-// (same keys as GetRuntimeUsageForScans).
+// runtimeUseForDigest returns in-use state and the merged runtime payload for a digest.
 func runtimeUseForDigest(usageByDigest map[string]RuntimeUsage, digest string) (used bool, u RuntimeUsage) {
 	u, ok := usageByDigest[digest]
 	if !ok {
@@ -170,10 +169,4 @@ func filterTagInfoByImageUsage(
 		filtered = append(filtered, tag)
 	}
 	return filtered
-}
-
-// PolicyArtifactMatchesInUseOrNewer reports whether an artifact matches the "in use + newer" image
-// filter: in runtime use, or tag strictly greater than the minimum in-use tag for the repository.
-func PolicyArtifactMatchesInUseOrNewer(used bool, repository, tag string, minInUseTagByRepo map[string]string) bool {
-	return matchesInUseOrNewer(used, repository, tag, minInUseTagByRepo)
 }

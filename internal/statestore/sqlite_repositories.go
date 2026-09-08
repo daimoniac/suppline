@@ -311,7 +311,7 @@ func (s *SQLiteStore) repositoryRuntimeUsageByID(ctx context.Context, repoNamesB
 		digest       string
 	}
 
-	lookups := make([]RuntimeLookupInput, 0)
+	lookups := make([]runtimeLookupInput, 0)
 	repoArtifacts := make([]repoArtifact, 0)
 	for rows.Next() {
 		var repositoryID int64
@@ -325,7 +325,7 @@ func (s *SQLiteStore) repositoryRuntimeUsageByID(ctx context.Context, repoNamesB
 			continue
 		}
 
-		lookups = append(lookups, RuntimeLookupInput{
+		lookups = append(lookups, runtimeLookupInput{
 			Digest:     digest,
 			Repository: repositoryName,
 			Tag:        tag,
@@ -337,7 +337,7 @@ func (s *SQLiteStore) repositoryRuntimeUsageByID(ctx context.Context, repoNamesB
 		return nil, errors.NewTransientf("error iterating repository artifacts for runtime usage: %w", err)
 	}
 
-	usageByDigest, err := s.GetRuntimeUsageForScans(ctx, lookups)
+	usageByDigest, err := s.getRuntimeUsageForScans(ctx, lookups)
 	if err != nil {
 		return nil, err
 	}
@@ -523,21 +523,20 @@ func (s *SQLiteStore) GetRepository(ctx context.Context, name string, filter Rep
 		return nil, errors.NewTransientf("error iterating tag rows: %w", err)
 	}
 
+	lookups := make([]runtimeLookupInput, 0, len(detail.Tags))
+	for _, tag := range detail.Tags {
+		lookups = append(lookups, runtimeLookupInput{
+			Digest:     tag.Digest,
+			Repository: name,
+			Tag:        tag.Name,
+		})
+	}
+	runtimeUsageByDigest, err := s.getRuntimeUsageForScans(ctx, lookups)
+	if err != nil {
+		return nil, err
+	}
+
 	if effectiveTagFilter {
-		lookups := make([]RuntimeLookupInput, 0, len(detail.Tags))
-		for _, tag := range detail.Tags {
-			lookups = append(lookups, RuntimeLookupInput{
-				Digest:     tag.Digest,
-				Repository: name,
-				Tag:        tag.Name,
-			})
-		}
-
-		runtimeUsageByDigest, err := s.GetRuntimeUsageForScans(ctx, lookups)
-		if err != nil {
-			return nil, err
-		}
-
 		inUseRows := inUseTagRowsFromRepositoryTags(name, detail.Tags, runtimeUsageByDigest)
 		minTagByRepo := minInUseImageTagByRepository(inUseRows)
 		filtered := filterTagInfoByImageUsage(detail.Tags, name, runtimeUsageByDigest, minTagByRepo, filter.ImageUsage)
@@ -561,6 +560,8 @@ func (s *SQLiteStore) GetRepository(ctx context.Context, name string, filter Rep
 		}
 
 		detail.Tags = filtered[start:end]
+	} else {
+		detail.Tags = filterTagInfoByImageUsage(detail.Tags, name, runtimeUsageByDigest, nil, ImageUsageAll)
 	}
 
 	return detail, nil
@@ -609,15 +610,15 @@ func (s *SQLiteStore) repositoryNamesWithInUseOrNewerSemver(ctx context.Context)
 	if len(rows) == 0 {
 		return map[string]bool{}, nil
 	}
-	lookups := make([]RuntimeLookupInput, 0, len(rows))
+	lookups := make([]runtimeLookupInput, 0, len(rows))
 	for _, row := range rows {
-		lookups = append(lookups, RuntimeLookupInput{
+		lookups = append(lookups, runtimeLookupInput{
 			Digest:     row.digest,
 			Repository: row.repo,
 			Tag:        row.tag,
 		})
 	}
-	usageByDigest, err := s.GetRuntimeUsageForScans(ctx, lookups)
+	usageByDigest, err := s.getRuntimeUsageForScans(ctx, lookups)
 	if err != nil {
 		return nil, err
 	}
