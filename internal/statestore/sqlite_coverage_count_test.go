@@ -141,3 +141,64 @@ func TestCountCurrentDigests_CountsDigestlessRuntimeMatch(t *testing.T) {
 		t.Fatalf("inUse=%d, want 1 (repository+tag fallback must count)", used)
 	}
 }
+
+// ListDueForRescanArtifacts must select the same artifacts CountDueForRescan counts, and
+// carry the repository and tag that enqueueing a scan requires.
+func TestListDueForRescanArtifacts_MatchesCountAndCarriesIdentity(t *testing.T) {
+	dbPath := "test_list_due_" + t.Name() + ".db"
+	_ = os.Remove(dbPath)
+	defer os.Remove(dbPath)
+
+	store, err := NewSQLiteStore(dbPath)
+	if err != nil {
+		t.Fatalf("NewSQLiteStore: %v", err)
+	}
+	defer store.Close()
+
+	ctx := context.Background()
+	fresh := &ScanRecord{
+		Repository: "docker.io/lib/fresh", Tag: "1.0.0", Digest: "sha256:fresh",
+		PolicyPassed: true, SBOMAttested: true, VulnAttested: true, SCAIAttested: true,
+		Vulnerabilities: []types.VulnerabilityRecord{}, AppliedVEXStatements: []types.AppliedVEXStatement{},
+	}
+	stale := &ScanRecord{
+		Repository: "docker.io/lib/stale", Tag: "2.1.0", Digest: "sha256:stale",
+		PolicyPassed: true, SBOMAttested: true, VulnAttested: true, SCAIAttested: true,
+		Vulnerabilities: []types.VulnerabilityRecord{}, AppliedVEXStatements: []types.AppliedVEXStatement{},
+	}
+	for _, r := range []*ScanRecord{fresh, stale} {
+		if err := store.RecordScan(ctx, r); err != nil {
+			t.Fatalf("RecordScan: %v", err)
+		}
+	}
+
+	if _, err := store.db.ExecContext(ctx, `
+		UPDATE scan_records SET created_at = ?
+		WHERE artifact_id = (SELECT id FROM artifacts WHERE digest = ?)
+	`, time.Now().UTC().Add(-10*24*time.Hour).Unix(), stale.Digest); err != nil {
+		t.Fatalf("backdate stale scan: %v", err)
+	}
+
+	records, err := store.ListDueForRescanArtifacts(ctx, 7*24*time.Hour)
+	if err != nil {
+		t.Fatalf("ListDueForRescanArtifacts: %v", err)
+	}
+
+	count, err := store.CountDueForRescan(ctx, 7*24*time.Hour)
+	if err != nil {
+		t.Fatalf("CountDueForRescan: %v", err)
+	}
+	if len(records) != count {
+		t.Fatalf("listed %d artifacts, but counted %d", len(records), count)
+	}
+
+	if len(records) != 1 {
+		t.Fatalf("listed %d artifacts, want 1", len(records))
+	}
+	got := records[0]
+	if got.Digest != stale.Digest || got.Repository != stale.Repository || got.Tag != stale.Tag {
+		t.Fatalf("got %s %s:%s, want %s %s:%s",
+			got.Repository, got.Tag, got.Digest,
+			stale.Repository, stale.Tag, stale.Digest)
+	}
+}

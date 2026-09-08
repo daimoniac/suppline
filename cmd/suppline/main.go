@@ -228,6 +228,15 @@ func run() error {
 		// Don't fail startup - this is a best-effort operation
 	}
 
+	// Seed the queue with work already known to be due, so a restart does not wait for a
+	// full discovery walk. This runs in the background because it blocks once the queue
+	// buffer is full, draining as the workers catch up.
+	go func() {
+		if err := enqueueDueArtifacts(ctx, store, scanEnqueuer, cfg.StateStore.RescanInterval, logger); err != nil {
+			logger.Error("failed to seed artifacts due for rescan", "error", err)
+		}
+	}()
+
 	logger.Debug("initializing worker",
 		"retry_attempts", cfg.Worker.RetryAttempts,
 		"retry_backoff", cfg.Worker.RetryBackoff,

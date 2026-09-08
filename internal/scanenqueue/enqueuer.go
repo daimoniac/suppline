@@ -56,10 +56,15 @@ func NewWithCatalog(taskQueue queue.TaskQueue, policyCatalog catalog.Catalog) *E
 func (e *Enqueuer) EnqueueDiscovery(ctx context.Context, image Image, kind DiscoveryKind) (*queue.ScanTask, error) {
 	isRescan := kind == DiscoveryRescan
 	isFirstScan := kind == DiscoveryFirstScan
-	return e.enqueue(ctx, image, isRescan, isFirstScan, queue.PriorityNormal)
+	priority := queue.PriorityNormal
+	if isRescan || isFirstScan {
+		priority = queue.PriorityHigh
+	}
+	return e.enqueue(ctx, image, isRescan, isFirstScan, priority)
 }
 
-// EnqueueRescan submits an explicit rescan request.
+// EnqueueRescan submits an explicit rescan request at regular priority, so it
+// stays behind urgent rescans and the discovery stream.
 func (e *Enqueuer) EnqueueRescan(ctx context.Context, image Image) (*queue.ScanTask, error) {
 	return e.enqueue(ctx, image, true, false, queue.PriorityNormal)
 }

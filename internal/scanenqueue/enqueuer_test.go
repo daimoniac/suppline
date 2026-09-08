@@ -144,7 +144,7 @@ func TestEnqueueScanMetadata(t *testing.T) {
 				return e.EnqueueDiscovery(context.Background(), testImage(), DiscoveryFirstScan)
 			},
 			wantFirstScan: true,
-			wantPriority:  queue.PriorityNormal,
+			wantPriority:  queue.PriorityHigh,
 		},
 		{
 			name: "discovery interval rescan",
@@ -152,7 +152,7 @@ func TestEnqueueScanMetadata(t *testing.T) {
 				return e.EnqueueDiscovery(context.Background(), testImage(), DiscoveryRescan)
 			},
 			wantRescan:   true,
-			wantPriority: queue.PriorityNormal,
+			wantPriority: queue.PriorityHigh,
 		},
 		{
 			name: "requested rescan",

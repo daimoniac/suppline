@@ -739,3 +739,54 @@ func TestHighPriorityOrdering(t *testing.T) {
 		t.Errorf("expected normal-1 last, got %s", task3.ID)
 	}
 }
+
+// A caller that sets a priority explicitly overrides the task-type routing, which is how
+// the startup seeding keeps rescans behind urgent work despite IsRescan being set.
+func TestExplicitPriorityOverridesTaskType(t *testing.T) {
+	q := NewInMemoryQueue(10)
+	defer q.Close()
+
+	ctx := context.Background()
+
+	demotedRescan := &ScanTask{
+		ID:         "demoted-rescan",
+		Repository: "test/repo",
+		Digest:     "sha256:demoted",
+		EnqueuedAt: time.Now(),
+		IsRescan:   true,
+		Priority:   PriorityNormal,
+	}
+	if err := q.Enqueue(ctx, demotedRescan); err != nil {
+		t.Fatalf("failed to enqueue demoted rescan: %v", err)
+	}
+
+	promotedScan := &ScanTask{
+		ID:         "promoted-scan",
+		Repository: "test/repo",
+		Digest:     "sha256:promoted",
+		EnqueuedAt: time.Now(),
+		Priority:   PriorityHigh,
+	}
+	if err := q.Enqueue(ctx, promotedScan); err != nil {
+		t.Fatalf("failed to enqueue promoted scan: %v", err)
+	}
+
+	first, err := q.Dequeue(ctx)
+	if err != nil {
+		t.Fatalf("failed to dequeue first task: %v", err)
+	}
+	if first.ID != "promoted-scan" {
+		t.Errorf("expected promoted-scan first, got %s", first.ID)
+	}
+
+	second, err := q.Dequeue(ctx)
+	if err != nil {
+		t.Fatalf("failed to dequeue second task: %v", err)
+	}
+	if second.ID != "demoted-rescan" {
+		t.Errorf("expected demoted-rescan second, got %s", second.ID)
+	}
+	if second.Priority != PriorityNormal {
+		t.Errorf("expected explicit normal priority to survive, got %v", second.Priority)
+	}
+}
