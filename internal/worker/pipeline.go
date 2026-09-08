@@ -751,32 +751,23 @@ func pickReplacementTag(validStoredTags map[string]struct{}) string {
 
 // getPolicyEngineForRepository returns a policy engine for the given repository
 func (p *Pipeline) getPolicyEngineForRepository(repository string) (policy.PolicyEngine, error) {
-	var policyConfig policy.PolicyConfig
+	if p.worker.policyCatalog == nil {
+		return p.worker.policy, nil
+	}
 
-	// Try to get policy from regsync config
-	if p.worker.regsyncCfg != nil {
-		if minAge, ok, err := p.worker.regsyncCfg.GetMinimumReleaseAgeForTarget(repository); err != nil {
-			return nil, errors.NewPermanentf("failed to resolve minimum release age for %s: %w", repository, err)
-		} else if ok {
-			policyConfig.MinimumReleaseAge = minAge
-		}
-
-		if regsyncPolicy := p.worker.regsyncCfg.GetPolicyForTarget(repository); regsyncPolicy != nil {
-			policyConfig = policy.PolicyConfig{
-				Expression:        regsyncPolicy.Expression,
-				FailureMessage:    regsyncPolicy.FailureMessage,
-				MinimumReleaseAge: policyConfig.MinimumReleaseAge,
-			}
-			p.logger.Debug("using repository-specific policy",
-				"repository", repository,
-				"expression", policyConfig.Expression)
-		}
+	policyConfig, err := p.worker.policyCatalog.ResolvePolicy(repository)
+	if err != nil {
+		return nil, errors.NewPermanentf("failed to resolve minimum release age for %s: %w", repository, err)
 	}
 
 	// If neither custom expression nor minimum release age is configured, use default from worker
 	if policyConfig.Expression == "" && policyConfig.MinimumReleaseAge <= 0 {
 		return p.worker.policy, nil
 	}
+
+	p.logger.Debug("using repository-specific policy",
+		"repository", repository,
+		"expression", policyConfig.Expression)
 
 	// Create a new policy engine with the repository-specific config
 	return policy.NewEngine(p.logger, policyConfig)

@@ -19,3 +19,7 @@ _Avoid_: latest scan, newest tag, tag history
 **Scan request**:
 An expressed intent to scan a specific container image, whether discovered automatically or initiated as a rescan.
 _Avoid_: queue task, worker job
+
+**Repository policy**:
+The effective security rules and vulnerability-exemption decisions that apply to images in one repository.
+_Avoid_: sync configuration, scan policy lookup

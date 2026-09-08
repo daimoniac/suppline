@@ -18,6 +18,7 @@ import (
 	"github.com/daimoniac/suppline/internal/config"
 	"github.com/daimoniac/suppline/internal/observability"
 	"github.com/daimoniac/suppline/internal/policy"
+	policycatalog "github.com/daimoniac/suppline/internal/policy/catalog"
 	"github.com/daimoniac/suppline/internal/queue"
 	"github.com/daimoniac/suppline/internal/registry"
 	"github.com/daimoniac/suppline/internal/scanenqueue"
@@ -104,6 +105,7 @@ func run() error {
 	logger.Debug("regsync configuration parsed",
 		"sync_entries", len(regsyncCfg.Sync),
 		"credentials", len(regsyncCfg.Creds))
+	repositoryPolicies := policycatalog.NewConfigCatalog(regsyncCfg)
 
 	logger.Debug("initializing state store",
 		"type", cfg.StateStore.Type)
@@ -138,7 +140,7 @@ func run() error {
 	logger.Debug("initializing task queue",
 		"buffer_size", cfg.Queue.BufferSize)
 	taskQueue := queue.NewInMemoryQueue(cfg.Queue.BufferSize)
-	scanEnqueuer := scanenqueue.New(taskQueue, regsyncCfg)
+	scanEnqueuer := scanenqueue.NewWithCatalog(taskQueue, repositoryPolicies)
 	healthChecker.UpdateComponentHealth("queue", observability.StatusHealthy, "")
 	logger.Debug("task queue initialized")
 
@@ -159,7 +161,7 @@ func run() error {
 	logger.Debug("trivy scanner initialized and connected",
 		"server_addr", cfg.Scanner.ServerAddr)
 
-	if regsyncCfg.IsVEXRepoEnabledAnywhere() {
+	if repositoryPolicies.UsesVEXRepo() {
 		downloadVEXRepo(ctx, logger)
 	}
 
@@ -206,12 +208,13 @@ func run() error {
 		PollInterval:   cfg.Worker.PollInterval,
 		RescanInterval: cfg.StateStore.RescanInterval,
 	}
-	registryWatcher := watcher.NewWatcherWithEnqueuer(
+	registryWatcher := watcher.NewWatcherWithCatalogAndEnqueuer(
 		registryClient,
 		regsyncCfg,
 		store,
 		taskQueue,
 		scanEnqueuer,
+		repositoryPolicies,
 		watcherConfig,
 		logger,
 	)
@@ -234,7 +237,7 @@ func run() error {
 		RetryBackoff:  cfg.Worker.RetryBackoff,
 		Concurrency:   cfg.Worker.Concurrency,
 	}
-	workerInstance := worker.NewImageWorker(
+	workerInstance := worker.NewImageWorkerWithCatalog(
 		taskQueue,
 		trivyScanner,
 		policyEngine,
@@ -244,6 +247,7 @@ func run() error {
 		workerConfig,
 		logger,
 		regsyncCfg,
+		repositoryPolicies,
 	)
 	healthChecker.UpdateComponentHealth("worker", observability.StatusHealthy, "")
 	logger.Debug("worker initialized")
@@ -253,13 +257,14 @@ func run() error {
 		logger.Debug("initializing API server",
 			"port", cfg.API.Port,
 			"read_only", cfg.API.ReadOnly)
-		apiServer = api.NewAPIServerWithEnqueuer(
+		apiServer = api.NewAPIServerWithCatalogAndEnqueuer(
 			&cfg.API,
 			&cfg.Attestation,
 			store,
 			taskQueue,
 			scanEnqueuer,
 			regsyncCfg,
+			repositoryPolicies,
 			logger,
 		)
 		logger.Debug("API server initialized")

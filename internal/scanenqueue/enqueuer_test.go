@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/daimoniac/suppline/internal/config"
+	"github.com/daimoniac/suppline/internal/policy/catalog"
 	"github.com/daimoniac/suppline/internal/queue"
 	"github.com/daimoniac/suppline/internal/types"
 )
@@ -61,6 +62,20 @@ func testImage() Image {
 	}
 }
 
+func testCatalog() catalog.Catalog {
+	return catalog.NewMemoryCatalog(catalog.MemoryEntry{}, map[string]catalog.MemoryEntry{
+		"registry.example/team/app": {
+			Evidence: catalog.Evidence{
+				VEXStatements: []types.VEXStatement{
+					{ID: "CVE-default"},
+					{ID: "CVE-repository"},
+				},
+				UseVEXRepo: true,
+			},
+		},
+	})
+}
+
 // fixedClock makes the task ID and EnqueuedAt deterministic.
 func fixedClock(e *Enqueuer, idTime, enqueuedAt time.Time) {
 	times := []time.Time{idTime, enqueuedAt}
@@ -73,7 +88,7 @@ func fixedClock(e *Enqueuer, idTime, enqueuedAt time.Time) {
 
 func TestEnqueueDiscoveryConstructsTask(t *testing.T) {
 	taskQueue := &capturingQueue{}
-	enqueuer := New(taskQueue, testConfig())
+	enqueuer := NewWithCatalog(taskQueue, testCatalog())
 	idTime := time.Unix(1234, 0)
 	enqueuedAt := time.Unix(1235, 42)
 	fixedClock(enqueuer, idTime, enqueuedAt)
@@ -196,6 +211,36 @@ func TestEnqueueWithoutRegsyncConfig(t *testing.T) {
 	}
 	if task.UseVEXRepo {
 		t.Error("UseVEXRepo = true, want false")
+	}
+}
+
+// Enqueueing reads exemption evidence only, so an unparseable
+// minimumReleaseAge must not stop a repository's scans from carrying VEX.
+func TestEnqueueWithInvalidMinimumReleaseAge(t *testing.T) {
+	taskQueue := &capturingQueue{}
+	vexRepo := true
+	enqueuer := New(taskQueue, &config.RegsyncConfig{
+		Sync: []config.SyncEntry{{
+			Target:  "registry.example/team/app",
+			Type:    "repository",
+			Policy:  &config.PolicyConfig{Expression: "criticalCount == 0", MinimumReleaseAge: "not-a-duration"},
+			VEX:     []types.VEXStatement{{ID: "CVE-repository"}},
+			VEXRepo: &vexRepo,
+		}},
+	})
+
+	task, err := enqueuer.EnqueueRescan(context.Background(), testImage())
+	if err != nil {
+		t.Fatalf("EnqueueRescan() error = %v", err)
+	}
+	if len(task.VEXStatements) != 1 || task.VEXStatements[0].ID != "CVE-repository" {
+		t.Errorf("VEXStatements = %+v, want configured statement", task.VEXStatements)
+	}
+	if !task.UseVEXRepo {
+		t.Error("UseVEXRepo = false, want true")
+	}
+	if len(taskQueue.submitted) != 1 {
+		t.Fatalf("submitted %d tasks, want 1", len(taskQueue.submitted))
 	}
 }
 

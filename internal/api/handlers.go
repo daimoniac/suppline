@@ -330,7 +330,7 @@ func (s *APIServer) handleListInactiveVEX(w http.ResponseWriter, r *http.Request
 		return
 	}
 
-	if s.regsyncConfig == nil {
+	if s.policyCatalog == nil {
 		s.respondJSON(w, http.StatusOK, []types.VEXSummary{})
 		return
 	}
@@ -341,11 +341,11 @@ func (s *APIServer) handleListInactiveVEX(w http.ResponseWriter, r *http.Request
 	repoVEX := make(map[string]map[string]*types.VEXSummary)
 
 	// Get all target repositories from config
-	repositories := s.regsyncConfig.GetTargetRepositories()
+	repositories := s.policyCatalog.Repositories()
 
 	for _, repo := range repositories {
 		// Get VEX statements for this repository
-		configStatements := s.regsyncConfig.GetVEXStatementsForTarget(repo)
+		configStatements := s.policyCatalog.ResolveEvidence(repo).VEXStatements
 
 		for _, stmt := range configStatements {
 			if _, exists := repoVEX[repo]; !exists {
@@ -1372,14 +1372,14 @@ func (s *APIServer) enrichScanRecord(record *statestore.ScanRecord) {
 // getConfiguredVEXStatements returns all VEX statements from config file
 // Returns all configured VEX statements for each target repository, optionally filtered by CVE ID and/or repository
 func (s *APIServer) getConfiguredVEXStatements(cveIDFilter, repositoryFilter string, expiringSoon *bool, expired *bool) []*types.VEXInfo {
-	if s.regsyncConfig == nil {
+	if s.policyCatalog == nil {
 		return []*types.VEXInfo{}
 	}
 
 	vexMap := make(map[string]*types.VEXInfo)
 
 	// Get all target repositories from config
-	repositories := s.regsyncConfig.GetTargetRepositories()
+	repositories := s.policyCatalog.Repositories()
 
 	now := time.Now()
 	sevenDaysFromNow := now.Add(7 * 24 * time.Hour)
@@ -1391,7 +1391,8 @@ func (s *APIServer) getConfiguredVEXStatements(cveIDFilter, repositoryFilter str
 		}
 
 		// Get VEX statements for this repository
-		configStatements := s.regsyncConfig.GetVEXStatementsForTarget(repo)
+		// Get VEX statements for this repository
+		configStatements := s.policyCatalog.ResolveEvidence(repo).VEXStatements
 
 		for i := range configStatements {
 			// Apply CVE ID filter if specified (partial match)

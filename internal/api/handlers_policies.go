@@ -2,9 +2,7 @@ package api
 
 import (
 	"net/http"
-	"strings"
 
-	"github.com/daimoniac/suppline/internal/config"
 	"github.com/daimoniac/suppline/internal/policy"
 )
 
@@ -42,12 +40,13 @@ func (s *APIServer) handleListPolicies(w http.ResponseWriter, r *http.Request) {
 
 func (s *APIServer) buildPoliciesResponse() PoliciesResponse {
 	resp := PoliciesResponse{}
-	if s.regsyncConfig == nil {
+	if s.policyCatalog == nil {
 		return resp
 	}
 
-	if s.regsyncConfig.Defaults.Policy != nil && s.regsyncConfig.Defaults.Policy.Expression != "" {
-		expr := s.regsyncConfig.Defaults.Policy.Expression
+	listing := s.policyCatalog.ListPolicies()
+	if listing.Default != nil && listing.Default.Expression != "" {
+		expr := listing.Default.Expression
 		resp.Default = &PolicyInfo{
 			Expression:  expr,
 			Description: policy.DescribeExpression(expr),
@@ -55,17 +54,10 @@ func (s *APIServer) buildPoliciesResponse() PoliciesResponse {
 	}
 
 	overrides := make(map[string]PolicyInfo)
-	for _, sync := range s.regsyncConfig.Sync {
-		if sync.Policy == nil || sync.Policy.Expression == "" {
-			continue
-		}
-		target := syncTargetRepository(sync)
-		if target == "" {
-			continue
-		}
-		overrides[target] = PolicyInfo{
-			Expression:  sync.Policy.Expression,
-			Description: policy.DescribeExpression(sync.Policy.Expression),
+	for repository, configuredPolicy := range listing.Overrides {
+		overrides[repository] = PolicyInfo{
+			Expression:  configuredPolicy.Expression,
+			Description: policy.DescribeExpression(configuredPolicy.Expression),
 		}
 	}
 	if len(overrides) > 0 {
@@ -74,24 +66,14 @@ func (s *APIServer) buildPoliciesResponse() PoliciesResponse {
 	return resp
 }
 
-func syncTargetRepository(sync config.SyncEntry) string {
-	target := sync.Target
-	if sync.Type == "image" {
-		if idx := strings.LastIndex(target, ":"); idx != -1 {
-			target = target[:idx]
-		}
-	}
-	return target
-}
-
 // enrichRepositoryPolicy attaches the resolved CEL policy description for a repository.
 func (s *APIServer) enrichRepositoryPolicy(name string) (expression, description string) {
-	if s.regsyncConfig == nil || name == "" {
+	if s.policyCatalog == nil || name == "" {
 		return "", ""
 	}
-	cfg := s.regsyncConfig.GetPolicyForTarget(name)
-	if cfg == nil || cfg.Expression == "" {
+	expr := s.policyCatalog.ResolveExpression(name)
+	if expr == "" {
 		return "", ""
 	}
-	return cfg.Expression, policy.DescribeExpression(cfg.Expression)
+	return expr, policy.DescribeExpression(expr)
 }

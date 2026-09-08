@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/daimoniac/suppline/internal/config"
+	"github.com/daimoniac/suppline/internal/policy/catalog"
 	"github.com/daimoniac/suppline/internal/queue"
 	"github.com/daimoniac/suppline/internal/registry"
 	"github.com/daimoniac/suppline/internal/scanenqueue"
@@ -28,6 +29,7 @@ type Watcher interface {
 type watcherImpl struct {
 	registryClient registry.Client
 	regsyncConfig  *config.RegsyncConfig
+	policyCatalog  catalog.Catalog
 	stateStore     statestore.StateStore
 	taskQueue      queue.TaskQueue
 	scanEnqueuer   *scanenqueue.Enqueuer
@@ -72,9 +74,27 @@ func NewWatcherWithEnqueuer(
 	config Config,
 	logger *slog.Logger,
 ) Watcher {
+	return NewWatcherWithCatalogAndEnqueuer(
+		registryClient, regsyncConfig, stateStore, taskQueue,
+		scanEnqueuer, catalog.NewConfigCatalog(regsyncConfig), config, logger,
+	)
+}
+
+// NewWatcherWithCatalogAndEnqueuer creates a watcher using shared seams.
+func NewWatcherWithCatalogAndEnqueuer(
+	registryClient registry.Client,
+	regsyncConfig *config.RegsyncConfig,
+	stateStore statestore.StateStore,
+	taskQueue queue.TaskQueue,
+	scanEnqueuer *scanenqueue.Enqueuer,
+	policyCatalog catalog.Catalog,
+	config Config,
+	logger *slog.Logger,
+) Watcher {
 	return &watcherImpl{
 		registryClient: registryClient,
 		regsyncConfig:  regsyncConfig,
+		policyCatalog:  policyCatalog,
 		stateStore:     stateStore,
 		taskQueue:      taskQueue,
 		scanEnqueuer:   scanEnqueuer,
@@ -149,11 +169,11 @@ func (w *watcherImpl) Discover(ctx context.Context) error {
 
 // processRepository discovers and enqueues images from a single repository
 func (w *watcherImpl) processRepository(ctx context.Context, repo string) error {
-	// Get VEX statements for this target repository
-	vexStatements := w.regsyncConfig.GetVEXStatementsForTarget(repo)
+	// Get exemption evidence for this target repository
+	evidence := w.policyCatalog.ResolveEvidence(repo)
 
 	// Check for expiring VEX statements and log warnings
-	w.checkExpiringVEXStatements(repo, vexStatements)
+	w.checkExpiringVEXStatements(repo, evidence.VEXStatements)
 
 	// Check if this repository has specific tags defined (type=image entries)
 	specificTags := w.regsyncConfig.GetTagsForRepository(repo)

@@ -12,6 +12,7 @@ import (
 	"github.com/daimoniac/suppline/internal/errors"
 	"github.com/daimoniac/suppline/internal/observability"
 	"github.com/daimoniac/suppline/internal/policy"
+	"github.com/daimoniac/suppline/internal/policy/catalog"
 	"github.com/daimoniac/suppline/internal/queue"
 	"github.com/daimoniac/suppline/internal/registry"
 	"github.com/daimoniac/suppline/internal/scanner"
@@ -55,6 +56,7 @@ type ImageWorker struct {
 	logger        *slog.Logger
 	wg            sync.WaitGroup
 	regsyncCfg    *config.RegsyncConfig
+	policyCatalog catalog.Catalog
 	scaiGenerator *attestation.SCAIGenerator
 	pipeline      *Pipeline
 }
@@ -71,13 +73,32 @@ func NewImageWorker(
 	logger *slog.Logger,
 	regsyncCfg *config.RegsyncConfig,
 ) *ImageWorker {
+	return NewImageWorkerWithCatalog(
+		queue, scanner, policy, attestor, registry, stateStore, config, logger,
+		regsyncCfg, catalog.NewConfigCatalog(regsyncCfg),
+	)
+}
+
+// NewImageWorkerWithCatalog creates a worker using a shared repository-policy catalog.
+func NewImageWorkerWithCatalog(
+	queue queue.TaskQueue,
+	scanner scanner.Scanner,
+	policy policy.PolicyEngine,
+	attestor attestation.Attestor,
+	registry registry.Client,
+	stateStore statestore.StateStore,
+	config Config,
+	logger *slog.Logger,
+	regsyncCfg *config.RegsyncConfig,
+	policyCatalog catalog.Catalog,
+) *ImageWorker {
 	if logger == nil {
 		logger = slog.Default()
 	}
 
 	var scaiGenerator *attestation.SCAIGenerator
 	if regsyncCfg != nil {
-		scaiGenerator = attestation.NewSCAIGenerator(regsyncCfg, logger)
+		scaiGenerator = attestation.NewSCAIGeneratorWithCatalog(regsyncCfg, policyCatalog, logger)
 	}
 
 	worker := &ImageWorker{
@@ -90,6 +111,7 @@ func NewImageWorker(
 		config:        config,
 		logger:        logger,
 		regsyncCfg:    regsyncCfg,
+		policyCatalog: policyCatalog,
 		scaiGenerator: scaiGenerator,
 	}
 
@@ -109,7 +131,7 @@ func (w *ImageWorker) Start(ctx context.Context) error {
 	w.logger.Info("worker starting", "concurrency", concurrency)
 
 	// Register metrics collectors (once across all worker instances)
-	observability.RegisterConfigCollector(w.regsyncCfg, w.stateStore, w.logger)
+	observability.RegisterConfigCollectorWithCatalog(w.policyCatalog, w.stateStore, w.logger)
 	observability.RegisterDatabaseCollector(w.stateStore, w.logger)
 
 	// Create a cancellable context for the worker

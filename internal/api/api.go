@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/daimoniac/suppline/internal/config"
+	"github.com/daimoniac/suppline/internal/policy/catalog"
 	"github.com/daimoniac/suppline/internal/queue"
 	"github.com/daimoniac/suppline/internal/scanenqueue"
 	"github.com/daimoniac/suppline/internal/statestore"
@@ -50,6 +51,7 @@ type APIServer struct {
 	taskQueue         queue.TaskQueue
 	scanEnqueuer      *scanenqueue.Enqueuer
 	regsyncConfig     *config.RegsyncConfig
+	policyCatalog     catalog.Catalog
 	router            *http.ServeMux
 	server            *http.Server
 	logger            *slog.Logger
@@ -70,6 +72,14 @@ func NewAPIServer(cfg *config.APIConfig, attestationCfg *config.AttestationConfi
 
 // NewAPIServerWithEnqueuer creates an API server with a shared scan enqueuer.
 func NewAPIServerWithEnqueuer(cfg *config.APIConfig, attestationCfg *config.AttestationConfig, store statestore.StateStoreQuery, taskQueue queue.TaskQueue, scanEnqueuer *scanenqueue.Enqueuer, regsyncConfig *config.RegsyncConfig, logger *slog.Logger) *APIServer {
+	return NewAPIServerWithCatalogAndEnqueuer(
+		cfg, attestationCfg, store, taskQueue, scanEnqueuer,
+		regsyncConfig, catalog.NewConfigCatalog(regsyncConfig), logger,
+	)
+}
+
+// NewAPIServerWithCatalogAndEnqueuer creates an API server using shared seams.
+func NewAPIServerWithCatalogAndEnqueuer(cfg *config.APIConfig, attestationCfg *config.AttestationConfig, store statestore.StateStoreQuery, taskQueue queue.TaskQueue, scanEnqueuer *scanenqueue.Enqueuer, regsyncConfig *config.RegsyncConfig, policyCatalog catalog.Catalog, logger *slog.Logger) *APIServer {
 	var clusterInventoryStore statestore.ClusterInventoryStore
 	if inventoryStore, ok := store.(statestore.ClusterInventoryStore); ok {
 		clusterInventoryStore = inventoryStore
@@ -83,6 +93,7 @@ func NewAPIServerWithEnqueuer(cfg *config.APIConfig, attestationCfg *config.Atte
 		taskQueue:         taskQueue,
 		scanEnqueuer:      scanEnqueuer,
 		regsyncConfig:     regsyncConfig,
+		policyCatalog:     policyCatalog,
 		router:            http.NewServeMux(),
 		logger:            logger,
 	}
