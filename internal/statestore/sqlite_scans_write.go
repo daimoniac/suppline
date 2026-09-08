@@ -75,12 +75,10 @@ func (s *SQLiteStore) RecordScan(ctx context.Context, record *ScanRecord) error 
 		artifactID = existingArtifactID.Int64
 		_, err := tx.ExecContext(ctx, `
 			UPDATE artifacts
-			SET last_seen = ?, image_created_at = CASE
-				WHEN image_created_at IS NULL AND ? IS NOT NULL THEN ?
-				ELSE image_created_at
-			END
+			SET last_seen = ?,
+				image_created_at = COALESCE(image_created_at, ?)
 			WHERE id = ?
-		`, nowUnix, nullableInt64(record.ImageCreatedAt), nullableInt64(record.ImageCreatedAt), artifactID)
+		`, nowUnix, nullableInt64(record.ImageCreatedAt), artifactID)
 		if err != nil {
 			return errors.NewTransientf("failed to update artifact: %w", err)
 		}

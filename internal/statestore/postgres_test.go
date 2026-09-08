@@ -37,6 +37,22 @@ func TestPostgresStoreRoundTrip(t *testing.T) {
 		t.Fatalf("RecordScan: %v", err)
 	}
 
+	// A rescan commonly has no image-created timestamp. PostgreSQL must still be
+	// able to type the NULL parameter when updating the existing artifact.
+	if err := store.RecordScan(ctx, &ScanRecord{
+		Repository:        "library/alpine",
+		Digest:            "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+		Tag:               "3.20",
+		PolicyPassed:      true,
+		PolicyStatus:      "passed",
+		CriticalVulnCount: 0,
+		HighVulnCount:     0,
+		MediumVulnCount:   0,
+		LowVulnCount:      0,
+	}); err != nil {
+		t.Fatalf("RecordScan existing artifact with unknown image timestamp: %v", err)
+	}
+
 	got, err := store.GetLastScan(ctx, "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa")
 	if err != nil {
 		t.Fatalf("GetLastScan: %v", err)
