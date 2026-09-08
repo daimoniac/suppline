@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"log/slog"
 	"os"
 	"os/exec"
@@ -59,6 +60,18 @@ func NewTrivyScanner(cfg config.ScannerConfig) (*TrivyScanner, error) {
 	return scanner, nil
 }
 
+func (s *TrivyScanner) trivyCmd(ctx context.Context, imageRef string, args []string) (*exec.Cmd, *bytes.Buffer, *bytes.Buffer, func()) {
+	cmd := exec.CommandContext(ctx, "trivy", args...)
+	var stdout, stderr bytes.Buffer
+	relay := newTrivyLogRelay(s.logger, imageRef)
+	cmd.Stdout = &stdout
+	cmd.Stderr = io.MultiWriter(&stderr, relay)
+	if s.dockerConfigPath != "" {
+		cmd.Env = append(os.Environ(), fmt.Sprintf("DOCKER_CONFIG=%s", s.dockerConfigPath))
+	}
+	return cmd, &stdout, &stderr, relay.Flush
+}
+
 // HealthCheck reports Trivy connectivity status
 func (s *TrivyScanner) HealthCheck(ctx context.Context) error {
 	// Check if trivy command is available
@@ -91,16 +104,8 @@ func (s *TrivyScanner) GenerateSBOM(ctx context.Context, imageRef string) (*SBOM
 
 	args = append(args, imageRef)
 
-	// Execute trivy command
-	cmd := exec.CommandContext(ctx, "trivy", args...)
-	var stdout, stderr bytes.Buffer
-	cmd.Stdout = &stdout
-	cmd.Stderr = &stderr
-
-	// Set DOCKER_CONFIG environment variable if we have a config path
-	if s.dockerConfigPath != "" {
-		cmd.Env = append(os.Environ(), fmt.Sprintf("DOCKER_CONFIG=%s", s.dockerConfigPath))
-	}
+	cmd, stdout, stderr, flushLogs := s.trivyCmd(ctx, imageRef, args)
+	defer flushLogs()
 
 	if err := cmd.Run(); err != nil {
 		duration := time.Since(startTime)
@@ -135,7 +140,7 @@ func (s *TrivyScanner) GenerateSBOM(ctx context.Context, imageRef string) (*SBOM
 	s.logger.Debug("Trivy SBOM generation completed",
 		"image_ref", imageRef,
 		"duration", duration,
-		"sbom_size_bytes", len(stdout.Bytes()))
+		"sbom_size_bytes", stdout.Len())
 
 	return &SBOM{
 		Format:  "cyclonedx",
@@ -190,7 +195,6 @@ func (s *TrivyScanner) ScanVulnerabilities(ctx context.Context, imageRef string,
 	args := []string{
 		"image",
 		"--format", "json",
-		"--quiet",
 		"--scanners", "vuln",
 		"--server", fmt.Sprintf("http://%s", s.serverAddr), // Trivy server is mandatory
 	}
@@ -206,16 +210,8 @@ func (s *TrivyScanner) ScanVulnerabilities(ctx context.Context, imageRef string,
 
 	args = append(args, imageRef)
 
-	// Execute trivy command for JSON output
-	cmd := exec.CommandContext(ctx, "trivy", args...)
-	var stdout, stderr bytes.Buffer
-	cmd.Stdout = &stdout
-	cmd.Stderr = &stderr
-
-	// Set DOCKER_CONFIG environment variable if we have a config path
-	if s.dockerConfigPath != "" {
-		cmd.Env = append(os.Environ(), fmt.Sprintf("DOCKER_CONFIG=%s", s.dockerConfigPath))
-	}
+	cmd, stdout, stderr, flushLogs := s.trivyCmd(ctx, imageRef, args)
+	defer flushLogs()
 
 	if err := cmd.Run(); err != nil {
 		duration := time.Since(startTime)
@@ -281,7 +277,6 @@ func (s *TrivyScanner) ScanVulnerabilities(ctx context.Context, imageRef string,
 		"image",
 		"--format", "cosign-vuln",
 		"--output", tmpFile.Name(),
-		"--quiet",
 		"--scanners", "vuln",
 		"--server", fmt.Sprintf("http://%s", s.serverAddr), // Trivy server is mandatory
 	}
@@ -296,13 +291,8 @@ func (s *TrivyScanner) ScanVulnerabilities(ctx context.Context, imageRef string,
 
 	trivyArgs = append(trivyArgs, imageRef)
 
-	cosignCmd := exec.CommandContext(ctx, "trivy", trivyArgs...)
-	var cosignStderr bytes.Buffer
-	cosignCmd.Stderr = &cosignStderr
-
-	if s.dockerConfigPath != "" {
-		cosignCmd.Env = append(os.Environ(), fmt.Sprintf("DOCKER_CONFIG=%s", s.dockerConfigPath))
-	}
+	cosignCmd, _, cosignStderr, flushCosignLogs := s.trivyCmd(ctx, imageRef, trivyArgs)
+	defer flushCosignLogs()
 
 	if err := cosignCmd.Run(); err != nil {
 		s.logger.Warn("failed to generate cosign-vuln format (continuing without it)",
@@ -347,13 +337,8 @@ func (s *TrivyScanner) generateSBOMLocal(ctx context.Context, imageRef string) (
 	}
 	args = append(args, imageRef)
 
-	cmd := exec.CommandContext(ctx, "trivy", args...)
-	var stdout, stderr bytes.Buffer
-	cmd.Stdout = &stdout
-	cmd.Stderr = &stderr
-	if s.dockerConfigPath != "" {
-		cmd.Env = append(os.Environ(), fmt.Sprintf("DOCKER_CONFIG=%s", s.dockerConfigPath))
-	}
+	cmd, stdout, stderr, flushLogs := s.trivyCmd(ctx, imageRef, args)
+	defer flushLogs()
 
 	if err := cmd.Run(); err != nil {
 		return nil, errors.NewTransientf("local fallback SBOM failed for %s: %w, stderr: %s", imageRef, err, stderr.String())
@@ -384,13 +369,8 @@ func (s *TrivyScanner) scanVulnerabilitiesLocal(ctx context.Context, imageRef st
 	}
 	args = append(args, imageRef)
 
-	cmd := exec.CommandContext(ctx, "trivy", args...)
-	var stdout, stderr bytes.Buffer
-	cmd.Stdout = &stdout
-	cmd.Stderr = &stderr
-	if s.dockerConfigPath != "" {
-		cmd.Env = append(os.Environ(), fmt.Sprintf("DOCKER_CONFIG=%s", s.dockerConfigPath))
-	}
+	cmd, stdout, stderr, flushLogs := s.trivyCmd(ctx, imageRef, args)
+	defer flushLogs()
 
 	if err := cmd.Run(); err != nil {
 		return nil, errors.NewTransientf("local fallback vuln scan failed for %s: %w, stderr: %s", imageRef, err, stderr.String())
@@ -437,12 +417,8 @@ func (s *TrivyScanner) scanVulnerabilitiesLocal(ctx context.Context, imageRef st
 	}
 	cosignArgs = append(cosignArgs, imageRef)
 
-	cosignCmd := exec.CommandContext(ctx, "trivy", cosignArgs...)
-	var cosignStderr bytes.Buffer
-	cosignCmd.Stderr = &cosignStderr
-	if s.dockerConfigPath != "" {
-		cosignCmd.Env = append(os.Environ(), fmt.Sprintf("DOCKER_CONFIG=%s", s.dockerConfigPath))
-	}
+	cosignCmd, _, cosignStderr, flushCosignLogs := s.trivyCmd(ctx, imageRef, cosignArgs)
+	defer flushCosignLogs()
 	if err := cosignCmd.Run(); err != nil {
 		s.logger.Warn("local fallback cosign-vuln generation failed (continuing without it)",
 			"image_ref", imageRef,

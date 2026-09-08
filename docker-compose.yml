@@ -131,12 +131,14 @@ services:
   trivy:
     image: aquasec/trivy:0.74.0
     container_name: trivy-server
+    entrypoint: ["/bin/sh", "/trivy-json-logs.sh"]
     command: ["server", "--listen", "0.0.0.0:4954"]
     ports:
       - "4954:4954"
     environment:
       - TRIVY_CACHE_DIR=/trivy-cache
     volumes:
+      - ./scripts/trivy-json-logs.sh:/trivy-json-logs.sh:ro
       - trivy-cache:/trivy-cache
     networks:
       - suppline

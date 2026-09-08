@@ -14,6 +14,7 @@ spec:
     metadata:
       annotations:
         checksum/config: {{ include (print $.Template.BasePath "/configmap.yaml") . | sha256sum }}
+        checksum/trivy-logs: {{ include (print $.Template.BasePath "/trivy-log-wrapper.yaml") . | sha256sum }}
         checksum/secret: {{ include (print $.Template.BasePath "/secret.yaml") . | sha256sum }}
         {{- if .Values.postgres.enabled }}
         checksum/postgres: {{ include (print $.Template.BasePath "/postgres-secret.yaml") . | sha256sum }}
@@ -128,6 +129,9 @@ spec:
       - name: trivy
         image: "{{ .Values.trivy.image.repository }}:{{ .Values.trivy.image.tag }}"
         imagePullPolicy: {{ .Values.trivy.image.pullPolicy }}
+        command:
+        - /bin/sh
+        - /trivy-json-logs.sh
         args:
         - server
         - --listen
@@ -142,6 +146,10 @@ spec:
         volumeMounts:
         - name: trivy-cache
           mountPath: /trivy-cache
+        - name: trivy-logs
+          mountPath: /trivy-json-logs.sh
+          subPath: trivy-json-logs.sh
+          readOnly: true
         resources:
           {{- toYaml .Values.trivy.resources | nindent 10 }}
         livenessProbe:
@@ -173,6 +181,10 @@ spec:
           items:
           - key: suppline.yml
             path: suppline.yml
+      - name: trivy-logs
+        configMap:
+          name: {{ include "suppline.fullname" . }}-trivy-logs
+          defaultMode: 0555
       {{- with .Values.nodeSelector }}
       nodeSelector:
         {{- toYaml . | nindent 8 }}
