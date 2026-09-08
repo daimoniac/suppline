@@ -141,7 +141,7 @@ func (s *SQLiteStore) CountDueForRescan(ctx context.Context, olderThan time.Dura
 			FROM artifacts a2
 			GROUP BY a2.repository_id, a2.tag
 		) latest ON a.repository_id = latest.repository_id
-			AND a.tag IS latest.tag
+			AND a.tag IS NOT DISTINCT FROM latest.tag
 			AND a.id = latest.max_id
 		WHERE sr.created_at < ?
 	`, cutoffUnix).Scan(&count)
@@ -164,7 +164,7 @@ func (s *SQLiteStore) CountCurrentDigests(ctx context.Context) (total int, inUse
 			FROM artifacts a2
 			GROUP BY a2.repository_id, a2.tag
 		) latest ON a.repository_id = latest.repository_id
-			AND a.tag IS latest.tag
+			AND a.tag IS NOT DISTINCT FROM latest.tag
 			AND a.id = latest.max_id
 		WHERE a.last_scan_id IS NOT NULL
 		  AND a.digest != ''
@@ -464,7 +464,7 @@ func (s *SQLiteStore) CountScans(ctx context.Context, filter ScanFilter) (int, e
 			FROM artifacts a2
 			GROUP BY a2.repository_id, a2.tag
 		) latest ON a.repository_id = latest.repository_id
-			AND a.tag IS latest.tag
+			AND a.tag IS NOT DISTINCT FROM latest.tag
 			AND a.id = latest.max_id
 		WHERE 1=1
 	`
@@ -570,7 +570,7 @@ func (s *SQLiteStore) queryScanRecords(ctx context.Context, filter ScanFilter) (
 			FROM artifacts a2
 			GROUP BY a2.repository_id, a2.tag
 		) latest ON a.repository_id = latest.repository_id
-			AND a.tag IS latest.tag
+			AND a.tag IS NOT DISTINCT FROM latest.tag
 			AND a.id = latest.max_id
 		WHERE 1=1
 	`
