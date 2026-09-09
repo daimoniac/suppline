@@ -218,7 +218,7 @@ frontend:
 # Bundled PostgreSQL (default). Set enabled=false and persistence.data.enabled=true for SQLite.
 postgres:
   enabled: true
-  image: postgres:16-alpine
+  image: postgres:18-alpine
   auth:
     database: suppline
     username: suppline

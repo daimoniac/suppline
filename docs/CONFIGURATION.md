@@ -66,7 +66,9 @@ the empty database. Suppline refuses to start if it detects the legacy table.
 
 Set `STATE_STORE_TYPE=postgres` and `POSTGRES_URL` (for example
 `postgres://user:pass@host:5432/suppline?sslmode=disable`). Compose and the Helm
-chart default to a bundled PostgreSQL 16 instance.
+chart default to a bundled PostgreSQL 18 instance. Official 18 images store data
+under `/var/lib/postgresql/18/docker`; Compose and the chart mount
+`/var/lib/postgresql`. Existing PostgreSQL 16 volumes cannot be reused.
 
 To copy an existing catalog-schema SQLite database into an empty Postgres
 database without starting the full worker pipeline:
