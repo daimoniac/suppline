@@ -43,11 +43,10 @@ spec:
                 secretKeyRef:
                   name: {{ include "suppline.fullname" . }}-postgres
                   key: POSTGRES_PASSWORD
-            - name: PGDATA
-              value: /var/lib/postgresql/data/pgdata
           volumeMounts:
+            {{- /* Postgres 18+ inits under /var/lib/postgresql/<major>/docker; mount the parent so PVC lost+found does not block initdb. */}}
             - name: postgres-data
-              mountPath: /var/lib/postgresql/data
+              mountPath: /var/lib/postgresql
           resources:
             {{- toYaml .Values.postgres.resources | nindent 12 }}
           readinessProbe:
