@@ -2064,6 +2064,10 @@ func (m *mockWorkerStateStore) RecordScan(ctx context.Context, record *statestor
 	return m.recordScanError
 }
 
+func (m *mockWorkerStateStore) GetLastRepositoryScan(ctx context.Context, repository, digest string) (*statestore.ScanRecord, error) {
+	return m.GetLastScan(ctx, digest)
+}
+
 func (m *mockWorkerStateStore) GetLastScan(ctx context.Context, digest string) (*statestore.ScanRecord, error) {
 	if m.getLastScanError != nil {
 		return nil, m.getLastScanError

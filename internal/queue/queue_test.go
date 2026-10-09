@@ -142,6 +142,46 @@ func TestDeduplication(t *testing.T) {
 	}
 }
 
+func TestDeduplication_SameDigestDifferentRepository(t *testing.T) {
+	q := NewInMemoryQueue(10)
+	defer q.Close()
+
+	ctx := context.Background()
+	digest := "sha256:shared"
+
+	first := &ScanTask{
+		ID:         "dockerhub",
+		Repository: "hostingmaloonde/rabbitmqoperator_cluster-operator",
+		Digest:     digest,
+		Tag:        "2.19.2",
+		EnqueuedAt: time.Now(),
+	}
+	second := &ScanTask{
+		ID:         "ghcr",
+		Repository: "hostingmaloonde/rabbitmq_cluster-operator",
+		Digest:     digest,
+		Tag:        "2.19.2",
+		EnqueuedAt: time.Now(),
+	}
+
+	if err := q.Enqueue(ctx, first); err != nil {
+		t.Fatalf("enqueue first: %v", err)
+	}
+	if err := q.Enqueue(ctx, second); err != nil {
+		t.Fatalf("enqueue second: %v", err)
+	}
+
+	metrics := q.GetMetrics()
+	if metrics.Enqueued != 2 || metrics.Dropped != 0 {
+		t.Fatalf("enqueued=%d dropped=%d, want 2 and 0", metrics.Enqueued, metrics.Dropped)
+	}
+
+	depth, _ := q.GetQueueDepth(ctx)
+	if depth != 2 {
+		t.Fatalf("queue depth %d, want 2", depth)
+	}
+}
+
 func TestDeduplicationAfterDequeue(t *testing.T) {
 	q := NewInMemoryQueue(10)
 	defer q.Close()
@@ -280,7 +320,7 @@ func TestContextCancellation(t *testing.T) {
 
 	// Verify task2 was not added to pending map
 	q.pendingMu.RLock()
-	if q.pending["sha256:second"] {
+	if q.pending[taskPendingKey("test/repo", "sha256:second")] {
 		t.Error("expected task2 to not be in pending map")
 	}
 	q.pendingMu.RUnlock()
@@ -489,13 +529,13 @@ func TestHasPendingTask(t *testing.T) {
 	digest := "sha256:abc123"
 
 	// Test with empty digest
-	_, err := q.HasPendingTask(ctx, "")
+	_, err := q.HasPendingTask(ctx, "test/repo", "")
 	if err == nil {
 		t.Error("expected error for empty digest")
 	}
 
 	// Test with no pending tasks
-	hasPending, err := q.HasPendingTask(ctx, digest)
+	hasPending, err := q.HasPendingTask(ctx, "test/repo", digest)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -518,7 +558,7 @@ func TestHasPendingTask(t *testing.T) {
 	}
 
 	// Test with pending task
-	hasPending, err = q.HasPendingTask(ctx, digest)
+	hasPending, err = q.HasPendingTask(ctx, "test/repo", digest)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -533,7 +573,7 @@ func TestHasPendingTask(t *testing.T) {
 	}
 
 	// Test after dequeue - should not be pending anymore
-	hasPending, err = q.HasPendingTask(ctx, digest)
+	hasPending, err = q.HasPendingTask(ctx, "test/repo", digest)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}

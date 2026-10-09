@@ -152,6 +152,10 @@ func (m *mockStateStore) RecordScan(ctx context.Context, record *statestore.Scan
 	return m.recordScanError
 }
 
+func (m *mockStateStore) GetLastRepositoryScan(ctx context.Context, repository, digest string) (*statestore.ScanRecord, error) {
+	return m.GetLastScan(ctx, digest)
+}
+
 func (m *mockStateStore) GetLastScan(ctx context.Context, digest string) (*statestore.ScanRecord, error) {
 	if m.getLastScanError != nil {
 		return nil, m.getLastScanError
@@ -866,4 +870,3 @@ func TestPipeline_CleansDigestWhenNoLiveTagsRemain(t *testing.T) {
 		t.Fatal("task tag must not be rewritten to empty string")
 	}
 }
-

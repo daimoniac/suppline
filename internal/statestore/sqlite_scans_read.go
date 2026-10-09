@@ -13,11 +13,26 @@ import (
 )
 
 func (s *SQLiteStore) GetLastScan(ctx context.Context, digest string) (*ScanRecord, error) {
+	return s.getLastScan(ctx, digest, "")
+}
+
+// GetLastRepositoryScan returns the newest scan of digest stored under repository.
+func (s *SQLiteStore) GetLastRepositoryScan(ctx context.Context, repository, digest string) (*ScanRecord, error) {
+	if repository == "" {
+		return nil, errors.NewPermanentf("repository is required")
+	}
+	if digest == "" {
+		return nil, errors.NewPermanentf("digest is required")
+	}
+	return s.getLastScan(ctx, digest, repository)
+}
+
+func (s *SQLiteStore) getLastScan(ctx context.Context, digest, repository string) (*ScanRecord, error) {
 	var record ScanRecord
 	var vexJSON sql.NullString
 	var failureFindingsJSON sql.NullString
 
-	err := s.db.QueryRowContext(ctx, `
+	query := `
 		SELECT sr.id, sr.artifact_id, sr.scan_duration_ms,
 			sr.critical_vuln_count, sr.high_vuln_count, sr.medium_vuln_count, sr.low_vuln_count,
 			sr.policy_passed, sr.policy_status, sr.policy_reason, sr.policy_failure_findings_json, sr.release_age_seconds, sr.minimum_release_age_seconds, sr.release_age_source,
@@ -28,10 +43,17 @@ func (s *SQLiteStore) GetLastScan(ctx context.Context, digest string) (*ScanReco
 		FROM scan_records sr
 		JOIN artifacts a ON sr.artifact_id = a.id
 		JOIN repositories r ON a.repository_id = r.id
-		WHERE a.digest = ?
+		WHERE a.digest = ?`
+	args := []any{digest}
+	if repository != "" {
+		query += ` AND r.name = ?`
+		args = append(args, repository)
+	}
+	query += `
 		ORDER BY sr.created_at DESC, sr.id DESC
-		LIMIT 1
-	`, digest).Scan(
+		LIMIT 1`
+
+	err := s.db.QueryRowContext(ctx, query, args...).Scan(
 		&record.ID, &record.ArtifactID, &record.ScanDurationMs,
 		&record.CriticalVulnCount, &record.HighVulnCount, &record.MediumVulnCount, &record.LowVulnCount,
 		&record.PolicyPassed, &record.PolicyStatus, &record.PolicyReason, &failureFindingsJSON, &record.ReleaseAgeSeconds, &record.MinimumReleaseAgeSeconds, &record.ReleaseAgeSource,

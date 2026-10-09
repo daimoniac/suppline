@@ -110,6 +110,17 @@ func (m *mockStateStore) GetLastScan(ctx context.Context, digest string) (*state
 	return nil, statestore.ErrScanNotFound
 }
 
+func (m *mockStateStore) GetLastRepositoryScan(ctx context.Context, repository, digest string) (*statestore.ScanRecord, error) {
+	scan, err := m.GetLastScan(ctx, digest)
+	if err != nil {
+		return nil, err
+	}
+	if scan.Repository != repository {
+		return nil, statestore.ErrScanNotFound
+	}
+	return scan, nil
+}
+
 func (m *mockStateStore) ListDueForRescan(ctx context.Context, interval time.Duration) ([]string, error) {
 	if m.err != nil {
 		return nil, m.err
@@ -158,8 +169,9 @@ func (m *mockStateStore) EnsureArtifactTagBinding(ctx context.Context, repositor
 	if m.bindings[key] {
 		return false, nil
 	}
-	// Only create when digest already has a scan (mirrors SQLite behavior).
-	if _, ok := m.scans[digest]; !ok {
+	// Only create when this repository already scanned the digest (mirrors SQLite).
+	scan, ok := m.scans[digest]
+	if !ok || scan.Repository != repository {
 		return false, nil
 	}
 	m.bindings[key] = true
@@ -440,6 +452,61 @@ func TestWatcher_Discover_Deduplication(t *testing.T) {
 	metrics := mockQueue.GetMetrics()
 	if metrics.Dropped != 1 {
 		t.Errorf("Expected 1 dropped task, got %d", metrics.Dropped)
+	}
+}
+
+func TestWatcher_Discover_SameDigestInAnotherRepositoryIsScanned(t *testing.T) {
+	ctx := context.Background()
+	digest := "sha256:shared"
+	dockerRepo := "hostingmaloonde/rabbitmqoperator_cluster-operator"
+	ghcrRepo := "hostingmaloonde/rabbitmq_cluster-operator"
+
+	mockRegistry := &mockRegistryClient{
+		repositories: []string{dockerRepo, ghcrRepo},
+		tags: map[string][]string{
+			dockerRepo: {"2.19.2"},
+			ghcrRepo:   {"2.19.2"},
+		},
+		digests: map[string]string{
+			dockerRepo + ":2.19.2": digest,
+			ghcrRepo + ":2.19.2":   digest,
+		},
+	}
+	mockStore := &mockStateStore{
+		scans: map[string]*statestore.ScanRecord{
+			digest: {
+				Digest:     digest,
+				Repository: dockerRepo,
+				Tag:        "2.19.2",
+				CreatedAt:  time.Now().Add(-time.Hour).Unix(),
+			},
+		},
+	}
+	mockQueue := queue.NewInMemoryQueue(100)
+	regsyncCfg := &config.RegsyncConfig{
+		Defaults: config.Defaults{RescanInterval: "24h"},
+		Sync: []config.SyncEntry{
+			{Target: dockerRepo},
+			{Target: ghcrRepo},
+		},
+	}
+	logger := observability.NewLogger("error")
+	w := NewWatcher(mockRegistry, regsyncCfg, mockStore, mockQueue, Config{
+		PollInterval:   5 * time.Second,
+		RescanInterval: 24 * time.Hour,
+	}, logger)
+
+	if err := w.Discover(ctx); err != nil {
+		t.Fatalf("Discover failed: %v", err)
+	}
+
+	queueDepth, _ := mockQueue.GetQueueDepth(ctx)
+	if queueDepth != 1 {
+		t.Fatalf("expected 1 scan for the unattested repository, got %d", queueDepth)
+	}
+	task, _ := mockQueue.Dequeue(ctx)
+	if task.Repository != ghcrRepo || task.Digest != digest {
+		t.Fatalf("enqueued %s@%s, want %s@%s", task.Repository, task.Digest, ghcrRepo, digest)
 	}
 }
 

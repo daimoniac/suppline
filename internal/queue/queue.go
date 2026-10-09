@@ -27,8 +27,8 @@ type TaskQueue interface {
 	// GetQueueDepth returns current queue size
 	GetQueueDepth(ctx context.Context) (int, error)
 
-	// HasPendingTask checks if there's a pending task for the given digest
-	HasPendingTask(ctx context.Context, digest string) (bool, error)
+	// HasPendingTask checks if there's a pending task for the given repository and digest.
+	HasPendingTask(ctx context.Context, repository, digest string) (bool, error)
 
 	// Close shuts down the queue gracefully
 	Close() error
@@ -66,7 +66,7 @@ type ScanTask struct {
 type InMemoryQueue struct {
 	highPriorityTasks chan *ScanTask  // For rescans and urgent tasks
 	normalTasks       chan *ScanTask  // For regular scans
-	pending           map[string]bool // Deduplication map: digest -> exists
+	pending           map[string]bool // Deduplication map: repository+digest -> exists
 	pendingMu         sync.RWMutex
 	metrics           *QueueMetrics
 	metricsMu         sync.RWMutex
@@ -122,13 +122,16 @@ func (q *InMemoryQueue) Enqueue(ctx context.Context, task *ScanTask) error {
 		return errors.NewPermanentf("task digest cannot be empty")
 	}
 
+	// Identical digests in different repositories are different admission targets.
+	// Attestations are stored in the repository, so both must be queued.
+	key := taskPendingKey(task.Repository, task.Digest)
 	q.pendingMu.Lock()
-	if q.pending[task.Digest] {
+	if q.pending[key] {
 		q.pendingMu.Unlock()
 		q.incrementMetric("dropped")
 		return nil
 	}
-	q.pending[task.Digest] = true
+	q.pending[key] = true
 	q.pendingMu.Unlock()
 
 	// An explicit priority from the caller wins. Only fall back to task-type
@@ -157,7 +160,7 @@ func (q *InMemoryQueue) Enqueue(ctx context.Context, task *ScanTask) error {
 		return nil
 	case <-ctx.Done():
 		q.pendingMu.Lock()
-		delete(q.pending, task.Digest)
+		delete(q.pending, taskPendingKey(task.Repository, task.Digest))
 		q.pendingMu.Unlock()
 		return ctx.Err()
 	}
@@ -182,7 +185,7 @@ func (q *InMemoryQueue) Dequeue(ctx context.Context) (*ScanTask, error) {
 				break
 			}
 			q.pendingMu.Lock()
-			delete(q.pending, task.Digest)
+			delete(q.pending, taskPendingKey(task.Repository, task.Digest))
 			q.pendingMu.Unlock()
 			q.incrementMetric("dequeued")
 			observability.GetMetrics().QueueDequeued.Inc()
@@ -198,7 +201,7 @@ func (q *InMemoryQueue) Dequeue(ctx context.Context) (*ScanTask, error) {
 				// High priority channel closed, continue to normal tasks
 			} else {
 				q.pendingMu.Lock()
-				delete(q.pending, task.Digest)
+				delete(q.pending, taskPendingKey(task.Repository, task.Digest))
 				q.pendingMu.Unlock()
 				q.incrementMetric("dequeued")
 				observability.GetMetrics().QueueDequeued.Inc()
@@ -209,7 +212,7 @@ func (q *InMemoryQueue) Dequeue(ctx context.Context) (*ScanTask, error) {
 				return nil, errors.NewPermanentf("queue is closed")
 			}
 			q.pendingMu.Lock()
-			delete(q.pending, task.Digest)
+			delete(q.pending, taskPendingKey(task.Repository, task.Digest))
 			q.pendingMu.Unlock()
 			q.incrementMetric("dequeued")
 			observability.GetMetrics().QueueDequeued.Inc()
@@ -241,8 +244,11 @@ func (q *InMemoryQueue) GetQueueDepth(ctx context.Context) (int, error) {
 	return depth, nil
 }
 
-// HasPendingTask checks if there's a pending task for the given digest
-func (q *InMemoryQueue) HasPendingTask(ctx context.Context, digest string) (bool, error) {
+// HasPendingTask checks if there's a pending task for the given repository and digest.
+func (q *InMemoryQueue) HasPendingTask(ctx context.Context, repository, digest string) (bool, error) {
+	if repository == "" {
+		return false, errors.NewPermanentf("repository cannot be empty")
+	}
 	if digest == "" {
 		return false, errors.NewPermanentf("digest cannot be empty")
 	}
@@ -250,7 +256,11 @@ func (q *InMemoryQueue) HasPendingTask(ctx context.Context, digest string) (bool
 	q.pendingMu.RLock()
 	defer q.pendingMu.RUnlock()
 
-	return q.pending[digest], nil
+	return q.pending[taskPendingKey(repository, digest)], nil
+}
+
+func taskPendingKey(repository, digest string) string {
+	return repository + "\n" + digest
 }
 
 // Close shuts down the queue gracefully

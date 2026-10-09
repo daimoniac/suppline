@@ -34,7 +34,7 @@ func (q *capturingQueue) Fail(ctx context.Context, taskID string, err error) err
 	return nil
 }
 func (q *capturingQueue) GetQueueDepth(ctx context.Context) (int, error) { return 0, nil }
-func (q *capturingQueue) HasPendingTask(ctx context.Context, digest string) (bool, error) {
+func (q *capturingQueue) HasPendingTask(ctx context.Context, repository, digest string) (bool, error) {
 	return false, nil
 }
 func (q *capturingQueue) Close() error { return nil }

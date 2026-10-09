@@ -41,8 +41,14 @@ type StateStore interface {
 	// RecordScan saves scan results with full vulnerability details
 	RecordScan(ctx context.Context, record *ScanRecord) error
 
-	// GetLastScan retrieves the most recent scan for a digest with vulnerabilities
+	// GetLastScan retrieves the most recent scan for a digest with vulnerabilities,
+	// across every repository that stores that digest.
 	GetLastScan(ctx context.Context, digest string) (*ScanRecord, error)
+
+	// GetLastRepositoryScan retrieves the most recent scan for a digest in one
+	// repository. A scan of the same digest in another repository does not count:
+	// attestations are published into the repository that was scanned.
+	GetLastRepositoryScan(ctx context.Context, repository, digest string) (*ScanRecord, error)
 
 	// ListDueForRescan returns digests that need rescanning (where next_scan_at < now)
 	ListDueForRescan(ctx context.Context, interval time.Duration) ([]string, error)

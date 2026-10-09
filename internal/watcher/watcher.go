@@ -312,8 +312,10 @@ func (w *watcherImpl) shouldScanImage(
 	currentDigest string,
 	rescanInterval time.Duration,
 ) (shouldScan bool, reason string, isRescan bool, err error) {
-	// Step 1: Check scan history
-	lastScan, err := w.stateStore.GetLastScan(ctx, currentDigest)
+	// Step 1: Check scan history for this repository. The same digest in another
+	// repository still needs its own scan: cosign attestations are attached to
+	// the repository, so a signature on the other mirror does not admit this one.
+	lastScan, err := w.stateStore.GetLastRepositoryScan(ctx, repo, currentDigest)
 	if err != nil {
 		if errors.Is(err, statestore.ErrScanNotFound) {
 			// isRescan=false but this will be marked as IsFirstScan=true in caller
@@ -337,7 +339,7 @@ func (w *watcherImpl) shouldScanImage(
 
 	// Step 4: Check for pending manual rescan tasks before skipping
 	// Only check this when we would otherwise skip due to rescan interval
-	hasPendingRescan, err := w.taskQueue.HasPendingTask(ctx, currentDigest)
+	hasPendingRescan, err := w.taskQueue.HasPendingTask(ctx, repo, currentDigest)
 	if err != nil {
 		w.logger.Warn("failed to check for pending rescan tasks, proceeding with skip decision",
 			"digest", currentDigest,
@@ -393,7 +395,7 @@ func (w *watcherImpl) processTag(ctx context.Context, repo, tag string) error {
 	// Log decision with structured fields and record metrics
 	if shouldScan {
 		// Get last scan info for additional context in logs
-		lastScan, scanErr := w.stateStore.GetLastScan(ctx, currentDigest)
+		lastScan, scanErr := w.stateStore.GetLastRepositoryScan(ctx, repo, currentDigest)
 
 		// Build log attributes
 		attrs := []any{
@@ -422,7 +424,7 @@ func (w *watcherImpl) processTag(ctx context.Context, repo, tag string) error {
 		w.logger.Debug("enqueuing scan task", attrs...)
 	} else {
 		// For skip decisions, get last scan info to include in logs
-		lastScan, scanErr := w.stateStore.GetLastScan(ctx, currentDigest)
+		lastScan, scanErr := w.stateStore.GetLastRepositoryScan(ctx, repo, currentDigest)
 
 		// Build log attributes
 		attrs := []any{

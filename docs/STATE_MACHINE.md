@@ -17,7 +17,7 @@ stateDiagram-v2
 
     Watched --> Queued : never scanned · digest changed<br/>interval elapsed · API rescan · startup replay
 
-    Queued --> Scanning : worker dequeue (deduped by digest)
+    Queued --> Scanning : worker dequeue (deduped by repository and digest)
 
     Scanning --> Retrying : transient error
     Retrying --> Scanning : exponential backoff
@@ -64,7 +64,7 @@ stateDiagram-v2
 
 ```mermaid
 flowchart TD
-    A[Tag digest from local registry] --> B{Scan record for this digest?}
+    A[Tag digest from local registry] --> B{Scan record for this repository and digest?}
     B -- no --> E[Enqueue: IsFirstScan]
     B -- yes --> C{Digest matches record?}
     C -- no --> F[Enqueue: fresh scan]

@@ -65,7 +65,7 @@ func (m *mockQueue) GetQueueDepth(ctx context.Context) (int, error) {
 	return len(m.tasks), nil
 }
 
-func (m *mockQueue) HasPendingTask(ctx context.Context, digest string) (bool, error) {
+func (m *mockQueue) HasPendingTask(ctx context.Context, repository, digest string) (bool, error) {
 	// For testing purposes, always return false (no pending tasks)
 	return false, nil
 }
@@ -289,5 +289,3 @@ func TestDefaultConfig(t *testing.T) {
 		t.Errorf("expected retry backoff 10s, got %v", config.RetryBackoff)
 	}
 }
-
-

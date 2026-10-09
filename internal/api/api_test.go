@@ -43,6 +43,10 @@ func (m *mockStateStore) RecordScan(ctx context.Context, record *statestore.Scan
 	return nil
 }
 
+func (m *mockStateStore) GetLastRepositoryScan(ctx context.Context, repository, digest string) (*statestore.ScanRecord, error) {
+	return m.GetLastScan(ctx, digest)
+}
+
 func (m *mockStateStore) GetLastScan(ctx context.Context, digest string) (*statestore.ScanRecord, error) {
 	// Return a minimal scan record for testing
 	return &statestore.ScanRecord{
