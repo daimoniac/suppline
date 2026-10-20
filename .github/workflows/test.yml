@@ -83,8 +83,10 @@ jobs:
 
       # Pinned: building from master made the enforced rule set drift with
       # upstream, so untouched code could start failing on any given day.
+      # v2.13.2 cannot read Go 1.27.2 export data (version 5).
+      # v2.14.0 can. v2.15.0 newly flags an existing channel receive.
       - name: Run golangci-lint
         uses: golangci/golangci-lint-action@v9
         with:
-          version: v2.13.2
+          version: v2.14.0
           args: --timeout=5m
