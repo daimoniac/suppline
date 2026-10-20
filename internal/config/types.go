@@ -68,10 +68,11 @@ type StateStoreConfig struct {
 
 // APIConfig configures the HTTP API server
 type APIConfig struct {
-	Enabled  bool
-	Port     int
-	APIKey   string
-	ReadOnly bool
+	Enabled     bool
+	Port        int
+	APIKey      string
+	ReadOnly    bool
+	AllowNoAuth bool // explicit opt-in; empty API key otherwise refuses to start
 }
 
 // ObservabilityConfig configures logging and metrics

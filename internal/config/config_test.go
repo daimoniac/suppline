@@ -239,6 +239,73 @@ func TestValidate(t *testing.T) {
 			errMsg:  "attestation key is required",
 		},
 		{
+			name: "enabled API without key",
+			config: &Config{
+				RegsyncPath: "suppline.yml",
+				Scanner: ScannerConfig{
+					ServerAddr: "localhost:4954",
+				},
+				StateStore: StateStoreConfig{
+					Type:       "sqlite",
+					SQLitePath: "test.db",
+				},
+				Attestation: AttestationConfig{
+					KeyBased: struct {
+						Key string
+					}{
+						Key: "dGVzdC1rZXk=",
+					},
+				},
+				API: APIConfig{Enabled: true},
+			},
+			wantErr: true,
+			errMsg:  "SUPPLINE_API_KEY is required",
+		},
+		{
+			name: "enabled API with explicit no-auth opt-in",
+			config: &Config{
+				RegsyncPath: "suppline.yml",
+				Scanner: ScannerConfig{
+					ServerAddr: "localhost:4954",
+				},
+				StateStore: StateStoreConfig{
+					Type:       "sqlite",
+					SQLitePath: "test.db",
+				},
+				Attestation: AttestationConfig{
+					KeyBased: struct {
+						Key string
+					}{
+						Key: "dGVzdC1rZXk=",
+					},
+				},
+				API: APIConfig{Enabled: true, AllowNoAuth: true},
+			},
+			wantErr: false,
+		},
+		{
+			name: "enabled API with key",
+			config: &Config{
+				RegsyncPath: "suppline.yml",
+				Scanner: ScannerConfig{
+					ServerAddr: "localhost:4954",
+				},
+				StateStore: StateStoreConfig{
+					Type:       "sqlite",
+					SQLitePath: "test.db",
+				},
+				Attestation: AttestationConfig{
+					KeyBased: struct {
+						Key string
+					}{
+						Key: "dGVzdC1rZXk=",
+					},
+				},
+				API: APIConfig{Enabled: true, APIKey: "secret"},
+			},
+			wantErr: false,
+		},
+		{
 			name: "keyless without OIDC config",
 			config: &Config{
 				RegsyncPath: "suppline.yml",

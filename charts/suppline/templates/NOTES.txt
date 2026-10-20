@@ -57,6 +57,12 @@ Registry: bring-your-own (registry.enabled=false). Ensure SUPPLINE_REGISTRY_* se
 suppline.yml targets are set. Optional lab registry: --set registry.enabled=true
 {{- end }}
 
+{{- if not (hasKey .Values.backend.secrets "SUPPLINE_API_KEY") }}
+
+WARNING: SUPPLINE_API_KEY is not set. The API refuses to start unless you set
+backend.secrets.SUPPLINE_API_KEY or SUPPLINE_ALLOW_NO_AUTH=1.
+{{- end }}
+
 {{- if not .Values.backend.attestationKey.enabled }}
 
 WARNING: Attestation signing is disabled. To enable it, set:

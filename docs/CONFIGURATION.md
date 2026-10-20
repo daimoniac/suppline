@@ -98,8 +98,9 @@ succeeds.
 |----------|------|---------|-------------|
 | `API_ENABLED` | bool | `true` | Enable HTTP API server |
 | `API_PORT` | int | `8080` | API server port |
-| `SUPPLINE_API_KEY` | string | `` | Optional API key for authentication |
-| `API_READ_ONLY` | bool | `false` | Disable write operations (POST endpoints) |
+| `SUPPLINE_API_KEY` | string | `` | Required when the API is enabled. The cluster-inventory webhook and cluster list stay unauthenticated |
+| `SUPPLINE_ALLOW_NO_AUTH` | bool | `false` | Explicit opt-in to start the API with authentication disabled. Isolated evaluation only |
+| `API_READ_ONLY` | bool | `false` | Disable write operations, including repository and tag rescan |
 
 ### Observability
 

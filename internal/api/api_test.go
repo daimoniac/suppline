@@ -763,6 +763,8 @@ func TestActionEndpoints_ReadOnlyMode(t *testing.T) {
 	}{
 		{"TriggerScan", "/api/v1/scans/trigger", `{"digest": "sha256:abc123"}`},
 		{"ReevaluatePolicy", "/api/v1/policy/reevaluate", `{}`},
+		{"RescanRepository", "/api/v1/repositories/library/agenttest/rescan", ``},
+		{"RescanTag", "/api/v1/repositories/library/agenttest/tags/v1.0.0/rescan", ``},
 	}
 
 	for _, tt := range tests {

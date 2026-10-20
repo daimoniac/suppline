@@ -98,6 +98,10 @@ func NewAPIServerWithCatalogAndEnqueuer(cfg *config.APIConfig, attestationCfg *c
 		logger:            logger,
 	}
 
+	if cfg != nil && strings.TrimSpace(cfg.APIKey) == "" && logger != nil {
+		logger.Warn("API authentication is disabled because SUPPLINE_API_KEY is empty")
+	}
+
 	api.setupRoutes()
 
 	// Wrap router with global CORS handler

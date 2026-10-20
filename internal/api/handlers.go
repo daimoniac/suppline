@@ -1235,6 +1235,10 @@ func (s *APIServer) handleRepositoriesRouter(w http.ResponseWriter, r *http.Requ
 	// Check if this is a rescan request
 	if strings.Contains(path, "/rescan") {
 		if r.Method == http.MethodPost {
+			if s.config.ReadOnly {
+				s.respondError(w, http.StatusForbidden, "API is in read-only mode")
+				return
+			}
 			// Check if it's a tag rescan or repository rescan
 			if strings.Contains(path, "/tags/") {
 				s.handleRescanTag(w, r)
