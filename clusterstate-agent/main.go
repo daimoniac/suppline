@@ -17,6 +17,7 @@ import (
 
 	"github.com/joho/godotenv"
 
+	batchv1 "k8s.io/api/batch/v1"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/informers"
@@ -52,10 +53,18 @@ type seenEntry struct {
 type inventoryBuffer struct {
 	mu   sync.Mutex
 	seen map[string]seenEntry
+	// blocked identities (namespace, imageRef, tag) were reported by a completed
+	// workload that is past retention and are not part of the live inventory.
+	// Pod and Event observers must not add them back; the 24h stale TTL would
+	// otherwise keep the image in the next snapshots.
+	blocked map[string]struct{}
 }
 
 func newInventoryBuffer() *inventoryBuffer {
-	return &inventoryBuffer{seen: make(map[string]seenEntry)}
+	return &inventoryBuffer{
+		seen:    make(map[string]seenEntry),
+		blocked: make(map[string]struct{}),
+	}
 }
 
 func imageKey(img clusterImageInput) string {
@@ -113,10 +122,27 @@ func normalizeImagesPreferDigests(images []clusterImageInput) []clusterImageInpu
 }
 
 func (b *inventoryBuffer) Add(img clusterImageInput) bool {
-	key := imageKey(img)
 	b.mu.Lock()
 	defer b.mu.Unlock()
 
+	if _, blocked := b.blocked[imageIdentityKey(img)]; blocked {
+		return false
+	}
+	return b.addLocked(img)
+}
+
+// Observe records an image from a live pod. A current pod is authoritative, so
+// this clears any completed-workload block for the same identity.
+func (b *inventoryBuffer) Observe(img clusterImageInput) bool {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+
+	delete(b.blocked, imageIdentityKey(img))
+	return b.addLocked(img)
+}
+
+func (b *inventoryBuffer) addLocked(img clusterImageInput) bool {
+	key := imageKey(img)
 	if existing, ok := b.seen[key]; ok {
 		updated := existing.img
 		tagEnriched := false
@@ -130,6 +156,48 @@ func (b *inventoryBuffer) Add(img clusterImageInput) bool {
 
 	b.seen[key] = seenEntry{img: img, lastSeen: time.Now().UTC()}
 	return true
+}
+
+// ReconcileExpired removes buffered images whose identity is in expired and not
+// in live, and remembers those identities so later pod or event observations
+// cannot resurrect them. Live identities are unblocked. Returns true when at
+// least one buffered image was removed.
+func (b *inventoryBuffer) ReconcileExpired(expired, live []clusterImageInput) bool {
+	liveIDs := make(map[string]struct{}, len(live))
+	for _, img := range live {
+		liveIDs[imageIdentityKey(img)] = struct{}{}
+	}
+	expiredIDs := make(map[string]struct{}, len(expired))
+	for _, img := range expired {
+		id := imageIdentityKey(img)
+		if _, ok := liveIDs[id]; ok {
+			continue
+		}
+		expiredIDs[id] = struct{}{}
+	}
+
+	b.mu.Lock()
+	defer b.mu.Unlock()
+
+	for id := range liveIDs {
+		delete(b.blocked, id)
+	}
+	for id := range expiredIDs {
+		b.blocked[id] = struct{}{}
+	}
+	if len(expiredIDs) == 0 {
+		return false
+	}
+
+	changed := false
+	for key, entry := range b.seen {
+		if _, drop := expiredIDs[imageIdentityKey(entry.img)]; !drop {
+			continue
+		}
+		delete(b.seen, key)
+		changed = true
+	}
+	return changed
 }
 
 func (b *inventoryBuffer) Snapshot() []clusterImageInput {
@@ -258,8 +326,17 @@ func runWatch(
 		return fmt.Errorf("IMAGE_STALE_AFTER must be > 0")
 	}
 
+	completedRetention := completedWorkloadRetention(logger)
+	if completedRetention <= 0 {
+		return fmt.Errorf("COMPLETED_WORKLOAD_RETENTION must be > 0")
+	}
+	sweepEvery := completedRetention
+	if sweepEvery > time.Minute {
+		sweepEvery = time.Minute
+	}
+
 	buffer := newInventoryBuffer()
-	if _, err := refreshInventoryBuffer(ctx, kubeClient, excludedNS, buffer, staleTTL, logger); err != nil {
+	if _, err := refreshInventoryBuffer(ctx, kubeClient, excludedNS, buffer, staleTTL, completedRetention, logger); err != nil {
 		return fmt.Errorf("initial inventory refresh: %w", err)
 	}
 	watchStartedAt := time.Now().UTC()
@@ -282,7 +359,7 @@ func runWatch(
 			if !ok {
 				return
 			}
-			if collectPodObservation(pod, excludedNS, buffer) {
+			if collectPodObservation(pod, excludedNS, buffer, completedRetention) {
 				signalSend()
 			}
 		},
@@ -291,7 +368,7 @@ func runWatch(
 			if !ok {
 				return
 			}
-			if collectPodObservation(pod, excludedNS, buffer) {
+			if collectPodObservation(pod, excludedNS, buffer, completedRetention) {
 				signalSend()
 			}
 		},
@@ -328,6 +405,9 @@ func runWatch(
 
 	attemptSend := func(force bool) error {
 		images := buffer.Snapshot()
+		if images == nil {
+			images = []clusterImageInput{}
+		}
 		if len(images) == 0 && !force {
 			logger.Info("skipping inventory send because snapshot is empty")
 			return nil
@@ -356,8 +436,16 @@ func runWatch(
 	defer heartbeatTicker.Stop()
 	retryTicker := time.NewTicker(retryInterval)
 	defer retryTicker.Stop()
+	sweepTicker := time.NewTicker(sweepEvery)
+	defer sweepTicker.Stop()
 
-	logger.Info("watch mode started", "refresh_interval", refreshInterval.String(), "retry_interval", retryInterval.String(), "heartbeat_interval", heartbeatInterval.String(), "stale_ttl", staleTTL.String())
+	logger.Info("watch mode started",
+		"refresh_interval", refreshInterval.String(),
+		"retry_interval", retryInterval.String(),
+		"heartbeat_interval", heartbeatInterval.String(),
+		"stale_ttl", staleTTL.String(),
+		"completed_workload_retention", completedRetention.String(),
+	)
 
 	for {
 		select {
@@ -397,8 +485,26 @@ func runWatch(
 			}
 			pendingSend = false
 			pendingForceSend = false
+		case <-sweepTicker.C:
+			dropped, err := dropExpiredCompletedWorkloads(ctx, kubeClient, excludedNS, buffer, completedRetention, logger)
+			if err != nil {
+				logger.Warn("failed to drop expired completed workloads", "error", err)
+				continue
+			}
+			if !dropped {
+				continue
+			}
+
+			pendingSend = true
+			pendingForceSend = len(buffer.Snapshot()) == 0
+			if err := attemptSend(pendingForceSend); err != nil {
+				logger.Warn("failed to send inventory snapshot after completed workload expiry; will retry", "error", err)
+				continue
+			}
+			pendingSend = false
+			pendingForceSend = false
 		case <-refreshTicker.C:
-			changed, err := refreshInventoryBuffer(ctx, kubeClient, excludedNS, buffer, staleTTL, logger)
+			changed, err := refreshInventoryBuffer(ctx, kubeClient, excludedNS, buffer, staleTTL, completedRetention, logger)
 			if err != nil {
 				logger.Warn("failed to refresh watched inventory snapshot", "error", err)
 				continue
@@ -411,8 +517,8 @@ func runWatch(
 			}
 
 			pendingSend = true
-			pendingForceSend = false
-			if err := attemptSend(false); err != nil {
+			pendingForceSend = len(buffer.Snapshot()) == 0
+			if err := attemptSend(pendingForceSend); err != nil {
 				logger.Warn("failed to send refreshed inventory snapshot; will retry", "error", err)
 				continue
 			}
@@ -450,8 +556,11 @@ func buildImageIDMap(pod *corev1.Pod) map[string]string {
 	return m
 }
 
-func collectPodObservation(pod *corev1.Pod, excludedNS map[string]bool, buffer *inventoryBuffer) bool {
+func collectPodObservation(pod *corev1.Pod, excludedNS map[string]bool, buffer *inventoryBuffer, retention time.Duration) bool {
 	if pod == nil || excludedNS[pod.Namespace] {
+		return false
+	}
+	if !includePodReports(pod, time.Now().UTC(), retention) {
 		return false
 	}
 
@@ -467,7 +576,7 @@ func collectPodObservation(pod *corev1.Pod, excludedNS map[string]bool, buffer *
 
 	for _, c := range pod.Spec.EphemeralContainers {
 		imageRef, tag, digest := parseImageRef(c.Image, imageIDs[c.Name])
-		if buffer.Add(clusterImageInput{Namespace: pod.Namespace, ImageRef: imageRef, Tag: tag, Digest: digest}) {
+		if buffer.Observe(clusterImageInput{Namespace: pod.Namespace, ImageRef: imageRef, Tag: tag, Digest: digest}) {
 			changed = true
 		}
 	}
@@ -615,7 +724,7 @@ func addObservedContainers(buffer *inventoryBuffer, namespace string, containers
 	changed := false
 	for _, c := range containers {
 		imageRef, tag, digest := parseImageRef(c.Image, imageIDByContainer[c.Name])
-		if buffer.Add(clusterImageInput{Namespace: namespace, ImageRef: imageRef, Tag: tag, Digest: digest}) {
+		if buffer.Observe(clusterImageInput{Namespace: namespace, ImageRef: imageRef, Tag: tag, Digest: digest}) {
 			changed = true
 		}
 	}
@@ -624,54 +733,82 @@ func addObservedContainers(buffer *inventoryBuffer, namespace string, containers
 
 func collectClusterInventory(
 	ctx context.Context,
-	kubeClient *kubernetes.Clientset,
+	kubeClient kubernetes.Interface,
 	excludedNS map[string]bool,
+	retention time.Duration,
 	logger *slog.Logger,
-) ([]clusterImageInput, error) {
+) (images, expired []clusterImageInput, err error) {
 	// --- List all pods across all namespaces ---
 	podList, err := kubeClient.CoreV1().Pods("").List(ctx, metav1.ListOptions{})
 	if err != nil {
-		return nil, fmt.Errorf("list pods: %w", err)
+		return nil, nil, fmt.Errorf("list pods: %w", err)
 	}
-	logger.Info("listed pods", "total", len(podList.Items))
+	logger.Debug("listed pods", "total", len(podList.Items))
 
-	// --- Collect images from running pods and workload definitions ---
-	images := collectImages(podList.Items, excludedNS, logger)
-	logger.Info("collected images from pods", "count", len(images))
+	// --- Collect images from pods and workload definitions ---
+	podImages, expiredPods := collectImages(podList.Items, excludedNS, retention, logger)
+	logger.Debug("collected images from pods", "count", len(podImages), "expired", len(expiredPods))
 
 	// --- Collect images from Deployments, StatefulSets, DaemonSets, Jobs, CronJobs ---
-	workloadImages, err := collectWorkloadImages(ctx, kubeClient, excludedNS, logger)
+	workloadImages, expiredWorkloads, err := collectWorkloadImages(ctx, kubeClient, excludedNS, retention, logger)
 	if err != nil {
 		logger.Warn("failed to collect workload images", "error", err)
 	} else {
-		logger.Info("collected images from workloads", "count", len(workloadImages))
+		logger.Debug("collected images from workloads", "count", len(workloadImages), "expired", len(expiredWorkloads))
 	}
 
 	// --- Merge and deduplicate ---
-	images = mergeImages(images, workloadImages)
-	logger.Info("collected unique images total", "count", len(images))
-	return images, nil
+	images = mergeImages(podImages, workloadImages)
+	expired = mergeImages(expiredPods, expiredWorkloads)
+	logger.Debug("collected unique images total", "count", len(images), "expired", len(expired))
+	return images, expired, nil
 }
 
 func refreshInventoryBuffer(
 	ctx context.Context,
-	kubeClient *kubernetes.Clientset,
+	kubeClient kubernetes.Interface,
 	excludedNS map[string]bool,
 	buffer *inventoryBuffer,
 	staleTTL time.Duration,
+	retention time.Duration,
 	logger *slog.Logger,
 ) (bool, error) {
-	images, err := collectClusterInventory(ctx, kubeClient, excludedNS, logger)
+	images, expired, err := collectClusterInventory(ctx, kubeClient, excludedNS, retention, logger)
 	if err != nil {
 		return false, err
 	}
 
 	changed := buffer.TouchAll(images)
+	if buffer.ReconcileExpired(expired, images) {
+		changed = true
+	}
 	if buffer.Evict(staleTTL) {
 		changed = true
 	}
-	logger.Info("inventory buffer refreshed", "images", len(images), "changed", changed)
+	logger.Info("inventory buffer refreshed", "images", len(images), "expired", len(expired), "changed", changed)
 	return changed, nil
+}
+
+// dropExpiredCompletedWorkloads removes buffered images that belong only to
+// completed or failed Jobs (and their terminal Pods) past retention. The pod
+// watcher and IMAGE_STALE_AFTER window must not keep those images alive.
+func dropExpiredCompletedWorkloads(
+	ctx context.Context,
+	kubeClient kubernetes.Interface,
+	excludedNS map[string]bool,
+	buffer *inventoryBuffer,
+	retention time.Duration,
+	logger *slog.Logger,
+) (bool, error) {
+	images, expired, err := collectClusterInventory(ctx, kubeClient, excludedNS, retention, logger)
+	if err != nil {
+		return false, err
+	}
+	dropped := buffer.ReconcileExpired(expired, images)
+	if dropped {
+		logger.Info("removed expired completed workload images", "remaining", len(buffer.Snapshot()))
+	}
+	return dropped, nil
 }
 
 func parseDurationEnv(key string, fallback time.Duration, logger *slog.Logger) time.Duration {
@@ -685,6 +822,10 @@ func parseDurationEnv(key string, fallback time.Duration, logger *slog.Logger) t
 		return fallback
 	}
 	return d
+}
+
+func completedWorkloadRetention(logger *slog.Logger) time.Duration {
+	return parseDurationEnv("COMPLETED_WORKLOAD_RETENTION", 60*time.Minute, logger)
 }
 
 func parseWatchRetryInterval(logger *slog.Logger) time.Duration {
@@ -755,22 +896,43 @@ func buildKubeClient() (*kubernetes.Clientset, error) {
 }
 
 // collectImages iterates pods, builds image entries and deduplicates them.
-func collectImages(pods []corev1.Pod, excludedNS map[string]bool, logger *slog.Logger) []clusterImageInput {
+// Terminal Job-owned Pods are included only until completion plus retention;
+// older ones are returned in expired so the inventory buffer can drop them.
+func collectImages(pods []corev1.Pod, excludedNS map[string]bool, retention time.Duration, logger *slog.Logger) (images, expired []clusterImageInput) {
+	now := time.Now().UTC()
 	seen := make(map[string]struct{})
-	var images []clusterImageInput
+	expiredSeen := make(map[string]struct{})
 
-	for _, pod := range pods {
+	for i := range pods {
+		pod := &pods[i]
 		if excludedNS[pod.Namespace] {
 			logger.Debug("skipping excluded namespace", "namespace", pod.Namespace, "pod", pod.Name)
 			continue
 		}
 
-		imageIDs := buildImageIDMap(&pod)
-		images = appendUniquePodContainerImages(images, seen, pod.Namespace, pod.Spec.InitContainers, imageIDs)
-		images = appendUniquePodContainerImages(images, seen, pod.Namespace, pod.Spec.Containers, imageIDs)
-		images = appendUniquePodEphemeralContainerImages(images, seen, pod.Namespace, pod.Spec.EphemeralContainers, imageIDs)
+		if expiredTerminalJobPod(pod, now, retention) {
+			completedAt, _ := podCompletionTime(pod)
+			logger.Debug("skipping terminal job pod past retention",
+				"namespace", pod.Namespace,
+				"pod", pod.Name,
+				"completed_at", completedAt,
+				"retention", retention.String(),
+			)
+			expired = appendPodImages(expired, expiredSeen, pod)
+			continue
+		}
+
+		images = appendPodImages(images, seen, pod)
 	}
 
+	return images, expired
+}
+
+func appendPodImages(images []clusterImageInput, seen map[string]struct{}, pod *corev1.Pod) []clusterImageInput {
+	imageIDs := buildImageIDMap(pod)
+	images = appendUniquePodContainerImages(images, seen, pod.Namespace, pod.Spec.InitContainers, imageIDs)
+	images = appendUniquePodContainerImages(images, seen, pod.Namespace, pod.Spec.Containers, imageIDs)
+	images = appendUniquePodEphemeralContainerImages(images, seen, pod.Namespace, pod.Spec.EphemeralContainers, imageIDs)
 	return images
 }
 
@@ -911,8 +1073,10 @@ func extractDigestFromImageID(imageID string) string {
 }
 
 // collectWorkloadImages gathers images from common workload controllers.
-func collectWorkloadImages(ctx context.Context, kubeClient kubernetes.Interface, excludedNS map[string]bool, logger *slog.Logger) ([]clusterImageInput, error) {
-	var images []clusterImageInput
+// Active Jobs are included. Completed and failed Jobs are included only until
+// completion time plus retention. CronJob templates are always included.
+func collectWorkloadImages(ctx context.Context, kubeClient kubernetes.Interface, excludedNS map[string]bool, retention time.Duration, logger *slog.Logger) (images, expired []clusterImageInput, err error) {
+	now := time.Now().UTC()
 
 	// Collect from Deployments
 	deployments, err := kubeClient.AppsV1().Deployments("").List(ctx, metav1.ListOptions{})
@@ -966,20 +1130,32 @@ func collectWorkloadImages(ctx context.Context, kubeClient kubernetes.Interface,
 		}
 	}
 
-	// Collect from Jobs
+	// Collect from Jobs. Finished Jobs stay only until completion plus retention.
 	jobs, err := kubeClient.BatchV1().Jobs("").List(ctx, metav1.ListOptions{})
 	if err != nil {
 		logger.Warn("failed to list jobs", "error", err)
 	} else {
-		for _, job := range jobs.Items {
+		for i := range jobs.Items {
+			job := &jobs.Items[i]
 			if excludedNS[job.Namespace] {
 				continue
 			}
-			images = appendWorkloadPodSpecImages(images, job.Namespace, job.Spec.Template.Spec)
+			finished, completedAt := jobCompletion(job)
+			if !finished || withinCompletedRetention(completedAt, now, retention) {
+				images = appendWorkloadPodSpecImages(images, job.Namespace, job.Spec.Template.Spec)
+				continue
+			}
+			logger.Debug("skipping completed job past retention",
+				"namespace", job.Namespace,
+				"job", job.Name,
+				"completed_at", completedAt,
+				"retention", retention.String(),
+			)
+			expired = appendWorkloadPodSpecImages(expired, job.Namespace, job.Spec.Template.Spec)
 		}
 	}
 
-	// Collect from CronJobs
+	// CronJob templates are the desired workload, not a completed run.
 	cronJobs, err := kubeClient.BatchV1().CronJobs("").List(ctx, metav1.ListOptions{})
 	if err != nil {
 		logger.Warn("failed to list cronjobs", "error", err)
@@ -992,7 +1168,124 @@ func collectWorkloadImages(ctx context.Context, kubeClient kubernetes.Interface,
 		}
 	}
 
-	return images, nil
+	return images, expired, nil
+}
+
+// jobCompletion reports whether a Job has succeeded or failed and the time it
+// reached that state. Successful Jobs prefer status.completionTime. Failed
+// Jobs use the Failed condition lastTransitionTime. A finished Job with no
+// timestamp returns a zero time so callers treat the retention window as elapsed.
+func jobCompletion(job *batchv1.Job) (finished bool, completedAt time.Time) {
+	if job == nil {
+		return false, time.Time{}
+	}
+
+	var failedAt time.Time
+	failed := false
+	for _, cond := range job.Status.Conditions {
+		if cond.Status != corev1.ConditionTrue {
+			continue
+		}
+		switch cond.Type {
+		case batchv1.JobComplete:
+			if job.Status.CompletionTime != nil && !job.Status.CompletionTime.IsZero() {
+				return true, job.Status.CompletionTime.Time.UTC()
+			}
+			if !cond.LastTransitionTime.IsZero() {
+				return true, cond.LastTransitionTime.Time.UTC()
+			}
+			return true, time.Time{}
+		case batchv1.JobFailed:
+			failed = true
+			if !cond.LastTransitionTime.IsZero() {
+				failedAt = cond.LastTransitionTime.Time.UTC()
+			}
+		}
+	}
+	if failed {
+		return true, failedAt
+	}
+	return false, time.Time{}
+}
+
+func withinCompletedRetention(completedAt, now time.Time, retention time.Duration) bool {
+	if completedAt.IsZero() || retention <= 0 {
+		return false
+	}
+	return now.Before(completedAt.Add(retention))
+}
+
+func isJobOwnedPod(pod *corev1.Pod) bool {
+	if pod == nil {
+		return false
+	}
+	for _, ref := range pod.OwnerReferences {
+		if ref.Kind != "Job" {
+			continue
+		}
+		if ref.APIVersion == "" || strings.HasPrefix(ref.APIVersion, "batch/") {
+			return true
+		}
+	}
+	return false
+}
+
+func isTerminalPodPhase(phase corev1.PodPhase) bool {
+	return phase == corev1.PodSucceeded || phase == corev1.PodFailed
+}
+
+func podCompletionTime(pod *corev1.Pod) (time.Time, bool) {
+	if pod == nil {
+		return time.Time{}, false
+	}
+
+	var latest time.Time
+	note := func(state corev1.ContainerState) {
+		if state.Terminated == nil || state.Terminated.FinishedAt.IsZero() {
+			return
+		}
+		finished := state.Terminated.FinishedAt.Time.UTC()
+		if finished.After(latest) {
+			latest = finished
+		}
+	}
+	for _, cs := range pod.Status.InitContainerStatuses {
+		note(cs.State)
+	}
+	for _, cs := range pod.Status.ContainerStatuses {
+		note(cs.State)
+	}
+	for _, cs := range pod.Status.EphemeralContainerStatuses {
+		note(cs.State)
+	}
+	if latest.IsZero() {
+		return time.Time{}, false
+	}
+	return latest, true
+}
+
+// includePodReports reports whether a pod's images belong in the live inventory.
+// Non-Job pods are always included. Terminal Pods owned by a Job are kept only
+// until their completion time plus retention.
+func includePodReports(pod *corev1.Pod, now time.Time, retention time.Duration) bool {
+	if pod == nil {
+		return false
+	}
+	if !isJobOwnedPod(pod) || !isTerminalPodPhase(pod.Status.Phase) {
+		return true
+	}
+	completedAt, ok := podCompletionTime(pod)
+	if !ok {
+		return false
+	}
+	return withinCompletedRetention(completedAt, now, retention)
+}
+
+func expiredTerminalJobPod(pod *corev1.Pod, now time.Time, retention time.Duration) bool {
+	if pod == nil || !isJobOwnedPod(pod) || !isTerminalPodPhase(pod.Status.Phase) {
+		return false
+	}
+	return !includePodReports(pod, now, retention)
 }
 
 func appendWorkloadPodSpecImages(images []clusterImageInput, namespace string, spec corev1.PodSpec) []clusterImageInput {

@@ -50,6 +50,8 @@ spec:
           value: {{ .Values.watchFlushInterval | quote }}
         - name: WATCH_HEARTBEAT_INTERVAL
           value: {{ .Values.watchHeartbeatInterval | quote }}
+        - name: COMPLETED_WORKLOAD_RETENTION
+          value: {{ .Values.completedWorkloadRetention | quote }}
         {{- if .Values.suppline.apiKey }}
         - name: SUPPLINE_API_KEY
           valueFrom:

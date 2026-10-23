@@ -7,13 +7,15 @@ Kubernetes Deployment that continuously reports container image inventory observ
 While running, the agent:
 
 1. Lists all pods across all namespaces using in-cluster RBAC (read-only `pods` permission).
-2. Collects image references from Deployments, StatefulSets, DaemonSets, Jobs, and CronJobs.
+2. Collects image references from Deployments, StatefulSets, DaemonSets, Jobs, and CronJobs. Active Jobs are always included. Completed and failed Jobs, and terminal Pods they own, stay only until completion time plus `COMPLETED_WORKLOAD_RETENTION` (default `60m`). CronJob templates are always included.
 3. Skips pods and workloads in excluded namespaces (configurable, defaults to `kube-system`, `kube-public`, `kube-node-lease`).
 4. Extracts image reference, tag, and runtime digest from pod status for regular, init, and ephemeral containers (digests only available for running pods).
 5. Deduplicates entries by `(namespace, image_ref, digest)`.
 6. POSTs periodic snapshots to `POST /api/v1/webhook/cluster-inventory` on the suppline API.
 
 This ensures suppline discovers images from scheduled jobs, pending deployments, and other workload definitions—even if no pods are currently running from those resources—while also capturing short-lived runtime workloads via pod and Event informers.
+
+When a completed or failed Job passes its retention window, its images are removed from the inventory buffer and a new snapshot is sent, even if a pod update or the 24-hour stale window still has a recent observation. The same image stays when a Deployment, CronJob, or other live workload still references it.
 
 ## Prerequisites
 
@@ -53,6 +55,7 @@ The agent loads configuration from a `.env` file (if present) before checking en
 | `WATCH_RETRY_INTERVAL` | no | `30s` | Interval for retrying failed inventory uploads |
 | `WATCH_HEARTBEAT_INTERVAL` | no | `60m` | Maximum interval between inventory uploads, even when no observations changed |
 | `WATCH_REFRESH_INTERVAL` | no | `24h` | Interval for full inventory refresh from pods/workloads |
+| `COMPLETED_WORKLOAD_RETENTION` | no | `60m` | How long to keep completed and failed Jobs, and terminal Pods they own, after completion. CronJob templates are always reported. |
 | `EXCLUDED_NAMESPACES` | no | `kube-system,kube-public,kube-node-lease` | Comma-separated namespaces to skip |
 | `LOG_LEVEL` | no | `info` | `debug` / `info` / `warn` / `error` |
 | `DEBUG_DUMP_PAYLOAD` | no | `false` | If true, logs the full JSON payload before POST |
@@ -64,6 +67,7 @@ The agent loads configuration from a `.env` file (if present) before checking en
 |---|---|---|
 | `watchFlushInterval` | `"30s"` | Interval for retrying failed inventory uploads (maps to `WATCH_FLUSH_INTERVAL`) |
 | `watchHeartbeatInterval` | `"60m"` | Maximum interval between inventory uploads, even when no observations changed |
+| `completedWorkloadRetention` | `"60m"` | How long to keep completed and failed Jobs, and terminal Pods they own, after completion |
 | `replicaCount` | `1` | Deployment replica count |
 | `clusterName` | `""` | **Required** |
 | `suppline.url` | `""` | **Required** |

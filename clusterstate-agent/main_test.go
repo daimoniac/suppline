@@ -8,6 +8,7 @@ import (
 	"time"
 
 	appsv1 "k8s.io/api/apps/v1"
+	batchv1 "k8s.io/api/batch/v1"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/kubernetes/fake"
@@ -218,7 +219,7 @@ func TestCollectPodObservationIncludesAllContainerKinds(t *testing.T) {
 		},
 	}
 
-	changed := collectPodObservation(pod, excluded, buffer)
+	changed := collectPodObservation(pod, excluded, buffer, time.Hour)
 	if !changed {
 		t.Fatalf("expected pod observation to report change")
 	}
@@ -283,7 +284,7 @@ func TestCollectPodObservationExtractsRuntimeDigests(t *testing.T) {
 		},
 	}
 
-	changed := collectPodObservation(pod, excluded, buffer)
+	changed := collectPodObservation(pod, excluded, buffer, time.Hour)
 	if !changed {
 		t.Fatalf("expected pod observation to report change")
 	}
@@ -330,7 +331,7 @@ func TestCollectPodObservationDiscardsRedirectedDigests(t *testing.T) {
 		},
 	}
 
-	changed := collectPodObservation(pod, excluded, buffer)
+	changed := collectPodObservation(pod, excluded, buffer, time.Hour)
 	if !changed {
 		t.Fatalf("expected pod observation to report change")
 	}
@@ -540,9 +541,12 @@ func TestCollectWorkloadImagesIncludesReplicaSets(t *testing.T) {
 	)
 
 	excluded := map[string]bool{"kube-system": true}
-	images, err := collectWorkloadImages(context.Background(), client, excluded, testLogger())
+	images, expired, err := collectWorkloadImages(context.Background(), client, excluded, time.Hour, testLogger())
 	if err != nil {
 		t.Fatalf("collectWorkloadImages returned error: %v", err)
+	}
+	if len(expired) != 0 {
+		t.Fatalf("expected no expired workload images, got %d", len(expired))
 	}
 
 	found := false
@@ -558,4 +562,359 @@ func TestCollectWorkloadImagesIncludesReplicaSets(t *testing.T) {
 	if !found {
 		t.Fatalf("expected ReplicaSet image to be collected")
 	}
+}
+
+func TestCompletedWorkloadRetentionDefault(t *testing.T) {
+	t.Setenv("COMPLETED_WORKLOAD_RETENTION", "")
+	got := completedWorkloadRetention(testLogger())
+	if got != 60*time.Minute {
+		t.Fatalf("expected default retention 60m, got %v", got)
+	}
+}
+
+func TestCollectWorkloadImagesAppliesCompletedRetention(t *testing.T) {
+	const retention = 60 * time.Minute
+	client := fake.NewSimpleClientset(
+		testJob("active", "jobs", "ghcr.io/example/active-job:1", "", 0),
+		testJob("recent-complete", "jobs", "ghcr.io/example/recent-complete:1", batchv1.JobComplete, 5*time.Minute),
+		testJob("old-complete", "jobs", "ghcr.io/example/old-complete:1", batchv1.JobComplete, 3*time.Hour),
+		testJob("recent-failed", "jobs", "ghcr.io/example/recent-failed:1", batchv1.JobFailed, 5*time.Minute),
+		testJob("old-failed", "jobs", "ghcr.io/example/old-failed:1", batchv1.JobFailed, 3*time.Hour),
+		testJob("excluded-old", "kube-system", "ghcr.io/example/excluded:1", batchv1.JobComplete, 3*time.Hour),
+		&batchv1.CronJob{
+			ObjectMeta: metav1.ObjectMeta{Name: "nightly", Namespace: "jobs"},
+			Spec: batchv1.CronJobSpec{
+				Schedule: "0 * * * *",
+				JobTemplate: batchv1.JobTemplateSpec{
+					Spec: batchv1.JobSpec{
+						Template: corev1.PodTemplateSpec{
+							Spec: corev1.PodSpec{
+								Containers: []corev1.Container{{Name: "work", Image: "ghcr.io/example/cron-template:1"}},
+							},
+						},
+					},
+				},
+			},
+		},
+	)
+
+	excluded := map[string]bool{"kube-system": true}
+	images, expired, err := collectWorkloadImages(context.Background(), client, excluded, retention, testLogger())
+	if err != nil {
+		t.Fatalf("collectWorkloadImages returned error: %v", err)
+	}
+
+	included := imageIdentitySet(images)
+	expiredSet := imageIdentitySet(expired)
+	for _, id := range []string{
+		"jobs|ghcr.io/example/active-job|1",
+		"jobs|ghcr.io/example/recent-complete|1",
+		"jobs|ghcr.io/example/recent-failed|1",
+		"jobs|ghcr.io/example/cron-template|1",
+	} {
+		if !included[id] {
+			t.Fatalf("expected %s to be included", id)
+		}
+		if expiredSet[id] {
+			t.Fatalf("did not expect %s to be expired", id)
+		}
+	}
+	for _, id := range []string{
+		"jobs|ghcr.io/example/old-complete|1",
+		"jobs|ghcr.io/example/old-failed|1",
+	} {
+		if included[id] {
+			t.Fatalf("did not expect %s to be included", id)
+		}
+		if !expiredSet[id] {
+			t.Fatalf("expected %s to be expired", id)
+		}
+	}
+	if included["kube-system|ghcr.io/example/excluded|1"] || expiredSet["kube-system|ghcr.io/example/excluded|1"] {
+		t.Fatalf("excluded namespace job leaked into inventory: included=%v expired=%v", included, expiredSet)
+	}
+}
+
+func TestCollectPodObservationAppliesJobPodRetention(t *testing.T) {
+	const retention = 60 * time.Minute
+	excluded := map[string]bool{}
+
+	cases := []struct {
+		name    string
+		pod     *corev1.Pod
+		wantAdd bool
+	}{
+		{
+			name:    "running job pod",
+			pod:     jobPod("running", "ghcr.io/example/active-job:1", corev1.PodRunning, time.Time{}),
+			wantAdd: true,
+		},
+		{
+			name:    "recently succeeded job pod",
+			pod:     jobPod("recent-ok", "ghcr.io/example/recent-complete:1", corev1.PodSucceeded, time.Now().Add(-5*time.Minute)),
+			wantAdd: true,
+		},
+		{
+			name:    "recently failed job pod",
+			pod:     jobPod("recent-fail", "ghcr.io/example/recent-failed:1", corev1.PodFailed, time.Now().Add(-5*time.Minute)),
+			wantAdd: true,
+		},
+		{
+			name:    "old succeeded job pod",
+			pod:     jobPod("old-ok", "ghcr.io/example/old-complete:1", corev1.PodSucceeded, time.Now().Add(-3*time.Hour)),
+			wantAdd: false,
+		},
+		{
+			name:    "old failed job pod",
+			pod:     jobPod("old-fail", "ghcr.io/example/old-failed:1", corev1.PodFailed, time.Now().Add(-3*time.Hour)),
+			wantAdd: false,
+		},
+		{
+			name: "old succeeded pod not owned by a job",
+			pod: &corev1.Pod{
+				ObjectMeta: metav1.ObjectMeta{Name: "bare", Namespace: "jobs"},
+				Spec: corev1.PodSpec{
+					Containers: []corev1.Container{{Name: "work", Image: "ghcr.io/example/bare:1"}},
+				},
+				Status: corev1.PodStatus{Phase: corev1.PodSucceeded},
+			},
+			wantAdd: true,
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			buffer := newInventoryBuffer()
+			changed := collectPodObservation(tc.pod, excluded, buffer, retention)
+			if changed != tc.wantAdd {
+				t.Fatalf("collectPodObservation changed=%v, want %v", changed, tc.wantAdd)
+			}
+			got := imageIdentitySet(buffer.Snapshot())
+			id := "jobs|" + mustImageIdentity(tc.pod.Spec.Containers[0].Image)
+			if tc.wantAdd && !got[id] {
+				t.Fatalf("expected buffer to contain %s, got %v", id, got)
+			}
+			if !tc.wantAdd && len(got) != 0 {
+				t.Fatalf("expected expired job pod to leave the buffer empty, got %v", got)
+			}
+		})
+	}
+}
+
+func TestRefreshRemovesExpiredJobImagesDespiteStaleTTL(t *testing.T) {
+	const (
+		retention = 60 * time.Minute
+		staleTTL  = 24 * time.Hour
+	)
+	excluded := map[string]bool{}
+	oldImage := clusterImageInput{
+		Namespace: "jobs",
+		ImageRef:  "ghcr.io/example/old-job",
+		Tag:       "1",
+		Digest:    "sha256:deadbeef",
+	}
+	apiImage := clusterImageInput{Namespace: "jobs", ImageRef: "ghcr.io/example/api", Tag: "2"}
+
+	buffer := newInventoryBuffer()
+	if !buffer.Add(oldImage) || !buffer.Add(apiImage) {
+		t.Fatal("expected seed images to enter the buffer")
+	}
+	// The pod watcher updates lastSeen when it observes a completed Job pod, so
+	// the 24h stale TTL alone keeps the image after the Job has aged out.
+	if buffer.Evict(staleTTL) {
+		t.Fatal("expected fresh buffer entries to survive the stale TTL")
+	}
+
+	oldPod := jobPod("old-pod", "ghcr.io/example/old-job:1", corev1.PodSucceeded, time.Now().Add(-3*time.Hour))
+	oldPod.Status.ContainerStatuses[0].ImageID = "ghcr.io/example/old-job@sha256:deadbeef"
+	client := fake.NewSimpleClientset(
+		testJob("old-complete", "jobs", "ghcr.io/example/old-job:1", batchv1.JobComplete, 3*time.Hour),
+		testJob("recent-complete", "jobs", "ghcr.io/example/recent-complete:1", batchv1.JobComplete, 5*time.Minute),
+		testJob("active", "jobs", "ghcr.io/example/active-job:1", "", 0),
+		oldPod,
+		&appsv1.Deployment{
+			ObjectMeta: metav1.ObjectMeta{Name: "api", Namespace: "jobs"},
+			Spec: appsv1.DeploymentSpec{
+				Template: corev1.PodTemplateSpec{
+					Spec: corev1.PodSpec{
+						Containers: []corev1.Container{{Name: "api", Image: "ghcr.io/example/api:2"}},
+					},
+				},
+			},
+		},
+	)
+
+	changed, err := refreshInventoryBuffer(context.Background(), client, excluded, buffer, staleTTL, retention, testLogger())
+	if err != nil {
+		t.Fatalf("refreshInventoryBuffer returned error: %v", err)
+	}
+	if !changed {
+		t.Fatal("expected refresh to report a change when expired job images are removed")
+	}
+
+	got := imageIdentitySet(buffer.Snapshot())
+	if got["jobs|ghcr.io/example/old-job|1"] {
+		t.Fatal("expected expired job image to be removed from the buffer")
+	}
+	for _, id := range []string{
+		"jobs|ghcr.io/example/api|2",
+		"jobs|ghcr.io/example/recent-complete|1",
+		"jobs|ghcr.io/example/active-job|1",
+	} {
+		if !got[id] {
+			t.Fatalf("expected live image %s to remain, got %v", id, got)
+		}
+	}
+
+	if buffer.Add(oldImage) {
+		t.Fatal("expected event observation to not resurrect an expired job image")
+	}
+	if collectPodObservation(oldPod, excluded, buffer, retention) {
+		t.Fatal("expected pod watcher to ignore a terminal job pod past retention")
+	}
+	if imageIdentitySet(buffer.Snapshot())["jobs|ghcr.io/example/old-job|1"] {
+		t.Fatal("expired job image returned to the buffer")
+	}
+
+	dropped, err := dropExpiredCompletedWorkloads(context.Background(), client, excluded, buffer, retention, testLogger())
+	if err != nil {
+		t.Fatalf("dropExpiredCompletedWorkloads returned error: %v", err)
+	}
+	if dropped {
+		t.Fatal("expected a second expiry pass to find nothing left to remove")
+	}
+
+	rerun := jobPod("rerun", "ghcr.io/example/old-job:1", corev1.PodRunning, time.Time{})
+	if !collectPodObservation(rerun, excluded, buffer, retention) {
+		t.Fatal("expected a new running job pod to report a previously expired image")
+	}
+	if !imageIdentitySet(buffer.Snapshot())["jobs|ghcr.io/example/old-job|1"] {
+		t.Fatal("expected the running job pod to restore the image")
+	}
+}
+
+func TestExpiredJobImageKeptWhenStillLive(t *testing.T) {
+	const retention = 60 * time.Minute
+	excluded := map[string]bool{}
+	shared := clusterImageInput{Namespace: "jobs", ImageRef: "ghcr.io/example/shared", Tag: "1", Digest: "sha256:abc"}
+
+	t.Run("deployment", func(t *testing.T) {
+		buffer := newInventoryBuffer()
+		buffer.Add(shared)
+		client := fake.NewSimpleClientset(
+			testJob("old-complete", "jobs", "ghcr.io/example/shared:1", batchv1.JobComplete, 3*time.Hour),
+			&appsv1.Deployment{
+				ObjectMeta: metav1.ObjectMeta{Name: "api", Namespace: "jobs"},
+				Spec: appsv1.DeploymentSpec{
+					Template: corev1.PodTemplateSpec{
+						Spec: corev1.PodSpec{
+							Containers: []corev1.Container{{Name: "api", Image: "ghcr.io/example/shared:1"}},
+						},
+					},
+				},
+			},
+		)
+		if _, err := refreshInventoryBuffer(context.Background(), client, excluded, buffer, 24*time.Hour, retention, testLogger()); err != nil {
+			t.Fatalf("refreshInventoryBuffer returned error: %v", err)
+		}
+		if !imageIdentitySet(buffer.Snapshot())["jobs|ghcr.io/example/shared|1"] {
+			t.Fatal("expected image to remain while a Deployment still uses it")
+		}
+	})
+
+	t.Run("cronjob template", func(t *testing.T) {
+		buffer := newInventoryBuffer()
+		buffer.Add(shared)
+		client := fake.NewSimpleClientset(
+			testJob("old-complete", "jobs", "ghcr.io/example/shared:1", batchv1.JobComplete, 3*time.Hour),
+			&batchv1.CronJob{
+				ObjectMeta: metav1.ObjectMeta{Name: "nightly", Namespace: "jobs"},
+				Spec: batchv1.CronJobSpec{
+					Schedule: "0 * * * *",
+					JobTemplate: batchv1.JobTemplateSpec{
+						Spec: batchv1.JobSpec{
+							Template: corev1.PodTemplateSpec{
+								Spec: corev1.PodSpec{
+									Containers: []corev1.Container{{Name: "work", Image: "ghcr.io/example/shared:1"}},
+								},
+							},
+						},
+					},
+				},
+			},
+		)
+		if _, err := refreshInventoryBuffer(context.Background(), client, excluded, buffer, 24*time.Hour, retention, testLogger()); err != nil {
+			t.Fatalf("refreshInventoryBuffer returned error: %v", err)
+		}
+		if !imageIdentitySet(buffer.Snapshot())["jobs|ghcr.io/example/shared|1"] {
+			t.Fatal("expected CronJob template image to remain after the spawned job expires")
+		}
+	})
+}
+
+func imageIdentitySet(images []clusterImageInput) map[string]bool {
+	set := make(map[string]bool, len(images))
+	for _, img := range images {
+		set[imageIdentityKey(img)] = true
+	}
+	return set
+}
+
+func mustImageIdentity(image string) string {
+	imageRef, tag, _ := parseImageRef(image, "")
+	return imageRef + "|" + tag
+}
+
+func testJob(name, namespace, image string, condition batchv1.JobConditionType, completedAgo time.Duration) *batchv1.Job {
+	job := &batchv1.Job{
+		ObjectMeta: metav1.ObjectMeta{Name: name, Namespace: namespace},
+		Spec: batchv1.JobSpec{
+			Template: corev1.PodTemplateSpec{
+				Spec: corev1.PodSpec{
+					Containers: []corev1.Container{{Name: "work", Image: image}},
+				},
+			},
+		},
+	}
+	if condition == "" {
+		job.Status.Active = 1
+		return job
+	}
+	finished := metav1.NewTime(time.Now().Add(-completedAgo))
+	job.Status.Conditions = []batchv1.JobCondition{{
+		Type:               condition,
+		Status:             corev1.ConditionTrue,
+		LastTransitionTime: finished,
+	}}
+	if condition == batchv1.JobComplete {
+		job.Status.CompletionTime = &finished
+	}
+	return job
+}
+
+func jobPod(name, image string, phase corev1.PodPhase, finished time.Time) *corev1.Pod {
+	pod := &corev1.Pod{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      name,
+			Namespace: "jobs",
+			OwnerReferences: []metav1.OwnerReference{{
+				APIVersion: "batch/v1",
+				Kind:       "Job",
+				Name:       name,
+			}},
+		},
+		Spec: corev1.PodSpec{
+			Containers: []corev1.Container{{Name: "work", Image: image}},
+		},
+		Status: corev1.PodStatus{Phase: phase},
+	}
+	if !finished.IsZero() {
+		pod.Status.ContainerStatuses = []corev1.ContainerStatus{{
+			Name: "work",
+			State: corev1.ContainerState{
+				Terminated: &corev1.ContainerStateTerminated{FinishedAt: metav1.NewTime(finished)},
+			},
+		}}
+	}
+	return pod
 }

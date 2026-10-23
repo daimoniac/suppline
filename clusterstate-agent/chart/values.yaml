@@ -4,6 +4,10 @@ watchFlushInterval: "30s"
 # Maximum interval between successful inventory submissions, even without changes.
 watchHeartbeatInterval: "60m"
 
+# How long to keep completed and failed Jobs, and terminal Pods they own, after completion.
+# CronJob templates are always reported.
+completedWorkloadRetention: "60m"
+
 # Deployment replica count.
 replicaCount: 1
 
