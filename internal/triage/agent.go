@@ -39,12 +39,20 @@ func runAgent(ctx context.Context, llm completer, roots Roots, allowed []string,
 	tools := toolDefinitions()
 	tokens := 0
 	for step := 0; step < maxSteps; step++ {
-		result, err := llm.Complete(ctx, messages, tools)
+		stepTools := tools
+		if step == maxSteps-1 {
+			messages = append(messages, chatMessage{
+				Role:    "user",
+				Content: "No more tool calls. Return only the JSON verdict now. Use uncertain if the evidence is incomplete.",
+			})
+			stepTools = nil
+		}
+		result, err := llm.Complete(ctx, messages, stepTools)
 		if err != nil {
 			return modelVerdict{}, tokens, err
 		}
 		tokens += result.Tokens
-		if len(result.ToolCalls) == 0 {
+		if len(result.ToolCalls) == 0 || step == maxSteps-1 {
 			verdict, err := parseVerdict(result.Content)
 			return verdict, tokens, err
 		}

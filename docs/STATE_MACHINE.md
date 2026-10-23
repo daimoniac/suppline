@@ -126,7 +126,7 @@ The model may only create `not_affected` when all of the following hold:
 - the justification is in `allowed_justifications` (default: `requires_configuration`, `requires_environment`, `protected_at_perimeter`, `protected_at_runtime`, `protected_by_mitigations`)
 - confidence is at least `min_confidence` (default 0.8)
 - every evidence quote matches a line in the checkout suppline actually read
-- the CVE is not in the CISA KEV feed (`block_kev`, default true). If the feed cannot be fetched, no new exemption is written
+- the CVE is not in the CISA KEV feed (`block_kev`, default true). If `cisa.gov` rejects the fetch, triage uses CISA's GitHub copy of the same catalog. If both fetches fail, no new exemption is written and the run is retried
 - `mode` is `enforce`. `dry-run` (the default) only records the decision
 
 `x-vex` is never edited. The statement is upserted into `x-vex-auto` on the matching sync entry. On a matching id, `x-vex` wins and the auto statement has no effect. `detail` records that the statement was auto-generated, plus the model, triage id, timestamp, and checkout SHAs. `expires_at` is set to now plus `expiry` (default 30 days).

@@ -56,6 +56,10 @@ func (r Roots) ListDir(repo, rel string) (string, error) {
 			suffix = "/"
 		}
 		lines = append(lines, name+suffix)
+		if len(lines) >= maxToolMatches {
+			lines = append(lines, "... truncated, use grep")
+			break
+		}
 	}
 	return strings.Join(lines, "\n"), nil
 }

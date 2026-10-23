@@ -3,6 +3,7 @@ package triage
 import (
 	"crypto/sha256"
 	"encoding/hex"
+	"strings"
 	"time"
 
 	"github.com/daimoniac/suppline/internal/statestore"
@@ -53,6 +54,9 @@ func cachedStatus(status string) bool {
 // skipped. A changed commit is triaged at most once per interval.
 func ShouldSkip(last *statestore.TriageRun, renewal bool, shaKey, cveHash string, interval time.Duration, now time.Time) bool {
 	if last == nil || !cachedStatus(last.Status) {
+		return false
+	}
+	if last.Status == StatusRejected && strings.Contains(last.Reasoning, "CISA KEV feed") {
 		return false
 	}
 	same := last.RepoSHAsJSON == shaKey && last.CVEHash == cveHash
