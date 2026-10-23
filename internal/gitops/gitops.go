@@ -64,12 +64,67 @@ type Checkout struct {
 	Branch string
 }
 
+// Snapshot is the local checkout HEAD, without contacting the remote.
+type Snapshot struct {
+	Cloned bool
+	SHA    string
+	Branch string
+	When   time.Time
+}
+
 // Manager keeps shallow clones under Base.
 type Manager struct {
 	Base       string
 	BeforePush func() error
 
 	mu sync.Mutex
+}
+
+// Snapshot reads the local checkout for rawURL. A missing clone is not an error.
+func (m *Manager) Snapshot(rawURL string) (Snapshot, error) {
+	if m == nil || strings.TrimSpace(rawURL) == "" || m.Base == "" {
+		return Snapshot{}, nil
+	}
+	repo, err := git.PlainOpen(filepath.Join(m.Base, dirName(rawURL)))
+	if err != nil {
+		if errors.Is(err, git.ErrRepositoryNotExists) || os.IsNotExist(err) {
+			return Snapshot{}, nil
+		}
+		return Snapshot{}, err
+	}
+	return snapshotRepo(repo)
+}
+
+// CommitTime returns the author time of sha in the local checkout.
+func (m *Manager) CommitTime(rawURL, sha string) (time.Time, bool) {
+	if m == nil || strings.TrimSpace(rawURL) == "" || strings.TrimSpace(sha) == "" || m.Base == "" {
+		return time.Time{}, false
+	}
+	repo, err := git.PlainOpen(filepath.Join(m.Base, dirName(rawURL)))
+	if err != nil {
+		return time.Time{}, false
+	}
+	commit, err := repo.CommitObject(plumbing.NewHash(sha))
+	if err != nil {
+		return time.Time{}, false
+	}
+	return commit.Author.When, true
+}
+
+func snapshotRepo(repo *git.Repository) (Snapshot, error) {
+	head, err := repo.Head()
+	if err != nil {
+		return Snapshot{}, err
+	}
+	commit, err := repo.CommitObject(head.Hash())
+	if err != nil {
+		return Snapshot{}, err
+	}
+	branch := ""
+	if head.Name().IsBranch() {
+		branch = head.Name().Short()
+	}
+	return Snapshot{Cloned: true, SHA: head.Hash().String(), Branch: branch, When: commit.Author.When}, nil
 }
 
 // Pull fetches the remote branch and resets the local checkout to it.

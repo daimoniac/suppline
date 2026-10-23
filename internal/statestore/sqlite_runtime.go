@@ -254,6 +254,64 @@ func (s *SQLiteStore) ListClusterImages(ctx context.Context, clusterName string)
 	return images, nil
 }
 
+// SearchClusterImages returns current cluster-agent images matching the filters.
+// cluster and namespace match exactly, ignoring case. image is a substring of the
+// reference, tag, or digest. limit caps the rows. A limit above 40 is treated as 40.
+func (s *SQLiteStore) SearchClusterImages(ctx context.Context, cluster, namespace, image string, limit int) ([]ClusterRuntimeHit, error) {
+	if limit <= 0 || limit > 40 {
+		limit = 40
+	}
+	query := `
+		SELECT c.name, ci.namespace, ci.image_ref, COALESCE(ci.tag, ''), COALESCE(ci.digest, '')
+		FROM cluster_images ci
+		JOIN clusters c ON c.id = ci.cluster_id
+		WHERE 1 = 1`
+	args := make([]any, 0, 6)
+	if cluster = strings.TrimSpace(cluster); cluster != "" {
+		query += ` AND LOWER(c.name) = LOWER(?)`
+		args = append(args, cluster)
+	}
+	if namespace = strings.TrimSpace(namespace); namespace != "" {
+		query += ` AND LOWER(ci.namespace) = LOWER(?)`
+		args = append(args, namespace)
+	}
+	if image = strings.TrimSpace(image); image != "" {
+		like := likeContains(image)
+		query += ` AND (
+			LOWER(ci.image_ref) LIKE ? ESCAPE '\'
+			OR LOWER(COALESCE(ci.tag, '')) LIKE ? ESCAPE '\'
+			OR LOWER(COALESCE(ci.digest, '')) LIKE ? ESCAPE '\'
+		)`
+		args = append(args, like, like, like)
+	}
+	query += ` ORDER BY c.name ASC, ci.namespace ASC, ci.image_ref ASC LIMIT ?`
+	args = append(args, limit)
+
+	rows, err := s.db.QueryContext(ctx, query, args...)
+	if err != nil {
+		return nil, errors.NewTransientf("failed to search cluster images: %w", err)
+	}
+	defer rows.Close()
+
+	hits := make([]ClusterRuntimeHit, 0)
+	for rows.Next() {
+		var hit ClusterRuntimeHit
+		if err := rows.Scan(&hit.Cluster, &hit.Namespace, &hit.ImageRef, &hit.Tag, &hit.Digest); err != nil {
+			return nil, errors.NewTransientf("failed to scan cluster runtime row: %w", err)
+		}
+		hits = append(hits, hit)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, errors.NewTransientf("error iterating cluster runtime rows: %w", err)
+	}
+	return hits, nil
+}
+
+func likeContains(value string) string {
+	replacer := strings.NewReplacer(`\`, `\\`, `%`, `\%`, `_`, `\_`)
+	return "%" + replacer.Replace(strings.ToLower(strings.TrimSpace(value))) + "%"
+}
+
 // DeleteClusterInventory removes a cluster and all of its inventory rows.
 func (s *SQLiteStore) DeleteClusterInventory(ctx context.Context, clusterName string) error {
 	clusterName = strings.TrimSpace(clusterName)

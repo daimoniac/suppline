@@ -28,15 +28,18 @@ type modelEvidence struct {
 	Quote string `json:"quote"`
 }
 
-func runAgent(ctx context.Context, llm completer, roots Roots, allowed []string, job Job, placements string, repoNames []string, existing *types.VEXStatement, maxSteps int) (modelVerdict, int, error) {
+func runAgent(ctx context.Context, llm completer, roots Roots, runtime clusterQuerier, pub *publicSource, allowed []string, job Job, placements string, repoNames []string, existing *types.VEXStatement, maxSteps int) (modelVerdict, int, error) {
 	if maxSteps < 1 {
 		maxSteps = 1
 	}
+	if pub == nil {
+		pub = newPublicSource()
+	}
 	messages := []chatMessage{
-		{Role: "system", Content: systemPrompt(allowed)},
+		{Role: "system", Content: systemPrompt(allowed, runtime != nil)},
 		{Role: "user", Content: userPrompt(job, placements, repoNames, existing)},
 	}
-	tools := toolDefinitions()
+	tools := toolDefinitions(runtime != nil)
 	tokens := 0
 	for step := 0; step < maxSteps; step++ {
 		stepTools := tools
@@ -58,20 +61,31 @@ func runAgent(ctx context.Context, llm completer, roots Roots, allowed []string,
 		}
 		messages = append(messages, chatMessage{Role: "assistant", Content: result.Content, ToolCalls: result.ToolCalls})
 		for _, call := range result.ToolCalls {
-			output := dispatchTool(roots, call)
+			output := dispatchTool(ctx, roots, runtime, pub, call)
 			messages = append(messages, chatMessage{Role: "tool", ToolCallID: call.ID, Content: untrusted("tool "+call.Function.Name, output)})
 		}
 	}
 	return modelVerdict{}, tokens, fmt.Errorf("triage agent exceeded %d steps", maxSteps)
 }
 
-func dispatchTool(roots Roots, call toolCall) string {
+type clusterQuerier interface {
+	Query(ctx context.Context, cluster, namespace, image string) (string, error)
+}
+
+func dispatchTool(ctx context.Context, roots Roots, runtime clusterQuerier, pub *publicSource, call toolCall) string {
 	var args struct {
 		Repo      string `json:"repo"`
 		Path      string `json:"path"`
 		Pattern   string `json:"pattern"`
 		StartLine int    `json:"start_line"`
 		EndLine   int    `json:"end_line"`
+		Cluster   string `json:"cluster"`
+		Namespace string `json:"namespace"`
+		Image     string `json:"image"`
+		ID        string `json:"id"`
+		Owner     string `json:"owner"`
+		GitRepo   string `json:"git_repo"`
+		Ref       string `json:"ref"`
 	}
 	if err := json.Unmarshal([]byte(call.Function.Arguments), &args); err != nil {
 		return "invalid arguments: " + err.Error()
@@ -87,6 +101,16 @@ func dispatchTool(roots Roots, call toolCall) string {
 		out, err = roots.ReadFile(args.Repo, args.Path, args.StartLine, args.EndLine)
 	case "grep":
 		out, err = roots.Grep(args.Repo, args.Pattern, args.Path)
+	case "cluster_runtime":
+		if runtime == nil {
+			err = fmt.Errorf("cluster runtime is unavailable")
+			break
+		}
+		out, err = runtime.Query(ctx, args.Cluster, args.Namespace, args.Image)
+	case "cve_advisory":
+		out, err = pub.Advisory(ctx, args.ID)
+	case "public_code":
+		out, err = pub.GitHubFile(ctx, args.Owner, args.GitRepo, args.Ref, args.Path, args.StartLine, args.EndLine)
 	default:
 		err = fmt.Errorf("unknown tool %s", call.Function.Name)
 	}
@@ -124,7 +148,7 @@ func parseVerdict(content string) (modelVerdict, error) {
 	return verdict, nil
 }
 
-func toolDefinitions() []toolDef {
+func toolDefinitions(withRuntime bool) []toolDef {
 	object := func(props map[string]any, required ...string) map[string]any {
 		return map[string]any{"type": "object", "properties": props, "required": required}
 	}
@@ -143,6 +167,31 @@ func toolDefinitions() []toolDef {
 			"start_line": map[string]any{"type": "integer"},
 			"end_line":   map[string]any{"type": "integer"},
 		}, "repo", "path")},
+		{"cve_advisory", "Fetch a public CVE or GHSA advisory: summary, affected package ranges, severity, and references.", object(map[string]any{
+			"id": map[string]any{"type": "string", "description": "CVE-YYYY-NNNN or GHSA-xxxx-xxxx-xxxx"},
+		}, "id")},
+		{"public_code", "Read a file or list a directory in a public GitHub repository. Content is line-numbered and capped at 200 lines.", object(map[string]any{
+			"owner":      map[string]any{"type": "string", "description": "GitHub owner"},
+			"git_repo":   map[string]any{"type": "string", "description": "GitHub repository"},
+			"ref":        map[string]any{"type": "string", "description": "Branch, tag, or commit. Omit for the default branch."},
+			"path":       map[string]any{"type": "string", "description": "File or directory path. Omit to list the repository root."},
+			"start_line": map[string]any{"type": "integer"},
+			"end_line":   map[string]any{"type": "integer"},
+		}, "owner", "git_repo")},
+	}
+	if withRuntime {
+		defs = append(defs, struct {
+			name, desc string
+			params     map[string]any
+		}{
+			"cluster_runtime",
+			"Read the latest image snapshots reported by suppline cluster agents. Omit filters to list clusters. Pass image, and optionally cluster or namespace, to list running images. Results are capped.",
+			object(map[string]any{
+				"cluster":   map[string]any{"type": "string", "description": "Cluster name"},
+				"namespace": map[string]any{"type": "string", "description": "Namespace"},
+				"image":     map[string]any{"type": "string", "description": "Substring of the image reference, tag, or digest"},
+			}),
+		})
 	}
 	out := make([]toolDef, 0, len(defs))
 	for _, def := range defs {

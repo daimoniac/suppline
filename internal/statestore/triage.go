@@ -49,6 +49,25 @@ func (s *SQLiteStore) LatestTriageRun(ctx context.Context, repository, cveID str
 	return run, nil
 }
 
+func (s *SQLiteStore) LatestTriageCommit(ctx context.Context) (*TriageRun, error) {
+	row := s.db.QueryRowContext(ctx, `
+		SELECT id, repository, cve_id, verdict, justification, confidence, evidence_json, reasoning,
+			model, repo_shas_json, cve_hash, tokens, status, commit_sha, created_at
+		FROM triage_runs
+		WHERE commit_sha != ''
+		ORDER BY created_at DESC, id DESC
+		LIMIT 1
+	`)
+	run, err := scanTriageRun(row)
+	if err == sql.ErrNoRows {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, errors.NewTransientf("latest triage commit: %w", err)
+	}
+	return run, nil
+}
+
 func (s *SQLiteStore) ListTriageRuns(ctx context.Context, filter TriageFilter) ([]TriageRun, error) {
 	var where []string
 	var args []any

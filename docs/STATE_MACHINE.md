@@ -103,7 +103,7 @@ flowchart TD
     skip -->|yes| done[Leave the gate failed]
     skip -->|commit changed inside retriage_interval| done
     skip -->|no| pull[Pull every context repo once per batch]
-    pull --> agent[LLM with read-only list, grep, and read tools]
+    pull --> agent[LLM with gitops, cluster runtime, advisory, and public GitHub tools]
     agent --> guard[Guardrails]
     guard -->|dry-run or rejected| record[triage_runs row]
     guard -->|not_affected or flipped to affected| write[Upsert x-vex-auto]
@@ -113,7 +113,7 @@ flowchart TD
 
 ### What gets queued
 
-A failed scan queues one job for each policy-failure finding that does not already have an unexpired `not_affected` statement. By default only images currently running in a cluster are queued (`only_in_use`, the same runtime window as the `source="runtime"` alerts). Set `only_in_use: false` to triage every failure. Hand-written `x-vex` and generated `x-vex-auto` both count. Jobs sit on a separate queue so scans are not blocked. Each batch pulls the configured gitops repositories once. Renewal skips a repository that has no in-use image when `only_in_use` is on.
+A failed scan queues one job for each policy-failure finding that does not already have an unexpired `not_affected` statement. By default only images currently running in a cluster are queued (`only_in_use`, the same runtime window as the `source="runtime"` alerts). Set `only_in_use: false` to triage every failure. Hand-written `x-vex` and generated `x-vex-auto` both count. Jobs sit on a separate queue so scans are not blocked. Each batch pulls the configured gitops repositories once. Renewal skips a repository that has no in-use image when `only_in_use` is on. **Triage now** in the UI queues the policy failures in the current view and runs them again even when a cached decision exists.
 
 ### Dedupe
 

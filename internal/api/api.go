@@ -14,6 +14,7 @@ import (
 	"github.com/daimoniac/suppline/internal/queue"
 	"github.com/daimoniac/suppline/internal/scanenqueue"
 	"github.com/daimoniac/suppline/internal/statestore"
+	"github.com/daimoniac/suppline/internal/triage"
 	httpSwagger "github.com/swaggo/http-swagger"
 
 	_ "github.com/daimoniac/suppline/build/swagger" // Import generated docs
@@ -52,6 +53,7 @@ type APIServer struct {
 	scanEnqueuer      *scanenqueue.Enqueuer
 	regsyncConfig     *config.RegsyncConfig
 	policyCatalog     catalog.Catalog
+	triageService     *triage.Service
 	router            *http.ServeMux
 	server            *http.Server
 	logger            *slog.Logger
@@ -133,6 +135,14 @@ func NewAPIServerWithCatalogAndEnqueuer(cfg *config.APIConfig, attestationCfg *c
 	return api
 }
 
+// SetTriage connects the triage queue so the API can report it and enqueue work.
+func (s *APIServer) SetTriage(svc *triage.Service) {
+	if s == nil {
+		return
+	}
+	s.triageService = svc
+}
+
 // setupRoutes configures all API routes
 func (s *APIServer) setupRoutes() {
 	// Query endpoints (GET)
@@ -143,6 +153,8 @@ func (s *APIServer) setupRoutes() {
 	s.router.HandleFunc("/api/v1/coverage", s.corsMiddleware(s.authMiddleware(s.handleGetCoverage, false)))
 	s.router.HandleFunc("/api/v1/vex", s.corsMiddleware(s.authMiddleware(s.handleListVEX, false)))
 	s.router.HandleFunc("/api/v1/triage", s.corsMiddleware(s.authMiddleware(s.handleListTriage, false)))
+	s.router.HandleFunc("/api/v1/triage/status", s.corsMiddleware(s.authMiddleware(s.handleTriageStatus, false)))
+	s.router.HandleFunc("/api/v1/triage/run", s.corsMiddleware(s.authMiddleware(s.handleTriageRun, true)))
 	s.router.HandleFunc("/api/v1/vex/inactive", s.corsMiddleware(s.authMiddleware(s.handleListInactiveVEX, false)))
 	s.router.HandleFunc("/api/v1/images/failed", s.corsMiddleware(s.authMiddleware(s.handleListFailedImages, false)))
 	s.router.HandleFunc("/api/v1/policies", s.corsMiddleware(s.authMiddleware(s.handleListPolicies, false)))
@@ -164,6 +176,7 @@ func (s *APIServer) setupRoutes() {
 	s.router.HandleFunc("/api/v1/tasks/runtime-unused-whitelist", s.corsMiddleware(s.authMiddleware(s.handleRuntimeUnusedWhitelistRouter, false)))
 
 	// Integration endpoints
+	s.router.HandleFunc("/api/v1/integration/gitops", s.corsMiddleware(s.authMiddleware(s.handleGitopsStatus, false)))
 	s.router.HandleFunc("/api/v1/integration/kubernetes/clusters", s.corsMiddleware(s.handleListKubernetesClusters))
 	s.router.HandleFunc("/api/v1/integration/kubernetes/clusters/", s.corsMiddleware(s.authMiddleware(s.handleKubernetesClustersRouter, false)))
 	s.router.HandleFunc("/api/v1/integration/publickey", s.corsMiddleware(s.handleGetPublicKey))

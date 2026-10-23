@@ -8,15 +8,18 @@ import { fetchPolicyComplianceData, type PolicyComplianceSnapshot } from '../lib
 import { scheduleEffectLoad } from '../lib/scheduleEffectLoad';
 import { LoadingState, ErrorState, PageHeader, EmptyState, ConfirmModal } from '../components/ui';
 import { PolicyCompliancePanel } from '../components/PolicyCompliancePanel';
+import { TriageStatusPanel } from '../components/TriageStatusPanel';
 import type {
   RepositoriesResponse,
   SemverUpdateEntry,
   SemverUpdateTasksResponse,
+  TriageRun,
+  TriageStatus,
   VEXSummary,
   VEXExpiryTaskEntry,
   VEXExpiryTasksResponse,
 } from '../lib/api';
-import { CheckCircle2, Clock3, Copy, RefreshCw, Server, ShieldAlert, Sparkles, Tag, TriangleAlert, Trash2 } from 'lucide-react';
+import { CheckCircle2, Clock3, Copy, RefreshCw, Scale, Server, ShieldAlert, Sparkles, Tag, TriangleAlert, Trash2 } from 'lucide-react';
 
 // ─── status badge ─────────────────────────────────────────────────────────────
 
@@ -734,8 +737,19 @@ export default function TasksPage() {
   const [vexExpiryData, setVexExpiryData] = useState<VEXExpiryTasksResponse | null>(null);
   const [inactiveVEXData, setInactiveVEXData] = useState<VEXSummary[]>([]);
   const [policyCompliance, setPolicyCompliance] = useState<PolicyComplianceSnapshot | null>(null);
+  const [triageStatus, setTriageStatus] = useState<TriageStatus | null>(null);
+  const [triageRuns, setTriageRuns] = useState<TriageRun[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
+
+  const loadTriage = useCallback(async () => {
+    const [status, runs] = await Promise.all([
+      apiClient.getTriageStatus().catch(() => null),
+      apiClient.getTriageRuns({ limit: 50 }).catch(() => [] as TriageRun[]),
+    ]);
+    setTriageStatus(status);
+    setTriageRuns(runs);
+  }, [apiClient]);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -747,6 +761,7 @@ export default function TasksPage() {
         apiClient.getVEXExpiryTasks(),
         apiClient.getInactiveVEXStatements(),
         fetchPolicyComplianceData(apiClient, inUseRequestParams),
+        loadTriage(),
       ]);
       setSemverData(semverResult);
       setRuntimeUnusedData(runtimeUnusedResult);
@@ -758,7 +773,7 @@ export default function TasksPage() {
     } finally {
       setLoading(false);
     }
-  }, [apiClient, inUseRequestParams]);
+  }, [apiClient, inUseRequestParams, loadTriage]);
 
   useEffect(() => { scheduleEffectLoad(load); }, [load]);
 
@@ -814,8 +829,23 @@ export default function TasksPage() {
             showCardHeading={false}
             policyByRepo={policyCompliance.policyByRepo}
             failedScans={policyCompliance.failedScans}
+            onTriageQueued={loadTriage}
           />
         ) : null}
+      </TaskSection>
+
+      <TaskSection
+        anchor="triage-status"
+        active={activeAnchor === 'triage-status'}
+        icon={<Scale className="w-4 h-4 text-accent" />}
+        title="Triage Status"
+        subtitle="Recent automated decisions. Counts cover the latest 50 runs."
+        loading={loading}
+        loadingMessage="Loading triage status…"
+        error={error}
+        onRetry={load}
+      >
+        <TriageStatusPanel status={triageStatus} runs={triageRuns} />
       </TaskSection>
 
       {/* SemVer Range Updates */}

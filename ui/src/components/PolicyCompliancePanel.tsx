@@ -11,6 +11,7 @@ export function PolicyCompliancePanel({
   defaultPolicy,
   showCardHeading = true,
   embedded = false,
+  onTriageQueued,
 }: {
   policyByRepo: Record<string, { failed: number; pending: number }>;
   failedScans: Scan[];
@@ -20,6 +21,7 @@ export function PolicyCompliancePanel({
   showCardHeading?: boolean;
   /** When true, skip the outer card shell (e.g. inside TaskSection which is already a card). */
   embedded?: boolean;
+  onTriageQueued?: () => void;
 }) {
   const topPolicyRepos = Object.entries(policyByRepo)
     .sort((a, b) => (b[1].failed + b[1].pending) - (a[1].failed + a[1].pending))
@@ -61,7 +63,7 @@ export function PolicyCompliancePanel({
         {heading}
         {repoSection}
       </div>
-      <PolicyAgentPromptCard scans={failedScans} />
+      <PolicyAgentPromptCard scans={failedScans} onTriageQueued={onTriageQueued} />
     </div>
   ) : (
     <>

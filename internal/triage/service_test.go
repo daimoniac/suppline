@@ -153,8 +153,85 @@ func TestNotifyPolicyFailureRespectsInUse(t *testing.T) {
 	}
 	allImages.NotifyPolicyFailure(context.Background(), notice)
 	select {
-	case <-allImages.jobs:
+	case job := <-allImages.jobs:
+		if job.Force {
+			t.Fatal("automatic triage should not force a rerun")
+		}
 	default:
 		t.Fatal("only_in_use false still skipped the image")
+	}
+}
+
+func TestQueuePolicyFailureForcesRun(t *testing.T) {
+	svc := &Service{
+		settings: Settings{Enabled: true, OnlyInUse: false},
+		logger:   slog.Default(),
+		jobs:     make(chan Job, 2),
+		pending:  map[string]struct{}{},
+	}
+	notice := worker.PolicyFailureNotice{
+		Repository: "example/nginx",
+		Digest:     "sha256:abc",
+		Tag:        "1.2.3",
+		Findings: []types.PolicyFailureFinding{
+			{CVEID: "CVE-1", PackageName: "nginx"},
+			{CVEID: "CVE-2", PackageName: "openssl"},
+		},
+	}
+	queued := svc.QueuePolicyFailure(context.Background(), notice)
+	if queued != 2 {
+		t.Fatalf("queued = %d", queued)
+	}
+	for i := 0; i < 2; i++ {
+		job := <-svc.jobs
+		if !job.Force {
+			t.Fatalf("job %s was not forced", job.CVEID)
+		}
+	}
+	if again := svc.QueuePolicyFailure(context.Background(), notice); again != 0 {
+		t.Fatalf("duplicate queue = %d", again)
+	}
+}
+
+type stubRuns struct {
+	commit *statestore.TriageRun
+}
+
+func (s stubRuns) InsertTriageRun(context.Context, *statestore.TriageRun) error { return nil }
+func (s stubRuns) LatestTriageRun(context.Context, string, string) (*statestore.TriageRun, error) {
+	return nil, nil
+}
+func (s stubRuns) LatestTriageCommit(context.Context) (*statestore.TriageRun, error) {
+	return s.commit, nil
+}
+func (s stubRuns) ListTriageRuns(context.Context, statestore.TriageFilter) ([]statestore.TriageRun, error) {
+	return nil, nil
+}
+func (s stubRuns) TriageTokensSince(context.Context, time.Time) (int, error) { return 0, nil }
+
+func TestGitopsStatusMergesSharedRepo(t *testing.T) {
+	when := time.Date(2026, 10, 23, 9, 0, 0, 0, time.UTC)
+	svc := &Service{
+		settings: Settings{
+			Context: []config.GitRepoConfig{
+				{Name: "infra", URL: "https://example.com/infra.git", Branch: "main"},
+				{Name: "apps", URL: "https://example.com/apps.git"},
+			},
+			ConfigRepo: &config.ConfigRepoConfig{URL: "https://example.com/infra.git", Branch: "main"},
+		},
+		runs: stubRuns{commit: &statestore.TriageRun{CommitSHA: "deadbeef", CreatedAt: when}},
+	}
+	repos, err := svc.GitopsStatus(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(repos) != 2 {
+		t.Fatalf("repos = %+v", repos)
+	}
+	if repos[0].Name != "infra" || len(repos[0].Roles) != 2 || repos[0].LastSupplineSHA != "deadbeef" || !repos[0].LastSupplineAt.Equal(when) {
+		t.Fatalf("config repo = %+v", repos[0])
+	}
+	if repos[1].Name != "apps" || repos[1].LastSupplineSHA != "" || len(repos[1].Roles) != 1 {
+		t.Fatalf("context repo = %+v", repos[1])
 	}
 }

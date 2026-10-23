@@ -170,6 +170,18 @@ export class APIClient {
   async getTriageRuns(filters: Record<string, unknown> = {}) {
     return this.request<TriageRun[]>(`/api/v1/triage${this.qs(filters)}`);
   }
+  async getTriageStatus() {
+    return this.request<TriageStatus>('/api/v1/triage/status');
+  }
+  async queueTriage(images: TriageRunImage[]) {
+    return this.request<TriageRunResult>('/api/v1/triage/run', {
+      method: 'POST',
+      body: JSON.stringify({ Images: images }),
+    });
+  }
+  async getGitopsRepositories() {
+    return this.request<GitopsRepository[]>('/api/v1/integration/gitops');
+  }
 
   // Policy
   async reevaluatePolicy(repository: string) {
@@ -380,6 +392,35 @@ export interface TriageEvidence {
 export interface TriageRepoSHA {
   name: string;
   sha: string;
+}
+
+export interface TriageStatus {
+  Enabled: boolean;
+  Mode?: string;
+  OnlyInUse: boolean;
+  Pending: number;
+}
+
+export interface TriageRunImage {
+  Repository: string;
+  Digest: string;
+  Tag: string;
+}
+
+export interface TriageRunResult {
+  Queued: number;
+}
+
+export interface GitopsRepository {
+  Name: string;
+  URL: string;
+  Branch?: string;
+  Roles: string[];
+  Cloned: boolean;
+  HeadSHA?: string;
+  HeadAt?: number;
+  LastSupplineSHA?: string;
+  LastSupplineAt?: number;
 }
 
 export interface TriageRun {

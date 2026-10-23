@@ -30,6 +30,7 @@ type Service struct {
 	runs     statestore.TriageStore
 	scans    statestore.StateStoreQuery
 	runtime  runtimeLookup
+	clusters clusterQuerier
 	enqueuer *scanenqueue.Enqueuer
 	logger   *slog.Logger
 	llm      completer
@@ -75,12 +76,17 @@ func New(cfg *config.TriageConfig, configPath string, cat *catalog.ConfigCatalog
 	if lookup, ok := store.(runtimeLookup); ok {
 		runtime = lookup
 	}
+	var clusters clusterQuerier
+	if lookup, ok := store.(clusterRuntimeStore); ok {
+		clusters = runtimeTool{store: lookup}
+	}
 	svc := &Service{
 		settings: settings,
 		catalog:  cat,
 		runs:     runs,
 		scans:    store,
 		runtime:  runtime,
+		clusters: clusters,
 		enqueuer: enqueuer,
 		logger:   logger,
 		llm: &Client{
@@ -146,22 +152,61 @@ func (s *Service) Start(ctx context.Context) error {
 	}
 }
 
+// Enabled reports whether triage accepts work.
+func (s *Service) Enabled() bool {
+	return s != nil && s.settings.Enabled
+}
+
+// Mode is dry-run or enforce.
+func (s *Service) Mode() string {
+	if s == nil {
+		return ""
+	}
+	return s.settings.Mode
+}
+
+// OnlyInUse reports whether triage is limited to images running in a cluster.
+func (s *Service) OnlyInUse() bool {
+	return s == nil || s.settings.OnlyInUse
+}
+
+// Pending is the number of jobs waiting or in flight.
+func (s *Service) Pending() int {
+	if s == nil {
+		return 0
+	}
+	s.pendingMu.Lock()
+	defer s.pendingMu.Unlock()
+	return len(s.pending)
+}
+
 // NotifyPolicyFailure queues one job per finding that has no active exemption.
 func (s *Service) NotifyPolicyFailure(ctx context.Context, notice worker.PolicyFailureNotice) {
+	s.queuePolicyFailure(ctx, notice, false)
+}
+
+// QueuePolicyFailure queues the same work as a policy failure and runs it
+// again even when a cached decision exists. It returns how many findings were queued.
+func (s *Service) QueuePolicyFailure(ctx context.Context, notice worker.PolicyFailureNotice) int {
+	return s.queuePolicyFailure(ctx, notice, true)
+}
+
+func (s *Service) queuePolicyFailure(ctx context.Context, notice worker.PolicyFailureNotice, force bool) int {
 	if s == nil || !s.settings.Enabled {
-		return
+		return 0
 	}
 	if s.settings.OnlyInUse {
 		used, err := s.imageInUse(ctx, notice.Digest, notice.Repository, notice.Tag)
 		if err != nil {
 			s.logger.Error("triage in-use lookup failed", "repository", notice.Repository, "digest", notice.Digest, "error", err)
-			return
+			return 0
 		}
 		if !used {
 			s.logger.Debug("triage skipped, image not in use", "repository", notice.Repository, "tag", notice.Tag, "digest", notice.Digest)
-			return
+			return 0
 		}
 	}
+	queued := 0
 	for _, finding := range notice.Findings {
 		if s.exempt(notice.Repository, finding.CVEID) {
 			continue
@@ -191,8 +236,12 @@ func (s *Service) NotifyPolicyFailure(ctx context.Context, notice worker.PolicyF
 			job.Description = vuln.Description
 			break
 		}
-		s.enqueue(job)
+		job.Force = force
+		if s.enqueue(job) {
+			queued++
+		}
 	}
+	return queued
 }
 
 func (s *Service) exempt(repository, cve string) bool {
@@ -212,22 +261,24 @@ func (s *Service) exempt(repository, cve string) bool {
 	return false
 }
 
-func (s *Service) enqueue(job Job) {
+func (s *Service) enqueue(job Job) bool {
 	if job.Repository == "" || job.CVEID == "" {
-		return
+		return false
 	}
 	s.pendingMu.Lock()
 	if _, exists := s.pending[job.key()]; exists {
 		s.pendingMu.Unlock()
-		return
+		return false
 	}
 	s.pending[job.key()] = struct{}{}
 	s.pendingMu.Unlock()
 	select {
 	case s.jobs <- job:
+		return true
 	default:
 		s.finish(job)
 		s.logger.Error("triage queue full", "repository", job.Repository, "cve", job.CVEID)
+		return false
 	}
 }
 
@@ -328,7 +379,7 @@ func (s *Service) process(ctx context.Context, job Job, checkouts []gitops.Check
 		s.logger.Error("triage lookup failed", "repository", job.Repository, "cve", job.CVEID, "error", err)
 		return
 	}
-	if ShouldSkip(last, job.Renewal, shas, job.cveHash(), s.settings.RetriageInterval, s.now()) {
+	if !job.Force && ShouldSkip(last, job.Renewal, shas, job.cveHash(), s.settings.RetriageInterval, s.now()) {
 		s.logger.Debug("triage skipped", "repository", job.Repository, "cve", job.CVEID, "renewal", job.Renewal)
 		return
 	}
@@ -352,7 +403,7 @@ func (s *Service) process(ctx context.Context, job Job, checkouts []gitops.Check
 	for i, checkout := range checkouts {
 		names[i] = checkout.Name
 	}
-	verdict, tokens, err := runAgent(ctx, s.llm, roots, allowedNames(s.settings), job, s.placements(ctx, job), names, existing, s.settings.MaxSteps)
+	verdict, tokens, err := runAgent(ctx, s.llm, roots, s.clusters, newPublicSource(), allowedNames(s.settings), job, s.placements(ctx, job), names, existing, s.settings.MaxSteps)
 	if err != nil {
 		s.record(ctx, job, verdict, tokens, StatusError, "", shas, err.Error())
 		s.logger.Error("triage agent failed", "repository", job.Repository, "cve", job.CVEID, "error", err)

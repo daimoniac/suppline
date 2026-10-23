@@ -13,6 +13,27 @@ import (
 	"github.com/go-git/go-git/v5/plumbing/object"
 )
 
+func TestSnapshotReadsLocalHEAD(t *testing.T) {
+	bare := filepath.Join(t.TempDir(), "bare.git")
+	branch := seedBare(t, bare)
+	manager := &Manager{Base: t.TempDir()}
+	checkout, err := manager.Pull(context.Background(), Spec{URL: bare, Branch: branch})
+	if err != nil {
+		t.Fatal(err)
+	}
+	snap, err := manager.Snapshot(bare)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !snap.Cloned || snap.SHA != checkout.SHA || snap.When.IsZero() {
+		t.Fatalf("snapshot = %+v checkout %s", snap, checkout.SHA)
+	}
+	missing, err := manager.Snapshot(bare + "-missing")
+	if err != nil || missing.Cloned {
+		t.Fatalf("missing = %+v err=%v", missing, err)
+	}
+}
+
 func TestCommitFilePushRetryAndRejection(t *testing.T) {
 	bare := filepath.Join(t.TempDir(), "bare.git")
 	branch := seedBare(t, bare)

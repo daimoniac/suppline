@@ -4,14 +4,15 @@ import { useToast } from '../lib/toast';
 import { copyToClipboard, formatDate, formatRelativeTime } from '../lib/utils';
 import { scheduleEffectLoad } from '../lib/scheduleEffectLoad';
 import { LoadingState, ErrorState, PageHeader } from '../components/ui';
-import type { KubernetesClusterImageSummary, KubernetesClusterSummary } from '../lib/api';
-import { Boxes, ChevronDown, ChevronRight, Copy, Download, Key, Shield, Trash2 } from 'lucide-react';
+import type { GitopsRepository, KubernetesClusterImageSummary, KubernetesClusterSummary } from '../lib/api';
+import { Boxes, ChevronDown, ChevronRight, Copy, Download, GitBranch, Key, Shield, Trash2 } from 'lucide-react';
 
 export default function IntegrationsPage() {
   const { apiClient } = useAuth();
   const { toast } = useToast();
   const [publicKey, setPublicKey] = useState('');
   const [kyvernoPolicy, setKyvernoPolicy] = useState('');
+  const [gitops, setGitops] = useState<GitopsRepository[]>([]);
   const [clusters, setClusters] = useState<KubernetesClusterSummary[]>([]);
   const [expandedClusters, setExpandedClusters] = useState<Record<string, boolean>>({});
   const [clusterImages, setClusterImages] = useState<Record<string, KubernetesClusterImageSummary[]>>({});
@@ -25,11 +26,13 @@ export default function IntegrationsPage() {
     setLoading(true);
     setError('');
     try {
-      const [clusterData, key, policy] = await Promise.all([
+      const [gitopsData, clusterData, key, policy] = await Promise.all([
+        apiClient.getGitopsRepositories().catch(() => []),
         apiClient.getKubernetesClusters().catch(() => []),
         apiClient.getPublicKey().catch(() => ''),
         apiClient.getKyvernoPolicy().catch(() => ''),
       ]);
+      setGitops(gitopsData);
       setClusters(clusterData);
       setPublicKey(key);
       setKyvernoPolicy(policy);
@@ -123,9 +126,59 @@ export default function IntegrationsPage() {
     <div className="space-y-6">
       <PageHeader
         title="Integrations"
-        subtitle="Export keys and policies for Kubernetes integration"
+        subtitle="Gitops checkouts, clusters, and admission policy"
         showImageUsage={false}
       />
+
+      <div className="bg-bg-primary border border-border rounded-xl overflow-hidden">
+        <div className="flex items-center justify-between px-5 py-4 border-b border-border">
+          <div className="flex items-center gap-2">
+            <GitBranch className="w-4 h-4 text-accent" />
+            <h2 className="text-sm font-semibold">Gitops Repositories</h2>
+          </div>
+          {gitops.length > 0 && (
+            <span className="text-xs text-text-muted">{gitops.length} repositor{gitops.length === 1 ? 'y' : 'ies'}</span>
+          )}
+        </div>
+        <div className="p-4">
+          {gitops.length > 0 ? (
+            <div className="overflow-x-auto">
+              <table className="min-w-full text-sm">
+                <thead>
+                  <tr className="border-b border-border">
+                    <th className="px-3 py-2 text-left text-xs font-semibold text-text-muted uppercase tracking-wide">Repository</th>
+                    <th className="px-3 py-2 text-left text-xs font-semibold text-text-muted uppercase tracking-wide">HEAD</th>
+                    <th className="px-3 py-2 text-left text-xs font-semibold text-text-muted uppercase tracking-wide">HEAD date</th>
+                    <th className="px-3 py-2 text-left text-xs font-semibold text-text-muted uppercase tracking-wide">Last suppline commit</th>
+                    <th className="px-3 py-2 text-left text-xs font-semibold text-text-muted uppercase tracking-wide">Commit date</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {gitops.map(repo => (
+                    <tr key={repo.URL} className="border-b border-border/50 last:border-0">
+                      <td className="px-3 py-3">
+                        <div className="text-text-primary font-medium">{repo.Name}</div>
+                        <div className="text-xs text-text-muted break-all">{repo.URL}</div>
+                        <div className="mt-1 text-[10px] uppercase tracking-wide text-text-muted">{(repo.Roles || []).join(' · ')}{repo.Branch ? ` · ${repo.Branch}` : ''}</div>
+                      </td>
+                      <td className="px-3 py-3 font-mono text-xs text-text-secondary">{repo.Cloned && repo.HeadSHA ? repo.HeadSHA.slice(0, 12) : 'Not checked out'}</td>
+                      <td className="px-3 py-3 text-xs text-text-secondary" title={repo.HeadAt ? formatDate(repo.HeadAt) : undefined}>
+                        {repo.HeadAt ? formatRelativeTime(repo.HeadAt) : '—'}
+                      </td>
+                      <td className="px-3 py-3 font-mono text-xs text-text-secondary">{repo.LastSupplineSHA ? repo.LastSupplineSHA.slice(0, 12) : '—'}</td>
+                      <td className="px-3 py-3 text-xs text-text-secondary" title={repo.LastSupplineAt ? formatDate(repo.LastSupplineAt) : undefined}>
+                        {repo.LastSupplineAt ? formatRelativeTime(repo.LastSupplineAt) : '—'}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          ) : (
+            <p className="text-sm text-text-muted">No gitops repositories configured. Add them under x-triage.</p>
+          )}
+        </div>
+      </div>
 
       {/* Kubernetes */}
       <div className="bg-bg-primary border border-border rounded-xl overflow-hidden">

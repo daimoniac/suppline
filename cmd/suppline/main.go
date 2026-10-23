@@ -285,6 +285,7 @@ func run() error {
 			repositoryPolicies,
 			logger,
 		)
+		apiServer.SetTriage(triageService)
 		logger.Debug("API server initialized")
 	}
 

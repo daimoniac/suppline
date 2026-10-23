@@ -31,6 +31,8 @@ type Job struct {
 	Tag          string
 	Digest       string
 	Renewal      bool
+	// Force runs again even when a cached decision exists. Manual "Triage now" sets it.
+	Force bool
 }
 
 func (j Job) key() string { return j.Repository + "\x00" + j.CVEID }

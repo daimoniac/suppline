@@ -73,6 +73,11 @@ func Resolve(cfg *config.TriageConfig, configPath string) (Settings, error) {
 	}
 	settings.Enabled = true
 	settings.APIKey = strings.TrimSpace(os.Getenv(envLLMAPIKey))
+	if strings.TrimSpace(cfg.CheckoutDir) != "" {
+		settings.CheckoutDir = strings.TrimSpace(cfg.CheckoutDir)
+	}
+	settings.Context = append([]config.GitRepoConfig(nil), cfg.ContextRepos...)
+	settings.ConfigRepo = cfg.ConfigRepo
 	if settings.APIKey == "" {
 		settings.Enabled = false
 		return settings, nil
@@ -134,14 +139,9 @@ func Resolve(cfg *config.TriageConfig, configPath string) (Settings, error) {
 	if cfg.BackupRetention > 0 {
 		settings.BackupRetention = cfg.BackupRetention
 	}
-	if strings.TrimSpace(cfg.CheckoutDir) != "" {
-		settings.CheckoutDir = strings.TrimSpace(cfg.CheckoutDir)
-	}
 	if cfg.MaxFileBytes > 0 {
 		settings.MaxFileBytes = cfg.MaxFileBytes
 	}
-	settings.Context = append([]config.GitRepoConfig(nil), cfg.ContextRepos...)
-	settings.ConfigRepo = cfg.ConfigRepo
 	return settings, nil
 }
 
