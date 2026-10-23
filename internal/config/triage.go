@@ -81,7 +81,9 @@ type GitAuthor struct {
 	Email string `yaml:"email"`
 }
 
-// DefaultTriageJustifications are the justifications gitops context can support.
+// DefaultTriageJustifications are the justifications an automatic decision may use.
+// The deployment justifications come from the gitops checkout. code_not_reachable
+// comes from an upstream call site the agent read.
 func DefaultTriageJustifications() []string {
 	return []string{
 		string(types.VEXJustRequiresConfiguration),
@@ -89,6 +91,7 @@ func DefaultTriageJustifications() []string {
 		string(types.VEXJustProtectedAtPerimeter),
 		string(types.VEXJustProtectedAtRuntime),
 		string(types.VEXJustProtectedByMitigations),
+		string(types.VEXJustCodeNotReachable),
 	}
 }
 

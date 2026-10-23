@@ -98,21 +98,45 @@ func provenance(triageID, model string, checkouts []gitops.Checkout, verdict mod
 	return text
 }
 
-func verifyEvidence(roots Roots, verdict modelVerdict) error {
+func verifyEvidence(roots Roots, pub *publicSource, verdict modelVerdict) error {
 	if verdict.Verdict != "not_affected" {
 		return nil
 	}
+	justification := types.NormalizeVEXJustification(types.VEXJustification(verdict.Justification))
+	gitopsHits := 0
+	publicHits := 0
 	for i, item := range verdict.Evidence {
 		if strings.TrimSpace(item.Quote) == "" || item.Line < 1 || strings.TrimSpace(item.Path) == "" {
 			return fmt.Errorf("evidence[%d] needs repo, path, line, and quote", i)
 		}
-		line, err := roots.Line(item.Repo, item.Path, item.Line)
-		if err != nil {
-			return fmt.Errorf("evidence[%d]: %w", i, err)
+		line, fromPublic := "", false
+		if pub != nil {
+			if text, ok := pub.line(item.Repo, item.Path, item.Line); ok {
+				line, fromPublic = text, true
+			}
+		}
+		if !fromPublic {
+			got, err := roots.Line(item.Repo, item.Path, item.Line)
+			if err != nil {
+				return fmt.Errorf("evidence[%d]: %w", i, err)
+			}
+			line = got
+			gitopsHits++
+		} else {
+			publicHits++
 		}
 		if !strings.Contains(line, strings.TrimSpace(item.Quote)) && !strings.Contains(strings.TrimSpace(item.Quote), strings.TrimSpace(line)) {
 			return fmt.Errorf("evidence[%d] quote does not match %s:%d", i, item.Path, item.Line)
 		}
+	}
+	if justification == types.VEXJustCodeNotReachable {
+		if publicHits == 0 {
+			return fmt.Errorf("code_not_reachable requires a line returned by public_code or by grep or read_file on a public checkout")
+		}
+		return nil
+	}
+	if gitopsHits == 0 {
+		return fmt.Errorf("%s requires a gitops checkout line", justification)
 	}
 	return nil
 }

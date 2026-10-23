@@ -17,6 +17,8 @@ type CheckoutRoot struct {
 	Dir     string
 	Include []string
 	Exclude []string
+	// Public is an upstream checkout fetched for this triage, not a gitops repo.
+	Public bool
 }
 
 // Roots executes read-only tools inside checkout directories.
@@ -192,6 +194,11 @@ func (r Roots) Line(repo, rel string, line int) (string, error) {
 		return "", fmt.Errorf("line %d not found", line)
 	}
 	return value, nil
+}
+
+func (r Roots) public(repo string) bool {
+	root, err := r.checkout(repo)
+	return err == nil && root.Public
 }
 
 func (r Roots) checkout(repo string) (CheckoutRoot, error) {

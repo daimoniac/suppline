@@ -11,7 +11,9 @@ import (
 	"net/url"
 	"os"
 	"regexp"
+	"strconv"
 	"strings"
+	"sync"
 	"time"
 )
 
@@ -22,7 +24,10 @@ var (
 	githubNamePattern = regexp.MustCompile(`^[A-Za-z0-9_][A-Za-z0-9_.-]{0,99}$`)
 	githubRefPattern  = regexp.MustCompile(`^[A-Za-z0-9_][A-Za-z0-9_./-]{0,127}$`)
 	githubPathPattern = regexp.MustCompile(`^[A-Za-z0-9_.@+-]{1,200}$`)
+	symbolPattern     = regexp.MustCompile(`^[A-Za-z0-9_.$-]{1,80}$`)
 )
+
+const maxPublicSearchResults = 10
 
 // publicSource fetches vulnerability advisories and public GitHub files.
 // Requests stay on an allowlist of hosts and on public IP addresses.
@@ -32,6 +37,9 @@ type publicSource struct {
 	insecure bool
 	osv      string
 	github   string
+
+	mu    sync.Mutex
+	lines map[string]string
 }
 
 func newPublicSource() *publicSource {
@@ -205,10 +213,52 @@ func (p *publicSource) GitHubFile(ctx context.Context, owner, repo, ref, rel str
 	if err != nil {
 		return "", err
 	}
-	return numberedLines(redacted, start, end), nil
+	numbered := numberedLines(redacted, start, end)
+	p.remember(owner+"/"+repo, rel, numbered)
+	return numbered, nil
+}
+
+// GitHubSearch searches the default branch of one public repository for a symbol.
+// The query cannot add its own GitHub qualifiers. Results point at files; they are
+// not evidence until public_code reads the line.
+func (p *publicSource) GitHubSearch(ctx context.Context, owner, repo, rel, query string) (string, error) {
+	if p == nil {
+		p = newPublicSource()
+	}
+	owner, repo, _, rel, err := cleanGitHubPath(owner, repo, "", rel)
+	if err != nil {
+		return "", err
+	}
+	query = strings.TrimSpace(query)
+	if !symbolPattern.MatchString(query) {
+		return "", fmt.Errorf("query must be one symbol")
+	}
+	if githubToken() == "" {
+		return "", fmt.Errorf("GitHub code search requires SUPPLINE_GITHUB_TOKEN or GITHUB_TOKEN")
+	}
+	q := query + " repo:" + owner + "/" + repo
+	if rel != "" {
+		q += " path:" + rel
+	}
+	rawURL := strings.TrimRight(p.github, "/") + "/search/code?per_page=" + strconv.Itoa(maxPublicSearchResults) + "&q=" + url.QueryEscape(q)
+	body, status, err := p.getAccept(ctx, rawURL, "application/vnd.github.text-match+json")
+	if err != nil {
+		return "", err
+	}
+	if status == http.StatusUnauthorized || status == http.StatusForbidden {
+		return "", fmt.Errorf("GitHub code search status %d", status)
+	}
+	if status != http.StatusOK {
+		return "", fmt.Errorf("GitHub code search status %d", status)
+	}
+	return formatGitHubSearch(owner, repo, body)
 }
 
 func (p *publicSource) get(ctx context.Context, rawURL string) ([]byte, int, error) {
+	return p.getAccept(ctx, rawURL, "application/vnd.github+json, application/json")
+}
+
+func (p *publicSource) getAccept(ctx context.Context, rawURL, accept string) ([]byte, int, error) {
 	if p == nil {
 		p = newPublicSource()
 	}
@@ -227,7 +277,7 @@ func (p *publicSource) get(ctx context.Context, rawURL string) ([]byte, int, err
 		return nil, 0, err
 	}
 	req.Header.Set("User-Agent", publicUserAgent)
-	req.Header.Set("Accept", "application/vnd.github+json, application/json")
+	req.Header.Set("Accept", accept)
 	if token := githubToken(); token != "" && (parsed.Hostname() == "api.github.com" || parsed.Hostname() == "raw.githubusercontent.com") {
 		req.Header.Set("Authorization", "Bearer "+token)
 	}
@@ -433,6 +483,112 @@ func formatGitHubAdvisory(body []byte) (string, error) {
 	}
 	if adv.Description != "" {
 		fmt.Fprintf(&b, "details:\n%s\n", oneLine(adv.Description, 4000))
+	}
+	return b.String(), nil
+}
+
+func (p *publicSource) remember(repo, path, numbered string) {
+	if p == nil {
+		return
+	}
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	if p.lines == nil {
+		p.lines = map[string]string{}
+	}
+	for _, row := range strings.Split(numbered, "\n") {
+		number, text, ok := strings.Cut(row, "|")
+		if !ok {
+			continue
+		}
+		n, err := strconv.Atoi(number)
+		if err != nil || n < 1 {
+			continue
+		}
+		p.lines[evidenceKey(repo, path, n)] = text
+	}
+}
+
+func (p *publicSource) rememberGrep(repo, output string) {
+	for _, row := range strings.Split(output, "\n") {
+		path, number, text, ok := splitGrepLine(row)
+		if !ok {
+			continue
+		}
+		p.remember(repo, path, strconv.Itoa(number)+"|"+text)
+	}
+}
+
+func splitGrepLine(row string) (string, int, string, bool) {
+	colon := -1
+	for i := 0; i < len(row); i++ {
+		if row[i] != ':' {
+			continue
+		}
+		j := i + 1
+		if j >= len(row) || row[j] < '0' || row[j] > '9' {
+			continue
+		}
+		n := 0
+		for j < len(row) && row[j] >= '0' && row[j] <= '9' {
+			n = n*10 + int(row[j]-'0')
+			j++
+		}
+		if j < len(row) && row[j] == ':' && n > 0 {
+			colon = i
+			return row[:colon], n, row[j+1:], true
+		}
+	}
+	return "", 0, "", false
+}
+
+func (p *publicSource) line(repo, path string, n int) (string, bool) {
+	if p == nil || n < 1 {
+		return "", false
+	}
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	text, ok := p.lines[evidenceKey(repo, path, n)]
+	return text, ok
+}
+
+func evidenceKey(repo, path string, line int) string {
+	return strings.ToLower(strings.Trim(strings.TrimSpace(repo), "/")) + "\n" + strings.Trim(strings.TrimSpace(path), "/") + "\n" + strconv.Itoa(line)
+}
+
+func formatGitHubSearch(owner, repo string, body []byte) (string, error) {
+	var result struct {
+		TotalCount        int  `json:"total_count"`
+		IncompleteResults bool `json:"incomplete_results"`
+		Items             []struct {
+			Path        string `json:"path"`
+			TextMatches []struct {
+				Fragment string `json:"fragment"`
+			} `json:"text_matches"`
+		} `json:"items"`
+	}
+	if err := json.Unmarshal(body, &result); err != nil {
+		return "", fmt.Errorf("decode GitHub code search: %w", err)
+	}
+	if len(result.Items) == 0 {
+		return "no matches\n", nil
+	}
+	var b strings.Builder
+	fmt.Fprintf(&b, "default branch of %s/%s\n", owner, repo)
+	for i, item := range result.Items {
+		if i >= maxPublicSearchResults {
+			break
+		}
+		fmt.Fprintf(&b, "%s\n", item.Path)
+		for _, match := range item.TextMatches {
+			fragment := oneLine(match.Fragment, 300)
+			if fragment != "" {
+				fmt.Fprintf(&b, "  %s\n", strings.ReplaceAll(fragment, "\n", " "))
+			}
+		}
+	}
+	if result.IncompleteResults || result.TotalCount > len(result.Items) {
+		b.WriteString("truncated, narrow the path\n")
 	}
 	return b.String(), nil
 }

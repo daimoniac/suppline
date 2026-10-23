@@ -32,6 +32,9 @@ type Client interface {
 	// GetManifest retrieves image manifest by digest
 	GetManifest(ctx context.Context, repo, digest string) (*Manifest, error)
 
+	// ImageLabels returns the config labels and manifest annotations for a digest.
+	ImageLabels(ctx context.Context, repo, digest string) (map[string]string, error)
+
 	// VerifyTagExists checks if a tag still exists in the registry
 	VerifyTagExists(ctx context.Context, repo, tag string) error
 
@@ -352,6 +355,51 @@ func (c *clientImpl) GetManifest(ctx context.Context, repo, digest string) (*Man
 	}
 
 	return manifest, nil
+}
+
+// ImageLabels returns OCI config labels for an image digest. Manifest annotations
+// fill keys that the config does not set.
+func (c *clientImpl) ImageLabels(ctx context.Context, repo, digest string) (map[string]string, error) {
+	registry, repository, err := parseImageRef(repo)
+	if err != nil {
+		return nil, errors.NewPermanentf("failed to parse repository: %w", err)
+	}
+	imageRef := fmt.Sprintf("%s/%s@%s", registry, repository, digest)
+	ref, err := name.ParseReference(imageRef, c.nameOptions(registry)...)
+	if err != nil {
+		return nil, errors.NewPermanentf("failed to parse image reference: %w", err)
+	}
+	auth := c.getAuthForRegistry(registry)
+	opts := append([]remote.Option{remote.WithAuth(auth), remote.WithContext(ctx)}, c.remoteOpts...)
+	desc, err := remote.Get(ref, opts...)
+	if err != nil {
+		return nil, errors.ClassifyRegistryError(fmt.Errorf("failed to get image descriptor for %s: %w", imageRef, err))
+	}
+	img, err := desc.Image()
+	if err != nil {
+		return nil, errors.ClassifyRegistryError(fmt.Errorf("failed to get image from descriptor: %w", err))
+	}
+	labels := map[string]string{}
+	configFile, err := img.ConfigFile()
+	if err != nil {
+		return nil, errors.ClassifyRegistryError(fmt.Errorf("failed to get config file: %w", err))
+	}
+	for key, value := range configFile.Config.Labels {
+		labels[key] = value
+	}
+	if manifest, err := img.Manifest(); err == nil && manifest != nil {
+		for key, value := range manifest.Annotations {
+			if _, ok := labels[key]; !ok {
+				labels[key] = value
+			}
+		}
+	}
+	for key, value := range desc.Annotations {
+		if _, ok := labels[key]; !ok {
+			labels[key] = value
+		}
+	}
+	return labels, nil
 }
 
 // VerifyTagExists checks if a tag still exists in the registry

@@ -28,7 +28,7 @@ type modelEvidence struct {
 	Quote string `json:"quote"`
 }
 
-func runAgent(ctx context.Context, llm completer, roots Roots, runtime clusterQuerier, pub *publicSource, allowed []string, job Job, placements string, repoNames []string, existing *types.VEXStatement, maxSteps int) (modelVerdict, int, error) {
+func runAgent(ctx context.Context, llm completer, roots *Roots, runtime clusterQuerier, pub *publicSource, upstream *publicCheckouts, images imageLabeler, allowed []string, job Job, placements string, repoNames []string, existing *types.VEXStatement, maxSteps int) (modelVerdict, int, error) {
 	if maxSteps < 1 {
 		maxSteps = 1
 	}
@@ -61,7 +61,7 @@ func runAgent(ctx context.Context, llm completer, roots Roots, runtime clusterQu
 		}
 		messages = append(messages, chatMessage{Role: "assistant", Content: result.Content, ToolCalls: result.ToolCalls})
 		for _, call := range result.ToolCalls {
-			output := dispatchTool(ctx, roots, runtime, pub, call)
+			output := dispatchTool(ctx, roots, runtime, pub, upstream, images, job, call)
 			messages = append(messages, chatMessage{Role: "tool", ToolCallID: call.ID, Content: untrusted("tool "+call.Function.Name, output)})
 		}
 	}
@@ -72,7 +72,7 @@ type clusterQuerier interface {
 	Query(ctx context.Context, cluster, namespace, image string) (string, error)
 }
 
-func dispatchTool(ctx context.Context, roots Roots, runtime clusterQuerier, pub *publicSource, call toolCall) string {
+func dispatchTool(ctx context.Context, roots *Roots, runtime clusterQuerier, pub *publicSource, upstream *publicCheckouts, images imageLabeler, job Job, call toolCall) string {
 	var args struct {
 		Repo      string `json:"repo"`
 		Path      string `json:"path"`
@@ -86,9 +86,13 @@ func dispatchTool(ctx context.Context, roots Roots, runtime clusterQuerier, pub 
 		Owner     string `json:"owner"`
 		GitRepo   string `json:"git_repo"`
 		Ref       string `json:"ref"`
+		Query     string `json:"query"`
 	}
 	if err := json.Unmarshal([]byte(call.Function.Arguments), &args); err != nil {
 		return "invalid arguments: " + err.Error()
+	}
+	if roots == nil {
+		roots = &Roots{}
 	}
 	var (
 		out string
@@ -99,8 +103,14 @@ func dispatchTool(ctx context.Context, roots Roots, runtime clusterQuerier, pub 
 		out, err = roots.ListDir(args.Repo, args.Path)
 	case "read_file":
 		out, err = roots.ReadFile(args.Repo, args.Path, args.StartLine, args.EndLine)
+		if err == nil && pub != nil && roots.public(args.Repo) {
+			pub.remember(args.Repo, args.Path, out)
+		}
 	case "grep":
 		out, err = roots.Grep(args.Repo, args.Pattern, args.Path)
+		if err == nil && pub != nil && roots.public(args.Repo) {
+			pub.rememberGrep(args.Repo, out)
+		}
 	case "cluster_runtime":
 		if runtime == nil {
 			err = fmt.Errorf("cluster runtime is unavailable")
@@ -111,6 +121,16 @@ func dispatchTool(ctx context.Context, roots Roots, runtime clusterQuerier, pub 
 		out, err = pub.Advisory(ctx, args.ID)
 	case "public_code":
 		out, err = pub.GitHubFile(ctx, args.Owner, args.GitRepo, args.Ref, args.Path, args.StartLine, args.EndLine)
+	case "public_search":
+		out, err = pub.GitHubSearch(ctx, args.Owner, args.GitRepo, args.Path, args.Query)
+	case "image_source":
+		out, err = imageSource(ctx, images, job)
+	case "public_checkout":
+		if roots == nil {
+			err = fmt.Errorf("public checkout is unavailable")
+			break
+		}
+		out, err = upstream.Checkout(ctx, roots, args.Owner, args.GitRepo, args.Ref, args.Path)
 	default:
 		err = fmt.Errorf("unknown tool %s", call.Function.Name)
 	}
@@ -121,6 +141,20 @@ func dispatchTool(ctx context.Context, roots Roots, runtime clusterQuerier, pub 
 		return "(no results)"
 	}
 	return out
+}
+
+func imageSource(ctx context.Context, images imageLabeler, job Job) (string, error) {
+	if images == nil {
+		return "", fmt.Errorf("image labels are unavailable")
+	}
+	if strings.TrimSpace(job.Repository) == "" || strings.TrimSpace(job.Digest) == "" {
+		return "", fmt.Errorf("image digest is unavailable")
+	}
+	labels, err := images.ImageLabels(ctx, job.Repository, job.Digest)
+	if err != nil {
+		return "", err
+	}
+	return formatImageLabels(labels), nil
 }
 
 func parseVerdict(content string) (modelVerdict, error) {
@@ -167,9 +201,22 @@ func toolDefinitions(withRuntime bool) []toolDef {
 			"start_line": map[string]any{"type": "integer"},
 			"end_line":   map[string]any{"type": "integer"},
 		}, "repo", "path")},
+		{"image_source", "Read the OCI source and revision labels of the image being triaged.", object(map[string]any{})},
+		{"public_checkout", "Fetch one directory of a public GitHub repository at a commit, tag, or branch. Then grep and read_file it with repo owner/repo. A short commit prefix is resolved. Submodules are not fetched.", object(map[string]any{
+			"owner":    map[string]any{"type": "string", "description": "GitHub owner"},
+			"git_repo": map[string]any{"type": "string", "description": "GitHub repository"},
+			"ref":      map[string]any{"type": "string", "description": "Commit, tag, or branch. A short commit prefix is accepted."},
+			"path":     map[string]any{"type": "string", "description": "Directory prefix to check out, such as apps/studio"},
+		}, "owner", "git_repo", "ref", "path")},
 		{"cve_advisory", "Fetch a public CVE or GHSA advisory: summary, affected package ranges, severity, and references.", object(map[string]any{
 			"id": map[string]any{"type": "string", "description": "CVE-YYYY-NNNN or GHSA-xxxx-xxxx-xxxx"},
 		}, "id")},
+		{"public_search", "Search the default branch of one public GitHub repository for a symbol. Returns matching paths. Read a path with public_code before citing it.", object(map[string]any{
+			"owner":    map[string]any{"type": "string", "description": "GitHub owner"},
+			"git_repo": map[string]any{"type": "string", "description": "GitHub repository"},
+			"query":    map[string]any{"type": "string", "description": "One symbol, such as SAFE_FOR_TEMPLATES or DOMPurify.sanitize"},
+			"path":     map[string]any{"type": "string", "description": "Optional directory prefix inside the repository"},
+		}, "owner", "git_repo", "query")},
 		{"public_code", "Read a file or list a directory in a public GitHub repository. Content is line-numbered and capped at 200 lines.", object(map[string]any{
 			"owner":      map[string]any{"type": "string", "description": "GitHub owner"},
 			"git_repo":   map[string]any{"type": "string", "description": "GitHub repository"},

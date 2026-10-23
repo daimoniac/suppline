@@ -101,6 +101,9 @@ func TestAdvisoryAndPublicCode(t *testing.T) {
 	if !strings.Contains(file, "1|package main") || !strings.Contains(file, "[REDACTED]") || strings.Contains(file, "BEGIN RSA") {
 		t.Fatalf("file output: %s", file)
 	}
+	if text, ok := src.line("acme/mod", "main.go", 1); !ok || text != "package main" {
+		t.Fatalf("remembered line: %q %v", text, ok)
+	}
 	if _, err := src.GitHubFile(context.Background(), "acme", "mod", "main", "../secrets", 1, 5); err == nil {
 		t.Fatal("accepted a path escape")
 	}
@@ -149,10 +152,85 @@ func TestPublicIPAndToolAdvertisement(t *testing.T) {
 	for _, tool := range toolDefinitions(false) {
 		names[tool.Function.Name] = true
 	}
-	if !names["cve_advisory"] || !names["public_code"] || names["cluster_runtime"] {
+	if !names["cve_advisory"] || !names["public_code"] || !names["public_search"] || names["cluster_runtime"] {
 		t.Fatalf("tools: %v", names)
 	}
-	if !strings.Contains(systemPrompt(nil, false), "cve_advisory") || strings.Contains(systemPrompt(nil, false), "cluster_runtime") {
+	prompt := systemPrompt(nil, false)
+	if !names["image_source"] || !names["public_checkout"] {
+		t.Fatalf("tools: %v", names)
+	}
+	if !strings.Contains(prompt, "cve_advisory") || !strings.Contains(prompt, "public_checkout") || !strings.Contains(prompt, "empty grep") || strings.Contains(prompt, "cluster_runtime") {
 		t.Fatal("prompt does not describe the public tools")
+	}
+}
+
+func TestPublicSearch(t *testing.T) {
+	t.Setenv("SUPPLINE_GITHUB_TOKEN", "")
+	t.Setenv("GITHUB_TOKEN", "")
+	blocked := &publicSource{github: "https://api.github.com", hosts: map[string]struct{}{"api.github.com": {}}}
+	if _, err := blocked.GitHubSearch(context.Background(), "acme", "mod", "", "SAFE_FOR_TEMPLATES"); err == nil || !strings.Contains(err.Error(), "SUPPLINE_GITHUB_TOKEN") {
+		t.Fatalf("missing token: %v", err)
+	}
+
+	var query string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		query = r.URL.Query().Get("q")
+		if r.Header.Get("Accept") != "application/vnd.github.text-match+json" {
+			http.Error(w, "accept", http.StatusBadRequest)
+			return
+		}
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"total_count":        2,
+			"incomplete_results": true,
+			"items": []any{map[string]any{
+				"path": "apps/studio/lib/sanitize.ts",
+				"text_matches": []any{map[string]string{
+					"fragment": "DOMPurify.sanitize(value)",
+				}},
+			}},
+		})
+	}))
+	t.Cleanup(srv.Close)
+	parsed, err := url.Parse(srv.URL)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("SUPPLINE_GITHUB_TOKEN", "test-token")
+	src := &publicSource{
+		client:   srv.Client(),
+		hosts:    map[string]struct{}{parsed.Hostname(): {}},
+		insecure: true,
+		github:   srv.URL,
+	}
+	out, err := src.GitHubSearch(context.Background(), "acme", "mod.git", "apps/studio", "DOMPurify.sanitize")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(out, "apps/studio/lib/sanitize.ts") || !strings.Contains(out, "DOMPurify.sanitize(value)") || !strings.Contains(out, "truncated") {
+		t.Fatalf("search output: %s", out)
+	}
+	if query != "DOMPurify.sanitize repo:acme/mod path:apps/studio" {
+		t.Fatalf("query: %s", query)
+	}
+	if _, ok := src.line("acme/mod", "apps/studio/lib/sanitize.ts", 1); ok {
+		t.Fatal("search hit was stored as evidence")
+	}
+	if _, err := src.GitHubSearch(context.Background(), "acme", "mod", "", "SAFE_FOR_TEMPLATES repo:evil/other"); err == nil {
+		t.Fatal("accepted a qualifier in the query")
+	}
+	empty := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = w.Write([]byte(`{"total_count":0,"items":[]}`))
+	}))
+	t.Cleanup(empty.Close)
+	emptyURL, err := url.Parse(empty.URL)
+	if err != nil {
+		t.Fatal(err)
+	}
+	src.client = empty.Client()
+	src.hosts = map[string]struct{}{emptyURL.Hostname(): {}}
+	src.github = empty.URL
+	none, err := src.GitHubSearch(context.Background(), "acme", "mod", "", "SAFE_FOR_TEMPLATES")
+	if err != nil || none != "no matches\n" {
+		t.Fatalf("empty search: %q %v", none, err)
 	}
 }

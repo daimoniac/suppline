@@ -263,6 +263,7 @@ func run() error {
 	if err != nil {
 		return fmt.Errorf("failed to initialize triage: %w", err)
 	}
+	triageService.SetImageLabels(registryClient)
 	if err := triageService.ValidateStartup(); err != nil {
 		return err
 	}

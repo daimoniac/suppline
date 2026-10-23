@@ -31,6 +31,7 @@ type Service struct {
 	scans    statestore.StateStoreQuery
 	runtime  runtimeLookup
 	clusters clusterQuerier
+	images   imageLabeler
 	enqueuer *scanenqueue.Enqueuer
 	logger   *slog.Logger
 	llm      completer
@@ -50,6 +51,13 @@ type Service struct {
 type runtimeLookup interface {
 	GetRuntimeUsageForScan(ctx context.Context, digest, repository, tag string) (*statestore.RuntimeUsage, error)
 	RepositoryInUse(ctx context.Context, repository string) (bool, error)
+}
+
+// SetImageLabels supplies OCI source and revision labels for the image being triaged.
+func (s *Service) SetImageLabels(src imageLabeler) {
+	if s != nil {
+		s.images = src
+	}
 }
 
 // New builds a triage service. A missing API key disables the feature.
@@ -403,14 +411,18 @@ func (s *Service) process(ctx context.Context, job Job, checkouts []gitops.Check
 	for i, checkout := range checkouts {
 		names[i] = checkout.Name
 	}
-	verdict, tokens, err := runAgent(ctx, s.llm, roots, s.clusters, newPublicSource(), allowedNames(s.settings), job, s.placements(ctx, job), names, existing, s.settings.MaxSteps)
+	jobRoots := roots
+	jobRoots.Checkouts = append([]CheckoutRoot(nil), roots.Checkouts...)
+	pub := newPublicSource()
+	upstream := &publicCheckouts{base: s.settings.CheckoutDir, pub: pub}
+	verdict, tokens, err := runAgent(ctx, s.llm, &jobRoots, s.clusters, pub, upstream, s.images, allowedNames(s.settings), job, s.placements(ctx, job), names, existing, s.settings.MaxSteps)
 	if err != nil {
 		s.record(ctx, job, verdict, tokens, StatusError, "", shas, err.Error())
 		s.logger.Error("triage agent failed", "repository", job.Repository, "cve", job.CVEID, "error", err)
 		return
 	}
 	evidenceErr := ""
-	if err := verifyEvidence(roots, verdict); err != nil {
+	if err := verifyEvidence(jobRoots, pub, verdict); err != nil {
 		evidenceErr = err.Error()
 	}
 	kevHit, kevErr := s.kev.Contains(ctx, job.CVEID)

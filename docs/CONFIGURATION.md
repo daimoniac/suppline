@@ -511,7 +511,7 @@ SUPPLINE_API_KEY=<from-secret>
 
 ## Triage (`x-triage`)
 
-Triage runs after a CEL failure on an image that is currently running in a cluster (`only_in_use`, default true; the same runtime window as `source="runtime"` alerts). Set `only_in_use: false` to triage every failure. When triage is enabled, the policy views show **Triage now** instead of the coding-agent prompt. That button queues the failures in the current image-usage view. It checks out the gitops repositories in `context_repos`, asks an OpenAI-compatible chat model whether the CVE affects this deployment, and may write `x-vex-auto` on the matching sync entry. The model can also read the latest image snapshots reported by the cluster agents, fetch the public CVE or GHSA advisory, and read a file from a public GitHub repository named by that advisory. `SUPPLINE_GITHUB_TOKEN` is optional and raises the GitHub rate limit. A `not_affected` evidence quote still has to come from the gitops checkout. Hand-written `x-vex` is never modified and wins when both lists contain the same id. The workflow, dedupe rules, and guardrails are in [STATE_MACHINE.md](STATE_MACHINE.md).
+Triage runs after a CEL failure on an image that is currently running in a cluster (`only_in_use`, default true; the same runtime window as `source="runtime"` alerts). Set `only_in_use: false` to triage every failure. When triage is enabled, the policy views show **Triage now** instead of the coding-agent prompt. That button queues the failures in the current image-usage view. It checks out the gitops repositories in `context_repos`, asks an OpenAI-compatible chat model whether the CVE affects this deployment, and may write `x-vex-auto` on the matching sync entry. The model can also read the latest image snapshots reported by the cluster agents, fetch the public CVE or GHSA advisory, and check out one directory of the public GitHub commit named by the image labels `org.opencontainers.image.source` and `org.opencontainers.image.revision`. That checkout is searched with the same grep and read_file tools as the gitops repos. A deployment `not_affected` still needs a gitops line. `code_not_reachable` needs a line those tools, or `public_code`, actually returned. An empty grep stays uncertain. `SUPPLINE_GITHUB_TOKEN` is optional and is only used for GitHub code search of the default branch. Hand-written `x-vex` is never modified and wins when both lists contain the same id. The workflow, dedupe rules, and guardrails are in [STATE_MACHINE.md](STATE_MACHINE.md).
 
 ```yaml
 x-triage:
@@ -533,6 +533,7 @@ x-triage:
     - protected_at_perimeter
     - protected_at_runtime
     - protected_by_mitigations
+    - code_not_reachable
   block_kev: true
   checkout_dir: /data/gitops
   backup_retention: 10

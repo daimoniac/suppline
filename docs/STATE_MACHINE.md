@@ -123,9 +123,9 @@ A job is skipped when the latest cached run (`dry_run`, `committed`, `written`, 
 
 The model may only create `not_affected` when all of the following hold:
 
-- the justification is in `allowed_justifications` (default: `requires_configuration`, `requires_environment`, `protected_at_perimeter`, `protected_at_runtime`, `protected_by_mitigations`)
+- the justification is in `allowed_justifications` (default: `requires_configuration`, `requires_environment`, `protected_at_perimeter`, `protected_at_runtime`, `protected_by_mitigations`, `code_not_reachable`)
 - confidence is at least `min_confidence` (default 0.8)
-- every evidence quote matches a line in the checkout suppline actually read
+- every evidence quote matches a line suppline actually read. Deployment justifications need a gitops line. `code_not_reachable` needs a line from `public_code` or from grep or read_file on the public checkout of the image's source commit. An empty grep is not evidence
 - the CVE is not in the CISA KEV feed (`block_kev`, default true). If `cisa.gov` rejects the fetch, triage uses CISA's GitHub copy of the same catalog. If both fetches fail, no new exemption is written and the run is retried
 - `mode` is `enforce`. `dry-run` (the default) only records the decision
 
