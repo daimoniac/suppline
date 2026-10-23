@@ -214,6 +214,10 @@ sync:
 - Expired VEX statements are ignored (CVE counts as normal)
 - Only `not_affected` state exempts CVEs from policy counts; other states (e.g. `in_triage`, `affected`) are informational
 
+### `x-vex-auto`
+
+Triage writes exemptions into `x-vex-auto` on the sync entry. Effective statements are `defaults.x-vex`, then the sync entry's `x-vex`, then `x-vex-auto`. The first statement for an id wins, so a hand-written `x-vex` id is never replaced by an auto statement. An auto statement with `state: affected` stays in the file as the decision record and does not exempt the CVE, so the gate fails.
+
 ## Testing Policies
 
 ### Using the API

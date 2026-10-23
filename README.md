@@ -4,7 +4,7 @@
 
 <p align="center">
   <strong>Self-hosted image intake gateway for Kubernetes.</strong><br/>
-  Mirror → Scan → Gate → Attest → Run.
+  Mirror → Scan → Gate → Triage → Attest → Run.
 </p>
 
 <p align="center">
@@ -41,8 +41,9 @@ One Go binary. SQLite or PostgreSQL state. No SaaS, no phone-home, air-gap compa
 1. **Mirror** — regsync keeps your registry in sync with the upstream repositories listed in `suppline.yml`.
 2. **Scan** — the watcher notices new or changed digests and enqueues them; Trivy produces an SBOM and vulnerability set.
 3. **Gate** — active VEX statements are applied, then your CEL policy decides: `passed`, `failed`, or `pending`.
-4. **Attest** — cosign signs SBOM, vulnerability, VEX, and SCAI attestations into the registry next to the image.
-5. **Run** — clusters pull from the mirror; Kyverno/OPA verifies the SCAI attestation before a pod starts.
+4. **Triage** — a failed gate can ask an LLM, with your gitops repos as context, whether the CVE affects this deployment. A guarded `not_affected` result is written to `x-vex-auto` and the image is evaluated again. See [docs/STATE_MACHINE.md](docs/STATE_MACHINE.md).
+5. **Attest** — cosign signs SBOM, vulnerability, VEX, and SCAI attestations into the registry next to the image.
+6. **Run** — clusters pull from the mirror; Kyverno/OPA verifies the SCAI attestation before a pod starts.
 
 See [docs/STATE_MACHINE.md](docs/STATE_MACHINE.md) for the exact lifecycle, including rescan triggers and error paths.
 
@@ -127,7 +128,7 @@ sync:
         expires_at: 2026-12-31T23:59:59Z
 ```
 
-Runtime behaviour is set with environment variables — `SUPPLINE_CONFIG`, `TRIVY_SERVER_ADDR`, `SQLITE_PATH`, `ATTESTATION_KEY`, `SUPPLINE_API_KEY`, `LOG_LEVEL`, and the worker/queue tunables. Full list in [docs/CONFIGURATION.md](docs/CONFIGURATION.md).
+Runtime behaviour is set with environment variables — `SUPPLINE_CONFIG`, `TRIVY_SERVER_ADDR`, `SQLITE_PATH`, `ATTESTATION_KEY`, `SUPPLINE_API_KEY`, `SUPPLINE_LLM_API_KEY`, `LOG_LEVEL`, and the worker/queue tunables. Full list in [docs/CONFIGURATION.md](docs/CONFIGURATION.md).
 
 ## Policy as code
 
@@ -246,6 +247,10 @@ Prometheus metrics on `:9090/metrics`, JSON logs on stdout, component health on 
 | `suppline_scans_total` | Scans by status |
 | `suppline_queue_depth` | Backlog — if this climbs, add workers or slow the watcher |
 | `suppline_scan_duration_seconds` | Scan latency histogram |
+| `suppline_triage_runs_total{status}` | Triage decisions by status |
+| `suppline_triage_tokens_total` | Tokens reported by the triage model |
+| `suppline_triage_push_failures_total` | Config-repo pushes rejected after retries |
+| `suppline_triage_budget_exhausted` | 1 while the daily token budget is used up |
 
 A starter Grafana dashboard lives in [grafana/](grafana/).
 

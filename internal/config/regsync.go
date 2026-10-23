@@ -333,6 +333,14 @@ func (c *RegsyncConfig) ValidateVEXStatements() error {
 				return fmt.Errorf("sync[%s].x-vex[%d]: %w", sync.Target, i, err)
 			}
 		}
+		for i, stmt := range sync.VEXAuto {
+			if err := types.ValidateVEXStatement(stmt); err != nil {
+				return fmt.Errorf("sync[%s].x-vex-auto[%d]: %w", sync.Target, i, err)
+			}
+		}
+	}
+	if err := c.Triage.Validate(); err != nil {
+		return err
 	}
 	return nil
 }

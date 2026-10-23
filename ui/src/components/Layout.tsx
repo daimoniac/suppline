@@ -3,7 +3,7 @@ import { Link, NavLink, Outlet } from 'react-router';
 import { useAuth } from '../lib/auth';
 import {
   LayoutDashboard, Layers, ScanSearch, ShieldAlert, Bug, ShieldCheck,
-  Plug, LogOut, ClipboardList, Menu, X,
+  Plug, LogOut, ClipboardList, Menu, X, Scale,
 } from 'lucide-react';
 import { ImageUsageFilterProvider, useImageUsageFilter } from '../lib/imageUsageFilter';
 import { PageSizePreferenceProvider } from '../lib/pageSizePreference';
@@ -17,6 +17,7 @@ const navItems = [
   { to: '/failed', icon: ShieldAlert, label: 'Policy Exceptions' },
   { to: '/vulnerabilities?severity=critical', icon: Bug, label: 'Vulnerabilities' },
   { to: '/vex', icon: ShieldCheck, label: 'VEX Statements' },
+  { to: '/triage', icon: Scale, label: 'Triage' },
   { to: '/integrations', icon: Plug, label: 'Integrations' },
 ];
 

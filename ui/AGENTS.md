@@ -62,6 +62,7 @@ ui/
         ├── FailedImagesPage.tsx
         ├── VulnerabilitiesPage.tsx
         ├── VEXPage.tsx
+        ├── TriagePage.tsx
         └── IntegrationsPage.tsx
 ```
 
@@ -79,6 +80,7 @@ All routes live in `src/App.tsx`. The app renders `<LoginPage />` full-screen wh
 /failed                        → FailedImagesPage
 /vulnerabilities               → VulnerabilitiesPage
 /vex                           → VEXPage
+/triage                        → TriagePage
 /integrations                  → IntegrationsPage
 *                              → redirect to /
 ```

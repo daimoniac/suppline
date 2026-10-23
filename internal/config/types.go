@@ -88,6 +88,7 @@ type RegsyncConfig struct {
 	Creds    []RegistryCredential `yaml:"creds"`
 	Defaults Defaults             `yaml:"defaults"`
 	Sync     []SyncEntry          `yaml:"sync"`
+	Triage   *TriageConfig        `yaml:"x-triage,omitempty"`
 }
 
 // RegistryCredential contains authentication information for a registry
@@ -127,7 +128,8 @@ type SyncEntry struct {
 	Schedule              string               `yaml:"schedule,omitempty"`
 	Platform              string               `yaml:"platform,omitempty"`
 	Tags                  *TagFilter           `yaml:"tags,omitempty"`
-	VEX                   []types.VEXStatement `yaml:"x-vex,omitempty"` // CycloneDX VEX statements
+	VEX                   []types.VEXStatement `yaml:"x-vex,omitempty"`      // CycloneDX VEX statements authored by people
+	VEXAuto               []types.VEXStatement `yaml:"x-vex-auto,omitempty"` // Triage-owned statements; never written into x-vex
 	RescanInterval        string               `yaml:"x-rescanInterval,omitempty"`
 	SCAIValidityExtension string               `yaml:"x-scaiValidityExtension,omitempty"`
 	Policy                *PolicyConfig        `yaml:"x-policy,omitempty"`

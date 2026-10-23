@@ -167,6 +167,9 @@ export class APIClient {
   async getInactiveVEXStatements() {
     return this.request<VEXSummary[]>('/api/v1/vex/inactive');
   }
+  async getTriageRuns(filters: Record<string, unknown> = {}) {
+    return this.request<TriageRun[]>(`/api/v1/triage${this.qs(filters)}`);
+  }
 
   // Policy
   async reevaluatePolicy(repository: string) {
@@ -364,6 +367,36 @@ export interface RepositoryDetailResponse {
 export interface RepositoryVEXInfo {
   Repository: string;
   AppliedAt: number;
+  Source?: string;
+}
+
+export interface TriageEvidence {
+  repo: string;
+  path: string;
+  line: number;
+  quote: string;
+}
+
+export interface TriageRepoSHA {
+  name: string;
+  sha: string;
+}
+
+export interface TriageRun {
+  ID: number;
+  Repository: string;
+  CVEID: string;
+  Verdict: string;
+  Justification?: string;
+  Confidence: number;
+  Evidence?: TriageEvidence[];
+  Reasoning?: string;
+  Model?: string;
+  RepoSHAs?: TriageRepoSHA[];
+  Tokens: number;
+  Status: string;
+  CommitSHA?: string;
+  CreatedAt: number;
 }
 
 export interface VEXSummary {

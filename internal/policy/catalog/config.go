@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"sort"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/daimoniac/suppline/internal/config"
@@ -12,7 +13,9 @@ import (
 )
 
 // ConfigCatalog adapts parsed suppline YAML configuration to Catalog.
+// Auto-VEX hot-swap is safe for concurrent readers.
 type ConfigCatalog struct {
+	mu     sync.RWMutex
 	config *config.RegsyncConfig
 }
 
@@ -62,6 +65,12 @@ func (c *ConfigCatalog) effective(repository string) (*config.PolicyConfig, Evid
 	if c == nil || c.config == nil {
 		return nil, Evidence{}
 	}
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	return c.effectiveLocked(repository)
+}
+
+func (c *ConfigCatalog) effectiveLocked(repository string) (*config.PolicyConfig, Evidence) {
 
 	configured := c.config.Defaults.Policy
 	var evidence Evidence
@@ -75,6 +84,7 @@ func (c *ConfigCatalog) effective(repository string) (*config.PolicyConfig, Evid
 			continue
 		}
 		seen[statement.ID] = struct{}{}
+		statement.Source = types.VEXSourceManual
 		evidence.VEXStatements = append(evidence.VEXStatements, statement)
 	}
 
@@ -97,6 +107,15 @@ func (c *ConfigCatalog) effective(repository string) (*config.PolicyConfig, Evid
 				continue
 			}
 			seen[statement.ID] = struct{}{}
+			statement.Source = types.VEXSourceManual
+			evidence.VEXStatements = append(evidence.VEXStatements, statement)
+		}
+		for _, statement := range sync.VEXAuto {
+			if _, exists := seen[statement.ID]; exists {
+				continue
+			}
+			seen[statement.ID] = struct{}{}
+			statement.Source = types.VEXSourceAuto
 			evidence.VEXStatements = append(evidence.VEXStatements, statement)
 		}
 	}
@@ -104,10 +123,67 @@ func (c *ConfigCatalog) effective(repository string) (*config.PolicyConfig, Evid
 	return configured, evidence
 }
 
+// ReplaceAutoVEX replaces x-vex-auto on every sync entry for repository.
+// Hand-written x-vex statements are left untouched. x-vex wins on the same id
+// at read time, so an auto statement with a duplicate id stays stored but is
+// not effective.
+func (c *ConfigCatalog) ReplaceAutoVEX(repository string, statements []types.VEXStatement) error {
+	if c == nil || c.config == nil {
+		return fmt.Errorf("no configuration catalog")
+	}
+	copied := make([]types.VEXStatement, len(statements))
+	for i, statement := range statements {
+		statement.Source = types.VEXSourceAuto
+		copied[i] = statement
+	}
+
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	matched := false
+	for i := range c.config.Sync {
+		if targetRepository(c.config.Sync[i]) != repository {
+			continue
+		}
+		matched = true
+		c.config.Sync[i].VEXAuto = append([]types.VEXStatement(nil), copied...)
+	}
+	if !matched {
+		return fmt.Errorf("no sync entry for repository %s", repository)
+	}
+	return nil
+}
+
+// AutoVEX returns the triage-owned statements stored for a repository.
+func (c *ConfigCatalog) AutoVEX(repository string) []types.VEXStatement {
+	if c == nil || c.config == nil {
+		return nil
+	}
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	var out []types.VEXStatement
+	seen := make(map[string]struct{})
+	for _, sync := range c.config.Sync {
+		if targetRepository(sync) != repository {
+			continue
+		}
+		for _, statement := range sync.VEXAuto {
+			if _, exists := seen[statement.ID]; exists {
+				continue
+			}
+			seen[statement.ID] = struct{}{}
+			statement.Source = types.VEXSourceAuto
+			out = append(out, statement)
+		}
+	}
+	return out
+}
+
 func (c *ConfigCatalog) Repositories() []string {
 	if c == nil || c.config == nil {
 		return nil
 	}
+	c.mu.RLock()
+	defer c.mu.RUnlock()
 	return append([]string(nil), c.config.GetTargetRepositories()...)
 }
 
@@ -116,6 +192,8 @@ func (c *ConfigCatalog) ListPolicies() PolicyListing {
 	if c == nil || c.config == nil {
 		return listing
 	}
+	c.mu.RLock()
+	defer c.mu.RUnlock()
 
 	if cfg := c.config.Defaults.Policy; cfg != nil && cfg.Expression != "" {
 		defaultPolicy := policy.PolicyConfig{
@@ -152,12 +230,17 @@ func (c *ConfigCatalog) StatementIDs() []string {
 	if c == nil || c.config == nil {
 		return nil
 	}
+	c.mu.RLock()
+	defer c.mu.RUnlock()
 	ids := make(map[string]struct{})
 	for _, statement := range c.config.Defaults.VEX {
 		ids[statement.ID] = struct{}{}
 	}
 	for _, sync := range c.config.Sync {
 		for _, statement := range sync.VEX {
+			ids[statement.ID] = struct{}{}
+		}
+		for _, statement := range sync.VEXAuto {
 			ids[statement.ID] = struct{}{}
 		}
 	}
@@ -168,6 +251,8 @@ func (c *ConfigCatalog) UsesVEXRepo() bool {
 	if c == nil || c.config == nil {
 		return false
 	}
+	c.mu.RLock()
+	defer c.mu.RUnlock()
 	if c.config.Defaults.VEXRepo != nil && *c.config.Defaults.VEXRepo {
 		return true
 	}

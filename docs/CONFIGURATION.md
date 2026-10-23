@@ -8,6 +8,7 @@ Complete reference for all configuration options in suppline.
 - [Environment Variables](#environment-variables)
 - [Regsync Configuration](#regsync-configuration)
 - [Examples](#examples)
+- [Triage (`x-triage`)](#triage-x-triage)
 
 ## Configuration Sources
 
@@ -99,6 +100,7 @@ succeeds.
 | `API_ENABLED` | bool | `true` | Enable HTTP API server |
 | `API_PORT` | int | `8080` | API server port |
 | `SUPPLINE_API_KEY` | string | `` | Required when the API is enabled. The cluster-inventory webhook and cluster list stay unauthenticated |
+| `SUPPLINE_LLM_API_KEY` | string | `` | Bearer token for the Triage OpenAI-compatible endpoint. If `x-triage.enabled` is true and this is empty, Triage stays off |
 | `SUPPLINE_ALLOW_NO_AUTH` | bool | `false` | Explicit opt-in to start the API with authentication disabled. Isolated evaluation only |
 | `API_READ_ONLY` | bool | `false` | Disable write operations, including repository and tag rescan |
 
@@ -505,6 +507,60 @@ SUPPLINE_CONFIG=/config/suppline.yml
 ATTESTATION_KEY_PATH=/keys/cosign.key
 ATTESTATION_KEY_PASSWORD=<from-secret>
 SUPPLINE_API_KEY=<from-secret>
+```
+
+## Triage (`x-triage`)
+
+Triage runs after a CEL failure. It checks out the gitops repositories in `context_repos`, asks an OpenAI-compatible chat model whether the CVE affects this deployment, and may write `x-vex-auto` on the matching sync entry. Hand-written `x-vex` is never modified and wins when both lists contain the same id. The workflow, dedupe rules, and guardrails are in [STATE_MACHINE.md](STATE_MACHINE.md).
+
+```yaml
+x-triage:
+  enabled: true
+  mode: dry-run          # dry-run (default) | enforce
+  llm:
+    base_url: https://llm.internal/v1
+    model: gpt-4.1
+    max_steps: 20
+    daily_token_budget: 2000000
+  min_confidence: 0.8
+  expiry: 30d
+  renew_before: 7d
+  retriage_interval: 24h
+  allowed_justifications:
+    - requires_configuration
+    - requires_environment
+    - protected_at_perimeter
+    - protected_at_runtime
+    - protected_by_mitigations
+  block_kev: true
+  checkout_dir: /data/gitops
+  backup_retention: 10
+  context_repos:
+    - name: infra
+      url: https://git.example/infra/gitops.git
+      auth: { type: https-token, env: GITOPS_INFRA_TOKEN }
+      include: ["**/*.yaml"]
+  config_repo:            # omit to edit the local suppline.yml instead
+    url: ssh://git@git.example/infra/suppline-config.git
+    path: suppline.yml
+    auth:
+      type: ssh
+      key_env: SUPPLINE_CONFIG_REPO_KEY
+      known_hosts_env: SUPPLINE_KNOWN_HOSTS
+    author: { name: suppline-triage, email: triage@suppline.local }
+```
+
+Git credentials and `SUPPLINE_LLM_API_KEY` come from the environment, not from this file. SSH auth requires both a private key and `known_hosts`. An empty `branch` follows the remote HEAD. `config_repo.path` is a plain file inside that repository. In enforce mode without `config_repo`, the local file must be writable; a read-only ConfigMap mount refuses to start. Local writes keep `suppline.yml.bak.1` (newest) through `.bak.N`.
+
+Per-sync auto statements:
+
+```yaml
+sync:
+  - source: nginx
+    target: registry.example/nginx
+    type: repository
+    x-vex: []        # people
+    x-vex-auto: []   # Triage
 ```
 
 ## Duration Format

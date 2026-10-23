@@ -359,7 +359,7 @@ func (s *APIServer) handleListInactiveVEX(w http.ResponseWriter, r *http.Request
 					Detail:        stmt.Detail,
 					ExpiresAt:     stmt.ExpiresAt,
 					Repositories: []types.RepositoryVEXInfo{
-						{Repository: repo, AppliedAt: 0},
+						{Repository: repo, AppliedAt: 0, Source: stmt.Source},
 					},
 				}
 			}
@@ -405,12 +405,21 @@ func (s *APIServer) handleListInactiveVEX(w http.ResponseWriter, r *http.Request
 			// Add to grouped result
 			if existing, exists := grouped[cveID]; exists {
 				// Add repository to existing entry
+				source := ""
+				if len(summary.Repositories) > 0 {
+					source = summary.Repositories[0].Source
+				}
 				existing.Repositories = append(existing.Repositories, types.RepositoryVEXInfo{
 					Repository: repo,
 					AppliedAt:  0,
+					Source:     source,
 				})
 			} else {
 				// Create new entry
+				source := ""
+				if len(summary.Repositories) > 0 {
+					source = summary.Repositories[0].Source
+				}
 				grouped[cveID] = &types.VEXSummary{
 					CVEID:         summary.CVEID,
 					State:         summary.State,
@@ -418,7 +427,7 @@ func (s *APIServer) handleListInactiveVEX(w http.ResponseWriter, r *http.Request
 					Detail:        summary.Detail,
 					ExpiresAt:     summary.ExpiresAt,
 					Repositories: []types.RepositoryVEXInfo{
-						{Repository: repo, AppliedAt: 0},
+						{Repository: repo, AppliedAt: 0, Source: source},
 					},
 				}
 			}
@@ -1439,6 +1448,7 @@ func (s *APIServer) getConfiguredVEXStatements(cveIDFilter, repositoryFilter str
 					AppliedAt:     0, // Will be enriched with historical data if available
 					ExpiresAt:     configStatements[i].ExpiresAt,
 					Repository:    repo,
+					Source:        configStatements[i].Source,
 				}
 			}
 		}
@@ -1532,6 +1542,7 @@ func (s *APIServer) groupVEXByCVE(vexInfos []*types.VEXInfo) []*types.VEXSummary
 		summary.Repositories = append(summary.Repositories, types.RepositoryVEXInfo{
 			Repository: info.Repository,
 			AppliedAt:  info.AppliedAt,
+			Source:     info.Source,
 		})
 	}
 

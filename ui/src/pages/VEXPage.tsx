@@ -3,7 +3,7 @@ import { Link, useSearchParams } from 'react-router';
 import { useAuth } from '../lib/auth';
 import { formatDate, isPast, isWithinDays, daysUntil } from '../lib/utils';
 import { LoadingState, ErrorState, PageHeader, Pagination, PageFiltersBar, FilterActionButton } from '../components/ui';
-import type { VEXSummary } from '../lib/api';
+import type { RepositoryVEXInfo, VEXSummary } from '../lib/api';
 import { ArrowUpDown, ArrowUp, ArrowDown } from 'lucide-react';
 import { useSortablePaginationState } from '../lib/useSortablePaginationState';
 import { usePageSizePreference } from '../lib/pageSizePreference';
@@ -33,6 +33,19 @@ function VEXStateBadge({ state }: { state: string }) {
     <span className={`px-2 py-0.5 rounded text-xs font-medium ${styles[state] || 'bg-bg-tertiary text-text-secondary'}`}>
       {VEX_STATE_LABELS[state] || state}
     </span>
+  );
+}
+
+function ProvenanceBadge({ repositories }: { repositories: RepositoryVEXInfo[] }) {
+  const sources = new Set(repositories.map(repo => repo.Source).filter(Boolean));
+  if (sources.size === 0) return null;
+  const auto = sources.has('x-vex-auto');
+  const manual = sources.has('x-vex');
+  let label = 'manual';
+  if (auto && manual) label = 'mixed';
+  else if (auto) label = 'auto';
+  return (
+    <span className="px-2 py-0.5 rounded text-xs font-medium bg-bg-tertiary text-text-secondary">{label}</span>
   );
 }
 
@@ -191,6 +204,7 @@ export default function VEXPage() {
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center gap-2">
                       <span className="text-sm font-mono font-medium">{t.CVEID}</span>
+                      <ProvenanceBadge repositories={repos} />
                       <ExpirationBadge expiresAt={t.ExpiresAt} />
                     </div>
                     <div className="flex items-center gap-2 mt-0.5">

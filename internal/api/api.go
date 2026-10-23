@@ -142,6 +142,7 @@ func (s *APIServer) setupRoutes() {
 	s.router.HandleFunc("/api/v1/vulnerabilities/", s.corsMiddleware(s.authMiddleware(s.handleGetVulnerabilityDetails, false)))
 	s.router.HandleFunc("/api/v1/coverage", s.corsMiddleware(s.authMiddleware(s.handleGetCoverage, false)))
 	s.router.HandleFunc("/api/v1/vex", s.corsMiddleware(s.authMiddleware(s.handleListVEX, false)))
+	s.router.HandleFunc("/api/v1/triage", s.corsMiddleware(s.authMiddleware(s.handleListTriage, false)))
 	s.router.HandleFunc("/api/v1/vex/inactive", s.corsMiddleware(s.authMiddleware(s.handleListInactiveVEX, false)))
 	s.router.HandleFunc("/api/v1/images/failed", s.corsMiddleware(s.authMiddleware(s.handleListFailedImages, false)))
 	s.router.HandleFunc("/api/v1/policies", s.corsMiddleware(s.authMiddleware(s.handleListPolicies, false)))
