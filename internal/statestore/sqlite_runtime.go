@@ -444,6 +444,15 @@ func (s *SQLiteStore) queryRuntimeUsageByRepoTags(ctx context.Context, pairs []r
 	return result, nil
 }
 
+// RepositoryInUse reports whether any current cluster observation matches the repository.
+func (s *SQLiteStore) RepositoryInUse(ctx context.Context, repository string) (bool, error) {
+	usage, err := s.queryRuntimeUsageByRepository(ctx, repository)
+	if err != nil {
+		return false, err
+	}
+	return usage.RuntimeUsed, nil
+}
+
 // GetRuntimeUsageForScan returns runtime usage for one scan detail response.
 func (s *SQLiteStore) GetRuntimeUsageForScan(ctx context.Context, digest, repository, tag string) (*RuntimeUsage, error) {
 	digest = strings.TrimSpace(digest)

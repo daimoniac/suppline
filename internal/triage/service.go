@@ -48,6 +48,7 @@ type Service struct {
 
 type runtimeLookup interface {
 	GetRuntimeUsageForScan(ctx context.Context, digest, repository, tag string) (*statestore.RuntimeUsage, error)
+	RepositoryInUse(ctx context.Context, repository string) (bool, error)
 }
 
 // New builds a triage service. A missing API key disables the feature.
@@ -150,6 +151,17 @@ func (s *Service) NotifyPolicyFailure(ctx context.Context, notice worker.PolicyF
 	if s == nil || !s.settings.Enabled {
 		return
 	}
+	if s.settings.OnlyInUse {
+		used, err := s.imageInUse(ctx, notice.Digest, notice.Repository, notice.Tag)
+		if err != nil {
+			s.logger.Error("triage in-use lookup failed", "repository", notice.Repository, "digest", notice.Digest, "error", err)
+			return
+		}
+		if !used {
+			s.logger.Debug("triage skipped, image not in use", "repository", notice.Repository, "tag", notice.Tag, "digest", notice.Digest)
+			return
+		}
+	}
 	for _, finding := range notice.Findings {
 		if s.exempt(notice.Repository, finding.CVEID) {
 			continue
@@ -245,6 +257,16 @@ func (s *Service) sweep(ctx context.Context) {
 	}
 	now := s.now()
 	for _, repository := range s.catalog.Repositories() {
+		if s.settings.OnlyInUse {
+			used, err := s.repositoryInUse(ctx, repository)
+			if err != nil {
+				s.logger.Error("triage in-use lookup failed", "repository", repository, "error", err)
+				continue
+			}
+			if !used {
+				continue
+			}
+		}
 		for _, statement := range s.catalog.AutoVEX(repository) {
 			if statement.ExpiresAt == nil {
 				continue
@@ -512,6 +534,24 @@ func (s *Service) reevaluate(ctx context.Context, repository string) {
 			s.logger.Error("triage reevaluate enqueue failed", "repository", scan.Repository, "digest", scan.Digest, "error", err)
 		}
 	}
+}
+
+func (s *Service) imageInUse(ctx context.Context, digest, repository, tag string) (bool, error) {
+	if s.runtime == nil {
+		return false, nil
+	}
+	usage, err := s.runtime.GetRuntimeUsageForScan(ctx, digest, repository, tag)
+	if err != nil || usage == nil {
+		return false, err
+	}
+	return usage.RuntimeUsed, nil
+}
+
+func (s *Service) repositoryInUse(ctx context.Context, repository string) (bool, error) {
+	if s.runtime == nil {
+		return false, nil
+	}
+	return s.runtime.RepositoryInUse(ctx, repository)
 }
 
 func (s *Service) placements(ctx context.Context, job Job) string {

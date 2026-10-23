@@ -511,11 +511,12 @@ SUPPLINE_API_KEY=<from-secret>
 
 ## Triage (`x-triage`)
 
-Triage runs after a CEL failure. It checks out the gitops repositories in `context_repos`, asks an OpenAI-compatible chat model whether the CVE affects this deployment, and may write `x-vex-auto` on the matching sync entry. Hand-written `x-vex` is never modified and wins when both lists contain the same id. The workflow, dedupe rules, and guardrails are in [STATE_MACHINE.md](STATE_MACHINE.md).
+Triage runs after a CEL failure on an image that is currently running in a cluster (`only_in_use`, default true; the same runtime window as `source="runtime"` alerts). Set `only_in_use: false` to triage every failure. It checks out the gitops repositories in `context_repos`, asks an OpenAI-compatible chat model whether the CVE affects this deployment, and may write `x-vex-auto` on the matching sync entry. Hand-written `x-vex` is never modified and wins when both lists contain the same id. The workflow, dedupe rules, and guardrails are in [STATE_MACHINE.md](STATE_MACHINE.md).
 
 ```yaml
 x-triage:
   enabled: true
+  only_in_use: true      # default; false triages images that are not running
   mode: dry-run          # dry-run (default) | enforce
   llm:
     base_url: https://llm.internal/v1

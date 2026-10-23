@@ -20,6 +20,7 @@ const (
 // it is read from SUPPLINE_LLM_API_KEY.
 type TriageConfig struct {
 	Enabled               bool              `yaml:"enabled"`
+	OnlyInUse             *bool             `yaml:"only_in_use,omitempty"`
 	Mode                  string            `yaml:"mode,omitempty"`
 	LLM                   TriageLLMConfig   `yaml:"llm"`
 	MinConfidence         *float64          `yaml:"min_confidence,omitempty"`

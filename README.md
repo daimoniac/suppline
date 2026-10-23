@@ -41,7 +41,7 @@ One Go binary. SQLite or PostgreSQL state. No SaaS, no phone-home, air-gap compa
 1. **Mirror** — regsync keeps your registry in sync with the upstream repositories listed in `suppline.yml`.
 2. **Scan** — the watcher notices new or changed digests and enqueues them; Trivy produces an SBOM and vulnerability set.
 3. **Gate** — active VEX statements are applied, then your CEL policy decides: `passed`, `failed`, or `pending`.
-4. **Triage** — a failed gate can ask an LLM, with your gitops repos as context, whether the CVE affects this deployment. A guarded `not_affected` result is written to `x-vex-auto` and the image is evaluated again. See [docs/STATE_MACHINE.md](docs/STATE_MACHINE.md).
+4. **Triage** — a failed gate on an image running in a cluster can ask an LLM, with your gitops repos as context, whether the CVE affects this deployment. A guarded `not_affected` result is written to `x-vex-auto` and the image is evaluated again. See [docs/STATE_MACHINE.md](docs/STATE_MACHINE.md).
 5. **Attest** — cosign signs SBOM, vulnerability, VEX, and SCAI attestations into the registry next to the image.
 6. **Run** — clusters pull from the mirror; Kyverno/OPA verifies the SCAI attestation before a pod starts.
 

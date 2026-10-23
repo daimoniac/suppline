@@ -10,11 +10,14 @@ import (
 	"testing"
 	"time"
 
+	"log/slog"
+
 	"github.com/daimoniac/suppline/internal/config"
 	"github.com/daimoniac/suppline/internal/gitops"
 	"github.com/daimoniac/suppline/internal/policy/catalog"
 	"github.com/daimoniac/suppline/internal/statestore"
 	"github.com/daimoniac/suppline/internal/types"
+	"github.com/daimoniac/suppline/internal/worker"
 )
 
 type stubLLM struct {
@@ -88,5 +91,70 @@ sync:
 	run, err := store.LatestTriageRun(context.Background(), job.Repository, job.CVEID)
 	if err != nil || run == nil || run.Status != StatusWritten {
 		t.Fatalf("run = %+v err=%v", run, err)
+	}
+}
+
+type stubRuntime struct {
+	used bool
+}
+
+func (s stubRuntime) GetRuntimeUsageForScan(context.Context, string, string, string) (*statestore.RuntimeUsage, error) {
+	return &statestore.RuntimeUsage{RuntimeUsed: s.used}, nil
+}
+
+func (s stubRuntime) RepositoryInUse(context.Context, string) (bool, error) {
+	return s.used, nil
+}
+
+func TestNotifyPolicyFailureRespectsInUse(t *testing.T) {
+	notice := worker.PolicyFailureNotice{
+		Repository: "example/nginx",
+		Digest:     "sha256:abc",
+		Tag:        "1.2.3",
+		Findings:   []types.PolicyFailureFinding{{CVEID: "CVE-1", PackageName: "nginx"}},
+	}
+	notRunning := &Service{
+		settings: Settings{Enabled: true, OnlyInUse: true},
+		runtime:  stubRuntime{used: false},
+		logger:   slog.Default(),
+		jobs:     make(chan Job, 1),
+		pending:  map[string]struct{}{},
+	}
+	notRunning.NotifyPolicyFailure(context.Background(), notice)
+	select {
+	case job := <-notRunning.jobs:
+		t.Fatalf("queued unused image %s", job.CVEID)
+	default:
+	}
+
+	running := &Service{
+		settings: Settings{Enabled: true, OnlyInUse: true},
+		runtime:  stubRuntime{used: true},
+		logger:   slog.Default(),
+		jobs:     make(chan Job, 1),
+		pending:  map[string]struct{}{},
+	}
+	running.NotifyPolicyFailure(context.Background(), notice)
+	select {
+	case job := <-running.jobs:
+		if job.CVEID != "CVE-1" {
+			t.Fatalf("cve = %s", job.CVEID)
+		}
+	default:
+		t.Fatal("in-use image was not queued")
+	}
+
+	allImages := &Service{
+		settings: Settings{Enabled: true, OnlyInUse: false},
+		runtime:  stubRuntime{used: false},
+		logger:   slog.Default(),
+		jobs:     make(chan Job, 1),
+		pending:  map[string]struct{}{},
+	}
+	allImages.NotifyPolicyFailure(context.Background(), notice)
+	select {
+	case <-allImages.jobs:
+	default:
+		t.Fatal("only_in_use false still skipped the image")
 	}
 }

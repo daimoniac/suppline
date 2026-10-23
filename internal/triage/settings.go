@@ -20,6 +20,7 @@ const (
 // Settings is the resolved runtime view of x-triage.
 type Settings struct {
 	Enabled          bool
+	OnlyInUse        bool
 	Mode             string
 	BaseURL          string
 	Model            string
@@ -47,6 +48,7 @@ type Settings struct {
 func Resolve(cfg *config.TriageConfig, configPath string) (Settings, error) {
 	settings := Settings{
 		Mode:             config.TriageModeDryRun,
+		OnlyInUse:        true,
 		MaxSteps:         20,
 		DailyTokenBudget: 2_000_000,
 		MinConfidence:    0.8,
@@ -74,6 +76,9 @@ func Resolve(cfg *config.TriageConfig, configPath string) (Settings, error) {
 	if settings.APIKey == "" {
 		settings.Enabled = false
 		return settings, nil
+	}
+	if cfg.OnlyInUse != nil {
+		settings.OnlyInUse = *cfg.OnlyInUse
 	}
 	if cfg.Mode != "" {
 		settings.Mode = cfg.Mode
