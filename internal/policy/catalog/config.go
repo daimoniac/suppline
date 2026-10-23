@@ -153,6 +153,40 @@ func (c *ConfigCatalog) ReplaceAutoVEX(repository string, statements []types.VEX
 	return nil
 }
 
+// UpsertManualVEX inserts or replaces one hand-written x-vex statement on every
+// sync entry for repository. x-vex-auto is left untouched. The manual statement
+// wins over an auto statement with the same id.
+func (c *ConfigCatalog) UpsertManualVEX(repository string, statement types.VEXStatement) error {
+	if c == nil || c.config == nil {
+		return fmt.Errorf("no configuration catalog")
+	}
+	statement.Source = types.VEXSourceManual
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	matched := false
+	for i := range c.config.Sync {
+		if targetRepository(c.config.Sync[i]) != repository {
+			continue
+		}
+		matched = true
+		replaced := false
+		for j := range c.config.Sync[i].VEX {
+			if c.config.Sync[i].VEX[j].ID == statement.ID {
+				c.config.Sync[i].VEX[j] = statement
+				replaced = true
+				break
+			}
+		}
+		if !replaced {
+			c.config.Sync[i].VEX = append(c.config.Sync[i].VEX, statement)
+		}
+	}
+	if !matched {
+		return fmt.Errorf("no sync entry for repository %s", repository)
+	}
+	return nil
+}
+
 // AutoVEX returns the triage-owned statements stored for a repository.
 func (c *ConfigCatalog) AutoVEX(repository string) []types.VEXStatement {
 	if c == nil || c.config == nil {

@@ -1,5 +1,5 @@
-// Package yamledit updates only the x-vex-auto sequence of a suppline document.
-// Comments, anchors, and untouched keys, including hand-written x-vex, stay in place.
+// Package yamledit updates one VEX list in a suppline document.
+// Comments, anchors, and untouched keys stay in place.
 package yamledit
 
 import (
@@ -15,6 +15,16 @@ import (
 // Upsert inserts or replaces one auto-VEX statement on every sync entry whose
 // target repository matches. x-vex is never modified.
 func Upsert(document []byte, repository string, statement types.VEXStatement) ([]byte, error) {
+	return upsertList(document, repository, "x-vex-auto", statement)
+}
+
+// UpsertManual inserts or replaces one hand-written x-vex statement.
+// x-vex-auto is never modified.
+func UpsertManual(document []byte, repository string, statement types.VEXStatement) ([]byte, error) {
+	return upsertList(document, repository, "x-vex", statement)
+}
+
+func upsertList(document []byte, repository, key string, statement types.VEXStatement) ([]byte, error) {
 	if strings.TrimSpace(repository) == "" {
 		return nil, fmt.Errorf("repository is required")
 	}
@@ -43,7 +53,7 @@ func Upsert(document []byte, repository string, statement types.VEXStatement) ([
 		if targetRepository(mappingScalar(entry, "target"), mappingScalar(entry, "type")) != repository {
 			continue
 		}
-		if err := upsertEntry(entry, statement); err != nil {
+		if err := upsertEntry(entry, key, statement); err != nil {
 			return nil, err
 		}
 		matched++
@@ -64,17 +74,17 @@ func Upsert(document []byte, repository string, statement types.VEXStatement) ([
 	return buf.Bytes(), nil
 }
 
-func upsertEntry(entry *yaml.Node, statement types.VEXStatement) error {
-	seq := mappingChild(entry, "x-vex-auto")
+func upsertEntry(entry *yaml.Node, key string, statement types.VEXStatement) error {
+	seq := mappingChild(entry, key)
 	if seq == nil {
 		entry.Content = append(entry.Content,
-			&yaml.Node{Kind: yaml.ScalarNode, Value: "x-vex-auto", Tag: "!!str"},
+			&yaml.Node{Kind: yaml.ScalarNode, Value: key, Tag: "!!str"},
 			&yaml.Node{Kind: yaml.SequenceNode, Tag: "!!seq"},
 		)
-		seq = mappingChild(entry, "x-vex-auto")
+		seq = mappingChild(entry, key)
 	}
 	if seq.Kind != yaml.SequenceNode {
-		return fmt.Errorf("x-vex-auto must be a list")
+		return fmt.Errorf("%s must be a list", key)
 	}
 	item := statementNode(statement)
 	for i, existing := range seq.Content {

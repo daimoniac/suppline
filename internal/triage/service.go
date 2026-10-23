@@ -40,7 +40,7 @@ type Service struct {
 	now      func() time.Time
 
 	jobs      chan Job
-	pending   map[string]struct{}
+	pending   map[string]ActiveJob
 	pendingMu sync.Mutex
 
 	// pullAll and apply are replaceable in tests.
@@ -106,7 +106,7 @@ func New(cfg *config.TriageConfig, configPath string, cat *catalog.ConfigCatalog
 		kev:     &KEVCache{URL: settings.KEVFeedURL, TTL: settings.KEVCacheTTL},
 		now:     func() time.Time { return time.Now().UTC() },
 		jobs:    make(chan Job, 256),
-		pending: make(map[string]struct{}),
+		pending: make(map[string]ActiveJob),
 	}
 	svc.pullAll = svc.pullCheckouts
 	svc.apply = svc.applyStatement
@@ -178,14 +178,36 @@ func (s *Service) OnlyInUse() bool {
 	return s == nil || s.settings.OnlyInUse
 }
 
+// ActiveJob is one triage job waiting or in flight.
+type ActiveJob struct {
+	Repository string
+	CVEID      string
+	Image      string
+}
+
 // Pending is the number of jobs waiting or in flight.
 func (s *Service) Pending() int {
+	return len(s.Active())
+}
+
+// Active lists jobs waiting or in flight.
+func (s *Service) Active() []ActiveJob {
 	if s == nil {
-		return 0
+		return nil
 	}
 	s.pendingMu.Lock()
 	defer s.pendingMu.Unlock()
-	return len(s.pending)
+	out := make([]ActiveJob, 0, len(s.pending))
+	for _, job := range s.pending {
+		out = append(out, job)
+	}
+	sort.Slice(out, func(i, j int) bool {
+		if out[i].Repository == out[j].Repository {
+			return out[i].CVEID < out[j].CVEID
+		}
+		return out[i].Repository < out[j].Repository
+	})
+	return out
 }
 
 // NotifyPolicyFailure queues one job per finding that has no active exemption.
@@ -278,7 +300,7 @@ func (s *Service) enqueue(job Job) bool {
 		s.pendingMu.Unlock()
 		return false
 	}
-	s.pending[job.key()] = struct{}{}
+	s.pending[job.key()] = ActiveJob{Repository: job.Repository, CVEID: job.CVEID, Image: job.ImageRef}
 	s.pendingMu.Unlock()
 	select {
 	case s.jobs <- job:
@@ -549,24 +571,62 @@ func (s *Service) pullCheckouts(ctx context.Context) ([]gitops.Checkout, Roots, 
 }
 
 func (s *Service) applyStatement(ctx context.Context, repository string, statement types.VEXStatement, message string) (string, error) {
+	return s.writeStatement(ctx, repository, statement, message, yamledit.Upsert)
+}
+
+// PromoteManual writes a hand-written x-vex statement and makes it effective
+// immediately. It runs even when triage mode is dry-run, because a person
+// asked for the override. x-vex-auto is left in place and loses on the same id.
+func (s *Service) PromoteManual(ctx context.Context, repository string, statement types.VEXStatement) (string, error) {
+	if s == nil || !s.settings.Enabled {
+		return "", fmt.Errorf("triage is not enabled")
+	}
+	repository = strings.TrimSpace(repository)
+	statement.ID = strings.TrimSpace(statement.ID)
+	statement.Source = ""
+	statement.Justification = types.NormalizeVEXJustification(statement.Justification)
+	if statement.State != types.VEXStateNotAffected {
+		statement.Justification = ""
+	}
+	if repository == "" || statement.ID == "" {
+		return "", fmt.Errorf("repository and id are required")
+	}
+	if err := types.ValidateVEXStatement(statement); err != nil {
+		return "", err
+	}
+	message := fmt.Sprintf("chore(vex): accept %s for %s\n\nhuman override of triage", statement.ID, repository)
+	commit, err := s.writeStatement(ctx, repository, statement, message, yamledit.UpsertManual)
+	if err != nil {
+		return "", err
+	}
+	if s.catalog != nil {
+		if err := s.catalog.UpsertManualVEX(repository, statement); err != nil {
+			return commit, err
+		}
+	}
+	s.reevaluate(ctx, repository)
+	return commit, nil
+}
+
+func (s *Service) writeStatement(ctx context.Context, repository string, statement types.VEXStatement, message string, edit func([]byte, string, types.VEXStatement) ([]byte, error)) (string, error) {
 	if s.settings.ConfigRepo != nil {
 		spec, err := s.settings.configSpec()
 		if err != nil {
 			return "", err
 		}
 		return s.git.CommitFile(ctx, spec, s.settings.ConfigRepo.Path, func(current []byte) ([]byte, error) {
-			return yamledit.Upsert(current, repository, statement)
+			return edit(current, repository, statement)
 		}, message)
 	}
-	return "", writeLocalStatement(s.settings.ConfigPath, s.settings.BackupRetention, repository, statement)
+	return "", writeLocalStatement(s.settings.ConfigPath, s.settings.BackupRetention, repository, statement, edit)
 }
 
-func writeLocalStatement(path string, retention int, repository string, statement types.VEXStatement) error {
+func writeLocalStatement(path string, retention int, repository string, statement types.VEXStatement, edit func([]byte, string, types.VEXStatement) ([]byte, error)) error {
 	current, err := readFile(path)
 	if err != nil {
 		return err
 	}
-	updated, err := yamledit.Upsert(current, repository, statement)
+	updated, err := edit(current, repository, statement)
 	if err != nil {
 		return err
 	}

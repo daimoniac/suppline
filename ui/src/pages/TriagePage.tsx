@@ -1,8 +1,9 @@
 import { useCallback, useEffect, useState } from 'react';
+import { Loader2 } from 'lucide-react';
 import { useAuth } from '../lib/auth';
 import { formatDate } from '../lib/utils';
 import { ErrorState, LoadingState, PageHeader } from '../components/ui';
-import type { TriageRun } from '../lib/api';
+import type { TriageAccept, TriageActive, TriageRun } from '../lib/api';
 
 const STATUS_LABELS: Record<string, string> = {
   dry_run: 'Dry run',
@@ -29,37 +30,152 @@ function StatusPill({ status }: { status: string }) {
   );
 }
 
+const VEX_STATES = [
+  ['not_affected', 'Not affected'],
+  ['affected', 'Affected'],
+  ['in_triage', 'In triage'],
+  ['false_positive', 'False positive'],
+  ['resolved', 'Resolved'],
+  ['resolved_with_pedigree', 'Resolved with pedigree'],
+] as const;
+
+const VEX_JUSTIFICATIONS = [
+  'code_not_present',
+  'code_not_reachable',
+  'requires_configuration',
+  'requires_dependency',
+  'requires_environment',
+  'protected_by_compiler',
+  'protected_at_runtime',
+  'protected_at_perimeter',
+  'protected_by_mitigations',
+];
+
+function fromLocalInput(value: string) {
+  if (!value) return undefined;
+  const ms = new Date(value).getTime();
+  if (Number.isNaN(ms)) return undefined;
+  return Math.floor(ms / 1000);
+}
+
+function AcceptModal({ run, onClose, onSave }: { run: TriageRun; onClose: () => void; onSave: (body: TriageAccept) => Promise<void> }) {
+  const knownState = VEX_STATES.some(([value]) => value === run.Verdict);
+  const [state, setState] = useState(knownState ? run.Verdict : 'not_affected');
+  const [justification, setJustification] = useState(run.Justification || 'code_not_reachable');
+  const [detail, setDetail] = useState(run.Reasoning || '');
+  const [expires, setExpires] = useState('');
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const save = async () => {
+    setSaving(true);
+    setError(null);
+    try {
+      await onSave({
+        Repository: run.Repository,
+        CVEID: run.CVEID,
+        State: state,
+        Justification: state === 'not_affected' ? justification : undefined,
+        Detail: detail.trim() || undefined,
+        ExpiresAt: fromLocalInput(expires),
+      });
+    } catch (e: unknown) {
+      setError(e instanceof Error ? e.message : 'Failed to save');
+      setSaving(false);
+    }
+  };
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60" onClick={onClose}>
+      <div className="bg-bg-secondary border border-border rounded-xl p-6 max-w-lg w-full mx-4 shadow-2xl" onClick={e => e.stopPropagation()}>
+        <h3 className="text-lg font-semibold mb-1">Accept into x-vex</h3>
+        <p className="text-sm text-text-secondary mb-4">
+          Writes a hand-written x-vex statement for {run.CVEID}. It overrides the automated decision for {run.Repository}.
+        </p>
+        <div className="space-y-3">
+          <label className="block text-xs text-text-secondary">
+            Outcome
+            <select value={state} onChange={e => setState(e.target.value)}
+              className="mt-1 w-full px-3 py-2 bg-bg-primary border border-border rounded-lg text-sm text-text-primary focus:outline-none focus:border-accent/50">
+              {VEX_STATES.map(([value, label]) => <option key={value} value={value}>{label}</option>)}
+            </select>
+          </label>
+          {state === 'not_affected' && (
+            <label className="block text-xs text-text-secondary">
+              Justification
+              <select value={justification} onChange={e => setJustification(e.target.value)}
+                className="mt-1 w-full px-3 py-2 bg-bg-primary border border-border rounded-lg text-sm text-text-primary focus:outline-none focus:border-accent/50">
+                {VEX_JUSTIFICATIONS.map(value => <option key={value} value={value}>{value}</option>)}
+              </select>
+            </label>
+          )}
+          <label className="block text-xs text-text-secondary">
+            Detail
+            <textarea value={detail} onChange={e => setDetail(e.target.value)} rows={4}
+              className="mt-1 w-full px-3 py-2 bg-bg-primary border border-border rounded-lg text-sm text-text-primary focus:outline-none focus:border-accent/50" />
+          </label>
+          <label className="block text-xs text-text-secondary">
+            Expires
+            <input type="datetime-local" value={expires} onChange={e => setExpires(e.target.value)}
+              className="mt-1 w-full px-3 py-2 bg-bg-primary border border-border rounded-lg text-sm text-text-primary focus:outline-none focus:border-accent/50" />
+          </label>
+          {expires && <p className="text-xs text-text-muted">Expires {formatDate(fromLocalInput(expires) || 0)}</p>}
+          {error && <p className="text-sm text-danger">{error}</p>}
+        </div>
+        <div className="flex justify-end gap-3 mt-6">
+          <button type="button" onClick={onClose} className="px-4 py-2 text-sm rounded-lg border border-border text-text-secondary hover:bg-bg-tertiary transition-colors">Cancel</button>
+          <button type="button" onClick={save} disabled={saving} className="px-4 py-2 text-sm rounded-lg bg-accent text-bg-primary font-medium hover:bg-accent-hover transition-colors disabled:opacity-50">
+            {saving ? 'Saving…' : 'Save to x-vex'}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export default function TriagePage() {
   const { apiClient } = useAuth();
   const [runs, setRuns] = useState<TriageRun[]>([]);
+  const [active, setActive] = useState<TriageActive[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [repository, setRepository] = useState('');
   const [cve, setCve] = useState('');
   const [status, setStatus] = useState('');
   const [openID, setOpenID] = useState<number | null>(null);
+  const [editing, setEditing] = useState<TriageRun | null>(null);
 
-  const load = useCallback(async () => {
-    setLoading(true);
+  const refresh = useCallback(async (quiet: boolean) => {
+    if (!quiet) setLoading(true);
     try {
-      const result = await apiClient.getTriageRuns({
-        repository: repository || undefined,
-        cve: cve || undefined,
-        status: status || undefined,
-      });
+      const [result, triageStatus] = await Promise.all([
+        apiClient.getTriageRuns({
+          repository: repository || undefined,
+          cve: cve || undefined,
+          status: status || undefined,
+        }),
+        apiClient.getTriageStatus().catch(() => null),
+      ]);
       setRuns(result);
+      setActive(triageStatus?.Active ?? []);
       setError(null);
     } catch (e: unknown) {
       setError(e instanceof Error ? e.message : 'Failed to load triage runs');
     } finally {
-      setLoading(false);
+      if (!quiet) setLoading(false);
     }
   }, [apiClient, repository, cve, status]);
 
-  useEffect(() => { load(); }, [load]);
+  useEffect(() => { refresh(false); }, [refresh]);
 
-  if (loading && runs.length === 0) return <LoadingState message="Loading triage runs..." />;
-  if (error && runs.length === 0) return <ErrorState message={error} onRetry={load} />;
+  useEffect(() => {
+    if (active.length === 0) return;
+    const id = window.setInterval(() => { refresh(true); }, 3000);
+    return () => window.clearInterval(id);
+  }, [active.length, refresh]);
+
+  if (loading && runs.length === 0 && active.length === 0) return <LoadingState message="Loading triage runs..." />;
+  if (error && runs.length === 0) return <ErrorState message={error} onRetry={() => refresh(false)} />;
 
   return (
     <div>
@@ -78,23 +194,44 @@ export default function TriagePage() {
         </select>
       </div>
       {error && <p className="text-sm text-danger mb-3">{error}</p>}
+      {active.length > 0 && (
+        <div className="mb-4 bg-bg-primary border border-border rounded-xl overflow-hidden divide-y divide-border">
+          <div className="px-4 py-2 text-xs font-medium text-text-secondary">Currently running</div>
+          {active.map(job => (
+            <div key={`${job.Repository}\n${job.CVEID}`} className="flex items-center gap-3 px-4 py-3">
+              <Loader2 className="w-4 h-4 animate-spin text-accent shrink-0" />
+              <div className="min-w-0">
+                <div className="text-sm font-mono font-medium">{job.CVEID}</div>
+                <div className="text-xs text-text-muted truncate">{job.Image || job.Repository}</div>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
       <div className="bg-bg-primary border border-border rounded-xl overflow-hidden divide-y divide-border">
         {runs.length === 0 ? (
           <div className="p-12 text-center text-text-secondary text-sm">No triage runs</div>
         ) : runs.map(run => {
           const open = openID === run.ID;
           return (
-            <div key={run.ID}>
-              <button type="button" onClick={() => setOpenID(open ? null : run.ID)}
-                className="w-full flex items-center gap-3 px-4 py-3 text-left hover:bg-bg-secondary transition-colors">
-                <StatusPill status={run.Status} />
-                <div className="flex-1 min-w-0">
-                  <div className="text-sm font-mono font-medium">{run.CVEID}</div>
-                  <div className="text-xs text-text-muted truncate">{run.Repository}</div>
-                </div>
-                <span className="text-xs text-text-secondary shrink-0">{run.Verdict || '—'}</span>
-                <span className="text-xs text-text-muted shrink-0 w-28 text-right">{formatDate(run.CreatedAt)}</span>
-              </button>
+            <div key={run.ID} className={run.Superseded ? 'opacity-50' : undefined}>
+              <div className="flex items-center gap-3 px-4 py-3 hover:bg-bg-secondary transition-colors">
+                <button type="button" onClick={() => setOpenID(open ? null : run.ID)}
+                  className="flex-1 min-w-0 flex items-center gap-3 text-left">
+                  <StatusPill status={run.Status} />
+                  <div className="flex-1 min-w-0">
+                    <div className="text-sm font-mono font-medium">{run.CVEID}</div>
+                    <div className="text-xs text-text-muted truncate">{run.Repository}</div>
+                  </div>
+                  {run.Superseded && <span className="text-xs text-text-muted shrink-0">Superseded</span>}
+                  <span className="text-xs text-text-secondary shrink-0">{run.Verdict || '—'}</span>
+                  <span className="text-xs text-text-muted shrink-0 w-28 text-right">{formatDate(run.CreatedAt)}</span>
+                </button>
+                <button type="button" onClick={() => setEditing(run)}
+                  className="px-2 py-1 text-xs rounded-md border border-border text-text-secondary hover:bg-bg-tertiary shrink-0">
+                  Edit
+                </button>
+              </div>
               {open && (
                 <div className="px-4 pb-4 text-sm text-text-secondary space-y-2">
                   <div className="flex flex-wrap gap-x-4 gap-y-1 text-xs">
@@ -127,6 +264,18 @@ export default function TriagePage() {
           );
         })}
       </div>
+      {editing && (
+        <AcceptModal
+          key={editing.ID}
+          run={editing}
+          onClose={() => setEditing(null)}
+          onSave={async body => {
+            await apiClient.acceptTriage(body);
+            setEditing(null);
+            await refresh(true);
+          }}
+        />
+      )}
     </div>
   );
 }

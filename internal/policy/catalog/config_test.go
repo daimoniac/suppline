@@ -270,3 +270,27 @@ func TestConfigCatalogOperations(t *testing.T) {
 		t.Errorf("override listing = %+v", listing.Overrides)
 	}
 }
+
+func TestUpsertManualVEXWinsOverAuto(t *testing.T) {
+	cat := NewConfigCatalog(&config.RegsyncConfig{
+		Sync: []config.SyncEntry{{
+			Target: "registry.example/app",
+			Type:   "repository",
+			VEXAuto: []types.VEXStatement{{
+				ID: "CVE-1", State: types.VEXStateNotAffected, Justification: types.VEXJustCodeNotReachable, Detail: "auto",
+			}},
+		}},
+	})
+	if err := cat.UpsertManualVEX("registry.example/app", types.VEXStatement{
+		ID: "CVE-1", State: types.VEXStateNotAffected, Justification: types.VEXJustProtectedAtPerimeter, Detail: "human",
+	}); err != nil {
+		t.Fatal(err)
+	}
+	evidence := cat.ResolveEvidence("registry.example/app")
+	if len(evidence.VEXStatements) != 1 || evidence.VEXStatements[0].Source != types.VEXSourceManual || evidence.VEXStatements[0].Detail != "human" {
+		t.Fatalf("effective = %+v", evidence.VEXStatements)
+	}
+	if len(cat.AutoVEX("registry.example/app")) != 1 {
+		t.Fatal("auto statement was removed")
+	}
+}

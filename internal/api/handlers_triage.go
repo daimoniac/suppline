@@ -26,6 +26,7 @@ type TriageRunResponse struct {
 	Status        string          `json:"Status"`
 	CommitSHA     string          `json:"CommitSHA,omitempty"`
 	CreatedAt     int64           `json:"CreatedAt"`
+	Superseded    bool            `json:"Superseded"`
 }
 
 // handleListTriage lists automated triage decisions.
@@ -62,6 +63,13 @@ func (s *APIServer) handleListTriage(w http.ResponseWriter, r *http.Request) {
 		s.logger.Error("list triage runs", "error", err)
 		return
 	}
+	latest := map[string]int64{}
+	for _, run := range runs {
+		key := run.Repository + "\n" + run.CVEID
+		if _, ok := latest[key]; !ok {
+			latest[key] = run.ID
+		}
+	}
 	response := make([]TriageRunResponse, 0, len(runs))
 	for _, run := range runs {
 		item := TriageRunResponse{
@@ -77,6 +85,7 @@ func (s *APIServer) handleListTriage(w http.ResponseWriter, r *http.Request) {
 			Status:        run.Status,
 			CommitSHA:     run.CommitSHA,
 			CreatedAt:     run.CreatedAt.Unix(),
+			Superseded:    latest[run.Repository+"\n"+run.CVEID] != run.ID,
 		}
 		if run.EvidenceJSON != "" {
 			item.Evidence = json.RawMessage(run.EvidenceJSON)
@@ -91,10 +100,18 @@ func (s *APIServer) handleListTriage(w http.ResponseWriter, r *http.Request) {
 
 // TriageStatusResponse describes whether triage can accept work.
 type TriageStatusResponse struct {
-	Enabled   bool   `json:"Enabled"`
-	Mode      string `json:"Mode,omitempty"`
-	OnlyInUse bool   `json:"OnlyInUse"`
-	Pending   int    `json:"Pending"`
+	Enabled   bool                   `json:"Enabled"`
+	Mode      string                 `json:"Mode,omitempty"`
+	OnlyInUse bool                   `json:"OnlyInUse"`
+	Pending   int                    `json:"Pending"`
+	Active    []TriageActiveResponse `json:"Active"`
+}
+
+// TriageActiveResponse is one job waiting or in flight.
+type TriageActiveResponse struct {
+	Repository string `json:"Repository"`
+	CVEID      string `json:"CVEID"`
+	Image      string `json:"Image,omitempty"`
 }
 
 // TriageRunRequest selects the failed images to queue.
@@ -140,12 +157,19 @@ func (s *APIServer) handleTriageStatus(w http.ResponseWriter, r *http.Request) {
 		s.respondError(w, http.StatusMethodNotAllowed, "Method not allowed")
 		return
 	}
-	response := TriageStatusResponse{OnlyInUse: true}
+	response := TriageStatusResponse{OnlyInUse: true, Active: []TriageActiveResponse{}}
 	if s.triageService != nil {
 		response.Enabled = s.triageService.Enabled()
 		response.Mode = s.triageService.Mode()
 		response.OnlyInUse = s.triageService.OnlyInUse()
 		response.Pending = s.triageService.Pending()
+		for _, job := range s.triageService.Active() {
+			response.Active = append(response.Active, TriageActiveResponse{
+				Repository: job.Repository,
+				CVEID:      job.CVEID,
+				Image:      job.Image,
+			})
+		}
 	}
 	s.respondJSON(w, http.StatusOK, response)
 }
@@ -245,6 +269,67 @@ func (s *APIServer) handleGitopsStatus(w http.ResponseWriter, r *http.Request) {
 		response = append(response, item)
 	}
 	s.respondJSON(w, http.StatusOK, response)
+}
+
+// TriageAcceptRequest is a human override of one triage decision.
+type TriageAcceptRequest struct {
+	Repository    string `json:"Repository"`
+	CVEID         string `json:"CVEID"`
+	State         string `json:"State"`
+	Justification string `json:"Justification,omitempty"`
+	Detail        string `json:"Detail,omitempty"`
+	ExpiresAt     int64  `json:"ExpiresAt,omitempty"`
+}
+
+// TriageAcceptResult is the commit created for a hand-written x-vex statement.
+type TriageAcceptResult struct {
+	CommitSHA string `json:"CommitSHA,omitempty"`
+}
+
+// handleTriageAccept writes the edited decision into x-vex.
+// @Summary Accept a triage decision into x-vex
+// @Description Writes a hand-written x-vex statement. It overrides x-vex-auto for the same id.
+// @Tags Triage
+// @Accept json
+// @Produce json
+// @Param request body TriageAcceptRequest true "Statement to write"
+// @Success 200 {object} TriageAcceptResult
+// @Failure 400 {object} map[string]string "Invalid request"
+// @Failure 409 {object} map[string]string "Triage is not enabled"
+// @Security BearerAuth
+// @Router /triage/accept [post]
+func (s *APIServer) handleTriageAccept(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		s.respondError(w, http.StatusMethodNotAllowed, "Method not allowed")
+		return
+	}
+	if s.triageService == nil || !s.triageService.Enabled() {
+		s.respondError(w, http.StatusConflict, "triage is not enabled")
+		return
+	}
+	var body TriageAcceptRequest
+	decoder := json.NewDecoder(http.MaxBytesReader(w, r.Body, 1<<20))
+	if err := decoder.Decode(&body); err != nil {
+		s.respondError(w, http.StatusBadRequest, "Invalid request body")
+		return
+	}
+	statement := types.VEXStatement{
+		ID:            strings.TrimSpace(body.CVEID),
+		State:         types.VEXAnalysisState(strings.TrimSpace(body.State)),
+		Justification: types.VEXJustification(strings.TrimSpace(body.Justification)),
+		Detail:        strings.TrimSpace(body.Detail),
+	}
+	if body.ExpiresAt > 0 {
+		expires := body.ExpiresAt
+		statement.ExpiresAt = &expires
+	}
+	commit, err := s.triageService.PromoteManual(r.Context(), body.Repository, statement)
+	if err != nil {
+		s.respondError(w, http.StatusBadRequest, err.Error())
+		s.logger.Error("accept triage into x-vex", "repository", body.Repository, "cve", body.CVEID, "error", err)
+		return
+	}
+	s.respondJSON(w, http.StatusOK, TriageAcceptResult{CommitSHA: commit})
 }
 
 func triageImageKey(repository, digest, tag string) string {

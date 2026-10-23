@@ -94,6 +94,82 @@ sync:
 	}
 }
 
+func TestPromoteManualWritesXVEX(t *testing.T) {
+	t.Setenv("SUPPLINE_LLM_API_KEY", "test-key")
+	dir := t.TempDir()
+	path := filepath.Join(dir, "suppline.yml")
+	if err := os.WriteFile(path, []byte(`version: 1
+sync:
+  - source: example.com/app
+    target: registry.local/app
+    type: repository
+    x-vex-auto:
+      - id: CVE-2026-1
+        state: not_affected
+        justification: code_not_reachable
+        detail: auto
+`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	parsed, err := config.ParseRegsync(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	parsed.Triage = &config.TriageConfig{
+		Enabled: true,
+		Mode:    config.TriageModeDryRun,
+		LLM:     config.TriageLLMConfig{BaseURL: "http://llm.example/v1", Model: "stub"},
+	}
+	cat := catalog.NewConfigCatalog(parsed)
+	store, err := statestore.NewSQLiteStore(filepath.Join(dir, "triage.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { store.Close() })
+	svc, err := New(parsed.Triage, path, cat, store, nil, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	expires := time.Date(2026, 12, 1, 0, 0, 0, 0, time.UTC).Unix()
+	commit, err := svc.PromoteManual(context.Background(), "registry.local/app", types.VEXStatement{
+		ID:            "CVE-2026-1",
+		State:         types.VEXStateNotAffected,
+		Justification: types.VEXJustProtectedAtPerimeter,
+		Detail:        "accepted by a person",
+		ExpiresAt:     &expires,
+	})
+	if err != nil || commit != "" {
+		t.Fatalf("commit %q err %v", commit, err)
+	}
+	body, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(body), "protected_at_perimeter") || !strings.Contains(string(body), "x-vex-auto") {
+		t.Fatalf("file:\n%s", body)
+	}
+	evidence := cat.ResolveEvidence("registry.local/app")
+	if len(evidence.VEXStatements) != 1 || evidence.VEXStatements[0].Source != types.VEXSourceManual || evidence.VEXStatements[0].Justification != types.VEXJustProtectedAtPerimeter {
+		t.Fatalf("effective = %+v", evidence.VEXStatements)
+	}
+}
+
+func TestActiveListsPendingJob(t *testing.T) {
+	svc := &Service{
+		settings: Settings{Enabled: true},
+		logger:   slog.Default(),
+		jobs:     make(chan Job, 1),
+		pending:  map[string]ActiveJob{},
+	}
+	if !svc.enqueue(Job{Repository: "app", CVEID: "CVE-1", ImageRef: "app:1"}) {
+		t.Fatal("enqueue")
+	}
+	active := svc.Active()
+	if len(active) != 1 || active[0].CVEID != "CVE-1" || active[0].Image != "app:1" || svc.Pending() != 1 {
+		t.Fatalf("active = %+v pending %d", active, svc.Pending())
+	}
+}
+
 type stubRuntime struct {
 	used bool
 }
@@ -118,7 +194,7 @@ func TestNotifyPolicyFailureRespectsInUse(t *testing.T) {
 		runtime:  stubRuntime{used: false},
 		logger:   slog.Default(),
 		jobs:     make(chan Job, 1),
-		pending:  map[string]struct{}{},
+		pending:  map[string]ActiveJob{},
 	}
 	notRunning.NotifyPolicyFailure(context.Background(), notice)
 	select {
@@ -132,7 +208,7 @@ func TestNotifyPolicyFailureRespectsInUse(t *testing.T) {
 		runtime:  stubRuntime{used: true},
 		logger:   slog.Default(),
 		jobs:     make(chan Job, 1),
-		pending:  map[string]struct{}{},
+		pending:  map[string]ActiveJob{},
 	}
 	running.NotifyPolicyFailure(context.Background(), notice)
 	select {
@@ -149,7 +225,7 @@ func TestNotifyPolicyFailureRespectsInUse(t *testing.T) {
 		runtime:  stubRuntime{used: false},
 		logger:   slog.Default(),
 		jobs:     make(chan Job, 1),
-		pending:  map[string]struct{}{},
+		pending:  map[string]ActiveJob{},
 	}
 	allImages.NotifyPolicyFailure(context.Background(), notice)
 	select {
@@ -167,7 +243,7 @@ func TestQueuePolicyFailureForcesRun(t *testing.T) {
 		settings: Settings{Enabled: true, OnlyInUse: false},
 		logger:   slog.Default(),
 		jobs:     make(chan Job, 2),
-		pending:  map[string]struct{}{},
+		pending:  map[string]ActiveJob{},
 	}
 	notice := worker.PolicyFailureNotice{
 		Repository: "example/nginx",

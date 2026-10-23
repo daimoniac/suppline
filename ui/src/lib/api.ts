@@ -173,6 +173,13 @@ export class APIClient {
   async getTriageStatus() {
     return this.request<TriageStatus>('/api/v1/triage/status');
   }
+
+  async acceptTriage(statement: TriageAccept) {
+    return this.request<TriageAcceptResult>('/api/v1/triage/accept', {
+      method: 'POST',
+      body: JSON.stringify(statement),
+    });
+  }
   async queueTriage(images: TriageRunImage[]) {
     return this.request<TriageRunResult>('/api/v1/triage/run', {
       method: 'POST',
@@ -399,6 +406,26 @@ export interface TriageStatus {
   Mode?: string;
   OnlyInUse: boolean;
   Pending: number;
+  Active?: TriageActive[];
+}
+
+export interface TriageActive {
+  Repository: string;
+  CVEID: string;
+  Image?: string;
+}
+
+export interface TriageAccept {
+  Repository: string;
+  CVEID: string;
+  State: string;
+  Justification?: string;
+  Detail?: string;
+  ExpiresAt?: number;
+}
+
+export interface TriageAcceptResult {
+  CommitSHA?: string;
 }
 
 export interface TriageRunImage {
@@ -438,6 +465,7 @@ export interface TriageRun {
   Status: string;
   CommitSHA?: string;
   CreatedAt: number;
+  Superseded?: boolean;
 }
 
 export interface VEXSummary {

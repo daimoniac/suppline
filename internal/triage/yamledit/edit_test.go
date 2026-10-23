@@ -67,6 +67,34 @@ sync:
 	}
 }
 
+func TestUpsertManualLeavesAutoUntouched(t *testing.T) {
+	original := []byte(`# keep me
+version: 1
+sync:
+  - source: example.com/app
+    target: registry.local/app
+    type: repository
+    x-vex-auto:
+      - id: CVE-AUTO
+        state: not_affected
+        justification: code_not_reachable
+        detail: auto
+`)
+	updated, err := UpsertManual(original, "registry.local/app", types.VEXStatement{
+		ID: "CVE-AUTO", State: types.VEXStateNotAffected, Justification: types.VEXJustProtectedAtPerimeter, Detail: "human",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	text := string(updated)
+	if !strings.Contains(text, "# keep me") || !strings.Contains(text, "code_not_reachable") || !strings.Contains(text, "protected_at_perimeter") {
+		t.Fatalf("manual edit:\n%s", text)
+	}
+	if strings.Count(text, "x-vex:") != 1 {
+		t.Fatalf("x-vex key:\n%s", text)
+	}
+}
+
 func TestUpsertRejectsUnknownRepository(t *testing.T) {
 	_, err := Upsert([]byte("version: 1\nsync: []\n"), "missing", types.VEXStatement{
 		ID: "CVE-1", State: types.VEXStateAffected,
