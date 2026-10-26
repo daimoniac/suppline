@@ -88,10 +88,10 @@ func TestClusterRuntimeToolIsAdvertised(t *testing.T) {
 	if !found {
 		t.Fatal("cluster_runtime missing")
 	}
-	if strings.Contains(systemPrompt(nil, false), "cluster_runtime") {
+	if strings.Contains(systemPrompt(nil, false, "", 0), "cluster_runtime") {
 		t.Fatal("prompt mentions the tool when runtime is unavailable")
 	}
-	if !strings.Contains(systemPrompt(nil, true), "cluster_runtime") {
+	if !strings.Contains(systemPrompt(nil, true, "", 0), "cluster_runtime") {
 		t.Fatal("prompt omits the tool")
 	}
 }

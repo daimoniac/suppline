@@ -183,6 +183,7 @@ type ActiveJob struct {
 	Repository string
 	CVEID      string
 	Image      string
+	Running    bool
 }
 
 // Pending is the number of jobs waiting or in flight.
@@ -291,6 +292,94 @@ func (s *Service) exempt(repository, cve string) bool {
 	return false
 }
 
+// Retry queues one finished decision again, even when an exemption already exists.
+// only_in_use still applies. It returns 1 when the job was accepted.
+func (s *Service) Retry(ctx context.Context, repository, cve string) int {
+	if s == nil || !s.settings.Enabled {
+		return 0
+	}
+	repository = strings.TrimSpace(repository)
+	cve = strings.TrimSpace(cve)
+	if repository == "" || cve == "" {
+		return 0
+	}
+	job := Job{Repository: repository, CVEID: cve, ImageRef: repository, Force: true}
+	if s.scans != nil {
+		records, err := s.scans.ListScans(ctx, statestore.ScanFilter{Repository: repository, PolicyStatus: "failed", Limit: 200})
+		if err != nil {
+			s.logger.Error("triage retry scan lookup failed", "repository", repository, "cve", cve, "error", err)
+		} else if enriched, ok := jobFromFailedScan(records, cve); ok {
+			job = enriched
+			job.Force = true
+		}
+	}
+	if s.settings.OnlyInUse {
+		used, err := s.jobInUse(ctx, job)
+		if err != nil {
+			s.logger.Error("triage in-use lookup failed", "repository", repository, "cve", cve, "error", err)
+			return 0
+		}
+		if !used {
+			return 0
+		}
+	}
+	if s.enqueue(job) {
+		return 1
+	}
+	return 0
+}
+
+func jobFromFailedScan(records []*statestore.ScanRecord, cve string) (Job, bool) {
+	for _, record := range records {
+		var finding types.PolicyFailureFinding
+		matched := false
+		for _, item := range record.PolicyFailureFindings {
+			if item.CVEID == cve {
+				finding = item
+				matched = true
+				break
+			}
+		}
+		if !matched {
+			continue
+		}
+		job := Job{
+			Repository:  record.Repository,
+			CVEID:       cve,
+			PackageName: finding.PackageName,
+			ImageRef:    record.Repository,
+			Tag:         record.Tag,
+			Digest:      record.Digest,
+		}
+		if record.Tag != "" {
+			job.ImageRef = record.Repository + ":" + record.Tag
+		}
+		for _, vuln := range record.Vulnerabilities {
+			if vuln.CVEID != cve {
+				continue
+			}
+			if finding.PackageName != "" && vuln.PackageName != finding.PackageName {
+				continue
+			}
+			job.PackageName = vuln.PackageName
+			job.Version = vuln.InstalledVersion
+			job.FixedVersion = vuln.FixedVersion
+			job.Severity = vuln.Severity
+			job.Description = vuln.Description
+			break
+		}
+		return job, true
+	}
+	return Job{}, false
+}
+
+func (s *Service) jobInUse(ctx context.Context, job Job) (bool, error) {
+	if job.Digest != "" {
+		return s.imageInUse(ctx, job.Digest, job.Repository, job.Tag)
+	}
+	return s.repositoryInUse(ctx, job.Repository)
+}
+
 func (s *Service) enqueue(job Job) bool {
 	if job.Repository == "" || job.CVEID == "" {
 		return false
@@ -370,7 +459,21 @@ func (s *Service) sweep(ctx context.Context) {
 	}
 }
 
+func (s *Service) markRunning(batch []Job) {
+	s.pendingMu.Lock()
+	defer s.pendingMu.Unlock()
+	for _, job := range batch {
+		current, ok := s.pending[job.key()]
+		if !ok {
+			continue
+		}
+		current.Running = true
+		s.pending[job.key()] = current
+	}
+}
+
 func (s *Service) processBatch(ctx context.Context, batch []Job) {
+	s.markRunning(batch)
 	defer func() {
 		for _, job := range batch {
 			s.finish(job)
@@ -437,7 +540,7 @@ func (s *Service) process(ctx context.Context, job Job, checkouts []gitops.Check
 	jobRoots.Checkouts = append([]CheckoutRoot(nil), roots.Checkouts...)
 	pub := newPublicSource()
 	upstream := &publicCheckouts{base: s.settings.CheckoutDir, pub: pub}
-	verdict, tokens, err := runAgent(ctx, s.llm, &jobRoots, s.clusters, pub, upstream, s.images, allowedNames(s.settings), job, s.placements(ctx, job), names, existing, s.settings.MaxSteps)
+	verdict, tokens, err := runAgent(ctx, s.llm, &jobRoots, s.clusters, pub, upstream, s.images, allowedNames(s.settings), s.settings.Prompt, s.settings.MinConfidence, job, s.placements(ctx, job), names, existing, s.settings.MaxSteps)
 	if err != nil {
 		s.record(ctx, job, verdict, tokens, StatusError, "", shas, err.Error())
 		s.logger.Error("triage agent failed", "repository", job.Repository, "cve", job.CVEID, "error", err)

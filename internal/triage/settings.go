@@ -41,6 +41,7 @@ type Settings struct {
 	CheckoutDir      string
 	MaxFileBytes     int
 	ConfigPath       string
+	Prompt           string
 }
 
 // Resolve applies defaults. An enabled block with an empty API key is returned
@@ -88,6 +89,7 @@ func Resolve(cfg *config.TriageConfig, configPath string) (Settings, error) {
 	if cfg.Mode != "" {
 		settings.Mode = cfg.Mode
 	}
+	settings.Prompt = strings.TrimSpace(cfg.Prompt)
 	settings.BaseURL = strings.TrimRight(strings.TrimSpace(cfg.LLM.BaseURL), "/")
 	settings.Model = strings.TrimSpace(cfg.LLM.Model)
 	if cfg.LLM.MaxSteps > 0 {

@@ -113,7 +113,7 @@ flowchart TD
 
 ### What gets queued
 
-A failed scan queues one job for each policy-failure finding that does not already have an unexpired `not_affected` statement. By default only images currently running in a cluster are queued (`only_in_use`, the same runtime window as the `source="runtime"` alerts). Set `only_in_use: false` to triage every failure. Hand-written `x-vex` and generated `x-vex-auto` both count. Jobs sit on a separate queue so scans are not blocked. Each batch pulls the configured gitops repositories once. Renewal skips a repository that has no in-use image when `only_in_use` is on. **Triage now** in the UI queues the policy failures in the current view and runs them again even when a cached decision exists.
+A failed scan queues one job for each policy-failure finding that does not already have an unexpired `not_affected` statement. By default only images currently running in a cluster are queued (`only_in_use`, the same runtime window as the `source="runtime"` alerts). Set `only_in_use: false` to triage every failure. Hand-written `x-vex` and generated `x-vex-auto` both count. Jobs sit on a separate queue so scans are not blocked. Each batch pulls the configured gitops repositories once. Renewal skips a repository that has no in-use image when `only_in_use` is on. **Triage now** in the UI queues the policy failures in the current view and runs them again even when a cached decision exists. The same views also copy a coding-agent prompt for those failures. The Triage view copies a prompt for the current runs that stayed uncertain or were rejected.
 
 ### Dedupe
 
@@ -125,15 +125,15 @@ The model may only create `not_affected` when all of the following hold:
 
 - the justification is in `allowed_justifications` (default: `requires_configuration`, `requires_environment`, `protected_at_perimeter`, `protected_at_runtime`, `protected_by_mitigations`, `code_not_reachable`)
 - confidence is at least `min_confidence` (default 0.8)
-- every evidence quote matches a line suppline actually read. Deployment justifications need a gitops line. `code_not_reachable` needs a line from `public_code` or from grep or read_file on the public checkout of the image's source commit. An empty grep is not evidence
+- every evidence quote matches a line suppline actually read. Deployment justifications need a gitops line. `code_not_reachable` needs a line from `public_code` or from grep or read_file on the public checkout of the image's source commit. An empty grep is not evidence. The built-in decision policy accepts a low residual risk with `requires_configuration` or `requires_environment`, and rates a finding that is not exposed to the public down one severity step. `x-triage.prompt` replaces that policy text
 - the CVE is not in the CISA KEV feed (`block_kev`, default true). If `cisa.gov` rejects the fetch, triage uses CISA's GitHub copy of the same catalog. If both fetches fail, no new exemption is written and the run is retried
 - `mode` is `enforce`. `dry-run` (the default) only records the decision
 
-`x-vex` is never edited by the agent. The statement is upserted into `x-vex-auto` on the matching sync entry. A person can edit a run in the Triage view and save it into `x-vex`, which then wins on that id. Older runs for the same repository and CVE stay in the list and are marked superseded. Jobs still in the queue are shown as running. On a matching id, `x-vex` wins and the auto statement has no effect. `detail` records that the statement was auto-generated, plus the model, triage id, timestamp, and checkout SHAs. `expires_at` is set to now plus `expiry` (default 30 days).
+`x-vex` is never edited by the agent. The statement is upserted into `x-vex-auto` on the matching sync entry. A person can edit a run in the Triage view and save it into `x-vex`, which then wins on that id. Older runs for the same repository and CVE stay in the list and are marked superseded. Jobs still waiting are shown as queued, and jobs in flight are shown as running. A finished run can be queued again from the Triage view, and each policy failure can be queued from Policy Exceptions. On a matching id, `x-vex` wins and the auto statement has no effect. `detail` records that the statement was auto-generated, plus the model, triage id, timestamp, and checkout SHAs. `expires_at` is set to now plus `expiry` (default 30 days).
 
 ### Apply
 
-With `config_repo`, suppline fetches the remote, reapplies the edit on the new HEAD, commits as the configured bot author (`chore(vex): auto-triage ...`), and pushes to the branch (remote HEAD when `branch` is empty). A non-fast-forward rejection is retried three times. Any other rejection, or a non-fast-forward that survives the retries, is stored as `push_failed`. There is no merge-request fallback.
+With `config_repo`, suppline fetches the remote, reapplies the edit on the new HEAD, commits as the configured bot author (`chore(vex): auto-triage ...`), and pushes to the branch (remote HEAD when `branch` is empty). The credentials must be allowed to push to that branch. A non-fast-forward rejection is retried three times. Any other rejection, or a non-fast-forward that survives the retries, is stored as `push_failed`. There is no merge-request fallback.
 
 Without `config_repo`, suppline copies the current file to `suppline.yml.bak.1` (newest) through `.bak.N` (`backup_retention`, default 10) and atomically replaces the file. Enforce mode refuses to start when that file is not writable, which is the case for a read-only ConfigMap mount.
 

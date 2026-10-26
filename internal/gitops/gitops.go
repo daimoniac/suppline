@@ -2,6 +2,7 @@
 package gitops
 
 import (
+	"bytes"
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
@@ -29,11 +30,15 @@ const pushAttempts = 3
 // PushError is a push the remote rejected and that retrying will not fix,
 // or a non-fast-forward rejection that survived every retry.
 type PushError struct {
-	Err error
+	Err    error
+	Remote string
 }
 
 func (e *PushError) Error() string {
-	return fmt.Sprintf("git push rejected: %v", e.Err)
+	if strings.TrimSpace(e.Remote) == "" {
+		return fmt.Sprintf("git push rejected: %v", e.Err)
+	}
+	return fmt.Sprintf("git push rejected: %v: %s", e.Err, strings.TrimSpace(e.Remote))
 }
 
 func (e *PushError) Unwrap() error { return e.Err }
@@ -184,13 +189,14 @@ func (m *Manager) CommitFile(ctx context.Context, spec Spec, relPath string, mut
 		if err != nil {
 			return "", err
 		}
-		err = repo.PushContext(ctx, &git.PushOptions{RemoteName: "origin", Auth: auth})
+		var progress bytes.Buffer
+		err = repo.PushContext(ctx, &git.PushOptions{RemoteName: "origin", Auth: auth, Progress: &progress})
 		if err == nil || errors.Is(err, git.NoErrAlreadyUpToDate) {
 			return hash, nil
 		}
 		last = err
 		if !isNonFastForward(err) || attempt == pushAttempts {
-			return "", &PushError{Err: err}
+			return "", &PushError{Err: err, Remote: progress.String()}
 		}
 	}
 	return "", &PushError{Err: last}

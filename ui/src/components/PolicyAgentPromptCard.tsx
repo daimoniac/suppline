@@ -45,6 +45,19 @@ export function PolicyAgentPromptCard({
     return null;
   }
 
+  const copyPrompt = () => {
+    if (!policyFixPrompt) {
+      toast(
+        'No CEL policy failure findings available yet for these images. Re-scan to populate actionable findings.',
+        'warning'
+      );
+      return;
+    }
+    copyToClipboard(policyFixPrompt).then(ok =>
+      toast(ok ? 'Prompt copied to clipboard!' : 'Failed to copy', ok ? 'success' : 'error')
+    );
+  };
+
   if (triageStatus?.Enabled) {
     return (
       <div className="relative overflow-hidden rounded-xl border border-accent/35 bg-gradient-to-r from-accent/15 via-bg-secondary to-warning/10 p-4">
@@ -60,6 +73,7 @@ export function PolicyAgentPromptCard({
                 {triageStatus.OnlyInUse
                   ? 'Queue triage for CEL failures in this view that are running in a cluster.'
                   : 'Queue triage for the CEL policy failures in this view.'}
+                {' '}{hint}
               </p>
             </div>
           </div>
@@ -93,6 +107,14 @@ export function PolicyAgentPromptCard({
             <Scale className="w-3 h-3" />
             {queuing ? 'Queuing…' : 'Triage now'}
           </button>
+          <button
+            type="button"
+            onClick={copyPrompt}
+            className="inline-flex items-center justify-center gap-1.5 px-3 py-2 text-xs rounded-lg border border-accent/30 text-text-primary bg-bg-primary/70 hover:bg-bg-primary transition-colors"
+          >
+            <Copy className="w-3 h-3" />
+            Fix using coding agent
+          </button>
         </div>
       </div>
     );
@@ -121,18 +143,7 @@ export function PolicyAgentPromptCard({
         </div>
         <button
           type="button"
-          onClick={() => {
-            if (!policyFixPrompt) {
-              toast(
-                'No CEL policy failure findings available yet for these images. Re-scan to populate actionable findings.',
-                'warning'
-              );
-              return;
-            }
-            copyToClipboard(policyFixPrompt).then(ok =>
-              toast(ok ? 'Prompt copied to clipboard!' : 'Failed to copy', ok ? 'success' : 'error')
-            );
-          }}
+          onClick={copyPrompt}
           className="inline-flex items-center justify-center gap-1.5 px-3 py-2 text-xs rounded-lg border border-accent/30 text-text-primary bg-bg-primary/70 hover:bg-bg-primary transition-colors"
         >
           <Copy className="w-3 h-3" />

@@ -28,7 +28,7 @@ type modelEvidence struct {
 	Quote string `json:"quote"`
 }
 
-func runAgent(ctx context.Context, llm completer, roots *Roots, runtime clusterQuerier, pub *publicSource, upstream *publicCheckouts, images imageLabeler, allowed []string, job Job, placements string, repoNames []string, existing *types.VEXStatement, maxSteps int) (modelVerdict, int, error) {
+func runAgent(ctx context.Context, llm completer, roots *Roots, runtime clusterQuerier, pub *publicSource, upstream *publicCheckouts, images imageLabeler, allowed []string, policy string, minConfidence float64, job Job, placements string, repoNames []string, existing *types.VEXStatement, maxSteps int) (modelVerdict, int, error) {
 	if maxSteps < 1 {
 		maxSteps = 1
 	}
@@ -36,7 +36,7 @@ func runAgent(ctx context.Context, llm completer, roots *Roots, runtime clusterQ
 		pub = newPublicSource()
 	}
 	messages := []chatMessage{
-		{Role: "system", Content: systemPrompt(allowed, runtime != nil)},
+		{Role: "system", Content: systemPrompt(allowed, runtime != nil, policy, minConfidence)},
 		{Role: "user", Content: userPrompt(job, placements, repoNames, existing)},
 	}
 	tools := toolDefinitions(runtime != nil)
@@ -46,7 +46,7 @@ func runAgent(ctx context.Context, llm completer, roots *Roots, runtime clusterQ
 		if step == maxSteps-1 {
 			messages = append(messages, chatMessage{
 				Role:    "user",
-				Content: "No more tool calls. Return only the JSON verdict now. Use uncertain if the evidence is incomplete.",
+				Content: "No more tool calls. Return only the JSON verdict now. Accept a low residual risk with requires_configuration or requires_environment when a line you read supports it. Use uncertain when a fact you need was not returned by a tool.",
 			})
 			stepTools = nil
 		}

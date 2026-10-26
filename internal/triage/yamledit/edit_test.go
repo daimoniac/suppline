@@ -47,7 +47,7 @@ sync:
 	}
 	parsed, err := config.ParseRegsync(path)
 	if err != nil {
-		t.Fatal(err)
+		t.Fatalf("%v\n%s", err, text)
 	}
 	if len(parsed.Sync) != 1 || len(parsed.Sync[0].VEX) != 1 || parsed.Sync[0].VEX[0].ID != "CVE-HUMAN" {
 		t.Fatalf("human x-vex = %+v", parsed.Sync[0].VEX)
@@ -92,6 +92,69 @@ sync:
 	}
 	if strings.Count(text, "x-vex:") != 1 {
 		t.Fatalf("x-vex key:\n%s", text)
+	}
+}
+
+func TestUpsertManualMatchesExpandedRegistryTarget(t *testing.T) {
+	t.Setenv("SUPPLINE_REGISTRY_URL", "hostingmaloonde")
+	original := []byte(`sync:
+  - source: docker.io/supabase/studio
+    target: '{{ env "SUPPLINE_REGISTRY_URL" }}/supabase_studio'
+    type: repository
+`)
+	updated, err := UpsertManual(original, "hostingmaloonde/supabase_studio", types.VEXStatement{
+		ID: "GHSA-673q-mjm6-r5xr", State: types.VEXStateNotAffected, Justification: types.VEXJustRequiresConfiguration, Detail: "human",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	text := string(updated)
+	if !strings.Contains(text, `{{ env "SUPPLINE_REGISTRY_URL" }}/supabase_studio`) {
+		t.Fatalf("template target was rewritten:\n%s", text)
+	}
+	if strings.Contains(text, "target: hostingmaloonde/supabase_studio") {
+		t.Fatalf("expanded target was written back:\n%s", text)
+	}
+	if !strings.Contains(text, "GHSA-673q-mjm6-r5xr") || !strings.Contains(text, "requires_configuration") {
+		t.Fatalf("statement missing:\n%s", text)
+	}
+	for _, line := range strings.Split(string(original), "\n") {
+		if line != "" && !strings.Contains(text, line) {
+			t.Fatalf("rewrote %q\n%s", line, text)
+		}
+	}
+}
+
+func TestUpsertManualKeepsIndentlessCatalog(t *testing.T) {
+	t.Setenv("SUPPLINE_REGISTRY_URL", "hostingmaloonde")
+	original := []byte(`version: 1
+sync:
+- source: docker.io/supabase/studio
+  target: '{{ env "SUPPLINE_REGISTRY_URL" }}/supabase_studio'
+  type: repository
+  x-vex:
+  - id: CVE-1
+    state: not_affected
+    justification: code_not_reachable
+    detail: keep
+x-triage:
+  enabled: true
+`)
+	updated, err := UpsertManual(original, "hostingmaloonde/supabase_studio", types.VEXStatement{
+		ID: "GHSA-673q-mjm6-r5xr", State: types.VEXStateNotAffected, Justification: types.VEXJustRequiresConfiguration, Detail: "human",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	text := string(updated)
+	if !strings.HasPrefix(text, string(original[:len(original)-len("x-triage:\n  enabled: true\n")])) && !strings.Contains(text, "x-triage:\n  enabled: true") {
+		t.Fatalf("catalog tail changed:\n%s", text)
+	}
+	if strings.Count(text, "x-vex:") != 1 || !strings.Contains(text, "GHSA-673q-mjm6-r5xr") {
+		t.Fatalf("statement:\n%s", text)
+	}
+	if strings.Contains(text, "  - source:") || strings.Contains(text, "target: hostingmaloonde/") {
+		t.Fatalf("reindented catalog:\n%s", text)
 	}
 }
 

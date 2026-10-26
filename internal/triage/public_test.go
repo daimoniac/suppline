@@ -155,7 +155,7 @@ func TestPublicIPAndToolAdvertisement(t *testing.T) {
 	if !names["cve_advisory"] || !names["public_code"] || !names["public_search"] || names["cluster_runtime"] {
 		t.Fatalf("tools: %v", names)
 	}
-	prompt := systemPrompt(nil, false)
+	prompt := systemPrompt(nil, false, "", 0)
 	if !names["image_source"] || !names["public_checkout"] {
 		t.Fatalf("tools: %v", names)
 	}
@@ -232,5 +232,29 @@ func TestPublicSearch(t *testing.T) {
 	none, err := src.GitHubSearch(context.Background(), "acme", "mod", "", "SAFE_FOR_TEMPLATES")
 	if err != nil || none != "no matches\n" {
 		t.Fatalf("empty search: %q %v", none, err)
+	}
+}
+
+func TestDecisionPromptIsConfigurable(t *testing.T) {
+	builtIn := systemPrompt([]string{"requires_configuration"}, false, "", 0.8)
+	for _, phrase := range []string{
+		"requires_configuration",
+		"requires_environment",
+		"critical -> high, high -> medium, medium -> low",
+		"confidence of at least 0.80",
+	} {
+		if !strings.Contains(builtIn, phrase) {
+			t.Fatalf("built-in prompt missing %q", phrase)
+		}
+	}
+	custom := systemPrompt([]string{"requires_environment"}, false, "Operator policy: accept only weekend windows.", 0.9)
+	if !strings.Contains(custom, "Operator policy: accept only weekend windows.") {
+		t.Fatal("custom prompt was dropped")
+	}
+	if strings.Contains(custom, "critical -> high") {
+		t.Fatal("custom prompt kept the built-in decision policy")
+	}
+	if !strings.Contains(custom, "confidence of at least 0.90") || !strings.Contains(custom, "empty grep") {
+		t.Fatal("custom prompt lost the output contract")
 	}
 }

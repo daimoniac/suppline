@@ -112,6 +112,7 @@ type TriageActiveResponse struct {
 	Repository string `json:"Repository"`
 	CVEID      string `json:"CVEID"`
 	Image      string `json:"Image,omitempty"`
+	Running    bool   `json:"Running"`
 }
 
 // TriageRunRequest selects the failed images to queue.
@@ -168,6 +169,7 @@ func (s *APIServer) handleTriageStatus(w http.ResponseWriter, r *http.Request) {
 				Repository: job.Repository,
 				CVEID:      job.CVEID,
 				Image:      job.Image,
+				Running:    job.Running,
 			})
 		}
 	}
@@ -330,6 +332,46 @@ func (s *APIServer) handleTriageAccept(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	s.respondJSON(w, http.StatusOK, TriageAcceptResult{CommitSHA: commit})
+}
+
+// TriageRetryRequest selects one finished triage to run again.
+type TriageRetryRequest struct {
+	Repository string `json:"Repository"`
+	CVEID      string `json:"CVEID"`
+}
+
+// handleTriageRetry queues one finished triage again.
+// @Summary Retry a triage run
+// @Description Queues the repository and CVE from a finished run. An existing exemption does not block it.
+// @Tags Triage
+// @Accept json
+// @Produce json
+// @Param request body TriageRetryRequest true "Run to queue again"
+// @Success 200 {object} TriageRunResult
+// @Failure 400 {object} map[string]string "Invalid request"
+// @Failure 409 {object} map[string]string "Triage is not enabled"
+// @Security BearerAuth
+// @Router /triage/retry [post]
+func (s *APIServer) handleTriageRetry(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		s.respondError(w, http.StatusMethodNotAllowed, "Method not allowed")
+		return
+	}
+	if s.triageService == nil || !s.triageService.Enabled() {
+		s.respondError(w, http.StatusConflict, "triage is not enabled")
+		return
+	}
+	var body TriageRetryRequest
+	decoder := json.NewDecoder(http.MaxBytesReader(w, r.Body, 1<<20))
+	if err := decoder.Decode(&body); err != nil {
+		s.respondError(w, http.StatusBadRequest, "Invalid request body")
+		return
+	}
+	if strings.TrimSpace(body.Repository) == "" || strings.TrimSpace(body.CVEID) == "" {
+		s.respondError(w, http.StatusBadRequest, "Repository and CVEID are required")
+		return
+	}
+	s.respondJSON(w, http.StatusOK, TriageRunResult{Queued: s.triageService.Retry(r.Context(), body.Repository, body.CVEID)})
 }
 
 func triageImageKey(repository, digest, tag string) string {

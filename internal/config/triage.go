@@ -36,6 +36,9 @@ type TriageConfig struct {
 	BackupRetention       int               `yaml:"backup_retention,omitempty"`
 	CheckoutDir           string            `yaml:"checkout_dir,omitempty"`
 	MaxFileBytes          int               `yaml:"max_file_bytes,omitempty"`
+	// Prompt replaces the built-in decision policy. The tool workflow and the
+	// JSON output contract stay in place. Empty uses the built-in policy.
+	Prompt string `yaml:"prompt,omitempty"`
 }
 
 // TriageLLMConfig selects an OpenAI-compatible chat completions endpoint.
@@ -151,6 +154,9 @@ func (t *TriageConfig) Validate() error {
 	}
 	if t.BackupRetention < 0 {
 		return fmt.Errorf("x-triage.backup_retention must be >= 0")
+	}
+	if len(t.Prompt) > 16*1024 {
+		return fmt.Errorf("x-triage.prompt must be at most 16KiB")
 	}
 	return nil
 }

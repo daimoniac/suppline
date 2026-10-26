@@ -180,6 +180,12 @@ export class APIClient {
       body: JSON.stringify(statement),
     });
   }
+  async retryTriage(run: { Repository: string; CVEID: string }) {
+    return this.request<TriageRunResult>('/api/v1/triage/retry', {
+      method: 'POST',
+      body: JSON.stringify(run),
+    });
+  }
   async queueTriage(images: TriageRunImage[]) {
     return this.request<TriageRunResult>('/api/v1/triage/run', {
       method: 'POST',
@@ -413,6 +419,7 @@ export interface TriageActive {
   Repository: string;
   CVEID: string;
   Image?: string;
+  Running?: boolean;
 }
 
 export interface TriageAccept {

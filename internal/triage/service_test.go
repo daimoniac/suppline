@@ -165,8 +165,32 @@ func TestActiveListsPendingJob(t *testing.T) {
 		t.Fatal("enqueue")
 	}
 	active := svc.Active()
-	if len(active) != 1 || active[0].CVEID != "CVE-1" || active[0].Image != "app:1" || svc.Pending() != 1 {
+	if len(active) != 1 || active[0].CVEID != "CVE-1" || active[0].Image != "app:1" || active[0].Running || svc.Pending() != 1 {
 		t.Fatalf("active = %+v pending %d", active, svc.Pending())
+	}
+}
+
+func TestRetryQueuesAndMarksRunning(t *testing.T) {
+	svc := &Service{
+		settings: Settings{Enabled: true},
+		logger:   slog.Default(),
+		jobs:     make(chan Job, 2),
+		pending:  map[string]ActiveJob{},
+	}
+	if svc.Retry(context.Background(), "app", "CVE-1") != 1 {
+		t.Fatal("retry")
+	}
+	active := svc.Active()
+	if len(active) != 1 || active[0].Running || active[0].CVEID != "CVE-1" {
+		t.Fatalf("queued = %+v", active)
+	}
+	svc.markRunning([]Job{{Repository: "app", CVEID: "CVE-1"}})
+	active = svc.Active()
+	if len(active) != 1 || !active[0].Running {
+		t.Fatalf("running = %+v", active)
+	}
+	if svc.Retry(context.Background(), "app", "CVE-1") != 0 {
+		t.Fatal("duplicate retry was queued")
 	}
 }
 

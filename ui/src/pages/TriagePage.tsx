@@ -1,7 +1,9 @@
 import { useCallback, useEffect, useState } from 'react';
-import { Loader2 } from 'lucide-react';
+import { Clock, Copy, Loader2 } from 'lucide-react';
 import { useAuth } from '../lib/auth';
-import { formatDate } from '../lib/utils';
+import { useToast } from '../lib/toast';
+import { buildOpenTriagePrompt } from '../lib/policyComplianceData';
+import { copyToClipboard, formatDate } from '../lib/utils';
 import { ErrorState, LoadingState, PageHeader } from '../components/ui';
 import type { TriageAccept, TriageActive, TriageRun } from '../lib/api';
 
@@ -135,6 +137,8 @@ function AcceptModal({ run, onClose, onSave }: { run: TriageRun; onClose: () => 
 
 export default function TriagePage() {
   const { apiClient } = useAuth();
+  const { toast } = useToast();
+  const [copying, setCopying] = useState(false);
   const [runs, setRuns] = useState<TriageRun[]>([]);
   const [active, setActive] = useState<TriageActive[]>([]);
   const [loading, setLoading] = useState(true);
@@ -144,6 +148,8 @@ export default function TriagePage() {
   const [status, setStatus] = useState('');
   const [openID, setOpenID] = useState<number | null>(null);
   const [editing, setEditing] = useState<TriageRun | null>(null);
+  const [retryingID, setRetryingID] = useState<number | null>(null);
+  const [notice, setNotice] = useState<string | null>(null);
 
   const refresh = useCallback(async (quiet: boolean) => {
     if (!quiet) setLoading(true);
@@ -174,6 +180,45 @@ export default function TriagePage() {
     return () => window.clearInterval(id);
   }, [active.length, refresh]);
 
+  const running = active.filter(job => job.Running);
+  const queued = active.filter(job => !job.Running);
+  const busyKey = new Set(active.map(job => `${job.Repository}\n${job.CVEID}`));
+
+  const copyOpenPrompt = async () => {
+    setCopying(true);
+    try {
+      const latest = await apiClient.getTriageRuns({ limit: 200 });
+      const prompt = buildOpenTriagePrompt(latest);
+      if (!prompt) {
+        toast('No open or uncertain triage runs to copy', 'warning');
+        return;
+      }
+      const ok = await copyToClipboard(prompt);
+      toast(ok ? 'Prompt copied to clipboard!' : 'Failed to copy', ok ? 'success' : 'error');
+    } catch (e: unknown) {
+      toast(e instanceof Error ? e.message : 'Failed to build the coding-agent prompt', 'error');
+    } finally {
+      setCopying(false);
+    }
+  };
+
+  const retry = async (run: TriageRun) => {
+    setRetryingID(run.ID);
+    setNotice(null);
+    try {
+      const result = await apiClient.retryTriage({ Repository: run.Repository, CVEID: run.CVEID });
+      if (result.Queued > 0) {
+        await refresh(true);
+      } else {
+        setNotice('Triage was not queued. It may already be waiting, or the image is not running in a cluster.');
+      }
+    } catch (e: unknown) {
+      setNotice(e instanceof Error ? e.message : 'Failed to queue triage');
+    } finally {
+      setRetryingID(null);
+    }
+  };
+
   if (loading && runs.length === 0 && active.length === 0) return <LoadingState message="Loading triage runs..." />;
   if (error && runs.length === 0) return <ErrorState message={error} onRetry={() => refresh(false)} />;
 
@@ -192,14 +237,34 @@ export default function TriagePage() {
             <option key={value} value={value}>{label}</option>
           ))}
         </select>
+        <button type="button" onClick={copyOpenPrompt} disabled={copying}
+          className="inline-flex items-center gap-1.5 px-3 py-2 text-sm rounded-lg border border-accent/30 text-text-primary bg-bg-secondary hover:bg-bg-tertiary disabled:opacity-50 transition-colors">
+          <Copy className="w-3.5 h-3.5" />
+          {copying ? 'Copying…' : 'Coding agent for open runs'}
+        </button>
       </div>
       {error && <p className="text-sm text-danger mb-3">{error}</p>}
-      {active.length > 0 && (
+      {notice && <p className="text-sm text-text-secondary mb-3">{notice}</p>}
+      {running.length > 0 && (
         <div className="mb-4 bg-bg-primary border border-border rounded-xl overflow-hidden divide-y divide-border">
           <div className="px-4 py-2 text-xs font-medium text-text-secondary">Currently running</div>
-          {active.map(job => (
+          {running.map(job => (
             <div key={`${job.Repository}\n${job.CVEID}`} className="flex items-center gap-3 px-4 py-3">
               <Loader2 className="w-4 h-4 animate-spin text-accent shrink-0" />
+              <div className="min-w-0">
+                <div className="text-sm font-mono font-medium">{job.CVEID}</div>
+                <div className="text-xs text-text-muted truncate">{job.Image || job.Repository}</div>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+      {queued.length > 0 && (
+        <div className="mb-4 bg-bg-primary border border-border rounded-xl overflow-hidden divide-y divide-border">
+          <div className="px-4 py-2 text-xs font-medium text-text-secondary">Queued</div>
+          {queued.map(job => (
+            <div key={`${job.Repository}\n${job.CVEID}`} className="flex items-center gap-3 px-4 py-3">
+              <Clock className="w-4 h-4 text-text-muted shrink-0" />
               <div className="min-w-0">
                 <div className="text-sm font-mono font-medium">{job.CVEID}</div>
                 <div className="text-xs text-text-muted truncate">{job.Image || job.Repository}</div>
@@ -226,6 +291,11 @@ export default function TriagePage() {
                   {run.Superseded && <span className="text-xs text-text-muted shrink-0">Superseded</span>}
                   <span className="text-xs text-text-secondary shrink-0">{run.Verdict || '—'}</span>
                   <span className="text-xs text-text-muted shrink-0 w-28 text-right">{formatDate(run.CreatedAt)}</span>
+                </button>
+                <button type="button" onClick={() => retry(run)}
+                  disabled={retryingID === run.ID || busyKey.has(`${run.Repository}\n${run.CVEID}`)}
+                  className="px-2 py-1 text-xs rounded-md border border-border text-text-secondary hover:bg-bg-tertiary shrink-0 disabled:opacity-50">
+                  {busyKey.has(`${run.Repository}\n${run.CVEID}`) ? 'Queued' : retryingID === run.ID ? 'Queuing…' : 'Queue again'}
                 </button>
                 <button type="button" onClick={() => setEditing(run)}
                   className="px-2 py-1 text-xs rounded-md border border-border text-text-secondary hover:bg-bg-tertiary shrink-0">

@@ -155,6 +155,7 @@ func (s *APIServer) setupRoutes() {
 	s.router.HandleFunc("/api/v1/triage", s.corsMiddleware(s.authMiddleware(s.handleListTriage, false)))
 	s.router.HandleFunc("/api/v1/triage/status", s.corsMiddleware(s.authMiddleware(s.handleTriageStatus, false)))
 	s.router.HandleFunc("/api/v1/triage/run", s.corsMiddleware(s.authMiddleware(s.handleTriageRun, true)))
+	s.router.HandleFunc("/api/v1/triage/retry", s.corsMiddleware(s.authMiddleware(s.handleTriageRetry, true)))
 	s.router.HandleFunc("/api/v1/triage/accept", s.corsMiddleware(s.authMiddleware(s.handleTriageAccept, true)))
 	s.router.HandleFunc("/api/v1/vex/inactive", s.corsMiddleware(s.authMiddleware(s.handleListInactiveVEX, false)))
 	s.router.HandleFunc("/api/v1/images/failed", s.corsMiddleware(s.authMiddleware(s.handleListFailedImages, false)))
