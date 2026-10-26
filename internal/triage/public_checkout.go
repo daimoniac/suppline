@@ -141,19 +141,27 @@ func (c *publicCheckouts) Checkout(ctx context.Context, roots *Roots, owner, rep
 	}
 	name := owner + "/" + repo
 	replaced := false
+	var fetched []string
 	for i := range roots.Checkouts {
-		if roots.Checkouts[i].Name == name {
-			roots.Checkouts[i].Dir = dir
-			roots.Checkouts[i].Public = true
-			roots.Checkouts[i].SHA = sha
-			replaced = true
-			break
+		if roots.Checkouts[i].Name != name {
+			continue
 		}
+		if roots.Checkouts[i].SHA != sha {
+			roots.Checkouts[i].Paths = nil
+		}
+		roots.Checkouts[i].Dir = dir
+		roots.Checkouts[i].Public = true
+		roots.Checkouts[i].SHA = sha
+		roots.Checkouts[i].Paths = addFetched(roots.Checkouts[i].Paths, rel)
+		fetched = roots.Checkouts[i].Paths
+		replaced = true
+		break
 	}
 	if !replaced {
-		roots.Checkouts = append(roots.Checkouts, CheckoutRoot{Name: name, Dir: dir, Public: true, SHA: sha})
+		fetched = addFetched(nil, rel)
+		roots.Checkouts = append(roots.Checkouts, CheckoutRoot{Name: name, Dir: dir, Public: true, SHA: sha, Paths: fetched})
 	}
-	return fmt.Sprintf("checked out %s@%s\npath: %s\nuse grep and read_file with repo %s\n", name, sha, rel, name), nil
+	return fmt.Sprintf("checked out %s@%s\npath: %s\nfetched: %s\nuse grep and read_file with repo %s\n", name, sha, rel, strings.Join(fetched, ", "), name), nil
 }
 
 func cloneWithGit(ctx context.Context, dir, remote, sha, rel string) error {
@@ -180,11 +188,8 @@ func cloneWithGit(ctx context.Context, dir, remote, sha, rel string) error {
 	}
 	ctx, cancel := context.WithTimeout(ctx, 90*time.Second)
 	defer cancel()
-	if head, err := gitOutput(ctx, dir, "rev-parse", "HEAD"); err == nil && strings.TrimSpace(head) == sha {
-		info, statErr := os.Stat(filepath.Join(dir, rel))
-		if statErr == nil && info.IsDir() {
-			return nil
-		}
+	if head, err := gitOutput(ctx, dir, "rev-parse", "HEAD"); err == nil && strings.TrimSpace(head) == sha && treeCovers(ctx, dir, rel) {
+		return nil
 	}
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		return err
@@ -209,10 +214,15 @@ func cloneWithGit(ctx context.Context, dir, remote, sha, rel string) error {
 			return err
 		}
 	}
-	if rel != "." {
-		if err := runGit(ctx, dir, fileProto, "sparse-checkout", "set", "--cone", rel); err != nil {
+	if rel == "." {
+		_ = runGit(ctx, dir, fileProto, "sparse-checkout", "disable")
+	} else if sparseEnabled(ctx, dir) {
+		// Cone mode stays on from the first sparse-checkout set. add does not take --cone.
+		if err := runGit(ctx, dir, fileProto, "sparse-checkout", "add", rel); err != nil {
 			return err
 		}
+	} else if err := runGit(ctx, dir, fileProto, "sparse-checkout", "set", "--cone", rel); err != nil {
+		return err
 	}
 	if err := runGit(ctx, dir, fileProto, "checkout", "--detach", "FETCH_HEAD"); err != nil {
 		return err
@@ -236,6 +246,39 @@ func cloneWithGit(ctx context.Context, dir, remote, sha, rel string) error {
 		return fmt.Errorf("path %s is not in the checkout", rel)
 	}
 	return nil
+}
+
+func treeCovers(ctx context.Context, dir, rel string) bool {
+	if !sparseEnabled(ctx, dir) {
+		rel = cleanRel(rel)
+		target := dir
+		if rel != "." {
+			target = filepath.Join(dir, filepath.FromSlash(rel))
+		}
+		info, err := os.Stat(target)
+		return err == nil && info.IsDir()
+	}
+	return coneCovers(sparseCones(ctx, dir), rel)
+}
+
+func sparseEnabled(ctx context.Context, dir string) bool {
+	out, err := gitOutput(ctx, dir, "config", "--get", "core.sparseCheckout")
+	return err == nil && strings.TrimSpace(out) == "true"
+}
+
+func sparseCones(ctx context.Context, dir string) []string {
+	out, err := gitOutput(ctx, dir, "sparse-checkout", "list")
+	if err != nil {
+		return nil
+	}
+	var cones []string
+	for _, line := range strings.Split(out, "\n") {
+		line = strings.TrimSpace(line)
+		if line != "" {
+			cones = append(cones, cleanRel(line))
+		}
+	}
+	return cones
 }
 
 func runGit(ctx context.Context, dir string, fileProto bool, args ...string) error {

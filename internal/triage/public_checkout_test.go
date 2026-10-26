@@ -84,7 +84,7 @@ func TestPublicCheckoutResolvesCommitAndRecordsCall(t *testing.T) {
 			Repo: "supabase/supabase", Path: "apps/studio/call.ts", Line: 1, Quote: "DOMPurify.sanitize(value)",
 		}},
 	}
-	if err := verifyEvidence(roots, pub, Job{}, verdict); err != nil {
+	if err := verifyEvidence(roots, pub, Job{}, &verdict); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := upstream.Checkout(context.Background(), &roots, "supabase", "supabase", "main", ""); err == nil {
@@ -137,6 +137,54 @@ func TestCloneWithGitSparsePath(t *testing.T) {
 	}
 	if _, err := os.Stat(filepath.Join(dest, "apps", "other", "skip.ts")); err == nil {
 		t.Fatal("sparse checkout included a sibling directory")
+	}
+	if err := cloneWithGit(context.Background(), dest, "file://"+bare, sha, "apps/other"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(filepath.Join(dest, "apps", "studio", "call.ts")); err != nil {
+		t.Fatal("adding a cone removed the first directory")
+	}
+	if _, err := os.Stat(filepath.Join(dest, "apps", "other", "skip.ts")); err != nil {
+		t.Fatal(err)
+	}
+	if err := cloneWithGit(context.Background(), dest, "file://"+bare, sha, "."); err != nil {
+		t.Fatal(err)
+	}
+	if sparseEnabled(context.Background(), dest) {
+		t.Fatal("full checkout left sparse-checkout enabled")
+	}
+}
+
+func TestCheckoutKeepsFetchedDirectories(t *testing.T) {
+	const sha = "0123456789abcdef0123456789abcdef01234567"
+	var rels []string
+	upstream := &publicCheckouts{
+		base: t.TempDir(),
+		pub:  &publicSource{},
+		clone: func(ctx context.Context, dir, remote, gotSHA, rel string) error {
+			rels = append(rels, rel)
+			return os.MkdirAll(filepath.Join(dir, rel), 0o755)
+		},
+	}
+	roots := Roots{}
+	if _, err := upstream.Checkout(context.Background(), &roots, "elastic", "kibana", sha, "src/platform/packages/shared/kbn-design-tools"); err != nil {
+		t.Fatal(err)
+	}
+	out, err := upstream.Checkout(context.Background(), &roots, "elastic", "kibana", sha, "x-pack")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(rels) != 2 || len(roots.Checkouts) != 1 {
+		t.Fatalf("rels %v checkouts %+v", rels, roots.Checkouts)
+	}
+	if !strings.Contains(out, "fetched: src/platform/packages/shared/kbn-design-tools, x-pack") {
+		t.Fatalf("output %s", out)
+	}
+	if _, ok := roots.Checkouts[0].covers("src"); ok {
+		t.Fatal("a parent of a fetched directory counted as fully checked out")
+	}
+	if _, ok := roots.Checkouts[0].covers("x-pack/plugins"); !ok {
+		t.Fatal("a child of a fetched directory was not covered")
 	}
 }
 

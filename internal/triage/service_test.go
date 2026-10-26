@@ -335,3 +335,10 @@ func TestGitopsStatusMergesSharedRepo(t *testing.T) {
 		t.Fatalf("context repo = %+v", repos[1])
 	}
 }
+
+func TestAutoCommitSkipsGitLabCI(t *testing.T) {
+	message := autoCommitMessage("GHSA-cg2g-xh64-v4q7", "hostingmaloonde/elasticsearch_kibana", "not_affected", "the call returns a string")
+	if !strings.Contains(message, "chore(vex): auto-triage GHSA-cg2g-xh64-v4q7 for hostingmaloonde/elasticsearch_kibana [skip ci]\n") {
+		t.Fatalf("message = %q", message)
+	}
+}

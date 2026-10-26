@@ -21,6 +21,8 @@ type CheckoutRoot struct {
 	Public bool
 	// SHA is the commit of a public checkout. Gitops checkouts leave it empty.
 	SHA string
+	// Paths are directories fully fetched for a public checkout. "." is the whole tree.
+	Paths []string
 }
 
 // Roots executes read-only tools inside checkout directories.
@@ -201,6 +203,65 @@ func (r Roots) Line(repo, rel string, line int) (string, error) {
 func (r Roots) public(repo string) bool {
 	root, err := r.checkout(repo)
 	return err == nil && root.Public
+}
+
+// covers reports whether rel is inside a fully fetched directory.
+// The returned path is the path a grep of rel would walk.
+func (c CheckoutRoot) covers(rel string) (string, bool) {
+	rel = cleanRel(rel)
+	if coneCovers(c.Paths, rel) {
+		return rel, true
+	}
+	return "", false
+}
+
+func (c CheckoutRoot) fetchedLabel() string {
+	if len(c.Paths) == 0 {
+		return "(none)"
+	}
+	return strings.Join(c.Paths, ", ")
+}
+
+func cleanRel(rel string) string {
+	rel = filepath.ToSlash(strings.TrimSpace(rel))
+	rel = strings.Trim(rel, "/")
+	if rel == "" || rel == "." {
+		return "."
+	}
+	return rel
+}
+
+func coneCovers(cones []string, rel string) bool {
+	rel = cleanRel(rel)
+	for _, cone := range cones {
+		cone = cleanRel(cone)
+		if cone == "." || cone == rel || strings.HasPrefix(rel, cone+"/") {
+			return true
+		}
+	}
+	return false
+}
+
+func addFetched(paths []string, rel string) []string {
+	rel = cleanRel(rel)
+	if rel == "." {
+		return []string{"."}
+	}
+	for _, existing := range paths {
+		existing = cleanRel(existing)
+		if existing == "." || existing == rel || strings.HasPrefix(rel, existing+"/") {
+			return paths
+		}
+	}
+	next := make([]string, 0, len(paths)+1)
+	for _, existing := range paths {
+		existing = cleanRel(existing)
+		if strings.HasPrefix(existing, rel+"/") {
+			continue
+		}
+		next = append(next, existing)
+	}
+	return append(next, rel)
 }
 
 func (r Roots) sha(repo string) string {

@@ -316,7 +316,7 @@ export default function TriagePage() {
                     <ul className="space-y-1">
                       {run.Evidence.map((item, index) => (
                         <li key={`${item.repo}-${item.path}-${item.line}-${index}`} className="font-mono text-xs">
-                          {item.repo}:{item.path}:{item.line} {item.quote}
+                          {item.repo}:{item.path}:{item.line} {item.quote || item.pattern}
                         </li>
                       ))}
                     </ul>

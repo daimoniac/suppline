@@ -40,9 +40,18 @@ type publicSource struct {
 	raw      string
 	npm      string
 
-	mu        sync.Mutex
-	lines     map[string]string
-	emptyGrep map[string]struct{}
+	mu    sync.Mutex
+	lines map[string]string
+	greps []grepHit
+}
+
+type grepHit struct {
+	ID      string
+	Repo    string
+	Pattern string
+	Path    string
+	Commit  string
+	Empty   bool
 }
 
 func newPublicSource() *publicSource {
@@ -503,30 +512,36 @@ func formatGitHubAdvisory(body []byte) (string, error) {
 	return b.String(), nil
 }
 
-func (p *publicSource) rememberEmptyGrep(repo, pattern, path, commit string) {
+func (p *publicSource) recordGrep(repo, pattern, path, commit string, empty bool) string {
 	if p == nil || strings.TrimSpace(pattern) == "" || strings.TrimSpace(commit) == "" {
-		return
+		return ""
 	}
 	p.mu.Lock()
 	defer p.mu.Unlock()
-	if p.emptyGrep == nil {
-		p.emptyGrep = map[string]struct{}{}
+	hit := grepHit{
+		ID:      fmt.Sprintf("g%d", len(p.greps)+1),
+		Repo:    strings.Trim(strings.TrimSpace(repo), "/"),
+		Pattern: pattern,
+		Path:    cleanRel(path),
+		Commit:  strings.ToLower(strings.TrimSpace(commit)),
+		Empty:   empty,
 	}
-	p.emptyGrep[emptyGrepKey(repo, pattern, path, commit)] = struct{}{}
+	p.greps = append(p.greps, hit)
+	return hit.ID
 }
 
-func (p *publicSource) emptyGrepRan(repo, pattern, path, commit string) bool {
+func (p *publicSource) grep(id string) (grepHit, bool) {
 	if p == nil {
-		return false
+		return grepHit{}, false
 	}
 	p.mu.Lock()
 	defer p.mu.Unlock()
-	_, ok := p.emptyGrep[emptyGrepKey(repo, pattern, path, commit)]
-	return ok
-}
-
-func emptyGrepKey(repo, pattern, path, commit string) string {
-	return strings.ToLower(strings.Trim(strings.TrimSpace(repo), "/")) + "\n" + pattern + "\n" + strings.Trim(strings.TrimSpace(path), "/") + "\n" + strings.ToLower(strings.TrimSpace(commit))
+	for _, hit := range p.greps {
+		if hit.ID == strings.TrimSpace(id) {
+			return hit, true
+		}
+	}
+	return grepHit{}, false
 }
 
 func (p *publicSource) remember(repo, path, numbered string) {

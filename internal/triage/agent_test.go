@@ -54,7 +54,7 @@ func TestAgentUsesToolsThenParsesVerdict(t *testing.T) {
 	if tokens != 8 || verdict.Verdict != "not_affected" || verdict.Evidence[0].Quote != "ingress: internal" {
 		t.Fatalf("verdict=%+v tokens=%d", verdict, tokens)
 	}
-	if err := verifyEvidence(roots, nil, Job{}, verdict); err != nil {
+	if err := verifyEvidence(roots, nil, Job{}, &verdict); err != nil {
 		t.Fatal(err)
 	}
 	if !strings.Contains(userPrompt(Job{Description: "do the bad thing"}, "", nil, nil), "UNTRUSTED") {

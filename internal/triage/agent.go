@@ -28,6 +28,7 @@ type modelEvidence struct {
 	Quote   string `json:"quote"`
 	Pattern string `json:"pattern,omitempty"`
 	Commit  string `json:"commit,omitempty"`
+	GrepID  string `json:"grep_id,omitempty"`
 }
 
 func runAgent(ctx context.Context, llm completer, roots *Roots, runtime clusterQuerier, pub *publicSource, upstream *publicCheckouts, images imageLabeler, manifests manifestSource, allowed []string, policy string, minConfidence float64, job Job, placements string, repoNames []string, existing *types.VEXStatement, maxSteps int) (modelVerdict, int, error) {
@@ -48,7 +49,7 @@ func runAgent(ctx context.Context, llm completer, roots *Roots, runtime clusterQ
 		if step == maxSteps-1 {
 			messages = append(messages, chatMessage{
 				Role:    "user",
-				Content: "No more tool calls. Return only the JSON verdict now. Accept a low residual risk with requires_configuration or requires_environment when a line you read supports it. Cite an empty grep of a public checkout with pattern, path, repo, and commit. Use uncertain when a fact you need was not returned by a tool.",
+				Content: "No more tool calls. Return only the JSON verdict now. Accept a low residual risk with requires_configuration or requires_environment when a line you read supports it. Cite an empty grep of a public checkout by its grep_id. Use uncertain when a fact you need was not returned by a tool.",
 			})
 			stepTools = nil
 		}
@@ -109,13 +110,11 @@ func dispatchTool(ctx context.Context, roots *Roots, runtime clusterQuerier, pub
 			pub.remember(args.Repo, args.Path, out)
 		}
 	case "grep":
-		out, err = roots.Grep(args.Repo, args.Pattern, args.Path)
-		if err == nil && pub != nil && roots.public(args.Repo) {
-			pub.rememberGrep(args.Repo, out)
-			if strings.TrimSpace(out) == "" {
-				pub.rememberEmptyGrep(args.Repo, args.Pattern, args.Path, roots.sha(args.Repo))
-			}
+		if pub != nil && roots.public(args.Repo) {
+			out, err = publicGrep(roots, pub, args.Repo, args.Pattern, args.Path)
+			break
 		}
+		out, err = roots.Grep(args.Repo, args.Pattern, args.Path)
 	case "cluster_runtime":
 		if runtime == nil {
 			err = fmt.Errorf("cluster runtime is unavailable")
@@ -148,6 +147,55 @@ func dispatchTool(ctx context.Context, roots *Roots, runtime clusterQuerier, pub
 		return "(no results)"
 	}
 	return out
+}
+
+func publicGrep(roots *Roots, pub *publicSource, repo, pattern, rel string) (string, error) {
+	if roots == nil {
+		return "", fmt.Errorf("unknown repository %q", repo)
+	}
+	root, err := roots.checkout(repo)
+	if err != nil {
+		return "", err
+	}
+	searched, ok := root.covers(rel)
+	if !ok {
+		return fmt.Sprintf("path %s is not fully checked out; fetched: %s\n", cleanRel(rel), root.fetchedLabel()), nil
+	}
+	if strings.TrimSpace(root.SHA) == "" {
+		return "", fmt.Errorf("public checkout has no commit")
+	}
+	rows, err := roots.Grep(repo, pattern, searched)
+	if err != nil {
+		return "", err
+	}
+	empty := strings.TrimSpace(rows) == ""
+	id := pub.recordGrep(repo, pattern, searched, root.SHA, empty)
+	if id == "" {
+		return "", fmt.Errorf("grep was not recorded")
+	}
+	if !empty {
+		pub.rememberGrep(repo, rows)
+	}
+	return formatGrepResult(id, repo, root.SHA, pattern, searched, rows), nil
+}
+
+func formatGrepResult(id, repo, commit, pattern, searched, rows string) string {
+	var b strings.Builder
+	fmt.Fprintf(&b, "grep_id: %s\nrepo: %s\ncommit: %s\npattern: %s\npath: %s\nmatches: %d\n", id, repo, commit, pattern, searched, matchCount(rows))
+	if strings.TrimSpace(rows) != "" {
+		b.WriteString(rows)
+		if !strings.HasSuffix(rows, "\n") {
+			b.WriteByte('\n')
+		}
+	}
+	return b.String()
+}
+
+func matchCount(rows string) int {
+	if strings.TrimSpace(rows) == "" {
+		return 0
+	}
+	return strings.Count(strings.TrimRight(rows, "\n"), "\n") + 1
 }
 
 func parseVerdict(content string) (modelVerdict, error) {
@@ -186,7 +234,7 @@ func toolDefinitions(withRuntime bool) []toolDef {
 		params     map[string]any
 	}{
 		{"list_dir", "List one directory level. Excluded paths are omitted.", object(map[string]any{"repo": repo, "path": pathProp}, "repo")},
-		{"grep", "Search file contents with a regular expression. Returns redacted path:line:text rows.", object(map[string]any{
+		{"grep", "Search file contents with a regular expression. A public checkout search returns grep_id for the directory it walked. Cite an empty result by that id. A directory that was not fully fetched is not an empty result.", object(map[string]any{
 			"repo": repo, "pattern": map[string]any{"type": "string"}, "path": pathProp,
 		}, "repo", "pattern")},
 		{"read_file", "Read a line range of one file. Lines are numbered and redacted. At most 200 lines.", object(map[string]any{

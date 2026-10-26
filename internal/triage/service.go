@@ -553,7 +553,7 @@ func (s *Service) process(ctx context.Context, job Job, checkouts []gitops.Check
 		return
 	}
 	evidenceErr := ""
-	if err := verifyEvidence(jobRoots, pub, job, verdict); err != nil {
+	if err := verifyEvidence(jobRoots, pub, job, &verdict); err != nil {
 		evidenceErr = err.Error()
 	}
 	kevHit, kevErr := s.kev.Contains(ctx, job.CVEID)
@@ -567,7 +567,7 @@ func (s *Service) process(ctx context.Context, job Job, checkouts []gitops.Check
 			s.record(ctx, job, verdict, tokens, StatusDryRun, "", shas, decision.Statement.Detail)
 			return
 		}
-		message := fmt.Sprintf("chore(vex): auto-triage %s for %s\n\ntriage verdict: %s\n%s", job.CVEID, job.Repository, decision.Statement.State, decision.Reason)
+		message := autoCommitMessage(job.CVEID, job.Repository, string(decision.Statement.State), decision.Reason)
 		commit, err := s.apply(ctx, job.Repository, decision.Statement, message)
 		if err != nil {
 			status := StatusError
@@ -677,6 +677,12 @@ func (s *Service) pullCheckouts(ctx context.Context) ([]gitops.Checkout, Roots, 
 		})
 	}
 	return checkouts, roots, nil
+}
+
+// autoCommitMessage is the GitLab commit for an x-vex-auto write.
+// [skip ci] keeps that push from starting a pipeline.
+func autoCommitMessage(cve, repository, state, reason string) string {
+	return fmt.Sprintf("chore(vex): auto-triage %s for %s [skip ci]\n\ntriage verdict: %s\n%s", cve, repository, state, reason)
 }
 
 func (s *Service) applyStatement(ctx context.Context, repository string, statement types.VEXStatement, message string) (string, error) {

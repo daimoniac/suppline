@@ -236,7 +236,7 @@ export function buildOpenTriagePrompt(runs: TriageRun[]): string {
   );
   const notes = open.map(run => {
     const evidence = (run.Evidence || [])
-      .map(item => `- ${item.repo}:${item.path}:${item.line} ${item.quote}`)
+      .map(item => `- ${item.repo}:${item.path}:${item.line} ${item.quote || item.pattern || ''}`)
       .join('\n');
     return [
       `#### ${run.CVEID} on ${run.Repository}`,

@@ -400,6 +400,9 @@ export interface TriageEvidence {
   path: string;
   line: number;
   quote: string;
+  pattern?: string;
+  commit?: string;
+  grep_id?: string;
 }
 
 export interface TriageRepoSHA {

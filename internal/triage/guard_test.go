@@ -88,35 +88,35 @@ func TestCodeNotReachableNeedsUpstreamLine(t *testing.T) {
 			Repo: "Supabase/supabase", Path: "apps/studio/lib/sanitize.ts", Line: 40, Quote: "DOMPurify.sanitize(value)",
 		}},
 	}
-	if err := verifyEvidence(roots, pub, Job{}, upstream); err != nil {
+	if err := verifyEvidence(roots, pub, Job{}, &upstream); err != nil {
 		t.Fatal(err)
 	}
 	invented := upstream
 	invented.Evidence = []modelEvidence{{
 		Repo: "supabase/supabase", Path: "apps/studio/lib/sanitize.ts", Line: 40, Quote: "SAFE_FOR_TEMPLATES: true",
 	}}
-	if err := verifyEvidence(roots, pub, Job{}, invented); err == nil {
+	if err := verifyEvidence(roots, pub, Job{}, &invented); err == nil {
 		t.Fatal("accepted a quote the file read did not return")
 	}
 	checkoutOnly := modelVerdict{
 		Verdict: "not_affected", Justification: "code_not_reachable",
 		Evidence: []modelEvidence{{Repo: "infra", Path: "app.yaml", Line: 1, Quote: "image: studio"}},
 	}
-	if err := verifyEvidence(roots, pub, Job{}, checkoutOnly); err == nil || !strings.Contains(err.Error(), "public checkout") {
+	if err := verifyEvidence(roots, pub, Job{}, &checkoutOnly); err == nil || !strings.Contains(err.Error(), "public checkout") {
 		t.Fatalf("checkout line: %v", err)
 	}
 	deployment := modelVerdict{
 		Verdict: "not_affected", Justification: "requires_configuration",
 		Evidence: upstream.Evidence,
 	}
-	if err := verifyEvidence(roots, pub, Job{}, deployment); err != nil {
+	if err := verifyEvidence(roots, pub, Job{}, &deployment); err != nil {
 		t.Fatalf("public line as configuration evidence: %v", err)
 	}
 	neither := modelVerdict{
 		Verdict: "not_affected", Justification: "requires_configuration",
 		Evidence: []modelEvidence{{Repo: "missing", Path: "nope.ts", Line: 1, Quote: "no such line"}},
 	}
-	if err := verifyEvidence(roots, pub, Job{}, neither); err == nil {
+	if err := verifyEvidence(roots, pub, Job{}, &neither); err == nil {
 		t.Fatal("accepted configuration evidence from neither tree")
 	}
 
@@ -148,32 +148,68 @@ func TestEmptyGrepAndKernelWorkload(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(dir, "values.yaml"), []byte(body), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	roots := Roots{Checkouts: []CheckoutRoot{{Name: "infra", Dir: dir}, {Name: "supabase/supabase", Dir: dir, Public: true, SHA: studioSHA}}}
-	pub := &publicSource{}
-	pub.rememberEmptyGrep("supabase/supabase", "use cache", "apps/studio", studioSHA)
-	absence := modelVerdict{
-		Verdict: "not_affected", Justification: "code_not_reachable", Confidence: 0.9, Reasoning: "no use cache",
-		Evidence: []modelEvidence{{Repo: "supabase/supabase", Path: "apps/studio", Pattern: "use cache", Commit: studioSHA}},
-	}
-	if err := verifyEvidence(roots, pub, Job{PackageName: "next"}, absence); err != nil {
+	const cone = "src/platform/packages/shared/kbn-design-tools"
+	if err := os.MkdirAll(filepath.Join(dir, cone), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	invented := absence
-	invented.Evidence[0].Pattern = "SAFE_FOR_TEMPLATES"
-	if err := verifyEvidence(roots, pub, Job{}, invented); err == nil {
-		t.Fatal("accepted an empty grep that was not run")
+	if err := os.WriteFile(filepath.Join(dir, cone, "sanitize_html.ts"), []byte("return purifier.sanitize(html, {\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	roots := Roots{Checkouts: []CheckoutRoot{
+		{Name: "infra", Dir: dir},
+		{Name: "elastic/kibana", Dir: dir, Public: true, SHA: studioSHA, Paths: []string{cone}},
+	}}
+	pub := &publicSource{}
+	parent, err := publicGrep(&roots, pub, "elastic/kibana", "SAFE_FOR_TEMPLATES", "src")
+	if err != nil || !strings.Contains(parent, "not fully checked out") || strings.Contains(parent, "grep_id:") {
+		t.Fatalf("parent grep: %q %v", parent, err)
+	}
+	empty, err := publicGrep(&roots, pub, "elastic/kibana", "SAFE_FOR_TEMPLATES", cone)
+	if err != nil || !strings.Contains(empty, "grep_id: g1") || !strings.Contains(empty, "matches: 0") || !strings.Contains(empty, "path: "+cone) {
+		t.Fatalf("empty grep: %q %v", empty, err)
+	}
+	absence := modelVerdict{
+		Verdict: "not_affected", Justification: "code_not_reachable", Confidence: 0.9, Reasoning: "no template mode",
+		Evidence: []modelEvidence{{GrepID: "g1"}},
+	}
+	if err := verifyEvidence(roots, pub, Job{PackageName: "dompurify"}, &absence); err != nil {
+		t.Fatal(err)
+	}
+	if len(absence.Evidence) != 1 || absence.Evidence[0].Path != cone || absence.Evidence[0].Pattern != "SAFE_FOR_TEMPLATES" || absence.Evidence[0].GrepID != "g1" {
+		t.Fatalf("stored evidence = %+v", absence.Evidence)
+	}
+	pub.remember("elastic/kibana", cone+"/sanitize_html.ts", "1|return purifier.sanitize(html, {\n")
+	paraphrase := modelVerdict{
+		Verdict: "not_affected", Justification: "code_not_reachable", Confidence: 0.9, Reasoning: "narrated src",
+		Evidence: []modelEvidence{
+			{Repo: "elastic/kibana", Path: "src", Pattern: "SAFE_FOR_TEMPLATES", Commit: studioSHA},
+			{Repo: "elastic/kibana", Path: cone + "/sanitize_html.ts", Line: 1, Quote: "return purifier.sanitize(html, {"},
+		},
+	}
+	if err := verifyEvidence(roots, pub, Job{PackageName: "dompurify"}, &paraphrase); err != nil {
+		t.Fatal(err)
+	}
+	if len(paraphrase.Evidence) != 1 || paraphrase.Evidence[0].Line != 1 {
+		t.Fatalf("paraphrase was stored: %+v", paraphrase.Evidence)
+	}
+	unknown := modelVerdict{
+		Verdict: "not_affected", Justification: "code_not_reachable", Reasoning: "missing id",
+		Evidence: []modelEvidence{{GrepID: "g9"}},
+	}
+	if err := verifyEvidence(roots, pub, Job{}, &unknown); err == nil || !strings.Contains(err.Error(), "grep_id") {
+		t.Fatalf("unknown id: %v", err)
 	}
 	kernel := modelVerdict{
 		Verdict: "not_affected", Justification: "code_not_reachable", Confidence: 0.9, Reasoning: "userspace",
 		Evidence: []modelEvidence{{Repo: "infra", Path: "values.yaml", Line: 1, Quote: "image: hostingmaloonde/supabase_postgres:15"}},
 	}
-	if err := verifyEvidence(roots, pub, Job{Repository: "hostingmaloonde/supabase_postgres", PackageName: "linux-libc-dev"}, kernel); err != nil {
+	if err := verifyEvidence(roots, pub, Job{Repository: "hostingmaloonde/supabase_postgres", PackageName: "linux-libc-dev"}, &kernel); err != nil {
 		t.Fatal(err)
 	}
 	if err := os.WriteFile(filepath.Join(dir, "values.yaml"), []byte(body+"privileged: true\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	if err := verifyEvidence(roots, pub, Job{Repository: "hostingmaloonde/supabase_postgres", PackageName: "linux"}, kernel); err == nil || !strings.Contains(err.Error(), "privileged") {
+	if err := verifyEvidence(roots, pub, Job{Repository: "hostingmaloonde/supabase_postgres", PackageName: "linux"}, &kernel); err == nil || !strings.Contains(err.Error(), "privileged") {
 		t.Fatalf("privileged workload: %v", err)
 	}
 }
