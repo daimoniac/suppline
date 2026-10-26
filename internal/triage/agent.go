@@ -103,13 +103,29 @@ func dispatchTool(ctx context.Context, roots *Roots, runtime clusterQuerier, pub
 	)
 	switch call.Function.Name {
 	case "list_dir":
+		if args.Repo == imageCheckoutName {
+			err = roots.mountImage(ctx)
+			if err != nil {
+				break
+			}
+		}
 		out, err = roots.ListDir(args.Repo, args.Path)
 	case "read_file":
+		if args.Repo == imageCheckoutName {
+			err = roots.mountImage(ctx)
+			if err != nil {
+				break
+			}
+		}
 		out, err = roots.ReadFile(args.Repo, args.Path, args.StartLine, args.EndLine)
 		if err == nil && pub != nil && roots.public(args.Repo) {
 			pub.remember(args.Repo, args.Path, out)
 		}
 	case "grep":
+		if args.Repo == imageCheckoutName {
+			out, err = imageGrep(ctx, roots, pub, job, args.Pattern, args.Path)
+			break
+		}
 		if pub != nil && roots.public(args.Repo) {
 			out, err = publicGrep(roots, pub, args.Repo, args.Pattern, args.Path)
 			break
@@ -233,7 +249,7 @@ func toolDefinitions(withRuntime bool) []toolDef {
 		params     map[string]any
 	}{
 		{"list_dir", "List one directory level. Excluded paths are omitted.", object(map[string]any{"repo": repo, "path": pathProp}, "repo")},
-		{"grep", "Search file contents with a regular expression. A public checkout search returns grep_id. Cite that id. Rows are the evidence lines. An empty result is absence only for the directory walked. A directory that was not fully fetched is not an empty result.", object(map[string]any{
+		{"grep", "Search file contents with a regular expression. A public checkout search returns grep_id. Cite that id. Rows are the evidence lines. An empty result is absence only for the directory walked. A directory that was not fully fetched is not an empty result. repo image searches the scanned image: scripts, source files, and Go binaries. An empty image search is absence only when the result says absence: true.", object(map[string]any{
 			"repo": repo, "pattern": map[string]any{"type": "string"}, "path": pathProp,
 		}, "repo", "pattern")},
 		{"read_file", "Read a line range of one file. Lines are numbered and redacted. At most 200 lines.", object(map[string]any{

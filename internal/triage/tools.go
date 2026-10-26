@@ -29,6 +29,8 @@ type CheckoutRoot struct {
 type Roots struct {
 	Checkouts    []CheckoutRoot
 	MaxFileBytes int
+	// Image is the scanned image, unpacked on first use of the image checkout.
+	Image *imageFS
 }
 
 func (r Roots) ListDir(repo, rel string) (string, error) {

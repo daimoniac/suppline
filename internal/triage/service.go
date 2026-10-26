@@ -32,6 +32,7 @@ type Service struct {
 	runtime  runtimeLookup
 	clusters clusterQuerier
 	images   imageLabeler
+	unpack   imageUnpacker
 	enqueuer *scanenqueue.Enqueuer
 	logger   *slog.Logger
 	llm      completer
@@ -57,6 +58,9 @@ type runtimeLookup interface {
 func (s *Service) SetImageLabels(src imageLabeler) {
 	if s != nil {
 		s.images = src
+		if unpack, ok := src.(imageUnpacker); ok {
+			s.unpack = unpack
+		}
 	}
 }
 
@@ -538,6 +542,7 @@ func (s *Service) process(ctx context.Context, job Job, checkouts []gitops.Check
 	}
 	jobRoots := roots
 	jobRoots.Checkouts = append([]CheckoutRoot(nil), roots.Checkouts...)
+	jobRoots.Image = newImageFS(s.unpack, job.Repository, job.Digest)
 	pub := newPublicSource()
 	upstream := &publicCheckouts{base: s.settings.CheckoutDir, pub: pub}
 	if s.catalog != nil {

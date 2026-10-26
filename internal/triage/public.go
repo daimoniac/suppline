@@ -58,6 +58,8 @@ type grepHit struct {
 	Path    string
 	Commit  string
 	Empty   bool
+	// Absence is set for an empty search whose files would still have contained the name.
+	Absence bool
 	Rows    []grepRow
 }
 
@@ -520,6 +522,14 @@ func formatGitHubAdvisory(body []byte) (string, error) {
 }
 
 func (p *publicSource) recordGrep(repo, pattern, path, commit, rows string) string {
+	return p.storeGrep(repo, pattern, path, commit, rows, true)
+}
+
+func (p *publicSource) recordImageGrep(repo, pattern, path, commit, rows string, absence bool) string {
+	return p.storeGrep(repo, pattern, path, commit, rows, absence)
+}
+
+func (p *publicSource) storeGrep(repo, pattern, path, commit, rows string, absence bool) string {
 	if p == nil || strings.TrimSpace(pattern) == "" || strings.TrimSpace(commit) == "" {
 		return ""
 	}
@@ -531,6 +541,7 @@ func (p *publicSource) recordGrep(repo, pattern, path, commit, rows string) stri
 		}
 		parsed = append(parsed, grepRow{Path: file, Line: line, Text: text})
 	}
+	empty := strings.TrimSpace(rows) == ""
 	p.mu.Lock()
 	defer p.mu.Unlock()
 	hit := grepHit{
@@ -539,7 +550,8 @@ func (p *publicSource) recordGrep(repo, pattern, path, commit, rows string) stri
 		Pattern: pattern,
 		Path:    cleanRel(path),
 		Commit:  strings.ToLower(strings.TrimSpace(commit)),
-		Empty:   strings.TrimSpace(rows) == "",
+		Empty:   empty,
+		Absence: empty && absence,
 		Rows:    parsed,
 	}
 	p.greps = append(p.greps, hit)
