@@ -95,7 +95,7 @@ func lockfileDependents(ctx context.Context, pub *publicSource, owner, repo, sha
 		return deps, "", nil
 	}
 	if pnpmErr != nil && npmErr != nil {
-		return nil, fmt.Sprintf("no pnpm-lock.yaml or package-lock.json at %s\n", sha), nil
+		return nil, fmt.Sprintf("no pnpm-lock.yaml or package-lock.json at %s; grep the application checkout\n", sha), nil
 	}
 	return nil, "", nil
 }

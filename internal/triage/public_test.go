@@ -242,6 +242,7 @@ func TestDecisionPromptIsConfigurable(t *testing.T) {
 		"requires_environment",
 		"critical -> high, high -> medium, medium -> low",
 		"confidence of at least 0.80",
+		"A missing npm or pnpm lockfile is not a failure",
 	} {
 		if !strings.Contains(builtIn, phrase) {
 			t.Fatalf("built-in prompt missing %q", phrase)
