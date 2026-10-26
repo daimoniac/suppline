@@ -214,6 +214,46 @@ func TestEmptyGrepAndKernelWorkload(t *testing.T) {
 	}
 }
 
+func TestGrepIDExpandsReturnedLines(t *testing.T) {
+	dir := t.TempDir()
+	const rel = "apps/studio"
+	if err := os.MkdirAll(filepath.Join(dir, rel), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	body := "export default {\n  images: { dangerouslyAllowSVG: false },\n}\n"
+	if err := os.WriteFile(filepath.Join(dir, rel, "next.config.ts"), []byte(body), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	roots := Roots{Checkouts: []CheckoutRoot{{
+		Name: "supabase/supabase", Dir: dir, Public: true, SHA: studioSHA, Paths: []string{rel},
+	}}}
+	pub := &publicSource{}
+	out, err := publicGrep(&roots, pub, "supabase/supabase", "dangerouslyAllowSVG", rel)
+	if err != nil || !strings.Contains(out, "grep_id: g1") || !strings.Contains(out, "matches: 1") {
+		t.Fatalf("grep: %q %v", out, err)
+	}
+	cited := modelVerdict{
+		Verdict: "not_affected", Justification: "requires_configuration", Confidence: 0.9, Reasoning: "svg off",
+		Evidence: []modelEvidence{{GrepID: "g1"}},
+	}
+	if err := verifyEvidence(roots, pub, Job{}, &cited); err != nil {
+		t.Fatal(err)
+	}
+	if len(cited.Evidence) != 1 || cited.Evidence[0].Line != 2 || !strings.Contains(cited.Evidence[0].Quote, "dangerouslyAllowSVG: false") {
+		t.Fatalf("evidence = %+v", cited.Evidence)
+	}
+	if _, err := publicGrep(&roots, pub, "supabase/supabase", "SAFE_FOR_TEMPLATES", rel); err != nil {
+		t.Fatal(err)
+	}
+	absence := modelVerdict{
+		Verdict: "not_affected", Justification: "requires_configuration", Reasoning: "no symbol",
+		Evidence: []modelEvidence{{GrepID: "g2"}},
+	}
+	if err := verifyEvidence(roots, pub, Job{}, &absence); err == nil || !strings.Contains(err.Error(), "requires_configuration") {
+		t.Fatalf("empty grep as configuration: %v", err)
+	}
+}
+
 func TestGlobAndSecretPath(t *testing.T) {
 	if !globMatch("**/*.yaml", "clusters/prod/app.yaml") {
 		t.Fatal("yaml glob")

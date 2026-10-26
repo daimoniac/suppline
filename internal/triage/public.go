@@ -45,6 +45,12 @@ type publicSource struct {
 	greps []grepHit
 }
 
+type grepRow struct {
+	Path string
+	Line int
+	Text string
+}
+
 type grepHit struct {
 	ID      string
 	Repo    string
@@ -52,6 +58,7 @@ type grepHit struct {
 	Path    string
 	Commit  string
 	Empty   bool
+	Rows    []grepRow
 }
 
 func newPublicSource() *publicSource {
@@ -512,9 +519,17 @@ func formatGitHubAdvisory(body []byte) (string, error) {
 	return b.String(), nil
 }
 
-func (p *publicSource) recordGrep(repo, pattern, path, commit string, empty bool) string {
+func (p *publicSource) recordGrep(repo, pattern, path, commit, rows string) string {
 	if p == nil || strings.TrimSpace(pattern) == "" || strings.TrimSpace(commit) == "" {
 		return ""
+	}
+	var parsed []grepRow
+	for _, row := range strings.Split(rows, "\n") {
+		file, line, text, ok := splitGrepLine(row)
+		if !ok {
+			continue
+		}
+		parsed = append(parsed, grepRow{Path: file, Line: line, Text: text})
 	}
 	p.mu.Lock()
 	defer p.mu.Unlock()
@@ -524,7 +539,8 @@ func (p *publicSource) recordGrep(repo, pattern, path, commit string, empty bool
 		Pattern: pattern,
 		Path:    cleanRel(path),
 		Commit:  strings.ToLower(strings.TrimSpace(commit)),
-		Empty:   empty,
+		Empty:   strings.TrimSpace(rows) == "",
+		Rows:    parsed,
 	}
 	p.greps = append(p.greps, hit)
 	return hit.ID

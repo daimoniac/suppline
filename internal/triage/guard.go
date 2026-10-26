@@ -124,14 +124,27 @@ func verifyEvidence(roots Roots, pub *publicSource, job Job, verdict *modelVerdi
 	for i, item := range verdict.Evidence {
 		if id := strings.TrimSpace(item.GrepID); id != "" {
 			hit, ok := pub.grep(id)
-			if pub == nil || !ok || !hit.Empty {
+			if pub == nil || !ok {
 				verdict.Evidence = filtered
-				return fmt.Errorf("evidence[%d] grep_id %s was not an empty public grep", i, id)
+				return fmt.Errorf("evidence[%d] grep_id %s was not returned by a public grep", i, id)
 			}
-			filtered = append(filtered, modelEvidence{
-				Repo: hit.Repo, Path: hit.Path, Pattern: hit.Pattern, Commit: hit.Commit, GrepID: hit.ID,
-			})
-			absenceHits++
+			if hit.Empty {
+				filtered = append(filtered, modelEvidence{
+					Repo: hit.Repo, Path: hit.Path, Pattern: hit.Pattern, Commit: hit.Commit, GrepID: hit.ID,
+				})
+				absenceHits++
+				continue
+			}
+			if len(hit.Rows) == 0 {
+				verdict.Evidence = filtered
+				return fmt.Errorf("evidence[%d] grep_id %s returned no citable lines", i, id)
+			}
+			for _, row := range hit.Rows {
+				filtered = append(filtered, modelEvidence{
+					Repo: hit.Repo, Path: row.Path, Line: row.Line, Quote: row.Text, GrepID: hit.ID,
+				})
+				publicHits++
+			}
 			continue
 		}
 		if strings.TrimSpace(item.Quote) == "" && strings.TrimSpace(item.Pattern) != "" {
