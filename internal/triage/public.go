@@ -37,9 +37,12 @@ type publicSource struct {
 	insecure bool
 	osv      string
 	github   string
+	raw      string
+	npm      string
 
-	mu    sync.Mutex
-	lines map[string]string
+	mu        sync.Mutex
+	lines     map[string]string
+	emptyGrep map[string]struct{}
 }
 
 func newPublicSource() *publicSource {
@@ -47,6 +50,7 @@ func newPublicSource() *publicSource {
 		"api.osv.dev":               {},
 		"api.github.com":            {},
 		"raw.githubusercontent.com": {},
+		"registry.npmjs.org":        {},
 	}
 	return &publicSource{
 		client: &http.Client{
@@ -65,6 +69,8 @@ func newPublicSource() *publicSource {
 		hosts:  hosts,
 		osv:    "https://api.osv.dev",
 		github: "https://api.github.com",
+		raw:    "https://raw.githubusercontent.com",
+		npm:    "https://registry.npmjs.org",
 	}
 }
 
@@ -259,6 +265,10 @@ func (p *publicSource) get(ctx context.Context, rawURL string) ([]byte, int, err
 }
 
 func (p *publicSource) getAccept(ctx context.Context, rawURL, accept string) ([]byte, int, error) {
+	return p.getAcceptLimit(ctx, rawURL, accept, 1<<20)
+}
+
+func (p *publicSource) getAcceptLimit(ctx context.Context, rawURL, accept string, limit int64) ([]byte, int, error) {
 	if p == nil {
 		p = newPublicSource()
 	}
@@ -290,7 +300,10 @@ func (p *publicSource) getAccept(ctx context.Context, rawURL, accept string) ([]
 		return nil, 0, err
 	}
 	defer resp.Body.Close()
-	body, err := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
+	if limit <= 0 {
+		limit = 1 << 20
+	}
+	body, err := io.ReadAll(io.LimitReader(resp.Body, limit))
 	if err != nil {
 		return nil, resp.StatusCode, err
 	}
@@ -314,6 +327,9 @@ func cleanGitHubPath(owner, repo, ref, rel string) (string, string, string, stri
 	}
 	if ref != "" && (!githubRefPattern.MatchString(ref) || strings.Contains(ref, "..")) {
 		return "", "", "", "", fmt.Errorf("ref is not a branch, tag, or commit")
+	}
+	if rel == "." {
+		return owner, repo, ref, ".", nil
 	}
 	if rel != "" {
 		for _, part := range strings.Split(rel, "/") {
@@ -485,6 +501,32 @@ func formatGitHubAdvisory(body []byte) (string, error) {
 		fmt.Fprintf(&b, "details:\n%s\n", oneLine(adv.Description, 4000))
 	}
 	return b.String(), nil
+}
+
+func (p *publicSource) rememberEmptyGrep(repo, pattern, path, commit string) {
+	if p == nil || strings.TrimSpace(pattern) == "" || strings.TrimSpace(commit) == "" {
+		return
+	}
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	if p.emptyGrep == nil {
+		p.emptyGrep = map[string]struct{}{}
+	}
+	p.emptyGrep[emptyGrepKey(repo, pattern, path, commit)] = struct{}{}
+}
+
+func (p *publicSource) emptyGrepRan(repo, pattern, path, commit string) bool {
+	if p == nil {
+		return false
+	}
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	_, ok := p.emptyGrep[emptyGrepKey(repo, pattern, path, commit)]
+	return ok
+}
+
+func emptyGrepKey(repo, pattern, path, commit string) string {
+	return strings.ToLower(strings.Trim(strings.TrimSpace(repo), "/")) + "\n" + pattern + "\n" + strings.Trim(strings.TrimSpace(path), "/") + "\n" + strings.ToLower(strings.TrimSpace(commit))
 }
 
 func (p *publicSource) remember(repo, path, numbered string) {

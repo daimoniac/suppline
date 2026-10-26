@@ -30,7 +30,11 @@ type Job struct {
 	ImageRef     string
 	Tag          string
 	Digest       string
-	Renewal      bool
+	// Upstream is the catalog source image, such as docker.io/supabase/studio.
+	Upstream string
+	// Platform is the sync platform, such as linux/amd64. Empty means linux/amd64.
+	Platform string
+	Renewal  bool
 	// Force runs again even when a cached decision exists. Manual "Triage now" sets it.
 	Force bool
 }

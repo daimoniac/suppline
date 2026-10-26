@@ -540,14 +540,20 @@ func (s *Service) process(ctx context.Context, job Job, checkouts []gitops.Check
 	jobRoots.Checkouts = append([]CheckoutRoot(nil), roots.Checkouts...)
 	pub := newPublicSource()
 	upstream := &publicCheckouts{base: s.settings.CheckoutDir, pub: pub}
-	verdict, tokens, err := runAgent(ctx, s.llm, &jobRoots, s.clusters, pub, upstream, s.images, allowedNames(s.settings), s.settings.Prompt, s.settings.MinConfidence, job, s.placements(ctx, job), names, existing, s.settings.MaxSteps)
+	if s.catalog != nil {
+		if source, platform, ok := s.catalog.Upstream(job.Repository); ok {
+			job.Upstream = source
+			job.Platform = platform
+		}
+	}
+	verdict, tokens, err := runAgent(ctx, s.llm, &jobRoots, s.clusters, pub, upstream, s.images, ociManifests{}, allowedNames(s.settings), s.settings.Prompt, s.settings.MinConfidence, job, s.placements(ctx, job), names, existing, s.settings.MaxSteps)
 	if err != nil {
 		s.record(ctx, job, verdict, tokens, StatusError, "", shas, err.Error())
 		s.logger.Error("triage agent failed", "repository", job.Repository, "cve", job.CVEID, "error", err)
 		return
 	}
 	evidenceErr := ""
-	if err := verifyEvidence(jobRoots, pub, verdict); err != nil {
+	if err := verifyEvidence(jobRoots, pub, job, verdict); err != nil {
 		evidenceErr = err.Error()
 	}
 	kevHit, kevErr := s.kev.Contains(ctx, job.CVEID)

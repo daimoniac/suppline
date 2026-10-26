@@ -310,6 +310,25 @@ func parseInterval(value string) (time.Duration, error) {
 	return time.ParseDuration(value)
 }
 
+// Upstream returns the catalog source image and platform for a mirrored repository.
+func (c *ConfigCatalog) Upstream(repository string) (source, platform string, ok bool) {
+	if c == nil || c.config == nil {
+		return "", "", false
+	}
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	for _, sync := range c.config.Sync {
+		if targetRepository(sync) != repository {
+			continue
+		}
+		if strings.TrimSpace(sync.Source) == "" {
+			continue
+		}
+		return strings.TrimSpace(sync.Source), strings.TrimSpace(sync.Platform), true
+	}
+	return "", "", false
+}
+
 func targetRepository(sync config.SyncEntry) string {
 	target := sync.Target
 	if sync.Type == "image" {

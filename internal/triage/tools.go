@@ -19,6 +19,8 @@ type CheckoutRoot struct {
 	Exclude []string
 	// Public is an upstream checkout fetched for this triage, not a gitops repo.
 	Public bool
+	// SHA is the commit of a public checkout. Gitops checkouts leave it empty.
+	SHA string
 }
 
 // Roots executes read-only tools inside checkout directories.
@@ -199,6 +201,14 @@ func (r Roots) Line(repo, rel string, line int) (string, error) {
 func (r Roots) public(repo string) bool {
 	root, err := r.checkout(repo)
 	return err == nil && root.Public
+}
+
+func (r Roots) sha(repo string) string {
+	root, err := r.checkout(repo)
+	if err != nil {
+		return ""
+	}
+	return root.SHA
 }
 
 func (r Roots) checkout(repo string) (CheckoutRoot, error) {

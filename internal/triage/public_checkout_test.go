@@ -84,7 +84,7 @@ func TestPublicCheckoutResolvesCommitAndRecordsCall(t *testing.T) {
 			Repo: "supabase/supabase", Path: "apps/studio/call.ts", Line: 1, Quote: "DOMPurify.sanitize(value)",
 		}},
 	}
-	if err := verifyEvidence(roots, pub, verdict); err != nil {
+	if err := verifyEvidence(roots, pub, Job{}, verdict); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := upstream.Checkout(context.Background(), &roots, "supabase", "supabase", "main", ""); err == nil {

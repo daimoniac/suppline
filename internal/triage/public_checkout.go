@@ -145,12 +145,13 @@ func (c *publicCheckouts) Checkout(ctx context.Context, roots *Roots, owner, rep
 		if roots.Checkouts[i].Name == name {
 			roots.Checkouts[i].Dir = dir
 			roots.Checkouts[i].Public = true
+			roots.Checkouts[i].SHA = sha
 			replaced = true
 			break
 		}
 	}
 	if !replaced {
-		roots.Checkouts = append(roots.Checkouts, CheckoutRoot{Name: name, Dir: dir, Public: true})
+		roots.Checkouts = append(roots.Checkouts, CheckoutRoot{Name: name, Dir: dir, Public: true, SHA: sha})
 	}
 	return fmt.Sprintf("checked out %s@%s\npath: %s\nuse grep and read_file with repo %s\n", name, sha, rel, name), nil
 }
@@ -208,8 +209,10 @@ func cloneWithGit(ctx context.Context, dir, remote, sha, rel string) error {
 			return err
 		}
 	}
-	if err := runGit(ctx, dir, fileProto, "sparse-checkout", "set", "--cone", rel); err != nil {
-		return err
+	if rel != "." {
+		if err := runGit(ctx, dir, fileProto, "sparse-checkout", "set", "--cone", rel); err != nil {
+			return err
+		}
 	}
 	if err := runGit(ctx, dir, fileProto, "checkout", "--detach", "FETCH_HEAD"); err != nil {
 		return err
@@ -220,6 +223,13 @@ func cloneWithGit(ctx context.Context, dir, remote, sha, rel string) error {
 	}
 	if strings.TrimSpace(head) != sha {
 		return fmt.Errorf("checkout resolved to %s", strings.TrimSpace(head))
+	}
+	if rel == "." {
+		info, err := os.Stat(dir)
+		if err != nil || !info.IsDir() {
+			return fmt.Errorf("path . is not in the checkout")
+		}
+		return nil
 	}
 	info, err := os.Stat(filepath.Join(dir, rel))
 	if err != nil || !info.IsDir() {

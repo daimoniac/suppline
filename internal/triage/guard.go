@@ -2,11 +2,21 @@ package triage
 
 import (
 	"fmt"
+	"os"
+	"path/filepath"
+	"regexp"
 	"strings"
 	"time"
 
 	"github.com/daimoniac/suppline/internal/gitops"
 	"github.com/daimoniac/suppline/internal/types"
+)
+
+var (
+	hostNetworkTrue = regexp.MustCompile(`(?i)hostNetwork:\s*['"]?true\b`)
+	privilegedTrue  = regexp.MustCompile(`(?i)privileged:\s*['"]?true\b`)
+	hostPathKey     = regexp.MustCompile(`(?i)hostPath:`)
+	portLine        = regexp.MustCompile(`(?i)\b(?:containerPort|port):\s*\d+`)
 )
 
 type outcome string
@@ -98,14 +108,22 @@ func provenance(triageID, model string, checkouts []gitops.Checkout, verdict mod
 	return text
 }
 
-func verifyEvidence(roots Roots, pub *publicSource, verdict modelVerdict) error {
+func verifyEvidence(roots Roots, pub *publicSource, job Job, verdict modelVerdict) error {
 	if verdict.Verdict != "not_affected" {
 		return nil
 	}
 	justification := types.NormalizeVEXJustification(types.VEXJustification(verdict.Justification))
 	gitopsHits := 0
 	publicHits := 0
+	absenceHits := 0
 	for i, item := range verdict.Evidence {
+		if strings.TrimSpace(item.Quote) == "" && strings.TrimSpace(item.Pattern) != "" {
+			if pub == nil || !pub.emptyGrepRan(item.Repo, item.Pattern, item.Path, item.Commit) {
+				return fmt.Errorf("evidence[%d] empty grep was not returned by a public checkout", i)
+			}
+			absenceHits++
+			continue
+		}
 		if strings.TrimSpace(item.Quote) == "" || item.Line < 1 || strings.TrimSpace(item.Path) == "" {
 			return fmt.Errorf("evidence[%d] needs repo, path, line, and quote", i)
 		}
@@ -130,8 +148,17 @@ func verifyEvidence(roots Roots, pub *publicSource, verdict modelVerdict) error 
 		}
 	}
 	if justification == types.VEXJustCodeNotReachable {
-		if publicHits == 0 {
-			return fmt.Errorf("code_not_reachable requires a line returned by public_code or by grep or read_file on a public checkout")
+		if publicHits > 0 || absenceHits > 0 {
+			return nil
+		}
+		if kernelPackage(job.PackageName) {
+			return verifyKernelWorkload(roots, job, verdict)
+		}
+		return fmt.Errorf("code_not_reachable requires a public line or an empty grep of a public checkout")
+	}
+	if justification == types.VEXJustRequiresConfiguration || justification == types.VEXJustRequiresEnvironment {
+		if gitopsHits == 0 && publicHits == 0 {
+			return fmt.Errorf("%s requires a gitops or public checkout line", justification)
 		}
 		return nil
 	}
@@ -139,4 +166,82 @@ func verifyEvidence(roots Roots, pub *publicSource, verdict modelVerdict) error 
 		return fmt.Errorf("%s requires a gitops checkout line", justification)
 	}
 	return nil
+}
+
+func verifyKernelWorkload(roots Roots, job Job, verdict modelVerdict) error {
+	if strings.TrimSpace(job.Repository) == "" {
+		return fmt.Errorf("kernel workload needs the image repository")
+	}
+	named := false
+	for _, item := range verdict.Evidence {
+		if strings.TrimSpace(item.Quote) == "" {
+			continue
+		}
+		if _, err := roots.Line(item.Repo, item.Path, item.Line); err != nil {
+			continue
+		}
+		if strings.Contains(item.Quote, job.Repository) || (portLine.MatchString(item.Quote) && evidenceFileContains(roots, item, job.Repository)) {
+			named = true
+			break
+		}
+	}
+	if !named {
+		return fmt.Errorf("kernel workload needs a gitops line that names the image or its port")
+	}
+	found, blocked := scanWorkload(roots, job.Repository)
+	if !found {
+		return fmt.Errorf("no matching workload file")
+	}
+	if blocked {
+		return fmt.Errorf("workload sets hostNetwork, privileged, or a host device")
+	}
+	return nil
+}
+
+func evidenceFileContains(roots Roots, item modelEvidence, repository string) bool {
+	root, err := roots.checkout(item.Repo)
+	if err != nil || root.Public {
+		return false
+	}
+	full, err := safePath(root.Dir, item.Path)
+	if err != nil {
+		return false
+	}
+	raw, err := os.ReadFile(full)
+	return err == nil && strings.Contains(string(raw), repository)
+}
+
+func scanWorkload(roots Roots, repository string) (found, blocked bool) {
+	for _, checkout := range roots.Checkouts {
+		if checkout.Public || checkout.Dir == "" {
+			continue
+		}
+		_ = filepath.WalkDir(checkout.Dir, func(full string, d os.DirEntry, walkErr error) error {
+			if walkErr != nil || d.IsDir() {
+				if d != nil && d.IsDir() && d.Name() == ".git" {
+					return filepath.SkipDir
+				}
+				return nil
+			}
+			name := strings.ToLower(d.Name())
+			if !strings.HasSuffix(name, ".yaml") && !strings.HasSuffix(name, ".yml") {
+				return nil
+			}
+			info, err := d.Info()
+			if err != nil || info.Size() > 1<<20 {
+				return nil
+			}
+			raw, err := os.ReadFile(full)
+			if err != nil || !strings.Contains(string(raw), repository) {
+				return nil
+			}
+			found = true
+			text := string(raw)
+			if hostNetworkTrue.MatchString(text) || privilegedTrue.MatchString(text) || hostPathKey.MatchString(text) {
+				blocked = true
+			}
+			return nil
+		})
+	}
+	return found, blocked
 }

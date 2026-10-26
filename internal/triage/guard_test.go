@@ -88,29 +88,36 @@ func TestCodeNotReachableNeedsUpstreamLine(t *testing.T) {
 			Repo: "Supabase/supabase", Path: "apps/studio/lib/sanitize.ts", Line: 40, Quote: "DOMPurify.sanitize(value)",
 		}},
 	}
-	if err := verifyEvidence(roots, pub, upstream); err != nil {
+	if err := verifyEvidence(roots, pub, Job{}, upstream); err != nil {
 		t.Fatal(err)
 	}
 	invented := upstream
 	invented.Evidence = []modelEvidence{{
 		Repo: "supabase/supabase", Path: "apps/studio/lib/sanitize.ts", Line: 40, Quote: "SAFE_FOR_TEMPLATES: true",
 	}}
-	if err := verifyEvidence(roots, pub, invented); err == nil {
+	if err := verifyEvidence(roots, pub, Job{}, invented); err == nil {
 		t.Fatal("accepted a quote the file read did not return")
 	}
 	checkoutOnly := modelVerdict{
 		Verdict: "not_affected", Justification: "code_not_reachable",
 		Evidence: []modelEvidence{{Repo: "infra", Path: "app.yaml", Line: 1, Quote: "image: studio"}},
 	}
-	if err := verifyEvidence(roots, pub, checkoutOnly); err == nil || !strings.Contains(err.Error(), "public_code") {
+	if err := verifyEvidence(roots, pub, Job{}, checkoutOnly); err == nil || !strings.Contains(err.Error(), "public checkout") {
 		t.Fatalf("checkout line: %v", err)
 	}
 	deployment := modelVerdict{
 		Verdict: "not_affected", Justification: "requires_configuration",
 		Evidence: upstream.Evidence,
 	}
-	if err := verifyEvidence(roots, pub, deployment); err == nil || !strings.Contains(err.Error(), "gitops") {
-		t.Fatalf("public line as deployment evidence: %v", err)
+	if err := verifyEvidence(roots, pub, Job{}, deployment); err != nil {
+		t.Fatalf("public line as configuration evidence: %v", err)
+	}
+	neither := modelVerdict{
+		Verdict: "not_affected", Justification: "requires_configuration",
+		Evidence: []modelEvidence{{Repo: "missing", Path: "nope.ts", Line: 1, Quote: "no such line"}},
+	}
+	if err := verifyEvidence(roots, pub, Job{}, neither); err == nil {
+		t.Fatal("accepted configuration evidence from neither tree")
 	}
 
 	found := false
@@ -132,6 +139,42 @@ func TestCodeNotReachableNeedsUpstreamLine(t *testing.T) {
 	decision := decide(settings, Job{CVEID: "GHSA-1", Repository: "app"}, upstream, "", false, nil, nil, nil, "tr", now)
 	if decision.Action != outcomeNotAffected || decision.Statement.Justification != types.VEXJustCodeNotReachable {
 		t.Fatalf("decision = %+v", decision)
+	}
+}
+
+func TestEmptyGrepAndKernelWorkload(t *testing.T) {
+	dir := t.TempDir()
+	body := "image: hostingmaloonde/supabase_postgres:15\ncontainerPort: 5432\n"
+	if err := os.WriteFile(filepath.Join(dir, "values.yaml"), []byte(body), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	roots := Roots{Checkouts: []CheckoutRoot{{Name: "infra", Dir: dir}, {Name: "supabase/supabase", Dir: dir, Public: true, SHA: studioSHA}}}
+	pub := &publicSource{}
+	pub.rememberEmptyGrep("supabase/supabase", "use cache", "apps/studio", studioSHA)
+	absence := modelVerdict{
+		Verdict: "not_affected", Justification: "code_not_reachable", Confidence: 0.9, Reasoning: "no use cache",
+		Evidence: []modelEvidence{{Repo: "supabase/supabase", Path: "apps/studio", Pattern: "use cache", Commit: studioSHA}},
+	}
+	if err := verifyEvidence(roots, pub, Job{PackageName: "next"}, absence); err != nil {
+		t.Fatal(err)
+	}
+	invented := absence
+	invented.Evidence[0].Pattern = "SAFE_FOR_TEMPLATES"
+	if err := verifyEvidence(roots, pub, Job{}, invented); err == nil {
+		t.Fatal("accepted an empty grep that was not run")
+	}
+	kernel := modelVerdict{
+		Verdict: "not_affected", Justification: "code_not_reachable", Confidence: 0.9, Reasoning: "userspace",
+		Evidence: []modelEvidence{{Repo: "infra", Path: "values.yaml", Line: 1, Quote: "image: hostingmaloonde/supabase_postgres:15"}},
+	}
+	if err := verifyEvidence(roots, pub, Job{Repository: "hostingmaloonde/supabase_postgres", PackageName: "linux-libc-dev"}, kernel); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "values.yaml"), []byte(body+"privileged: true\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := verifyEvidence(roots, pub, Job{Repository: "hostingmaloonde/supabase_postgres", PackageName: "linux"}, kernel); err == nil || !strings.Contains(err.Error(), "privileged") {
+		t.Fatalf("privileged workload: %v", err)
 	}
 }
 

@@ -22,13 +22,15 @@ type modelVerdict struct {
 }
 
 type modelEvidence struct {
-	Repo  string `json:"repo"`
-	Path  string `json:"path"`
-	Line  int    `json:"line"`
-	Quote string `json:"quote"`
+	Repo    string `json:"repo"`
+	Path    string `json:"path"`
+	Line    int    `json:"line"`
+	Quote   string `json:"quote"`
+	Pattern string `json:"pattern,omitempty"`
+	Commit  string `json:"commit,omitempty"`
 }
 
-func runAgent(ctx context.Context, llm completer, roots *Roots, runtime clusterQuerier, pub *publicSource, upstream *publicCheckouts, images imageLabeler, allowed []string, policy string, minConfidence float64, job Job, placements string, repoNames []string, existing *types.VEXStatement, maxSteps int) (modelVerdict, int, error) {
+func runAgent(ctx context.Context, llm completer, roots *Roots, runtime clusterQuerier, pub *publicSource, upstream *publicCheckouts, images imageLabeler, manifests manifestSource, allowed []string, policy string, minConfidence float64, job Job, placements string, repoNames []string, existing *types.VEXStatement, maxSteps int) (modelVerdict, int, error) {
 	if maxSteps < 1 {
 		maxSteps = 1
 	}
@@ -46,7 +48,7 @@ func runAgent(ctx context.Context, llm completer, roots *Roots, runtime clusterQ
 		if step == maxSteps-1 {
 			messages = append(messages, chatMessage{
 				Role:    "user",
-				Content: "No more tool calls. Return only the JSON verdict now. Accept a low residual risk with requires_configuration or requires_environment when a line you read supports it. Use uncertain when a fact you need was not returned by a tool.",
+				Content: "No more tool calls. Return only the JSON verdict now. Accept a low residual risk with requires_configuration or requires_environment when a line you read supports it. Cite an empty grep of a public checkout with pattern, path, repo, and commit. Use uncertain when a fact you need was not returned by a tool.",
 			})
 			stepTools = nil
 		}
@@ -61,7 +63,7 @@ func runAgent(ctx context.Context, llm completer, roots *Roots, runtime clusterQ
 		}
 		messages = append(messages, chatMessage{Role: "assistant", Content: result.Content, ToolCalls: result.ToolCalls})
 		for _, call := range result.ToolCalls {
-			output := dispatchTool(ctx, roots, runtime, pub, upstream, images, job, call)
+			output := dispatchTool(ctx, roots, runtime, pub, upstream, images, manifests, job, call)
 			messages = append(messages, chatMessage{Role: "tool", ToolCallID: call.ID, Content: untrusted("tool "+call.Function.Name, output)})
 		}
 	}
@@ -72,7 +74,7 @@ type clusterQuerier interface {
 	Query(ctx context.Context, cluster, namespace, image string) (string, error)
 }
 
-func dispatchTool(ctx context.Context, roots *Roots, runtime clusterQuerier, pub *publicSource, upstream *publicCheckouts, images imageLabeler, job Job, call toolCall) string {
+func dispatchTool(ctx context.Context, roots *Roots, runtime clusterQuerier, pub *publicSource, upstream *publicCheckouts, images imageLabeler, manifests manifestSource, job Job, call toolCall) string {
 	var args struct {
 		Repo      string `json:"repo"`
 		Path      string `json:"path"`
@@ -110,6 +112,9 @@ func dispatchTool(ctx context.Context, roots *Roots, runtime clusterQuerier, pub
 		out, err = roots.Grep(args.Repo, args.Pattern, args.Path)
 		if err == nil && pub != nil && roots.public(args.Repo) {
 			pub.rememberGrep(args.Repo, out)
+			if strings.TrimSpace(out) == "" {
+				pub.rememberEmptyGrep(args.Repo, args.Pattern, args.Path, roots.sha(args.Repo))
+			}
 		}
 	case "cluster_runtime":
 		if runtime == nil {
@@ -124,7 +129,9 @@ func dispatchTool(ctx context.Context, roots *Roots, runtime clusterQuerier, pub
 	case "public_search":
 		out, err = pub.GitHubSearch(ctx, args.Owner, args.GitRepo, args.Path, args.Query)
 	case "image_source":
-		out, err = imageSource(ctx, images, job)
+		out, err = explainImageSource(ctx, images, pub, manifests, job)
+	case "dependency_sources":
+		out, err = dependencySources(ctx, roots, upstream, pub, job, args.Owner, args.GitRepo, args.Ref)
 	case "public_checkout":
 		if roots == nil {
 			err = fmt.Errorf("public checkout is unavailable")
@@ -141,20 +148,6 @@ func dispatchTool(ctx context.Context, roots *Roots, runtime clusterQuerier, pub
 		return "(no results)"
 	}
 	return out
-}
-
-func imageSource(ctx context.Context, images imageLabeler, job Job) (string, error) {
-	if images == nil {
-		return "", fmt.Errorf("image labels are unavailable")
-	}
-	if strings.TrimSpace(job.Repository) == "" || strings.TrimSpace(job.Digest) == "" {
-		return "", fmt.Errorf("image digest is unavailable")
-	}
-	labels, err := images.ImageLabels(ctx, job.Repository, job.Digest)
-	if err != nil {
-		return "", err
-	}
-	return formatImageLabels(labels), nil
 }
 
 func parseVerdict(content string) (modelVerdict, error) {
@@ -201,7 +194,12 @@ func toolDefinitions(withRuntime bool) []toolDef {
 			"start_line": map[string]any{"type": "integer"},
 			"end_line":   map[string]any{"type": "integer"},
 		}, "repo", "path")},
-		{"image_source", "Read the OCI source and revision labels of the image being triaged.", object(map[string]any{})},
+		{"image_source", "Resolve the GitHub repository and revision of the image being triaged, from OCI labels, otherwise the upstream SLSA provenance, otherwise a unique commit search.", object(map[string]any{})},
+		{"dependency_sources", "Check out the direct npm or pnpm dependents of the vulnerable package at the image commit. Pass the owner, repository, and revision from image_source.", object(map[string]any{
+			"owner":    map[string]any{"type": "string", "description": "GitHub owner from image_source"},
+			"git_repo": map[string]any{"type": "string", "description": "GitHub repository from image_source"},
+			"ref":      map[string]any{"type": "string", "description": "Commit from image_source"},
+		}, "owner", "git_repo", "ref")},
 		{"public_checkout", "Fetch one directory of a public GitHub repository at a commit, tag, or branch. Then grep and read_file it with repo owner/repo. A short commit prefix is resolved. Submodules are not fetched.", object(map[string]any{
 			"owner":    map[string]any{"type": "string", "description": "GitHub owner"},
 			"git_repo": map[string]any{"type": "string", "description": "GitHub repository"},
