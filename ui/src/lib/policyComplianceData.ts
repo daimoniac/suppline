@@ -218,17 +218,8 @@ export function buildPolicyFixPrompt(
   ].join('\n');
 }
 
-const OPEN_TRIAGE_STATUSES = new Set(['rejected_by_guardrail', 'error', 'push_failed']);
-
-export function isOpenTriageRun(run: Pick<TriageRun, 'Superseded' | 'Status' | 'Verdict'>): boolean {
-  if (run.Superseded) return false;
-  return run.Verdict === 'uncertain' || OPEN_TRIAGE_STATUSES.has(run.Status);
-}
-
 export function buildOpenTriagePrompt(runs: TriageRun[]): string {
-  const open = runs
-    .filter(isOpenTriageRun)
-    .sort((a, b) => a.CVEID.localeCompare(b.CVEID) || a.Repository.localeCompare(b.Repository));
+  const open = [...runs].sort((a, b) => a.CVEID.localeCompare(b.CVEID) || a.Repository.localeCompare(b.Repository));
   if (open.length === 0) return '';
 
   const lines = open.map(run =>

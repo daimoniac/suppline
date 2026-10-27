@@ -153,6 +153,7 @@ func (s *APIServer) setupRoutes() {
 	s.router.HandleFunc("/api/v1/coverage", s.corsMiddleware(s.authMiddleware(s.handleGetCoverage, false)))
 	s.router.HandleFunc("/api/v1/vex", s.corsMiddleware(s.authMiddleware(s.handleListVEX, false)))
 	s.router.HandleFunc("/api/v1/triage", s.corsMiddleware(s.authMiddleware(s.handleListTriage, false)))
+	s.router.HandleFunc("/api/v1/triage/statements", s.corsMiddleware(s.authMiddleware(s.handleListTriageStatements, false)))
 	s.router.HandleFunc("/api/v1/triage/status", s.corsMiddleware(s.authMiddleware(s.handleTriageStatus, false)))
 	s.router.HandleFunc("/api/v1/triage/run", s.corsMiddleware(s.authMiddleware(s.handleTriageRun, true)))
 	s.router.HandleFunc("/api/v1/triage/retry", s.corsMiddleware(s.authMiddleware(s.handleTriageRetry, true)))

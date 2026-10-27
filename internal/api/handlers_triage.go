@@ -63,6 +63,49 @@ func (s *APIServer) handleListTriage(w http.ResponseWriter, r *http.Request) {
 		s.logger.Error("list triage runs", "error", err)
 		return
 	}
+	s.respondJSON(w, http.StatusOK, triageRunResponses(runs))
+}
+
+// handleListTriageStatements lists one row per repository and CVE.
+// @Summary List triage statements
+// @Description List hand-written exemptions, automated exemptions, and triage runs that have not become an exemption. NeedsFix marks a run that still needs a written exemption.
+// @Tags Triage
+// @Produce json
+// @Success 200 {array} TriageStatement
+// @Failure 401 {object} map[string]string "Unauthorized"
+// @Failure 500 {object} map[string]string "Internal server error"
+// @Security BearerAuth
+// @Router /triage/statements [get]
+func (s *APIServer) handleListTriageStatements(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		s.respondError(w, http.StatusMethodNotAllowed, "Method not allowed")
+		return
+	}
+	store, ok := s.stateStore.(statestore.TriageStore)
+	if !ok {
+		s.respondError(w, http.StatusNotImplemented, "triage store is not available")
+		return
+	}
+	runs, err := store.ListTriageRuns(r.Context(), statestore.TriageFilter{Limit: 500})
+	if err != nil {
+		s.respondError(w, http.StatusInternalServerError, "Failed to list triage runs")
+		s.logger.Error("list triage statements", "error", err)
+		return
+	}
+	inactive, err := s.inactiveVEXSummaries(r.Context())
+	if err != nil {
+		s.respondError(w, http.StatusInternalServerError, "Failed to list triage statements")
+		s.logger.Error("list inactive statements", "error", err)
+		return
+	}
+	rows := statementList(s.activeVEXSummaries(r.Context()), inactive, triageRunResponses(runs))
+	if rows == nil {
+		rows = []TriageStatement{}
+	}
+	s.respondJSON(w, http.StatusOK, rows)
+}
+
+func triageRunResponses(runs []statestore.TriageRun) []TriageRunResponse {
 	latest := map[string]int64{}
 	for _, run := range runs {
 		key := run.Repository + "\n" + run.CVEID
@@ -95,7 +138,7 @@ func (s *APIServer) handleListTriage(w http.ResponseWriter, r *http.Request) {
 		}
 		response = append(response, item)
 	}
-	s.respondJSON(w, http.StatusOK, response)
+	return response
 }
 
 // TriageStatusResponse describes whether triage can accept work.

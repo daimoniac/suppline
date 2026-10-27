@@ -145,7 +145,7 @@ A sweep, hourly and once at startup, requeues auto statements within `renew_befo
 
 ### Budget and audit
 
-`triage_runs` stores the verdict, justification, confidence, evidence, model, checkout SHAs, token count, status, and commit SHA. `GET /api/v1/triage` and the Triage page read that table. Tokens count toward `daily_token_budget` (default 2,000,000) per UTC day. When the budget is spent, triage waits until the next UTC day. `suppline_triage_budget_exhausted` is 1 during that wait.
+`triage_runs` stores the verdict, justification, confidence, evidence, model, checkout SHAs, token count, status, and commit SHA. `GET /api/v1/triage` reads that table. `GET /api/v1/triage/statements` is the triage list: one row per repository and CVE, including hand-written exemptions, with `NeedsFix` set on an open triage. Tokens count toward `daily_token_budget` (default 2,000,000) per UTC day. When the budget is spent, triage waits until the next UTC day. `suppline_triage_budget_exhausted` is 1 during that wait.
 
 ## Error handling
 

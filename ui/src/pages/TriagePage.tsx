@@ -9,7 +9,7 @@ import { ErrorState, FilterActionButton, LoadingState, PageFiltersBar, PageHeade
 import { scheduleEffectLoad } from '../lib/scheduleEffectLoad';
 import { usePageSizePreference } from '../lib/pageSizePreference';
 import { useSortablePaginationState } from '../lib/useSortablePaginationState';
-import type { TriageAccept, TriageActive, TriageRun, VEXSummary, VulnerabilityGroup } from '../lib/api';
+import type { TriageAccept, TriageActive, TriageStatement, VulnerabilityGroup } from '../lib/api';
 
 const STATUS_LABELS: Record<string, string> = {
   dry_run: 'Dry run',
@@ -51,8 +51,6 @@ const VEX_JUSTIFICATIONS = [
   'protected_by_mitigations',
 ];
 
-type RowSource = 'auto' | 'manual' | 'open';
-
 type StatementRow = {
   key: string;
   cve: string;
@@ -63,9 +61,27 @@ type StatementRow = {
   expiresAt: number;
   createdAt: number;
   affectedImages: number;
-  source: RowSource;
-  run?: TriageRun;
+  source: 'auto' | 'manual' | 'open';
+  needsFix: boolean;
+  run?: TriageStatement['Run'];
 };
+
+function statementRow(item: TriageStatement): StatementRow {
+  return {
+    key: `${item.Repository}\n${item.CVEID}`,
+    cve: item.CVEID,
+    repository: item.Repository,
+    state: item.State || '',
+    justification: item.Justification || '',
+    detail: item.Detail || '',
+    expiresAt: item.ExpiresAt || 0,
+    createdAt: item.CreatedAt || 0,
+    affectedImages: item.AffectedImageCount || 0,
+    source: item.Source,
+    needsFix: item.NeedsFix,
+    run: item.Run,
+  };
+}
 
 function StatusPill({ status }: { status: string }) {
   const styles: Record<string, string> = {
@@ -126,69 +142,6 @@ function toLocalInput(unix?: number) {
 
 function pairKey(repository: string, cve: string) {
   return `${repository}\n${cve}`;
-}
-
-function betterRun(next: TriageRun, prev: TriageRun) {
-  if (prev.Superseded !== next.Superseded) return !next.Superseded;
-  return next.CreatedAt > prev.CreatedAt;
-}
-
-function statementSource(source?: string): RowSource {
-  return source === 'x-vex-auto' ? 'auto' : 'manual';
-}
-
-function buildStatementRows(statements: VEXSummary[], runs: TriageRun[]): StatementRow[] {
-  const runsByPair = new Map<string, TriageRun>();
-  for (const run of runs) {
-    const key = pairKey(run.Repository, run.CVEID);
-    const prev = runsByPair.get(key);
-    if (!prev || betterRun(run, prev)) runsByPair.set(key, run);
-  }
-  const imageCount = new Map<string, number>();
-  for (const statement of statements) {
-    imageCount.set(statement.CVEID, statement.AffectedImageCount || 0);
-  }
-  const rows: StatementRow[] = [];
-  const seen = new Set<string>();
-  for (const statement of statements) {
-    for (const repo of statement.Repositories || []) {
-      const key = pairKey(repo.Repository, statement.CVEID);
-      if (seen.has(key)) continue;
-      seen.add(key);
-      const run = runsByPair.get(key);
-      rows.push({
-        key,
-        cve: statement.CVEID,
-        repository: repo.Repository,
-        state: statement.State,
-        justification: statement.Justification || '',
-        detail: statement.Detail || '',
-        expiresAt: statement.ExpiresAt || 0,
-        createdAt: repo.AppliedAt || run?.CreatedAt || 0,
-        affectedImages: statement.AffectedImageCount || 0,
-        source: statementSource(repo.Source),
-        run,
-      });
-    }
-  }
-  for (const [key, run] of runsByPair) {
-    if (seen.has(key) || run.Superseded) continue;
-    const known = VEX_STATES.some(([value]) => value === run.Verdict);
-    rows.push({
-      key,
-      cve: run.CVEID,
-      repository: run.Repository,
-      state: known ? run.Verdict : '',
-      justification: run.Justification || '',
-      detail: run.Reasoning || '',
-      expiresAt: 0,
-      createdAt: run.CreatedAt,
-      affectedImages: imageCount.get(run.CVEID) || 0,
-      source: 'open',
-      run,
-    });
-  }
-  return rows;
 }
 
 function matchesOrigin(row: StatementRow, origin: string) {
@@ -360,13 +313,11 @@ export default function TriagePage() {
   const refresh = useCallback(async (quiet: boolean) => {
     if (!quiet) setLoading(true);
     try {
-      const [statements, inactive, runs, triageStatus] = await Promise.all([
-        apiClient.getVEXStatements({}),
-        apiClient.getInactiveVEXStatements(),
-        apiClient.getTriageRuns({ limit: 500 }),
+      const [statements, triageStatus] = await Promise.all([
+        apiClient.getTriageStatements(),
         apiClient.getTriageStatus().catch(() => null),
       ]);
-      setRows(buildStatementRows([...(statements || []), ...(inactive || [])], runs || []));
+      setRows((statements || []).map(statementRow));
       setActive(triageStatus?.Active ?? []);
       setError(null);
     } catch (e: unknown) {
@@ -425,8 +376,7 @@ export default function TriagePage() {
   const copyOpenPrompt = async () => {
     setCopying(true);
     try {
-      const latest = await apiClient.getTriageRuns({ limit: 500 });
-      const prompt = buildOpenTriagePrompt(latest);
+      const prompt = buildOpenTriagePrompt(rows.flatMap(row => (row.needsFix && row.run ? [row.run] : [])));
       if (!prompt) {
         toast('No open findings to copy', 'warning');
         return;

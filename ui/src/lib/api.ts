@@ -170,6 +170,9 @@ export class APIClient {
   async getTriageRuns(filters: Record<string, unknown> = {}) {
     return this.request<TriageRun[]>(`/api/v1/triage${this.qs(filters)}`);
   }
+  async getTriageStatements() {
+    return this.request<TriageStatement[]>('/api/v1/triage/statements');
+  }
   async getTriageStatus() {
     return this.request<TriageStatus>('/api/v1/triage/status');
   }
@@ -476,6 +479,20 @@ export interface TriageRun {
   CommitSHA?: string;
   CreatedAt: number;
   Superseded?: boolean;
+}
+
+export interface TriageStatement {
+  CVEID: string;
+  Repository: string;
+  State: string;
+  Justification?: string;
+  Detail?: string;
+  ExpiresAt: number;
+  CreatedAt: number;
+  AffectedImageCount: number;
+  Source: 'auto' | 'manual' | 'open';
+  NeedsFix: boolean;
+  Run?: TriageRun;
 }
 
 export interface VEXSummary {
