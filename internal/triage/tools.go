@@ -266,14 +266,6 @@ func addFetched(paths []string, rel string) []string {
 	return append(next, rel)
 }
 
-func (r Roots) sha(repo string) string {
-	root, err := r.checkout(repo)
-	if err != nil {
-		return ""
-	}
-	return root.SHA
-}
-
 func (r Roots) checkout(repo string) (CheckoutRoot, error) {
 	if repo == "" && len(r.Checkouts) == 1 {
 		return r.Checkouts[0], nil

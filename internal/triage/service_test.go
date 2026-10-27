@@ -64,7 +64,7 @@ sync:
 		t.Fatal(err)
 	}
 	kev := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.Write([]byte(`{"vulnerabilities":[]}`))
+		_, _ = w.Write([]byte(`{"vulnerabilities":[]}`))
 	}))
 	t.Cleanup(kev.Close)
 	svc.kev = &KEVCache{URL: kev.URL, TTL: time.Hour}

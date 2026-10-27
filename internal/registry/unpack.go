@@ -18,6 +18,8 @@ import (
 const (
 	maxImageExtractBytes = 512 << 20
 	maxImageFileBytes    = 64 << 20
+	// legacyTypeReg is the pre-ustar regular-file flag, formerly tar.TypeRegA.
+	legacyTypeReg = '\x00'
 )
 
 type extractLimits struct {
@@ -84,7 +86,7 @@ func untarLimited(r io.Reader, dest string, limits extractLimits) error {
 			if err := os.MkdirAll(target, 0o755); err != nil {
 				return err
 			}
-		case tar.TypeReg, tar.TypeRegA:
+		case tar.TypeReg, legacyTypeReg:
 			if hdr.Size > limits.maxFile || total+hdr.Size > limits.maxTotal {
 				return fmt.Errorf("image file %s exceeds the unpack limit", hdr.Name)
 			}

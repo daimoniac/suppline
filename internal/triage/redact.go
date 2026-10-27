@@ -35,7 +35,7 @@ func Redact(path, content string) (string, error) {
 		return "", err
 	}
 	var secrets []string
-	for _, finding := range found.Detect(detect.Fragment{Raw: content, FilePath: path}) {
+	for _, finding := range found.Detect(detect.Fragment{Raw: content, FilePath: path}) { //nolint:staticcheck // detect.Fragment is the v8 argument; sources.Fragment replaces it in v9.
 		if finding.Secret != "" {
 			secrets = append(secrets, finding.Secret)
 		}

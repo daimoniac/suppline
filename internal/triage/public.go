@@ -295,7 +295,8 @@ func (p *publicSource) getAcceptLimit(ctx context.Context, rawURL, accept string
 	if err != nil {
 		return nil, 0, err
 	}
-	if parsed.Scheme != "https" && !(p.insecure && parsed.Scheme == "http") {
+	allowed := parsed.Scheme == "https" || (p.insecure && parsed.Scheme == "http")
+	if !allowed {
 		return nil, 0, fmt.Errorf("only https URLs are allowed")
 	}
 	if _, ok := p.hosts[parsed.Hostname()]; !ok {
@@ -607,7 +608,6 @@ func (p *publicSource) rememberGrep(repo, output string) {
 }
 
 func splitGrepLine(row string) (string, int, string, bool) {
-	colon := -1
 	for i := 0; i < len(row); i++ {
 		if row[i] != ':' {
 			continue
@@ -622,8 +622,7 @@ func splitGrepLine(row string) (string, int, string, bool) {
 			j++
 		}
 		if j < len(row) && row[j] == ':' && n > 0 {
-			colon = i
-			return row[:colon], n, row[j+1:], true
+			return row[:i], n, row[j+1:], true
 		}
 	}
 	return "", 0, "", false
