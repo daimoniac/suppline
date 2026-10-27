@@ -128,20 +128,21 @@ func verifyEvidence(roots Roots, pub *publicSource, job Job, verdict *modelVerdi
 				verdict.Evidence = filtered
 				return fmt.Errorf("evidence[%d] grep_id %s was not returned by a public grep", i, id)
 			}
-			if hit.Empty {
-				if !hit.Absence {
-					verdict.Evidence = filtered
-					return fmt.Errorf("evidence[%d] grep_id %s is not absence", i, id)
-				}
+			switch hit.Cite {
+			case citeAbsence:
 				filtered = append(filtered, modelEvidence{
 					Repo: hit.Repo, Path: hit.Path, Pattern: hit.Pattern, Commit: hit.Commit, GrepID: hit.ID,
 				})
 				absenceHits++
 				continue
-			}
-			if len(hit.Rows) == 0 {
+			case citeRows:
+				if len(hit.Rows) == 0 {
+					verdict.Evidence = filtered
+					return fmt.Errorf("evidence[%d] grep_id %s returned no citable lines", i, id)
+				}
+			default:
 				verdict.Evidence = filtered
-				return fmt.Errorf("evidence[%d] grep_id %s returned no citable lines", i, id)
+				return fmt.Errorf("evidence[%d] grep_id %s is not absence", i, id)
 			}
 			for _, row := range hit.Rows {
 				filtered = append(filtered, modelEvidence{

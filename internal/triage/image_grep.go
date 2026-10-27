@@ -358,8 +358,8 @@ func printableWindow(raw []byte, start, end int) string {
 
 func formatImageGrep(id, digest, pattern, rel, rows string, absence bool, skipped []string, note string) string {
 	var b strings.Builder
-	fmt.Fprintf(&b, "grep_id: %s\nrepo: %s\ncommit: %s\npattern: %s\npath: %s\nmatches: %d\nsearched: scripts, source, go\nskipped_native: %d\nabsence: %t\n",
-		id, imageCheckoutName, strings.TrimSpace(digest), pattern, cleanRel(rel), matchCount(rows), len(skipped), absence)
+	fmt.Fprintf(&b, "grep_id: %s\nrepo: %s\ncommit: %s\npattern: %s\npath: %s\nmatches: %d\nsearched: scripts, source, go\nskipped_native: %d\n%s\n",
+		id, imageCheckoutName, strings.TrimSpace(digest), pattern, cleanRel(rel), matchCount(rows), len(skipped), cite(strings.TrimSpace(rows) == "", absence).line())
 	if note != "" {
 		fmt.Fprintf(&b, "note: %s\n", note)
 	}

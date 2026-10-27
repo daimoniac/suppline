@@ -22,7 +22,7 @@ func TestImageGrepAbsence(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(out, "grep_id: g1") || !strings.Contains(out, "absence: true") || !strings.Contains(out, "matches: 0") {
+	if !strings.Contains(out, "grep_id: g1") || !strings.Contains(out, "citable: absence") || !strings.Contains(out, "matches: 0") {
 		t.Fatalf("echo absence: %s", out)
 	}
 	verdict := modelVerdict{
@@ -37,7 +37,7 @@ func TestImageGrepAbsence(t *testing.T) {
 	}
 
 	linked, err := imageGrep(context.Background(), roots, pub, job, "GzipWithConfig", ".")
-	if err != nil || !strings.Contains(linked, "middleware.GzipWithConfig") || strings.Contains(linked, "absence: true") {
+	if err != nil || !strings.Contains(linked, "middleware.GzipWithConfig") || strings.Contains(linked, "citable: absence") {
 		t.Fatalf("linked symbol: %s %v", linked, err)
 	}
 	if unpack.calls != 1 {
@@ -45,7 +45,7 @@ func TestImageGrepAbsence(t *testing.T) {
 	}
 
 	libc, err := imageGrep(context.Background(), roots, pub, Job{PackageName: "libc6", Digest: "sha256:abc111"}, "gets", ".")
-	if err != nil || !strings.Contains(libc, "absence: false") || !strings.Contains(libc, "libc.so.6") {
+	if err != nil || !strings.Contains(libc, "citable: no") || !strings.Contains(libc, "libc.so.6") {
 		t.Fatalf("libc: %s %v", libc, err)
 	}
 	rejected := modelVerdict{
@@ -57,7 +57,7 @@ func TestImageGrepAbsence(t *testing.T) {
 	}
 
 	kernel, err := imageGrep(context.Background(), roots, pub, Job{PackageName: "linux-libc-dev", Digest: "sha256:abc111"}, "copy_from_user", ".")
-	if err != nil || !strings.Contains(kernel, "absence: false") || !strings.Contains(kernel, "workload rule") {
+	if err != nil || !strings.Contains(kernel, "citable: no") || !strings.Contains(kernel, "workload rule") {
 		t.Fatalf("kernel: %s %v", kernel, err)
 	}
 }

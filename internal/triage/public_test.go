@@ -243,8 +243,9 @@ func TestDecisionPromptIsConfigurable(t *testing.T) {
 		"critical -> high, high -> medium, medium -> low",
 		"confidence of at least 0.80",
 		"A missing npm or pnpm lockfile is not a failure",
-		"Cite that grep by its grep_id",
-		"absence: true",
+		"Cite that grep_id",
+		"citable: absence",
+		evidenceContract(),
 	} {
 		if !strings.Contains(builtIn, phrase) {
 			t.Fatalf("built-in prompt missing %q", phrase)

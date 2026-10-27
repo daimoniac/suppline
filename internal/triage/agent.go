@@ -49,7 +49,7 @@ func runAgent(ctx context.Context, llm completer, roots *Roots, runtime clusterQ
 		if step == maxSteps-1 {
 			messages = append(messages, chatMessage{
 				Role:    "user",
-				Content: "No more tool calls. Return only the JSON verdict now. Accept a low residual risk with requires_configuration or requires_environment when a line you read supports it. Cite a public grep by its grep_id. An empty grep is absence. A grep that returned rows is those lines. Use uncertain when a fact you need was not returned by a tool.",
+				Content: "No more tool calls. Return only the JSON verdict now. Accept a low residual risk with requires_configuration or requires_environment when a line you read supports it. " + evidenceContract() + " Use uncertain when a fact you need was not returned by a tool.",
 			})
 			stepTools = nil
 		}
@@ -196,7 +196,7 @@ func publicGrep(roots *Roots, pub *publicSource, repo, pattern, rel string) (str
 
 func formatGrepResult(id, repo, commit, pattern, searched, rows string) string {
 	var b strings.Builder
-	fmt.Fprintf(&b, "grep_id: %s\nrepo: %s\ncommit: %s\npattern: %s\npath: %s\nmatches: %d\n", id, repo, commit, pattern, searched, matchCount(rows))
+	fmt.Fprintf(&b, "grep_id: %s\nrepo: %s\ncommit: %s\npattern: %s\npath: %s\nmatches: %d\n%s\n", id, repo, commit, pattern, searched, matchCount(rows), cite(strings.TrimSpace(rows) == "", true).line())
 	if strings.TrimSpace(rows) != "" {
 		b.WriteString(rows)
 		if !strings.HasSuffix(rows, "\n") {
@@ -249,7 +249,7 @@ func toolDefinitions(withRuntime bool) []toolDef {
 		params     map[string]any
 	}{
 		{"list_dir", "List one directory level. Excluded paths are omitted.", object(map[string]any{"repo": repo, "path": pathProp}, "repo")},
-		{"grep", "Search file contents with a regular expression. A public checkout search returns grep_id. Cite that id. Rows are the evidence lines. An empty result is absence only for the directory walked. A directory that was not fully fetched is not an empty result. repo image searches the scanned image: scripts, source files, and Go binaries. An empty image search is absence only when the result says absence: true.", object(map[string]any{
+		{"grep", "Search file contents with a regular expression. A recorded search returns grep_id and a citable line. repo image searches the scanned image: scripts, source files, and Go binaries. A directory that was not fully fetched is not an empty result.", object(map[string]any{
 			"repo": repo, "pattern": map[string]any{"type": "string"}, "path": pathProp,
 		}, "repo", "pattern")},
 		{"read_file", "Read a line range of one file. Lines are numbered and redacted. At most 200 lines.", object(map[string]any{

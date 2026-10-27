@@ -60,6 +60,7 @@ type grepHit struct {
 	Empty   bool
 	// Absence is set for an empty search whose files would still have contained the name.
 	Absence bool
+	Cite    citeKind
 	Rows    []grepRow
 }
 
@@ -552,6 +553,7 @@ func (p *publicSource) storeGrep(repo, pattern, path, commit, rows string, absen
 		Commit:  strings.ToLower(strings.TrimSpace(commit)),
 		Empty:   empty,
 		Absence: empty && absence,
+		Cite:    cite(empty, absence),
 		Rows:    parsed,
 	}
 	p.greps = append(p.greps, hit)
