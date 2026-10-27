@@ -101,36 +101,14 @@ func dispatchTool(ctx context.Context, roots *Roots, runtime clusterQuerier, pub
 		out string
 		err error
 	)
+	files := checkouts{roots: roots, ledger: pub, job: job}
 	switch call.Function.Name {
 	case "list_dir":
-		if args.Repo == imageCheckoutName {
-			err = roots.mountImage(ctx)
-			if err != nil {
-				break
-			}
-		}
-		out, err = roots.ListDir(args.Repo, args.Path)
+		out, err = files.List(ctx, args.Repo, args.Path)
 	case "read_file":
-		if args.Repo == imageCheckoutName {
-			err = roots.mountImage(ctx)
-			if err != nil {
-				break
-			}
-		}
-		out, err = roots.ReadFile(args.Repo, args.Path, args.StartLine, args.EndLine)
-		if err == nil && pub != nil && roots.public(args.Repo) {
-			pub.remember(args.Repo, args.Path, out)
-		}
+		out, err = files.Read(ctx, args.Repo, args.Path, args.StartLine, args.EndLine)
 	case "grep":
-		if args.Repo == imageCheckoutName {
-			out, err = imageGrep(ctx, roots, pub, job, args.Pattern, args.Path)
-			break
-		}
-		if pub != nil && roots.public(args.Repo) {
-			out, err = publicGrep(roots, pub, args.Repo, args.Pattern, args.Path)
-			break
-		}
-		out, err = roots.Grep(args.Repo, args.Pattern, args.Path)
+		out, err = files.Grep(ctx, args.Repo, args.Pattern, args.Path)
 	case "cluster_runtime":
 		if runtime == nil {
 			err = fmt.Errorf("cluster runtime is unavailable")
