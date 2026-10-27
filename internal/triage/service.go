@@ -54,14 +54,17 @@ type runtimeLookup interface {
 	RepositoryInUse(ctx context.Context, repository string) (bool, error)
 }
 
-// SetImageLabels supplies OCI source and revision labels for the image being triaged.
-func (s *Service) SetImageLabels(src imageLabeler) {
+// SetImageLabels supplies label reads and image unpack for the image being triaged.
+func (s *Service) SetImageLabels(src imageAccess) {
 	if s != nil {
 		s.images = src
-		if unpack, ok := src.(imageUnpacker); ok {
-			s.unpack = unpack
-		}
+		s.unpack = src
 	}
+}
+
+type imageAccess interface {
+	imageLabeler
+	imageUnpacker
 }
 
 // New builds a triage service. A missing API key disables the feature.

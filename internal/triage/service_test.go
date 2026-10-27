@@ -342,3 +342,21 @@ func TestAutoCommitSkipsGitLabCI(t *testing.T) {
 		t.Fatalf("message = %q", message)
 	}
 }
+
+type imageAccessStub struct{}
+
+func (imageAccessStub) ImageLabels(context.Context, string, string) (map[string]string, error) {
+	return map[string]string{"org.opencontainers.image.source": "https://github.com/acme/app"}, nil
+}
+
+func (imageAccessStub) UnpackImage(context.Context, string, string, string) error {
+	return nil
+}
+
+func TestSetImageLabelsKeepsUnpack(t *testing.T) {
+	svc := &Service{}
+	svc.SetImageLabels(imageAccessStub{})
+	if svc.images == nil || svc.unpack == nil {
+		t.Fatal("labels and unpack are one seam")
+	}
+}

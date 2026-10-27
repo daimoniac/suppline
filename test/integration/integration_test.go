@@ -1985,6 +1985,10 @@ func (m *mockWorkerRegistry) ImageLabels(ctx context.Context, repo, digest strin
 	return nil, nil
 }
 
+func (m *mockWorkerRegistry) UnpackImage(context.Context, string, string, string) error {
+	return fmt.Errorf("image unpack is not available")
+}
+
 func (m *mockWorkerRegistry) GetManifest(ctx context.Context, repository, digest string) (*registry.Manifest, error) {
 	if m.manifestError != nil {
 		return nil, m.manifestError

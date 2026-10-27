@@ -35,6 +35,9 @@ type Client interface {
 	// ImageLabels returns the config labels and manifest annotations for a digest.
 	ImageLabels(ctx context.Context, repo, digest string) (map[string]string, error)
 
+	// UnpackImage writes the filesystem of a scanned image into dest.
+	UnpackImage(ctx context.Context, repo, digest, dest string) error
+
 	// VerifyTagExists checks if a tag still exists in the registry
 	VerifyTagExists(ctx context.Context, repo, tag string) error
 
