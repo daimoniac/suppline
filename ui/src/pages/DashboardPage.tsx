@@ -151,7 +151,7 @@ export default function DashboardPage() {
           to="/failed"
         />
         <SummaryCard icon={<Clock className="w-5 h-5" />} value={data.pendingCount} label="Pending Release" variant="warning" detail="Waiting to mature" />
-        <SummaryCard icon={<ShieldCheck className="w-5 h-5" />} value={data.activeVEXStatements} label="Active VEX Statements" variant="info" to="/vex" />
+        <SummaryCard icon={<ShieldCheck className="w-5 h-5" />} value={data.activeVEXStatements} label="Active VEX Statements" variant="info" to="/triage" />
       </div>
 
       {(data.outOfBoundsTaskCount > 0 || data.tightenTaskCount > 0 || data.runtimeUnusedTaskCount > 0 || data.vexExpiredTaskCount > 0 || data.vexExpiringSoonTaskCount > 0 || data.inactiveVEXStatements > 0) && (
