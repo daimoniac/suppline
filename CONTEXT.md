@@ -23,3 +23,11 @@ _Avoid_: queue task, worker job
 **Repository policy**:
 The effective security rules and vulnerability-exemption decisions that apply to images in one repository.
 _Avoid_: sync configuration, scan policy lookup
+
+**Triage statement**:
+One CVE on one repository, shown whether it is an exemption or a triage run that has not become an exemption.
+_Avoid_: VEX row, triage line
+
+**Open triage**:
+A triage run that still needs an exemption written: the verdict is uncertain, or the run was rejected or failed, and a later run has not replaced it.
+_Avoid_: dry run, auto filter

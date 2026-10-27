@@ -147,6 +147,25 @@ func (s *SQLiteStore) initPostgresSchema() error {
 		`CREATE INDEX IF NOT EXISTS idx_cluster_images_seen_image_ref_tag ON cluster_images_seen(image_ref, tag)`,
 		`CREATE INDEX IF NOT EXISTS idx_cluster_images_seen_last_seen_at ON cluster_images_seen(last_seen_at)`,
 		`CREATE INDEX IF NOT EXISTS idx_runtime_unused_repo_whitelist_created_at ON runtime_unused_repository_whitelist(created_at)`,
+		`CREATE TABLE IF NOT EXISTS triage_runs (
+			id BIGSERIAL PRIMARY KEY,
+			repository TEXT NOT NULL,
+			cve_id TEXT NOT NULL,
+			verdict TEXT NOT NULL DEFAULT '',
+			justification TEXT NOT NULL DEFAULT '',
+			confidence DOUBLE PRECISION NOT NULL DEFAULT 0,
+			evidence_json TEXT NOT NULL DEFAULT '',
+			reasoning TEXT NOT NULL DEFAULT '',
+			model TEXT NOT NULL DEFAULT '',
+			repo_shas_json TEXT NOT NULL DEFAULT '',
+			cve_hash TEXT NOT NULL DEFAULT '',
+			tokens INTEGER NOT NULL DEFAULT 0,
+			status TEXT NOT NULL,
+			commit_sha TEXT NOT NULL DEFAULT '',
+			created_at BIGINT NOT NULL
+		)`,
+		`CREATE INDEX IF NOT EXISTS idx_triage_runs_repo_cve ON triage_runs(repository, cve_id, created_at)`,
+		`CREATE INDEX IF NOT EXISTS idx_triage_runs_created ON triage_runs(created_at)`,
 	}
 
 	for _, stmt := range stmts {

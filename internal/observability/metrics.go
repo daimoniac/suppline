@@ -34,6 +34,12 @@ type Metrics struct {
 	// Worker metrics
 	WorkerTasksProcessed prometheus.Counter
 	WorkerErrors         prometheus.Counter
+
+	// Triage metrics
+	TriageRuns            *prometheus.CounterVec
+	TriageTokens          prometheus.Counter
+	TriagePushFailures    prometheus.Counter
+	TriageBudgetExhausted prometheus.Gauge
 }
 
 var (
@@ -118,6 +124,23 @@ func GetMetrics() *Metrics {
 			WorkerErrors: promauto.NewCounter(prometheus.CounterOpts{
 				Name: "suppline_worker_errors_total",
 				Help: "Total number of worker errors",
+			}),
+
+			TriageRuns: promauto.NewCounterVec(prometheus.CounterOpts{
+				Name: "suppline_triage_runs_total",
+				Help: "Triage runs by status",
+			}, []string{"status"}),
+			TriageTokens: promauto.NewCounter(prometheus.CounterOpts{
+				Name: "suppline_triage_tokens_total",
+				Help: "Tokens reported by the triage LLM",
+			}),
+			TriagePushFailures: promauto.NewCounter(prometheus.CounterOpts{
+				Name: "suppline_triage_push_failures_total",
+				Help: "Config-repo pushes rejected after retries",
+			}),
+			TriageBudgetExhausted: promauto.NewGauge(prometheus.GaugeOpts{
+				Name: "suppline_triage_budget_exhausted",
+				Help: "1 when the daily triage token budget is exhausted",
 			}),
 		}
 	})

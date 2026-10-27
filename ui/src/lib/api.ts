@@ -167,6 +167,37 @@ export class APIClient {
   async getInactiveVEXStatements() {
     return this.request<VEXSummary[]>('/api/v1/vex/inactive');
   }
+  async getTriageRuns(filters: Record<string, unknown> = {}) {
+    return this.request<TriageRun[]>(`/api/v1/triage${this.qs(filters)}`);
+  }
+  async getTriageStatements() {
+    return this.request<TriageStatement[]>('/api/v1/triage/statements');
+  }
+  async getTriageStatus() {
+    return this.request<TriageStatus>('/api/v1/triage/status');
+  }
+
+  async acceptTriage(statement: TriageAccept) {
+    return this.request<TriageAcceptResult>('/api/v1/triage/accept', {
+      method: 'POST',
+      body: JSON.stringify(statement),
+    });
+  }
+  async retryTriage(run: { Repository: string; CVEID: string }) {
+    return this.request<TriageRunResult>('/api/v1/triage/retry', {
+      method: 'POST',
+      body: JSON.stringify(run),
+    });
+  }
+  async queueTriage(images: TriageRunImage[]) {
+    return this.request<TriageRunResult>('/api/v1/triage/run', {
+      method: 'POST',
+      body: JSON.stringify({ Images: images }),
+    });
+  }
+  async getGitopsRepositories() {
+    return this.request<GitopsRepository[]>('/api/v1/integration/gitops');
+  }
 
   // Policy
   async reevaluatePolicy(repository: string) {
@@ -364,6 +395,104 @@ export interface RepositoryDetailResponse {
 export interface RepositoryVEXInfo {
   Repository: string;
   AppliedAt: number;
+  Source?: string;
+}
+
+export interface TriageEvidence {
+  repo: string;
+  path: string;
+  line: number;
+  quote: string;
+  pattern?: string;
+  commit?: string;
+  grep_id?: string;
+}
+
+export interface TriageRepoSHA {
+  name: string;
+  sha: string;
+}
+
+export interface TriageStatus {
+  Enabled: boolean;
+  Mode?: string;
+  OnlyInUse: boolean;
+  Pending: number;
+  Active?: TriageActive[];
+}
+
+export interface TriageActive {
+  Repository: string;
+  CVEID: string;
+  Image?: string;
+  Running?: boolean;
+}
+
+export interface TriageAccept {
+  Repository: string;
+  CVEID: string;
+  State: string;
+  Justification?: string;
+  Detail?: string;
+  ExpiresAt?: number;
+}
+
+export interface TriageAcceptResult {
+  CommitSHA?: string;
+}
+
+export interface TriageRunImage {
+  Repository: string;
+  Digest: string;
+  Tag: string;
+}
+
+export interface TriageRunResult {
+  Queued: number;
+}
+
+export interface GitopsRepository {
+  Name: string;
+  URL: string;
+  Branch?: string;
+  Roles: string[];
+  Cloned: boolean;
+  HeadSHA?: string;
+  HeadAt?: number;
+  LastSupplineSHA?: string;
+  LastSupplineAt?: number;
+}
+
+export interface TriageRun {
+  ID: number;
+  Repository: string;
+  CVEID: string;
+  Verdict: string;
+  Justification?: string;
+  Confidence: number;
+  Evidence?: TriageEvidence[];
+  Reasoning?: string;
+  Model?: string;
+  RepoSHAs?: TriageRepoSHA[];
+  Tokens: number;
+  Status: string;
+  CommitSHA?: string;
+  CreatedAt: number;
+  Superseded?: boolean;
+}
+
+export interface TriageStatement {
+  CVEID: string;
+  Repository: string;
+  State: string;
+  Justification?: string;
+  Detail?: string;
+  ExpiresAt: number;
+  CreatedAt: number;
+  AffectedImageCount: number;
+  Source: 'auto' | 'manual' | 'open';
+  NeedsFix: boolean;
+  Run?: TriageRun;
 }
 
 export interface VEXSummary {

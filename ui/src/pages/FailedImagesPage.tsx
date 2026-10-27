@@ -1,6 +1,7 @@
 import { useEffect, useState, useCallback } from 'react';
 import { Link, useSearchParams } from 'react-router';
 import { useAuth } from '../lib/auth';
+import { useToast } from '../lib/toast';
 import { formatRelativeTime, formatDate, daysUntilReleaseAge, formatRemainingDays } from '../lib/utils';
 import { useImageUsageFilter } from '../lib/imageUsageFilter';
 import {
@@ -19,6 +20,9 @@ import { scheduleEffectLoad } from '../lib/scheduleEffectLoad';
 
 export default function FailedImagesPage() {
   const { apiClient } = useAuth();
+  const { toast } = useToast();
+  const [triageEnabled, setTriageEnabled] = useState(false);
+  const [queuingKey, setQueuingKey] = useState<string | null>(null);
   const { inUseRequestParams } = useImageUsageFilter();
   const { pageSize, setPageSize, options: pageSizeOptions } = usePageSizePreference();
   const [searchParams, setSearchParams] = useSearchParams();
@@ -89,6 +93,31 @@ export default function FailedImagesPage() {
   }, [apiClient, inUseRequestParams, offset, pageSize, policyFilter, repository, sortCol, sortDir]);
 
   useEffect(() => { scheduleEffectLoad(load); }, [load]);
+
+  useEffect(() => {
+    let cancelled = false;
+    apiClient.getTriageStatus()
+      .then(status => { if (!cancelled) setTriageEnabled(!!status.Enabled); })
+      .catch(() => { if (!cancelled) setTriageEnabled(false); });
+    return () => { cancelled = true; };
+  }, [apiClient]);
+
+  const queueOne = (scan: Scan) => {
+    const key = `${scan.Repository}\n${scan.Digest}\n${scan.Tag}`;
+    setQueuingKey(key);
+    apiClient.queueTriage([{ Repository: scan.Repository, Digest: scan.Digest, Tag: scan.Tag }])
+      .then(result => {
+        const queued = result.Queued;
+        toast(
+          queued > 0 ? `Triage queued for ${queued} finding${queued === 1 ? '' : 's'}` : 'No findings queued',
+          queued > 0 ? 'success' : 'warning',
+        );
+      })
+      .catch((e: unknown) => {
+        toast(e instanceof Error ? e.message : 'Failed to queue triage', 'error');
+      })
+      .finally(() => setQueuingKey(current => current === key ? null : current));
+  };
 
   useEffect(() => {
     let cancelled = false;
@@ -174,6 +203,7 @@ export default function FailedImagesPage() {
             <th className="px-4 py-3 text-left text-xs font-medium text-text-secondary uppercase">Status</th>
             <th className="px-4 py-3 text-left text-xs font-medium text-text-secondary uppercase">Vulns</th>
             <th className="px-4 py-3 text-left text-xs font-medium text-text-secondary uppercase">Failure Reasons</th>
+            {triageEnabled && <th className="px-4 py-3 text-left text-xs font-medium text-text-secondary uppercase">Triage</th>}
           </tr></thead><tbody>
             {scans.map((s, idx) => (
               <tr key={`${s.Repository}:${s.Tag}:${s.Digest}:${idx}`} className="border-b border-border/50 hover:bg-bg-secondary transition-colors">
@@ -205,6 +235,17 @@ export default function FailedImagesPage() {
                     {s.HighVulnCount > 0 && <span className="px-1.5 py-0.5 rounded text-[10px] font-semibold bg-severity-high/20 text-severity-high">{s.HighVulnCount} High</span>}
                   </div>
                 </td>
+                {triageEnabled && (
+                  <td className="px-4 py-3">
+                    {s.PolicyStatus !== 'pending' && s.Digest && (
+                      <button type="button" onClick={() => queueOne(s)}
+                        disabled={queuingKey === `${s.Repository}\n${s.Digest}\n${s.Tag}`}
+                        className="px-2 py-1 text-xs rounded-md border border-border text-text-secondary hover:bg-bg-tertiary disabled:opacity-50">
+                        {queuingKey === `${s.Repository}\n${s.Digest}\n${s.Tag}` ? 'Queuing…' : 'Auto-triage'}
+                      </button>
+                    )}
+                  </td>
+                )}
               </tr>
             ))}
           </tbody></table></div>

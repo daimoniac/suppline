@@ -362,8 +362,25 @@ func (p *Pipeline) persistencePhase(ctx context.Context, task *queue.ScanTask, s
 
 	// Check for policy failures and alerts
 	p.checkPolicyFailures(ctx, task, policyDecision)
+	p.notifyPolicyFailure(ctx, task, scanResult, policyDecision)
 
 	return nil
+}
+
+func (p *Pipeline) notifyPolicyFailure(ctx context.Context, task *queue.ScanTask, scanResult *scanner.ScanResult, policyDecision *policy.PolicyDecision) {
+	if p.worker.failureNotifier == nil || policyDecision == nil || policyDecision.Status != policy.PolicyStatusFailed {
+		return
+	}
+	notice := PolicyFailureNotice{
+		Repository: task.Repository,
+		Digest:     task.Digest,
+		Tag:        task.Tag,
+		Findings:   policyDecision.PolicyFailureFindings,
+	}
+	if scanResult != nil {
+		notice.Vulnerabilities = scanResult.Vulnerabilities
+	}
+	p.worker.failureNotifier.NotifyPolicyFailure(ctx, notice)
 }
 
 // updateScanRecordWithDuration updates the scan record with calculated duration

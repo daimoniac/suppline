@@ -111,6 +111,12 @@ func expandConfig(config *RegsyncConfig) error {
 	return nil
 }
 
+// ExpandEnvTemplate expands {{ env "VAR" }} using the process environment.
+// A string without a template is returned unchanged.
+func ExpandEnvTemplate(tmpl string) (string, error) {
+	return expandTemplate(tmpl, template.FuncMap{"env": os.Getenv})
+}
+
 // expandTemplate expands a Go template string with the provided function map
 func expandTemplate(tmpl string, funcMap template.FuncMap) (string, error) {
 	// If the string doesn't contain template syntax, return as-is
@@ -333,6 +339,14 @@ func (c *RegsyncConfig) ValidateVEXStatements() error {
 				return fmt.Errorf("sync[%s].x-vex[%d]: %w", sync.Target, i, err)
 			}
 		}
+		for i, stmt := range sync.VEXAuto {
+			if err := types.ValidateVEXStatement(stmt); err != nil {
+				return fmt.Errorf("sync[%s].x-vex-auto[%d]: %w", sync.Target, i, err)
+			}
+		}
+	}
+	if err := c.Triage.Validate(); err != nil {
+		return err
 	}
 	return nil
 }

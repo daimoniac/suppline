@@ -24,6 +24,7 @@ import (
 	"github.com/daimoniac/suppline/internal/scanenqueue"
 	"github.com/daimoniac/suppline/internal/scanner"
 	"github.com/daimoniac/suppline/internal/statestore"
+	"github.com/daimoniac/suppline/internal/triage"
 	"github.com/daimoniac/suppline/internal/watcher"
 	"github.com/daimoniac/suppline/internal/worker"
 	"github.com/joho/godotenv"
@@ -258,6 +259,15 @@ func run() error {
 		regsyncCfg,
 		repositoryPolicies,
 	)
+	triageService, err := triage.New(regsyncCfg.Triage, cfg.RegsyncPath, repositoryPolicies, store, scanEnqueuer, logger)
+	if err != nil {
+		return fmt.Errorf("failed to initialize triage: %w", err)
+	}
+	triageService.SetImageLabels(registryClient)
+	if err := triageService.ValidateStartup(); err != nil {
+		return err
+	}
+	workerInstance.SetPolicyFailureNotifier(triageService)
 	healthChecker.UpdateComponentHealth("worker", observability.StatusHealthy, "")
 	logger.Debug("worker initialized")
 
@@ -276,11 +286,12 @@ func run() error {
 			repositoryPolicies,
 			logger,
 		)
+		apiServer.SetTriage(triageService)
 		logger.Debug("API server initialized")
 	}
 
 	var wg sync.WaitGroup
-	errChan := make(chan error, 3)
+	errChan := make(chan error, 4)
 
 	wg.Add(1)
 	go func() {
@@ -292,6 +303,17 @@ func run() error {
 			errChan <- fmt.Errorf("registry watcher error: %w", err)
 		}
 		logger.Debug("registry watcher stopped")
+	}()
+
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		logger.Debug("starting triage")
+		if err := triageService.Start(ctx); err != nil && err != context.Canceled {
+			logger.Error("triage error", "error", err.Error())
+			errChan <- fmt.Errorf("triage error: %w", err)
+		}
+		logger.Debug("triage stopped")
 	}()
 
 	wg.Add(1)

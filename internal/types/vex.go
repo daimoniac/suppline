@@ -43,6 +43,13 @@ const (
 	VEXJustProtectedByMitigations VEXJustification = "protected_by_mitigations"
 )
 
+const (
+	// VEXSourceManual marks a statement from x-vex (hand-written).
+	VEXSourceManual = "x-vex"
+	// VEXSourceAuto marks a statement from x-vex-auto (Triage-owned).
+	VEXSourceAuto = "x-vex-auto"
+)
+
 // validVEXJustifications is the set of valid VEX justifications.
 var validVEXJustifications = map[VEXJustification]bool{
 	VEXJustCodeNotPresent:         true,
@@ -83,6 +90,8 @@ type VEXStatement struct {
 	Justification VEXJustification `yaml:"justification,omitempty" json:"justification,omitempty"`
 	Detail        string           `yaml:"detail,omitempty" json:"detail,omitempty"`
 	ExpiresAt     *int64           `yaml:"expires_at,omitempty" json:"expiresAt,omitempty"` // Unix timestamp in seconds, nil means no expiry
+	// Source is set when statements are merged (x-vex or x-vex-auto). It is not stored in YAML.
+	Source string `yaml:"-" json:"-"`
 }
 
 // UnmarshalYAML implements custom YAML unmarshaling for VEXStatement.
@@ -170,6 +179,7 @@ type VEXInfo struct {
 	AppliedAt     int64            `json:"AppliedAt"` // Unix timestamp in seconds
 	ExpiresAt     *int64           `json:"ExpiresAt"`
 	Repository    string           `json:"Repository"`
+	Source        string           `json:"Source,omitempty"`
 }
 
 // VEXSummary groups VEX info by CVE ID with list of affected repositories.
@@ -188,6 +198,7 @@ type VEXSummary struct {
 type RepositoryVEXInfo struct {
 	Repository string `json:"Repository"`
 	AppliedAt  int64  `json:"AppliedAt"` // Unix timestamp when first applied, 0 if never applied
+	Source     string `json:"Source,omitempty"`
 }
 
 // FilterAppliedVEXStatements filters VEX statements based on a set of exempted CVE IDs.

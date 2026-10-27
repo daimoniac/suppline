@@ -8,6 +8,7 @@ Complete reference for all configuration options in suppline.
 - [Environment Variables](#environment-variables)
 - [Regsync Configuration](#regsync-configuration)
 - [Examples](#examples)
+- [Triage (`x-triage`)](#triage-x-triage)
 
 ## Configuration Sources
 
@@ -99,6 +100,7 @@ succeeds.
 | `API_ENABLED` | bool | `true` | Enable HTTP API server |
 | `API_PORT` | int | `8080` | API server port |
 | `SUPPLINE_API_KEY` | string | `` | Required when the API is enabled. The cluster-inventory webhook and cluster list stay unauthenticated |
+| `SUPPLINE_LLM_API_KEY` | string | `` | Bearer token for the Triage OpenAI-compatible endpoint. If `x-triage.enabled` is true and this is empty, Triage stays off |
 | `SUPPLINE_ALLOW_NO_AUTH` | bool | `false` | Explicit opt-in to start the API with authentication disabled. Isolated evaluation only |
 | `API_READ_ONLY` | bool | `false` | Disable write operations, including repository and tag rescan |
 
@@ -505,6 +507,64 @@ SUPPLINE_CONFIG=/config/suppline.yml
 ATTESTATION_KEY_PATH=/keys/cosign.key
 ATTESTATION_KEY_PASSWORD=<from-secret>
 SUPPLINE_API_KEY=<from-secret>
+```
+
+## Triage (`x-triage`)
+
+Triage runs after a CEL failure on an image that is currently running in a cluster (`only_in_use`, default true; the same runtime window as `source="runtime"` alerts). Set `only_in_use: false` to triage every failure. When triage is enabled, the policy views show **Triage now** and **Fix using coding agent** together. **Triage now** queues the failures in the current image-usage view. The coding-agent button copies a prompt for those same failures. The Triage view copies a separate prompt for current runs that stayed uncertain or were rejected. It checks out the gitops repositories in `context_repos`, asks an OpenAI-compatible chat model whether the CVE affects this deployment, and may write `x-vex-auto` on the matching sync entry. The model can also read the latest image snapshots reported by the cluster agents, fetch the public CVE or GHSA advisory, and check out one directory of the image's source commit. That commit comes from the OCI labels `org.opencontainers.image.source` and `org.opencontainers.image.revision` when they are present. Otherwise triage reads the upstream tag's SLSA provenance (`configSource.uri` on the attestation attached to the catalog source image). A `-sha-` tag is searched on GitHub only when that attestation is missing, and only a single matching repository is used. The checkout is searched with the same grep and read_file tools as the gitops repos. `dependency_sources` then checks out at most five direct npm or pnpm dependents of the vulnerable package. `requires_configuration` and `requires_environment` may cite a gitops line or a line from one of those checkouts. `code_not_reachable` may cite a public line, an empty grep by the `grep_id` of a directory that was fully fetched (a parent that was not fetched is not absence), an empty grep of the scanned image when that search reports absence, or, for `linux`, `linux-libc-dev`, `linux-headers`, and `kernel`, a gitops line that names the image when the workload does not set `hostNetwork`, `privileged`, or a host device. The image checkout is named `image` and is used when the image has no source commit. It searches scripts, source files, and Go binaries. A skipped stripped native library that belongs to the package is not absence. A `grep_id` whose search returned rows is those lines. An empty grep does not satisfy `requires_configuration` or `requires_environment`. An empty grep of the gitops tree stays uncertain. `SUPPLINE_GITHUB_TOKEN` is used for GitHub code search and for the commit-search fallback. Hand-written `x-vex` is never modified and wins when both lists contain the same id. The workflow, dedupe rules, and guardrails are in [STATE_MACHINE.md](STATE_MACHINE.md).
+
+```yaml
+x-triage:
+  enabled: true
+  only_in_use: true      # default; false triages images that are not running
+  mode: dry-run          # dry-run (default) | enforce
+  llm:
+    base_url: https://llm.internal/v1
+    model: anthropic/claude-sonnet-5.5
+    max_steps: 20
+    daily_token_budget: 2000000
+  min_confidence: 0.8
+  expiry: 30d
+  renew_before: 7d
+  retriage_interval: 24h
+  allowed_justifications:
+    - requires_configuration
+    - requires_environment
+    - protected_at_perimeter
+    - protected_at_runtime
+    - protected_by_mitigations
+    - code_not_reachable
+  block_kev: true
+  checkout_dir: /data/gitops
+  backup_retention: 10
+  context_repos:
+    - name: infra
+      url: https://git.example/infra/gitops.git
+      auth: { type: https-token, env: GITOPS_INFRA_TOKEN }
+      include: ["**/*.yaml"]
+  config_repo:            # omit to edit the local suppline.yml instead
+    url: ssh://git@git.example/infra/suppline-config.git
+    path: suppline.yml
+    auth:
+      type: ssh
+      key_env: SUPPLINE_CONFIG_REPO_KEY
+      known_hosts_env: SUPPLINE_KNOWN_HOSTS
+    author: { name: suppline-triage, email: triage@suppline.local }
+```
+
+`prompt` replaces the built-in decision policy. Leave it unset to accept a low residual risk with `requires_configuration` or `requires_environment`, and to rate a finding that is not exposed to the public down one severity step (`critical -> high`, `high -> medium`, `medium -> low`). The tool workflow and the JSON output contract stay in place either way.
+
+Git credentials and `SUPPLINE_LLM_API_KEY` come from the environment, not from this file. SSH auth requires both a private key and `known_hosts`. An empty `branch` follows the remote HEAD. `config_repo.path` is a plain file inside that repository. In enforce mode without `config_repo`, the local file must be writable; a read-only ConfigMap mount refuses to start. Local writes keep `suppline.yml.bak.1` (newest) through `.bak.N`.
+
+Per-sync auto statements:
+
+```yaml
+sync:
+  - source: nginx
+    target: registry.example/nginx
+    type: repository
+    x-vex: []        # people
+    x-vex-auto: []   # Triage
 ```
 
 ## Duration Format

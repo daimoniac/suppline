@@ -61,6 +61,14 @@ func (m *mockRegistry) GetManifest(ctx context.Context, repository, digest strin
 	}, nil
 }
 
+func (m *mockRegistry) ImageLabels(ctx context.Context, repo, digest string) (map[string]string, error) {
+	return nil, nil
+}
+
+func (m *mockRegistry) UnpackImage(context.Context, string, string, string) error {
+	return errors.New("image unpack is not available")
+}
+
 func (m *mockRegistry) VerifyTagExists(ctx context.Context, repo, tag string) error {
 	_, err := m.GetDigest(ctx, repo, tag)
 	return err

@@ -98,6 +98,15 @@ type ClusterImageSummary struct {
 	Digest    string
 }
 
+// ClusterRuntimeHit is one image in the latest cluster-agent snapshot.
+type ClusterRuntimeHit struct {
+	Cluster   string
+	Namespace string
+	ImageRef  string
+	Tag       string
+	Digest    string
+}
+
 // RuntimeLocation describes one matched runtime inventory entry.
 type RuntimeLocation struct {
 	Cluster   string
@@ -439,6 +448,42 @@ type ScanFilter struct {
 	SortBy       string // Sorting option: "age_desc" (default)
 	Limit        int
 	Offset       int
+}
+
+// TriageRun is one automated triage decision.
+type TriageRun struct {
+	ID            int64
+	Repository    string
+	CVEID         string
+	Verdict       string
+	Justification string
+	Confidence    float64
+	EvidenceJSON  string
+	Reasoning     string
+	Model         string
+	RepoSHAsJSON  string
+	CVEHash       string
+	Tokens        int
+	Status        string
+	CommitSHA     string
+	CreatedAt     time.Time
+}
+
+// TriageFilter selects stored triage runs.
+type TriageFilter struct {
+	Repository string
+	CVEID      string
+	Status     string
+	Limit      int
+}
+
+// TriageStore persists triage decisions. SQLite and Postgres implement it.
+type TriageStore interface {
+	InsertTriageRun(ctx context.Context, run *TriageRun) error
+	LatestTriageRun(ctx context.Context, repository, cveID string) (*TriageRun, error)
+	LatestTriageCommit(ctx context.Context) (*TriageRun, error)
+	ListTriageRuns(ctx context.Context, filter TriageFilter) ([]TriageRun, error)
+	TriageTokensSince(ctx context.Context, since time.Time) (int, error)
 }
 
 // VEXFilter defines criteria for listing VEX statements

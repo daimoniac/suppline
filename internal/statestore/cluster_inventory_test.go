@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"os"
+	"path/filepath"
 	"reflect"
 	"sort"
 	"testing"
@@ -1057,6 +1058,36 @@ func TestListRepositories_RuntimeUsedWhenRepositorySeenWithDifferentTag(t *testi
 		if repo.Name == "hostingmaloonde/minio_minio" {
 			t.Fatalf("did not expect hostingmaloonde/minio_minio in in_use=false results")
 		}
+	}
+}
+
+func TestSearchClusterImagesFiltersCurrentSnapshots(t *testing.T) {
+	store, err := NewSQLiteStore(filepath.Join(t.TempDir(), "runtime.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { store.Close() })
+	ctx := context.Background()
+	now := time.Now().UTC()
+	if err := store.RecordClusterInventory(ctx, "internal1", []ClusterImageEntry{
+		{Namespace: "kube-system", ImageRef: "ghcr.io/example/nginx", Tag: "1.29.5", Digest: "sha256:abc"},
+		{Namespace: "app", ImageRef: "ghcr.io/example/100%_off", Tag: "1", Digest: "sha256:pct"},
+	}, now); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.RecordClusterInventory(ctx, "hetzner1", []ClusterImageEntry{
+		{Namespace: "kube-system", ImageRef: "ghcr.io/example/nginx", Tag: "1.29.5", Digest: "sha256:other"},
+	}, now); err != nil {
+		t.Fatal(err)
+	}
+
+	hits, err := store.SearchClusterImages(ctx, "internal1", "kube-system", "nginx", 10)
+	if err != nil || len(hits) != 1 || hits[0].Digest != "sha256:abc" {
+		t.Fatalf("hits = %+v err=%v", hits, err)
+	}
+	escaped, err := store.SearchClusterImages(ctx, "", "", "100%", 10)
+	if err != nil || len(escaped) != 1 || escaped[0].Digest != "sha256:pct" {
+		t.Fatalf("escaped = %+v err=%v", escaped, err)
 	}
 }
 

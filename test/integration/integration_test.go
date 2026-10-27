@@ -1981,6 +1981,14 @@ func (m *mockWorkerRegistry) GetDigest(ctx context.Context, repo, tag string) (s
 	return "sha256:abc123", nil
 }
 
+func (m *mockWorkerRegistry) ImageLabels(ctx context.Context, repo, digest string) (map[string]string, error) {
+	return nil, nil
+}
+
+func (m *mockWorkerRegistry) UnpackImage(context.Context, string, string, string) error {
+	return fmt.Errorf("image unpack is not available")
+}
+
 func (m *mockWorkerRegistry) GetManifest(ctx context.Context, repository, digest string) (*registry.Manifest, error) {
 	if m.manifestError != nil {
 		return nil, m.manifestError

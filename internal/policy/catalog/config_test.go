@@ -115,6 +115,53 @@ func TestConfigCatalogResolve(t *testing.T) {
 // Before the catalog existed, only minimum release age resolution could fail.
 // Exemption evidence and the configured expression must stay available so that
 // one repository's unparseable duration cannot disable VEX everywhere.
+func TestConfigCatalogAutoVEXLosesToManual(t *testing.T) {
+	cfg := &config.RegsyncConfig{
+		Sync: []config.SyncEntry{{
+			Target: "registry.example/app",
+			Type:   "repository",
+			VEX: []types.VEXStatement{{
+				ID:     "CVE-shared",
+				State:  types.VEXStateNotAffected,
+				Detail: "human",
+			}},
+			VEXAuto: []types.VEXStatement{{
+				ID:     "CVE-shared",
+				State:  types.VEXStateNotAffected,
+				Detail: "auto",
+			}, {
+				ID:     "CVE-auto",
+				State:  types.VEXStateAffected,
+				Detail: "generated",
+			}},
+		}},
+	}
+	subject := NewConfigCatalog(cfg)
+	evidence := subject.ResolveEvidence("registry.example/app")
+	if len(evidence.VEXStatements) != 2 {
+		t.Fatalf("statements: %+v", evidence.VEXStatements)
+	}
+	if evidence.VEXStatements[0].Detail != "human" || evidence.VEXStatements[0].Source != types.VEXSourceManual {
+		t.Fatalf("manual statement = %+v", evidence.VEXStatements[0])
+	}
+	if evidence.VEXStatements[1].ID != "CVE-auto" || evidence.VEXStatements[1].Source != types.VEXSourceAuto {
+		t.Fatalf("auto statement = %+v", evidence.VEXStatements[1])
+	}
+	expires := int64(1)
+	if err := subject.ReplaceAutoVEX("registry.example/app", []types.VEXStatement{{
+		ID: "CVE-auto", State: types.VEXStateNotAffected, Justification: types.VEXJustRequiresConfiguration, ExpiresAt: &expires,
+	}}); err != nil {
+		t.Fatal(err)
+	}
+	if got := subject.AutoVEX("registry.example/app"); len(got) != 1 || got[0].State != types.VEXStateNotAffected {
+		t.Fatalf("replaced auto vex = %+v", got)
+	}
+	resolved := subject.ResolveEvidence("registry.example/app")
+	if resolved.VEXStatements[0].Detail != "human" || resolved.VEXStatements[0].Source != types.VEXSourceManual {
+		t.Fatalf("hot-swap changed the human statement: %+v", resolved.VEXStatements[0])
+	}
+}
+
 func TestConfigCatalogInvalidMinimumReleaseAgeIsLocalToPolicy(t *testing.T) {
 	statementExpiry := time.Now().Add(24 * time.Hour).Unix()
 	subject := NewConfigCatalog(&config.RegsyncConfig{
@@ -221,5 +268,29 @@ func TestConfigCatalogOperations(t *testing.T) {
 	}
 	if len(listing.Overrides) != 1 || listing.Overrides["registry.example/app"].Expression != "highCount == 0" {
 		t.Errorf("override listing = %+v", listing.Overrides)
+	}
+}
+
+func TestUpsertManualVEXWinsOverAuto(t *testing.T) {
+	cat := NewConfigCatalog(&config.RegsyncConfig{
+		Sync: []config.SyncEntry{{
+			Target: "registry.example/app",
+			Type:   "repository",
+			VEXAuto: []types.VEXStatement{{
+				ID: "CVE-1", State: types.VEXStateNotAffected, Justification: types.VEXJustCodeNotReachable, Detail: "auto",
+			}},
+		}},
+	})
+	if err := cat.UpsertManualVEX("registry.example/app", types.VEXStatement{
+		ID: "CVE-1", State: types.VEXStateNotAffected, Justification: types.VEXJustProtectedAtPerimeter, Detail: "human",
+	}); err != nil {
+		t.Fatal(err)
+	}
+	evidence := cat.ResolveEvidence("registry.example/app")
+	if len(evidence.VEXStatements) != 1 || evidence.VEXStatements[0].Source != types.VEXSourceManual || evidence.VEXStatements[0].Detail != "human" {
+		t.Fatalf("effective = %+v", evidence.VEXStatements)
+	}
+	if len(cat.AutoVEX("registry.example/app")) != 1 {
+		t.Fatal("auto statement was removed")
 	}
 }

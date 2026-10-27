@@ -45,7 +45,7 @@ FROM alpine:3.24.1
 # Install runtime dependencies including trivy and cosign clients.
 # cosign is pinned rather than installed from apk: its CLI contract changes between patch
 # releases, and an unpinned upgrade silently breaks the attestation pipeline.
-RUN apk add --no-cache ca-certificates sqlite-libs wget && \
+RUN apk add --no-cache ca-certificates sqlite-libs git wget && \
     wget https://github.com/aquasecurity/trivy/releases/download/v0.74.0/trivy_0.74.0_Linux-64bit.tar.gz && \
     tar zxvf trivy_0.74.0_Linux-64bit.tar.gz trivy && \
     mv trivy /usr/local/bin/ && \

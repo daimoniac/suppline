@@ -329,13 +329,22 @@ func (s *APIServer) handleListInactiveVEX(w http.ResponseWriter, r *http.Request
 		s.respondError(w, http.StatusMethodNotAllowed, "Method not allowed")
 		return
 	}
-
-	if s.policyCatalog == nil {
-		s.respondJSON(w, http.StatusOK, []types.VEXSummary{})
+	result, err := s.inactiveVEXSummaries(r.Context())
+	if err != nil {
+		s.respondError(w, http.StatusInternalServerError, fmt.Sprintf("Failed to get applied CVE IDs: %v", err))
 		return
 	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusOK)
+	if err := json.NewEncoder(w).Encode(result); err != nil {
+		s.logger.Error("error encoding JSON response", "error", err.Error())
+	}
+}
 
-	ctx := r.Context()
+func (s *APIServer) inactiveVEXSummaries(ctx context.Context) ([]*types.VEXSummary, error) {
+	if s.policyCatalog == nil {
+		return []*types.VEXSummary{}, nil
+	}
 
 	// Collect all defined CVE IDs from configuration per repository
 	repoVEX := make(map[string]map[string]*types.VEXSummary)
@@ -359,7 +368,7 @@ func (s *APIServer) handleListInactiveVEX(w http.ResponseWriter, r *http.Request
 					Detail:        stmt.Detail,
 					ExpiresAt:     stmt.ExpiresAt,
 					Repositories: []types.RepositoryVEXInfo{
-						{Repository: repo, AppliedAt: 0},
+						{Repository: repo, AppliedAt: 0, Source: stmt.Source},
 					},
 				}
 			}
@@ -383,8 +392,7 @@ func (s *APIServer) handleListInactiveVEX(w http.ResponseWriter, r *http.Request
 	// Query state store to find which CVE IDs have been applied
 	appliedCVEs, err := s.stateStore.GetAppliedVEXCVEIDs(ctx, cveIDSlice)
 	if err != nil {
-		s.respondError(w, http.StatusInternalServerError, fmt.Sprintf("Failed to get applied CVE IDs: %v", err))
-		return
+		return nil, err
 	}
 
 	// Build set of applied CVE IDs for quick lookup
@@ -405,12 +413,21 @@ func (s *APIServer) handleListInactiveVEX(w http.ResponseWriter, r *http.Request
 			// Add to grouped result
 			if existing, exists := grouped[cveID]; exists {
 				// Add repository to existing entry
+				source := ""
+				if len(summary.Repositories) > 0 {
+					source = summary.Repositories[0].Source
+				}
 				existing.Repositories = append(existing.Repositories, types.RepositoryVEXInfo{
 					Repository: repo,
 					AppliedAt:  0,
+					Source:     source,
 				})
 			} else {
 				// Create new entry
+				source := ""
+				if len(summary.Repositories) > 0 {
+					source = summary.Repositories[0].Source
+				}
 				grouped[cveID] = &types.VEXSummary{
 					CVEID:         summary.CVEID,
 					State:         summary.State,
@@ -418,27 +435,26 @@ func (s *APIServer) handleListInactiveVEX(w http.ResponseWriter, r *http.Request
 					Detail:        summary.Detail,
 					ExpiresAt:     summary.ExpiresAt,
 					Repositories: []types.RepositoryVEXInfo{
-						{Repository: repo, AppliedAt: 0},
+						{Repository: repo, AppliedAt: 0, Source: source},
 					},
 				}
 			}
 		}
 	}
 
-	// Convert map to slice
 	result := make([]*types.VEXSummary, 0, len(grouped))
 	for _, summary := range grouped {
 		result = append(result, summary)
 	}
+	return result, nil
+}
 
-	// Stream JSON response
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(http.StatusOK)
-	encoder := json.NewEncoder(w)
-	if err := encoder.Encode(result); err != nil {
-		s.logger.Error("error encoding JSON response",
-			"error", err.Error())
-	}
+func (s *APIServer) activeVEXSummaries(ctx context.Context) []*types.VEXSummary {
+	infos := s.getConfiguredVEXStatements("", "", nil, nil)
+	s.enrichWithHistoricalVEXTimestamps(ctx, infos)
+	grouped := s.groupVEXByCVE(infos)
+	s.enrichVEXWithImageCounts(ctx, grouped)
+	return grouped
 }
 
 // handleListVEX lists VEX statements with optional filters
@@ -1439,6 +1455,7 @@ func (s *APIServer) getConfiguredVEXStatements(cveIDFilter, repositoryFilter str
 					AppliedAt:     0, // Will be enriched with historical data if available
 					ExpiresAt:     configStatements[i].ExpiresAt,
 					Repository:    repo,
+					Source:        configStatements[i].Source,
 				}
 			}
 		}
@@ -1532,6 +1549,7 @@ func (s *APIServer) groupVEXByCVE(vexInfos []*types.VEXInfo) []*types.VEXSummary
 		summary.Repositories = append(summary.Repositories, types.RepositoryVEXInfo{
 			Repository: info.Repository,
 			AppliedAt:  info.AppliedAt,
+			Source:     info.Source,
 		})
 	}
 

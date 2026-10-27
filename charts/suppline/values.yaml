@@ -9,6 +9,13 @@ backend:
   # Secrets - these can be set via values-secrets.yaml or environment variables
   # DO NOT commit actual secrets to git.
   # SUPPLINE_API_KEY is required when the API is enabled.
+  # Triage reads SUPPLINE_LLM_API_KEY and the git credential variables named by
+  # x-triage from this secret. Checkouts use the backend PVC at
+  # /data/gitops (x-triage.checkout_dir). Example:
+  #   SUPPLINE_LLM_API_KEY: ""
+  #   GITOPS_INFRA_TOKEN: ""
+  #   SUPPLINE_CONFIG_REPO_KEY: ""
+  #   SUPPLINE_KNOWN_HOSTS: ""
   secrets: {}
 
   image:

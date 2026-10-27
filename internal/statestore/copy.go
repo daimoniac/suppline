@@ -138,6 +138,22 @@ func CopySQLiteToPostgres(ctx context.Context, sqlitePath, postgresURL string, l
 		},
 	}
 
+	var triageTable int
+	if err := src.QueryRowContext(ctx, `SELECT COUNT(*) FROM sqlite_master WHERE type = 'table' AND name = 'triage_runs'`).Scan(&triageTable); err != nil {
+		return errors.NewTransientf("inspect triage_runs: %w", err)
+	}
+	if triageTable > 0 {
+		copies = append(copies, struct {
+			name   string
+			query  string
+			insert string
+		}{
+			name:   "triage_runs",
+			query:  `SELECT id, repository, cve_id, verdict, justification, confidence, evidence_json, reasoning, model, repo_shas_json, cve_hash, tokens, status, commit_sha, created_at FROM triage_runs`,
+			insert: `INSERT INTO triage_runs (id, repository, cve_id, verdict, justification, confidence, evidence_json, reasoning, model, repo_shas_json, cve_hash, tokens, status, commit_sha, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		})
+	}
+
 	for _, job := range copies {
 		n, err := copyQuery(ctx, src, tx, job.query, job.insert)
 		if err != nil {
@@ -178,6 +194,13 @@ func CopySQLiteToPostgres(ctx context.Context, sqlitePath, postgresURL string, l
 			SELECT setval('%s', COALESCE((SELECT MAX(id) FROM %s), 1), (SELECT MAX(id) FROM %s) IS NOT NULL)
 		`, seq, tables[i], tables[i])); err != nil {
 			return errors.NewTransientf("set sequence %s: %w", seq, err)
+		}
+	}
+	if triageTable > 0 {
+		if _, err := tx.ExecContext(ctx, `
+			SELECT setval('triage_runs_id_seq', COALESCE((SELECT MAX(id) FROM triage_runs), 1), (SELECT MAX(id) FROM triage_runs) IS NOT NULL)
+		`); err != nil {
+			return errors.NewTransientf("set sequence triage_runs_id_seq: %w", err)
 		}
 	}
 

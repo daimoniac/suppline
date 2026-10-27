@@ -17,7 +17,22 @@ import (
 	"github.com/daimoniac/suppline/internal/registry"
 	"github.com/daimoniac/suppline/internal/scanner"
 	"github.com/daimoniac/suppline/internal/statestore"
+	"github.com/daimoniac/suppline/internal/types"
 )
+
+// PolicyFailureNotifier is told when a scan's CEL gate fails.
+type PolicyFailureNotifier interface {
+	NotifyPolicyFailure(ctx context.Context, notice PolicyFailureNotice)
+}
+
+// PolicyFailureNotice is one failed gate, with the findings that caused it.
+type PolicyFailureNotice struct {
+	Repository      string
+	Digest          string
+	Tag             string
+	Findings        []types.PolicyFailureFinding
+	Vulnerabilities []types.Vulnerability
+}
 
 // Worker defines the interface for processing scan tasks
 type Worker interface {
@@ -46,19 +61,28 @@ func DefaultConfig() Config {
 
 // ImageWorker implements the Worker interface
 type ImageWorker struct {
-	queue         queue.TaskQueue
-	scanner       scanner.Scanner
-	policy        policy.PolicyEngine
-	attestor      attestation.Attestor
-	registry      registry.Client
-	stateStore    statestore.StateStore
-	config        Config
-	logger        *slog.Logger
-	wg            sync.WaitGroup
-	regsyncCfg    *config.RegsyncConfig
-	policyCatalog catalog.Catalog
-	scaiGenerator *attestation.SCAIGenerator
-	pipeline      *Pipeline
+	queue           queue.TaskQueue
+	scanner         scanner.Scanner
+	policy          policy.PolicyEngine
+	attestor        attestation.Attestor
+	registry        registry.Client
+	stateStore      statestore.StateStore
+	config          Config
+	logger          *slog.Logger
+	wg              sync.WaitGroup
+	regsyncCfg      *config.RegsyncConfig
+	policyCatalog   catalog.Catalog
+	scaiGenerator   *attestation.SCAIGenerator
+	pipeline        *Pipeline
+	failureNotifier PolicyFailureNotifier
+}
+
+// SetPolicyFailureNotifier receives CEL failures after they are persisted.
+// The notifier must return quickly; triage work is queued, not run inline.
+func (w *ImageWorker) SetPolicyFailureNotifier(notifier PolicyFailureNotifier) {
+	if w != nil {
+		w.failureNotifier = notifier
+	}
 }
 
 // NewImageWorker creates a new worker instance
