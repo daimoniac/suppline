@@ -46,10 +46,10 @@ FROM alpine:3.24.1
 # cosign is pinned rather than installed from apk: its CLI contract changes between patch
 # releases, and an unpinned upgrade silently breaks the attestation pipeline.
 RUN apk add --no-cache ca-certificates sqlite-libs git wget && \
-    wget https://github.com/aquasecurity/trivy/releases/download/v0.74.0/trivy_0.74.0_Linux-64bit.tar.gz && \
-    tar zxvf trivy_0.74.0_Linux-64bit.tar.gz trivy && \
+    wget https://github.com/aquasecurity/trivy/releases/download/v0.76.1/trivy_0.76.1_Linux-64bit.tar.gz && \
+    tar zxvf trivy_0.76.1_Linux-64bit.tar.gz trivy && \
     mv trivy /usr/local/bin/ && \
-    rm trivy_0.74.0_Linux-64bit.tar.gz && \
+    rm trivy_0.76.1_Linux-64bit.tar.gz && \
     wget -O /usr/local/bin/cosign https://github.com/sigstore/cosign/releases/download/v3.1.3/cosign-linux-amd64 && \
     chmod 0755 /usr/local/bin/cosign
 

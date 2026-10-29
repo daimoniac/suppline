@@ -70,18 +70,18 @@ func TestParseVersion_BitnamiRevisionOrdering(t *testing.T) {
 	if !ok {
 		t.Fatal("expected r16 to parse")
 	}
-	if !r16.GreaterThan(r9) {
-		t.Fatalf("expected r16 > r9, compare=%d", r16.Compare(r9))
+	if Compare(r16, r9) <= 0 {
+		t.Fatalf("expected r16 > r9, compare=%d", Compare(r16, r9))
 	}
 
 	c, err := NewConstraint(">=0.17.2-debian-12-r9")
 	if err != nil {
 		t.Fatalf("constraint: %v", err)
 	}
-	if !c.Check(r16) {
+	if !Satisfies(c, r16) {
 		t.Fatal("r16 should satisfy >=...-r9 after Bitnami revision canonicalization")
 	}
-	if !c.Check(r9) {
+	if !Satisfies(c, r9) {
 		t.Fatal("r9 should satisfy >=...-r9")
 	}
 }
@@ -158,6 +158,95 @@ func TestSatisfies_FlavorSuffixStaysInRange(t *testing.T) {
 
 	if Satisfies(nil, nil) {
 		t.Error("nil inputs should not satisfy")
+	}
+}
+
+func TestFourPartNumericVersion(t *testing.T) {
+	// One constraint string is AND. Two semverRange entries would be OR, so
+	// ">=15.8.1.060 <15.9" must stay a single string.
+	c, err := NewConstraint(">=15.8.1.060 <15.9")
+	if err != nil {
+		t.Fatalf("constraint: %v", err)
+	}
+	cases := []struct {
+		tag  string
+		want bool
+	}{
+		{"15.8.0.060", false},
+		{"15.8.1.059", false},
+		{"15.8.1", false},
+		{"15.8.1.060", true},
+		{"15.8.1.60", true},
+		{"15.8.1.085", true},
+		{"15.8.2", true},
+		{"15.8.2.001", true},
+		{"15.9.0.001", false},
+	}
+	for _, tc := range cases {
+		v, ok := ParseVersion(tc.tag)
+		if !ok {
+			t.Fatalf("expected %q to parse", tc.tag)
+		}
+		if got := Satisfies(c, v); got != tc.want {
+			t.Errorf("Satisfies(>=15.8.1.060 <15.9, %q) = %v, want %v", tc.tag, got, tc.want)
+		}
+	}
+
+	next, err := NewConstraint(">=15.14.1.037 <16")
+	if err != nil {
+		t.Fatalf("constraint: %v", err)
+	}
+	v, ok := ParseVersion("15.14.1.037")
+	if !ok || !Satisfies(next, v) {
+		t.Fatal("15.14.1.037 should satisfy >=15.14.1.037 <16")
+	}
+	low, ok := ParseVersion("17.6.1.036")
+	upper, err := NewConstraint(">=17.6.1.037 <18")
+	if err != nil || !ok || Satisfies(upper, low) {
+		t.Fatal("17.6.1.036 should not satisfy >=17.6.1.037 <18")
+	}
+
+	sonar, err := NewConstraint(">=26.2.0-0")
+	if err != nil {
+		t.Fatalf("constraint: %v", err)
+	}
+	tag, ok := ParseVersion("26.10.0.133078-community")
+	if !ok {
+		t.Fatal("expected 26.10.0.133078-community to parse")
+	}
+	if !IsFlavorSuffix(tag) {
+		t.Fatal("community should be a flavor suffix")
+	}
+	if !Satisfies(sonar, tag) {
+		t.Fatal("26.10.0.133078-community should satisfy >=26.2.0-0")
+	}
+}
+
+func TestCompareMatchesImageTagOrder(t *testing.T) {
+	pairs := []struct {
+		a, b string
+		want int
+	}{
+		{"15.8.1.060", "15.8.2", -1},
+		{"15.8.1", "15.8.1.060", -1},
+		{"0.17.2-debian-12-r9", "0.17.2-debian-12-r16", -1},
+		{"26.10.0.133078-community", "26.2.0", 1},
+		{"4.1.3-rc.1", "4.1.3", -1},
+	}
+	for _, tc := range pairs {
+		va, oka := ParseVersion(tc.a)
+		vb, okb := ParseVersion(tc.b)
+		if !oka || !okb {
+			t.Fatalf("parse %q %q", tc.a, tc.b)
+		}
+		got := Compare(va, vb)
+		if (tc.want < 0 && got >= 0) || (tc.want > 0 && got <= 0) || (tc.want == 0 && got != 0) {
+			t.Fatalf("Compare(%q, %q) = %d, want sign %d", tc.a, tc.b, got, tc.want)
+		}
+		ord, ok := CompareImageTagOrder(tc.a, tc.b)
+		if !ok || ord != got {
+			t.Fatalf("CompareImageTagOrder(%q, %q) = %d ok=%v, Compare = %d", tc.a, tc.b, ord, ok, got)
+		}
 	}
 }
 

@@ -89,9 +89,10 @@ func (s *APIServer) handleGetSemverUpdateTasks(w http.ResponseWriter, r *http.Re
 
 	// Collect sync entries that have a semverRange configured.
 	var candidates []internalSemverEntry
-	for i, entry := range s.regsyncConfig.Sync {
-		if entry.IsIgnored() || entry.Tags == nil || len(entry.Tags.SemverRange) == 0 {
-			continue
+	_ = s.regsyncConfig.ForEachActive(func(i int) error {
+		entry := s.regsyncConfig.Sync[i]
+		if entry.Tags == nil || len(entry.Tags.SemverRange) == 0 {
+			return nil
 		}
 		candidates = append(candidates, internalSemverEntry{
 			syncIndex: i,
@@ -103,7 +104,8 @@ func (s *APIServer) handleGetSemverUpdateTasks(w http.ResponseWriter, r *http.Re
 				OutOfRangeVersions: []string{},
 			},
 		})
-	}
+		return nil
+	})
 
 	if len(candidates) == 0 {
 		s.respondJSON(w, http.StatusOK, SemverUpdateTasksResponse{
@@ -177,7 +179,7 @@ func (s *APIServer) handleGetSemverUpdateTasks(w http.ResponseWriter, r *http.Re
 					if !okA || !okB {
 						return c.RuntimeVersions[a] < c.RuntimeVersions[b]
 					}
-					return va.LessThan(vb)
+					return semverutil.Compare(va, vb) < 0
 				})
 			}
 		}
@@ -427,7 +429,7 @@ func sameSemverLowerOnlyRange(current []string, proposedLower string) bool {
 	if !ok {
 		return false
 	}
-	return currentLower.Equal(proposed)
+	return semverutil.Compare(currentLower, proposed) == 0
 }
 
 func suggestedLowerBound(minVer *semver.Version, originalTag string, currentRanges []string) string {
@@ -479,7 +481,7 @@ func suggestedRangesForTighten(currentRanges []string, runtimeTags []string) ([]
 	if len(runtime) == 0 {
 		return nil, false
 	}
-	sort.Slice(runtime, func(i, j int) bool { return runtime[i].ver.LessThan(runtime[j].ver) })
+	sort.Slice(runtime, func(i, j int) bool { return semverutil.Compare(runtime[i].ver, runtime[j].ver) < 0 })
 	runtimeFloor := runtime[0].ver
 
 	for _, current := range currentRanges {
@@ -505,7 +507,7 @@ func suggestedRangesForTighten(currentRanges []string, runtimeTags []string) ([]
 			continue
 		}
 
-		sort.Slice(matching, func(i, j int) bool { return matching[i].ver.LessThan(matching[j].ver) })
+		sort.Slice(matching, func(i, j int) bool { return semverutil.Compare(matching[i].ver, matching[j].ver) < 0 })
 		trimmedCurrent := strings.TrimSpace(current)
 		if exactVersionRangeRe.MatchString(trimmedCurrent) {
 			suggested = append(suggested, trimmedCurrent)
@@ -568,13 +570,13 @@ func rangeStrictlyBelowVersion(r string, floor *semver.Version) bool {
 		}
 
 		if inclusive {
-			if v.LessThan(floor) {
+			if semverutil.Compare(v, floor) < 0 {
 				return true
 			}
 			continue
 		}
 
-		if v.LessThan(floor) || v.Equal(floor) {
+		if semverutil.Compare(v, floor) <= 0 {
 			return true
 		}
 	}
@@ -588,7 +590,7 @@ func rangeStrictlyBelowVersion(r string, floor *semver.Version) bool {
 
 		if strings.HasPrefix(token, "~") {
 			if upper, ok := inferredUpperBoundForTilde(strings.TrimPrefix(token, "~")); ok {
-				if upper.LessThan(floor) || upper.Equal(floor) {
+				if semverutil.Compare(upper, floor) <= 0 {
 					return true
 				}
 			}
@@ -596,14 +598,14 @@ func rangeStrictlyBelowVersion(r string, floor *semver.Version) bool {
 
 		if strings.HasPrefix(token, "^") {
 			if upper, ok := inferredUpperBoundForCaret(strings.TrimPrefix(token, "^")); ok {
-				if upper.LessThan(floor) || upper.Equal(floor) {
+				if semverutil.Compare(upper, floor) <= 0 {
 					return true
 				}
 			}
 		}
 
 		if exactVersionRangeRe.MatchString(token) {
-			if v, ok := semverutil.ParseVersion(token); ok && v.LessThan(floor) {
+			if v, ok := semverutil.ParseVersion(token); ok && semverutil.Compare(v, floor) < 0 {
 				return true
 			}
 		}

@@ -4,7 +4,6 @@ import (
 	"fmt"
 	"regexp"
 
-	semver "github.com/Masterminds/semver/v3"
 	"github.com/daimoniac/suppline/internal/config"
 	"github.com/daimoniac/suppline/internal/semverutil"
 )
@@ -41,7 +40,7 @@ func filterTagList(tags config.TagFilter, in []string) ([]string, error) {
 }
 
 func filterSemver(ranges, in []string) ([]string, error) {
-	constraints := make([]*semver.Constraints, 0, len(ranges))
+	constraints := make([]*semverutil.Constraint, 0, len(ranges))
 	for _, rangeStr := range ranges {
 		if rangeStr == "" {
 			continue

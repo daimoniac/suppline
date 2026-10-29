@@ -132,7 +132,7 @@ services:
       start_period: 5s
 
   trivy:
-    image: aquasec/trivy:0.74.0
+    image: aquasec/trivy:0.76.1
     container_name: trivy-server
     entrypoint: ["/bin/sh", "/trivy-json-logs.sh"]
     command: ["server", "--listen", "0.0.0.0:4954"]

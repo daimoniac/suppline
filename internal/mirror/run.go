@@ -43,6 +43,7 @@ func Run(ctx context.Context, cfg *config.RegsyncConfig, logger *slog.Logger, op
 	if logger == nil {
 		logger = slog.Default()
 	}
+	logger = logger.With("module", "regsync")
 	parallel := cfg.Defaults.Parallel
 	if parallel < 1 {
 		parallel = 1

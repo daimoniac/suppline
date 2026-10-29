@@ -62,13 +62,68 @@ func (c *RegsyncConfig) Active() []SyncEntry {
 		return nil
 	}
 	out := make([]SyncEntry, 0, len(c.Sync))
-	for _, sync := range c.Sync {
-		if sync.IsIgnored() {
-			continue
-		}
-		out = append(out, sync)
-	}
+	_ = c.ForEachActive(func(i int) error {
+		out = append(out, c.Sync[i])
+		return nil
+	})
 	return out
+}
+
+// ForEachActive visits each sync entry suppline itself processes.
+// The index is the position in Sync. The mirror does not use this walk.
+func (c *RegsyncConfig) ForEachActive(fn func(i int) error) error {
+	return c.walk(func(i int, active bool) error {
+		if !active {
+			return nil
+		}
+		return fn(i)
+	})
+}
+
+// KeepActive rebuilds Sync. Ignored entries stay, in order, because the mirror
+// still copies them. keep reports whether an active entry is kept.
+func (c *RegsyncConfig) KeepActive(keep func(SyncEntry) (bool, error)) (int, error) {
+	if c == nil {
+		return 0, nil
+	}
+	next := make([]SyncEntry, 0, len(c.Sync))
+	removed := 0
+	err := c.walk(func(i int, active bool) error {
+		entry := c.Sync[i]
+		if !active {
+			next = append(next, entry)
+			return nil
+		}
+		kept, err := keep(entry)
+		if err != nil {
+			return err
+		}
+		if !kept {
+			removed++
+			return nil
+		}
+		next = append(next, entry)
+		return nil
+	})
+	if err != nil {
+		return 0, err
+	}
+	c.Sync = next
+	return removed, nil
+}
+
+// walk is the only place that distinguishes ignored sync entries from the ones
+// suppline processes. The mirror ranges Sync itself and still copies ignored entries.
+func (c *RegsyncConfig) walk(fn func(i int, active bool) error) error {
+	if c == nil || fn == nil {
+		return nil
+	}
+	for i := range c.Sync {
+		if err := fn(i, !c.Sync[i].IsIgnored()); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 func normalizeRegsync(c *RegsyncConfig) error {

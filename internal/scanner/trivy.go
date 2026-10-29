@@ -61,7 +61,12 @@ func NewTrivyScanner(cfg config.ScannerConfig) (*TrivyScanner, error) {
 }
 
 func (s *TrivyScanner) trivyCmd(ctx context.Context, imageRef string, args []string) (*exec.Cmd, *bytes.Buffer, *bytes.Buffer, func()) {
-	cmd := exec.CommandContext(ctx, "trivy", args...)
+	// --skip-version-check is an image-scan flag. server, version, and vex reject it.
+	cmdArgs := args
+	if len(args) > 0 {
+		cmdArgs = append([]string{args[0], "--skip-version-check"}, args[1:]...)
+	}
+	cmd := exec.CommandContext(ctx, "trivy", cmdArgs...)
 	var stdout, stderr bytes.Buffer
 	relay := newTrivyLogRelay(s.logger, imageRef)
 	cmd.Stdout = &stdout

@@ -351,14 +351,15 @@ func run() error {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			logger.Info("starting in-process mirror")
+			mirrorLog := logger.With("module", "regsync")
+			mirrorLog.Info("starting in-process mirror")
 			if err := mirror.Run(ctx, regsyncCfg, logger, mirror.WithReady(func() {
 				healthChecker.UpdateComponentHealth("mirror", observability.StatusHealthy, "")
 			})); err != nil && err != context.Canceled {
-				logger.Error("mirror error", "error", err.Error())
+				mirrorLog.Error("mirror error", "error", err.Error())
 				healthChecker.UpdateComponentHealth("mirror", observability.StatusUnhealthy, err.Error())
 			}
-			logger.Debug("mirror stopped")
+			mirrorLog.Debug("mirror stopped")
 		}()
 	}
 

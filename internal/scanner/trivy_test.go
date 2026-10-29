@@ -125,6 +125,9 @@ func TestScanVulnerabilities_VEXRepoFlag(t *testing.T) {
 			}
 			content := string(rawBytes)
 
+			if !strings.Contains(content, "--skip-version-check") {
+				t.Errorf("expected '--skip-version-check' in trivy args but not found; args log:\n%s", content)
+			}
 			hasVEX := strings.Contains(content, "--vex repo")
 			if tc.wantVEXInArgs && !hasVEX {
 				t.Errorf("expected '--vex repo' in trivy args but not found; args log:\n%s", content)
