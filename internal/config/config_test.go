@@ -638,15 +638,19 @@ func TestSupplineIgnore_ParseYAML(t *testing.T) {
 		t.Fatalf("ParseRegsync failed: %v", err)
 	}
 
-	if len(cfg.Sync) != 2 {
-		t.Fatalf("expected 2 non-ignored sync entries after parsing, got %d", len(cfg.Sync))
+	if len(cfg.Sync) != 4 {
+		t.Fatalf("expected ignored entries to stay on Sync, got %d", len(cfg.Sync))
+	}
+	active := cfg.Active()
+	if len(active) != 2 {
+		t.Fatalf("expected 2 active sync entries, got %d", len(active))
 	}
 
-	if cfg.Sync[0].Source != "nginx" {
-		t.Errorf("expected first retained entry to be nginx, got %q", cfg.Sync[0].Source)
+	if active[0].Source != "nginx" {
+		t.Errorf("expected first active entry to be nginx, got %q", active[0].Source)
 	}
-	if cfg.Sync[1].Source != "redis" {
-		t.Errorf("expected second retained entry to be redis, got %q", cfg.Sync[1].Source)
+	if active[1].Source != "redis" {
+		t.Errorf("expected second active entry to be redis, got %q", active[1].Source)
 	}
 }
 
@@ -674,5 +678,65 @@ func TestSupplineIgnore_GetTargetRepositories(t *testing.T) {
 		if !expected[target] {
 			t.Errorf("unexpected target %q in results", target)
 		}
+	}
+}
+
+func TestParseRegsyncServerFields(t *testing.T) {
+	content := strings.Join([]string{
+		"version: 1",
+		"defaults:",
+		"  interval: 60m",
+		"  cleanupTags: true",
+		"  cleanupTagsExclude:",
+		"    - \".*\\\\.sig$\"",
+		"sync:",
+		"  - source: nginx",
+		"    target: myregistry/nginx",
+		"    type: repository",
+		"    tags:",
+		"      allow:",
+		"        - \"v.*\"",
+		"  - source: alpine",
+		"    target: myregistry/alpine",
+		"    type: repository",
+		"    x-suppline-ignore: true",
+		"",
+	}, "\n")
+	tmpfile, err := os.CreateTemp("", "regsync-*.yml")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer os.Remove(tmpfile.Name())
+	if _, err := tmpfile.Write([]byte(content)); err != nil {
+		t.Fatal(err)
+	}
+	if err := tmpfile.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	cfg, err := ParseRegsync(tmpfile.Name())
+	if err != nil {
+		t.Fatalf("ParseRegsync failed: %v", err)
+	}
+	if cfg.Sync[0].Interval.Std() != 60*time.Minute {
+		t.Fatalf("interval = %s, want 60m", cfg.Sync[0].Interval)
+	}
+	if cfg.Sync[0].Tags == nil || len(cfg.Sync[0].Tags.Allow) != 1 || cfg.Sync[0].Tags.Allow[0] != "v.*" {
+		t.Fatalf("tags.allow = %#v", cfg.Sync[0].Tags)
+	}
+	if cfg.Sync[0].CleanupTags == nil || !*cfg.Sync[0].CleanupTags {
+		t.Fatal("cleanupTags was not inherited")
+	}
+	if len(cfg.Sync[0].CleanupTagsExclude) != 1 {
+		t.Fatalf("cleanupTagsExclude = %#v", cfg.Sync[0].CleanupTagsExclude)
+	}
+	if cfg.Sync[1].CleanupTags == nil || !*cfg.Sync[1].CleanupTags {
+		t.Fatal("ignored entry did not inherit cleanupTags")
+	}
+	if len(cfg.Active()) != 1 || cfg.Active()[0].Source != "nginx" {
+		t.Fatalf("Active() = %#v", cfg.Active())
+	}
+	if len(cfg.Sync[0].MediaTypes) == 0 {
+		t.Fatal("default media types were not applied")
 	}
 }

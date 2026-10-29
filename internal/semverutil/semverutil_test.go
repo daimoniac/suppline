@@ -6,6 +6,48 @@ import (
 	semver "github.com/Masterminds/semver/v3"
 )
 
+func TestParseVersion_Prefix(t *testing.T) {
+	cases := []struct {
+		tag          string
+		major, minor uint64
+		patch        uint64
+		ok           bool
+	}{
+		{tag: "alpine-v18.10.0", major: 18, minor: 10, patch: 0, ok: true},
+		{tag: "alpine3.18-x86_64-v17.8.0", major: 17, minor: 8, patch: 0, ok: true},
+		{tag: "3.18-arm-v17.8.5", major: 17, minor: 8, patch: 5, ok: true},
+		{tag: "v2", major: 2, minor: 0, patch: 0, ok: true},
+		{tag: "alpine3.18", ok: false},
+		{tag: "a1", ok: false},
+		{tag: "b3", ok: false},
+	}
+	for _, tc := range cases {
+		v, ok := ParseVersion(tc.tag)
+		if ok != tc.ok {
+			t.Fatalf("ParseVersion(%q) ok=%v, want %v", tc.tag, ok, tc.ok)
+		}
+		if !tc.ok {
+			continue
+		}
+		if v.Major() != tc.major || v.Minor() != tc.minor || v.Patch() != tc.patch {
+			t.Fatalf("ParseVersion(%q) = %d.%d.%d", tc.tag, v.Major(), v.Minor(), v.Patch())
+		}
+	}
+
+	c, err := NewConstraint(">=18.9.0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	low, ok := ParseVersion("alpine3.18-x86_64-v17.8.0")
+	if !ok || Satisfies(c, low) {
+		t.Fatal("runner 17.8 must not satisfy >=18.9.0")
+	}
+	high, ok := ParseVersion("alpine-v18.10.0")
+	if !ok || !Satisfies(c, high) {
+		t.Fatal("alpine-v18.10.0 must satisfy >=18.9.0")
+	}
+}
+
 func TestParseVersion(t *testing.T) {
 	if _, ok := ParseVersion(""); ok {
 		t.Fatal("empty tag should not parse")

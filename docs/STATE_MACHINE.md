@@ -8,7 +8,7 @@ How a single image digest moves through suppline, from upstream registry to a po
 stateDiagram-v2
     direction TB
 
-    [*] --> Mirrored : regsync sync from upstream
+    [*] --> Mirrored : in-process mirror copies from upstream
 
     Mirrored --> Watched : watcher poll resolves tag → digest
 

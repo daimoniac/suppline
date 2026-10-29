@@ -25,6 +25,7 @@ Configuration is loaded from multiple sources in this priority order:
 | Variable | Type | Default | Description |
 |----------|------|---------|-------------|
 | `SUPPLINE_CONFIG` | string | `suppline.yml` | Path to regsync configuration file |
+| `SUPPLINE_MIRROR_ENABLED` | bool | `true` | Copy images inside the suppline process. Set `false` when running the regsync sidecar instead |
 | `LOG_LEVEL` | string | `info` | Log level: `debug`, `info`, `warn`, `error` |
 
 ### Queue & Worker
@@ -113,7 +114,7 @@ succeeds.
 
 ## Regsync Configuration
 
-The `suppline.yml` file defines registry credentials, sync entries, and VEX (Vulnerability Exploitability Exchange) statements.
+The `suppline.yml` file defines registry credentials, sync entries, and VEX (Vulnerability Exploitability Exchange) statements. Suppline copies those entries in-process. The regsync sidecar is the rollback path: set `SUPPLINE_MIRROR_ENABLED=false` and start the sidecar, and do not run both. `x-suppline-ignore` does not stop copying.
 
 ### File Structure
 
@@ -245,8 +246,8 @@ sync:
 The `x-suppline-ignore` field lets you temporarily disable a sync entry without deleting it from `suppline.yml`.
 
 **Behaviour:**
-- When `true`, the entry is discarded while reading `suppline.yml`, so it is excluded from all downstream processing.
-- When `false` (default), the entry is processed normally.
+- When `true`, suppline skips the entry for scanning, policy, and tasks. The in-process mirror still copies it.
+- When `false` (default), the entry is scanned and copied.
 - The field is per-entry only; there is no defaults-level equivalent.
 
 **Examples:**
@@ -258,7 +259,7 @@ sync:
     target: myregistry.example.com/nginx
     type: repository
 
-  # Temporarily ignored — kept for reference, not processed
+  # Temporarily ignored — still copied, not scanned
   - source: legacy-app
     target: myregistry.example.com/legacy-app
     type: repository

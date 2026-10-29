@@ -90,7 +90,7 @@ func (s *APIServer) handleGetSemverUpdateTasks(w http.ResponseWriter, r *http.Re
 	// Collect sync entries that have a semverRange configured.
 	var candidates []internalSemverEntry
 	for i, entry := range s.regsyncConfig.Sync {
-		if entry.Tags == nil || len(entry.Tags.SemverRange) == 0 {
+		if entry.IsIgnored() || entry.Tags == nil || len(entry.Tags.SemverRange) == 0 {
 			continue
 		}
 		candidates = append(candidates, internalSemverEntry{

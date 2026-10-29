@@ -36,7 +36,7 @@ One Go binary. SQLite or PostgreSQL state. No SaaS, no phone-home, air-gap compa
 
 ![suppline architecture diagram](../suppline.cloud/images/architecture-diagram.svg)
 
-1. **Mirror** — regsync keeps your registry in sync with the upstream repositories listed in `suppline.yml`.
+1. **Mirror** — suppline copies the upstream repositories listed in `suppline.yml` into your registry. The regsync sidecar remains available as a rollback.
 2. **Scan** — the watcher notices new or changed digests and enqueues them; Trivy produces an SBOM and vulnerability set.
 3. **Gate** — active VEX statements are applied, then your CEL policy decides: `passed`, `failed`, or `pending`.
 4. **Attest** — cosign signs SBOM, vulnerability, VEX, and SCAI attestations into the registry next to the image.

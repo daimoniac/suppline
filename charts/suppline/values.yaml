@@ -37,6 +37,8 @@ backend:
   # cgroup OOMs instead of dropping cache. 1Gi/1536Mi limits clamp working set
   # and look like a leak. GOMEMLIMIT only covers heap (~hundreds of MiB) and
   # will not prevent these kills. Size for RSS + dirty cache + worker concurrency.
+  # The in-process mirror now does the work the regsync sidecar used to do
+  # (that sidecar requested 250m CPU / 256Mi). Leave these numbers as they are.
   resources:
     requests:
       memory: "1Gi"
@@ -128,9 +130,15 @@ trivy:
     initialDelaySeconds: 10
     periodSeconds: 10
 
-# Regsync configuration (optional)
-regsync:
+# In-process mirror. Copies every sync entry, including x-suppline-ignore.
+# Do not enable this together with the regsync sidecar.
+mirror:
   enabled: true
+
+# Regsync sidecar. Rollback path only. The chart refuses to render when this
+# and mirror.enabled are both true, so a rollback cannot double-sync.
+regsync:
+  enabled: false
   replicaCount: 1
 
   image:

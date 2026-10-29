@@ -11,6 +11,7 @@ import (
 // Config represents the complete application configuration
 type Config struct {
 	RegsyncPath   string
+	MirrorEnabled bool
 	Queue         QueueConfig
 	Worker        WorkerConfig
 	Scanner       ScannerConfig
@@ -91,22 +92,58 @@ type RegsyncConfig struct {
 	Triage   *TriageConfig        `yaml:"x-triage,omitempty"`
 }
 
-// RegistryCredential contains authentication information for a registry
+// RegistryCredential contains authentication information for a registry.
+// Fields match regsync/regclient creds so the in-process mirror can build a host config.
 type RegistryCredential struct {
 	Registry      string `yaml:"registry"`
-	User          string `yaml:"user"`
-	Pass          string `yaml:"pass"`
+	Hostname      string `yaml:"hostname,omitempty"`
+	User          string `yaml:"user,omitempty"`
+	Pass          string `yaml:"pass,omitempty"`
+	Token         string `yaml:"token,omitempty"`
 	RepoAuth      bool   `yaml:"repoAuth"`
 	ReqPerSec     int    `yaml:"reqPerSec"`
 	ReqConcurrent int    `yaml:"reqConcurrent"`
 	// TLS controls TLS for this registry: "enabled" (default), "insecure", or "disabled" (HTTP).
 	// Matches regsync/regclient creds.tls.
-	TLS string `yaml:"tls,omitempty"`
+	TLS        string `yaml:"tls,omitempty"`
+	RegCert    string `yaml:"regcert,omitempty"`
+	ClientCert string `yaml:"clientCert,omitempty"`
+	ClientKey  string `yaml:"clientKey,omitempty"`
+	CredHelper string `yaml:"credHelper,omitempty"`
+	PathPrefix string `yaml:"pathPrefix,omitempty"`
+	Scheme     string `yaml:"scheme,omitempty"`
 }
 
-// Defaults contains default configuration values
+// Defaults contains default configuration values.
+// Regsync server fields are inherited onto each sync entry by ParseRegsync.
 type Defaults struct {
-	Parallel              int                  `yaml:"parallel"`
+	Parallel             int              `yaml:"parallel"`
+	Backup               string           `yaml:"backup,omitempty"`
+	Interval             Duration         `yaml:"interval,omitempty"`
+	Schedule             string           `yaml:"schedule,omitempty"`
+	RateLimit            RateLimit        `yaml:"ratelimit,omitempty"`
+	DigestTags           *bool            `yaml:"digestTags,omitempty"`
+	Referrers            *bool            `yaml:"referrers,omitempty"`
+	ReferrerFilters      []ReferrerFilter `yaml:"referrerFilters,omitempty"`
+	ReferrerSrc          string           `yaml:"referrerSource,omitempty"`
+	ReferrerTgt          string           `yaml:"referrerTarget,omitempty"`
+	ReferrerSlow         *bool            `yaml:"referrerSlow,omitempty"`
+	FastCheck            *bool            `yaml:"fastCheck,omitempty"`
+	ForceRecursive       *bool            `yaml:"forceRecursive,omitempty"`
+	IncludeExternal      *bool            `yaml:"includeExternal,omitempty"`
+	MediaTypes           []string         `yaml:"mediaTypes,omitempty"`
+	Hooks                Hooks            `yaml:"hooks,omitempty"`
+	CleanupTags          *bool            `yaml:"cleanupTags,omitempty"`
+	CleanupTagsExclude   []string         `yaml:"cleanupTagsExclude,omitempty"`
+	CleanupRepos         *bool            `yaml:"cleanupRepos,omitempty"`
+	CleanupReposExclude  []string         `yaml:"cleanupReposExclude,omitempty"`
+	CleanupReposSchedule string           `yaml:"cleanupReposSchedule,omitempty"`
+	BlobLimit            int64            `yaml:"blobLimit,omitempty"`
+	CacheCount           int              `yaml:"cacheCount,omitempty"`
+	CacheTime            Duration         `yaml:"cacheTime,omitempty"`
+	SkipDockerConf       bool             `yaml:"skipDockerConfig,omitempty"`
+	UserAgent            string           `yaml:"userAgent,omitempty"`
+
 	RescanInterval        string               `yaml:"x-rescanInterval,omitempty"`
 	RuntimeInUseWindow    string               `yaml:"x-runtimeInUseWindow,omitempty"`
 	WorkerPollInterval    string               `yaml:"x-worker-poll-interval,omitempty"`
@@ -120,21 +157,40 @@ type Defaults struct {
 	VEX                   []types.VEXStatement `yaml:"x-vex,omitempty"` // CycloneDX VEX statements merged with sync-specific ones
 }
 
-// SyncEntry represents a single sync configuration
+// SyncEntry represents a single sync configuration.
 type SyncEntry struct {
 	Source                string               `yaml:"source"`
 	Target                string               `yaml:"target"`
 	Type                  string               `yaml:"type"`
 	Schedule              string               `yaml:"schedule,omitempty"`
+	Interval              Duration             `yaml:"interval,omitempty"`
 	Platform              string               `yaml:"platform,omitempty"`
+	Platforms             []string             `yaml:"platforms,omitempty"`
 	Tags                  *TagFilter           `yaml:"tags,omitempty"`
+	TagSets               []TagFilter          `yaml:"tagSets,omitempty"`
+	Repos                 RepoFilter           `yaml:"repos,omitempty"`
+	DigestTags            *bool                `yaml:"digestTags,omitempty"`
+	Referrers             *bool                `yaml:"referrers,omitempty"`
+	ReferrerFilters       []ReferrerFilter     `yaml:"referrerFilters,omitempty"`
+	ReferrerSrc           string               `yaml:"referrerSource,omitempty"`
+	ReferrerTgt           string               `yaml:"referrerTarget,omitempty"`
+	ReferrerSlow          *bool                `yaml:"referrerSlow,omitempty"`
+	FastCheck             *bool                `yaml:"fastCheck,omitempty"`
+	ForceRecursive        *bool                `yaml:"forceRecursive,omitempty"`
+	IncludeExternal       *bool                `yaml:"includeExternal,omitempty"`
+	Backup                string               `yaml:"backup,omitempty"`
+	RateLimit             RateLimit            `yaml:"ratelimit,omitempty"`
+	MediaTypes            []string             `yaml:"mediaTypes,omitempty"`
+	Hooks                 Hooks                `yaml:"hooks,omitempty"`
+	CleanupTags           *bool                `yaml:"cleanupTags,omitempty"`
+	CleanupTagsExclude    []string             `yaml:"cleanupTagsExclude,omitempty"`
 	VEX                   []types.VEXStatement `yaml:"x-vex,omitempty"`      // CycloneDX VEX statements authored by people
 	VEXAuto               []types.VEXStatement `yaml:"x-vex-auto,omitempty"` // Triage-owned statements; never written into x-vex
 	RescanInterval        string               `yaml:"x-rescanInterval,omitempty"`
 	SCAIValidityExtension string               `yaml:"x-scaiValidityExtension,omitempty"`
 	Policy                *PolicyConfig        `yaml:"x-policy,omitempty"`
 	VEXRepo               *bool                `yaml:"x-vex-repo,omitempty"`
-	Ignore                bool                 `yaml:"-"` // If true, suppline skips this entry entirely
+	Ignore                bool                 `yaml:"-"` // If true, suppline skips scanning this entry. The mirror still copies it.
 }
 
 // UnmarshalYAML supports both x-suppline-ignore and the legacy x-supplineIgnore field names.
@@ -157,10 +213,43 @@ func (s *SyncEntry) UnmarshalYAML(value *yaml.Node) error {
 	return nil
 }
 
-// TagFilter defines tag filtering rules
+// TagFilter defines tag filtering rules.
+// Several SemverRange entries are OR. One entry is an AND range, matching regsync.
 type TagFilter struct {
-	SemverRange []string `yaml:"semverRange,omitempty"`
+	Allow       []string `yaml:"allow,omitempty"`
 	Deny        []string `yaml:"deny,omitempty"`
+	SemverRange []string `yaml:"semverRange,omitempty"`
+}
+
+// RepoFilter is an allow and deny list of repository names for a registry sync.
+type RepoFilter struct {
+	Allow []string `yaml:"allow,omitempty"`
+	Deny  []string `yaml:"deny,omitempty"`
+}
+
+// RateLimit is the regsync per-step rate limit.
+type RateLimit struct {
+	Min   int      `yaml:"min,omitempty"`
+	Retry Duration `yaml:"retry,omitempty"`
+}
+
+// ReferrerFilter selects which referrers ImageCopy includes.
+type ReferrerFilter struct {
+	ArtifactType string            `yaml:"artifactType,omitempty"`
+	Annotations  map[string]string `yaml:"annotations,omitempty"`
+}
+
+// Hooks are external commands regsync runs around a copy.
+type Hooks struct {
+	Pre       *Hook `yaml:"pre,omitempty"`
+	Post      *Hook `yaml:"post,omitempty"`
+	Unchanged *Hook `yaml:"unchanged,omitempty"`
+}
+
+// Hook is one script invocation. Type "script" runs Params as a command and arguments.
+type Hook struct {
+	Type   string   `yaml:"type,omitempty"`
+	Params []string `yaml:"params,omitempty"`
 }
 
 // PolicyConfig represents a CEL-based security policy

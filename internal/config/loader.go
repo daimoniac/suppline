@@ -65,7 +65,8 @@ func Load() (*Config, error) {
 	}
 
 	cfg := &Config{
-		RegsyncPath: regsyncPath,
+		RegsyncPath:   regsyncPath,
+		MirrorEnabled: getEnvBool("SUPPLINE_MIRROR_ENABLED", true),
 		Queue: QueueConfig{
 			BufferSize: queueBufferSize,
 		},

@@ -1,17 +1,29 @@
 package config
 
 import (
-	"bytes"
 	"fmt"
 	"os"
 	"strings"
-	"text/template"
 	"time"
 
 	"github.com/daimoniac/suppline/internal/errors"
 	"github.com/daimoniac/suppline/internal/types"
+	rtemplate "github.com/regclient/regclient/pkg/template"
+	"github.com/regclient/regclient/types/mediatype"
 	"gopkg.in/yaml.v3"
 )
+
+const defaultCleanupReposSchedule = "0 4 * * *"
+
+// rateLimitRetryMin matches regsync: wait at least five minutes after a rate limit.
+const rateLimitRetryMin = 5 * time.Minute
+
+var defaultMediaTypes = []string{
+	mediatype.Docker2Manifest,
+	mediatype.Docker2ManifestList,
+	mediatype.OCI1Manifest,
+	mediatype.OCI1ManifestList,
+}
 
 // ParseRegsync reads and parses a suppline.yml configuration file
 func ParseRegsync(path string) (*RegsyncConfig, error) {
@@ -25,9 +37,12 @@ func ParseRegsync(path string) (*RegsyncConfig, error) {
 		return nil, errors.NewPermanentf("failed to parse regsync YAML: %w", err)
 	}
 
-	filterIgnoredSyncEntries(&config)
+	if err := normalizeRegsync(&config); err != nil {
+		return nil, errors.NewPermanentf("invalid regsync configuration: %w", err)
+	}
 
-	// Expand environment variables throughout the configuration
+	// Expand templates on regsync string fields. x- text is expanded only
+	// where ExpandEnvTemplate is called by its own consumers.
 	if err := expandConfig(&config); err != nil {
 		return nil, errors.NewPermanentf("failed to expand configuration: %w", err)
 	}
@@ -40,101 +55,178 @@ func ParseRegsync(path string) (*RegsyncConfig, error) {
 	return &config, nil
 }
 
-func filterIgnoredSyncEntries(config *RegsyncConfig) {
-	if len(config.Sync) == 0 {
-		return
+// Active returns sync entries suppline itself processes.
+// Ignored entries stay on Sync so the mirror still copies them.
+func (c *RegsyncConfig) Active() []SyncEntry {
+	if c == nil {
+		return nil
 	}
-
-	filtered := config.Sync[:0]
-	for _, sync := range config.Sync {
+	out := make([]SyncEntry, 0, len(c.Sync))
+	for _, sync := range c.Sync {
 		if sync.IsIgnored() {
 			continue
 		}
-		filtered = append(filtered, sync)
+		out = append(out, sync)
 	}
-
-	config.Sync = filtered
+	return out
 }
 
-// expandConfig processes all configuration fields and expands Go template expressions
-// Supports {{ env "VAR_NAME" }} syntax for environment variable expansion
-func expandConfig(config *RegsyncConfig) error {
-	funcMap := template.FuncMap{
-		"env": os.Getenv,
+func normalizeRegsync(c *RegsyncConfig) error {
+	if c.Version == 0 {
+		c.Version = 1
 	}
+	if c.Version > 1 {
+		return fmt.Errorf("unsupported config version %d", c.Version)
+	}
+	if c.Defaults.RateLimit.Retry.Std() < rateLimitRetryMin {
+		c.Defaults.RateLimit.Retry = Duration(rateLimitRetryMin)
+	}
+	if c.Defaults.CleanupRepos == nil {
+		disabled := false
+		c.Defaults.CleanupRepos = &disabled
+	}
+	if *c.Defaults.CleanupRepos && c.Defaults.CleanupReposSchedule == "" {
+		c.Defaults.CleanupReposSchedule = defaultCleanupReposSchedule
+	}
+	for i := range c.Sync {
+		applySyncDefaults(&c.Sync[i], c.Defaults)
+	}
+	return nil
+}
 
-	// Expand credential fields
+func applySyncDefaults(s *SyncEntry, d Defaults) {
+	if s.Backup == "" && d.Backup != "" {
+		s.Backup = d.Backup
+	}
+	if s.Schedule == "" && s.Interval == 0 {
+		if d.Schedule != "" {
+			s.Schedule = d.Schedule
+		} else if d.Interval != 0 {
+			s.Interval = d.Interval
+		}
+	}
+	if s.RateLimit.Min == 0 && d.RateLimit.Min != 0 {
+		s.RateLimit.Min = d.RateLimit.Min
+	}
+	if s.RateLimit.Retry == 0 {
+		s.RateLimit.Retry = d.RateLimit.Retry
+	} else if s.RateLimit.Retry.Std() < rateLimitRetryMin {
+		s.RateLimit.Retry = Duration(rateLimitRetryMin)
+	}
+	if len(s.MediaTypes) == 0 {
+		if len(d.MediaTypes) > 0 {
+			s.MediaTypes = d.MediaTypes
+		} else {
+			s.MediaTypes = append([]string(nil), defaultMediaTypes...)
+		}
+	}
+	s.DigestTags = boolDefault(s.DigestTags, d.DigestTags)
+	s.Referrers = boolDefault(s.Referrers, d.Referrers)
+	if s.ReferrerFilters == nil {
+		s.ReferrerFilters = d.ReferrerFilters
+	}
+	if s.ReferrerSrc == "" && d.ReferrerSrc != "" {
+		s.ReferrerSrc = d.ReferrerSrc
+	}
+	if s.ReferrerTgt == "" && d.ReferrerTgt != "" {
+		s.ReferrerTgt = d.ReferrerTgt
+	}
+	s.ReferrerSlow = boolDefault(s.ReferrerSlow, d.ReferrerSlow)
+	s.FastCheck = boolDefault(s.FastCheck, d.FastCheck)
+	s.ForceRecursive = boolDefault(s.ForceRecursive, d.ForceRecursive)
+	s.IncludeExternal = boolDefault(s.IncludeExternal, d.IncludeExternal)
+	if s.Hooks.Pre == nil && d.Hooks.Pre != nil {
+		s.Hooks.Pre = d.Hooks.Pre
+	}
+	if s.Hooks.Post == nil && d.Hooks.Post != nil {
+		s.Hooks.Post = d.Hooks.Post
+	}
+	if s.Hooks.Unchanged == nil && d.Hooks.Unchanged != nil {
+		s.Hooks.Unchanged = d.Hooks.Unchanged
+	}
+	s.CleanupTags = boolDefault(s.CleanupTags, d.CleanupTags)
+	if s.CleanupTagsExclude == nil && d.CleanupTagsExclude != nil {
+		s.CleanupTagsExclude = d.CleanupTagsExclude
+	}
+}
+
+func boolDefault(entry, defaults *bool) *bool {
+	if entry != nil {
+		return entry
+	}
+	value := defaults != nil && *defaults
+	return &value
+}
+
+// expandConfig expands regsync template fields. Backup templates expand at copy time.
+func expandConfig(config *RegsyncConfig) error {
 	for i := range config.Creds {
 		cred := &config.Creds[i]
-
-		// Expand registry field
-		if expanded, err := expandTemplate(cred.Registry, funcMap); err != nil {
-			return errors.NewPermanentf("failed to expand registry field: %w", err)
-		} else {
-			cred.Registry = expanded
+		expanded, err := expandField("registry", cred.Registry, nil)
+		if err != nil {
+			return err
 		}
-
-		// Expand user field
-		if expanded, err := expandTemplate(cred.User, funcMap); err != nil {
-			return errors.NewPermanentf("failed to expand user for registry %s: %w", cred.Registry, err)
-		} else {
-			cred.User = expanded
+		cred.Registry = expanded
+		if cred.User, err = expandField("user for registry "+cred.Registry, cred.User, nil); err != nil {
+			return err
 		}
-
-		// Expand pass field
-		if expanded, err := expandTemplate(cred.Pass, funcMap); err != nil {
-			return errors.NewPermanentf("failed to expand pass for registry %s: %w", cred.Registry, err)
-		} else {
-			cred.Pass = expanded
+		if cred.Pass, err = expandField("pass for registry "+cred.Registry, cred.Pass, nil); err != nil {
+			return err
+		}
+		if cred.RegCert, err = expandField("regcert for registry "+cred.Registry, cred.RegCert, nil); err != nil {
+			return err
+		}
+		if cred.ClientCert, err = expandField("clientCert for registry "+cred.Registry, cred.ClientCert, nil); err != nil {
+			return err
+		}
+		if cred.ClientKey, err = expandField("clientKey for registry "+cred.Registry, cred.ClientKey, nil); err != nil {
+			return err
 		}
 	}
 
-	// Expand sync entry fields
 	for i := range config.Sync {
 		sync := &config.Sync[i]
-
-		// Expand source field
-		if expanded, err := expandTemplate(sync.Source, funcMap); err != nil {
-			return errors.NewPermanentf("failed to expand source field: %w", err)
-		} else {
-			sync.Source = expanded
+		data := struct{ Sync SyncEntry }{Sync: *sync}
+		var err error
+		if sync.Source, err = expandField("source", sync.Source, data); err != nil {
+			return err
 		}
-
-		// Expand target field
-		if expanded, err := expandTemplate(sync.Target, funcMap); err != nil {
-			return errors.NewPermanentf("failed to expand target field: %w", err)
-		} else {
-			sync.Target = expanded
+		data.Sync.Source = sync.Source
+		if sync.ReferrerSrc, err = expandField("referrerSource", sync.ReferrerSrc, data); err != nil {
+			return err
+		}
+		data.Sync.ReferrerSrc = sync.ReferrerSrc
+		if sync.Target, err = expandField("target", sync.Target, data); err != nil {
+			return err
+		}
+		data.Sync.Target = sync.Target
+		if sync.ReferrerTgt, err = expandField("referrerTarget", sync.ReferrerTgt, data); err != nil {
+			return err
 		}
 	}
-
 	return nil
+}
+
+func expandField(name, tmpl string, data any) (string, error) {
+	expanded, err := expandTemplate(tmpl, data)
+	if err != nil {
+		return "", errors.NewPermanentf("failed to expand %s: %w", name, err)
+	}
+	return expanded, nil
 }
 
 // ExpandEnvTemplate expands {{ env "VAR" }} using the process environment.
 // A string without a template is returned unchanged.
 func ExpandEnvTemplate(tmpl string) (string, error) {
-	return expandTemplate(tmpl, template.FuncMap{"env": os.Getenv})
+	return expandTemplate(tmpl, nil)
 }
 
-// expandTemplate expands a Go template string with the provided function map
-func expandTemplate(tmpl string, funcMap template.FuncMap) (string, error) {
-	// If the string doesn't contain template syntax, return as-is
+// expandTemplate expands a regsync template. Strings without "{{" are returned unchanged.
+func expandTemplate(tmpl string, data any) (string, error) {
 	if !strings.Contains(tmpl, "{{") {
 		return tmpl, nil
 	}
-
-	t, err := template.New("expand").Funcs(funcMap).Parse(tmpl)
-	if err != nil {
-		return "", err
-	}
-
-	var buf bytes.Buffer
-	if err := t.Execute(&buf, nil); err != nil {
-		return "", err
-	}
-
-	return buf.String(), nil
+	return rtemplate.String(tmpl, data)
 }
 
 // GetCredentialForRegistry returns the credential for a specific registry
@@ -181,11 +273,7 @@ func (c *RegsyncConfig) GetTargetRepositories() []string {
 	seen := make(map[string]bool)
 	targets := make([]string, 0, len(c.Sync))
 
-	for _, sync := range c.Sync {
-		// Skip entries that are marked as ignored
-		if sync.Ignore {
-			continue
-		}
+	for _, sync := range c.Active() {
 
 		target := sync.Target
 
@@ -212,7 +300,7 @@ func (c *RegsyncConfig) GetTargetRepositories() []string {
 // Handles both type=repository (exact match) and type=image (strips tag for matching)
 func (c *RegsyncConfig) GetRescanInterval(target string) (time.Duration, error) {
 	// Check sync entry first
-	for _, sync := range c.Sync {
+	for _, sync := range c.Active() {
 		syncTarget := sync.Target
 
 		// For type=image, strip the tag for comparison
@@ -252,7 +340,7 @@ func (c *RegsyncConfig) GetRuntimeInUseWindow() (time.Duration, error) {
 // Handles both type=repository (exact match) and type=image (strips tag for matching)
 func (c *RegsyncConfig) GetSCAIValidityExtension(target string) (time.Duration, error) {
 	// Check sync entry first
-	for _, sync := range c.Sync {
+	for _, sync := range c.Active() {
 		syncTarget := sync.Target
 
 		// For type=image, strip the tag for comparison
@@ -282,7 +370,7 @@ func (c *RegsyncConfig) GetSCAIValidityExtension(target string) (time.Duration, 
 func (c *RegsyncConfig) GetTagsForRepository(repo string) []string {
 	var tags []string
 
-	for _, sync := range c.Sync {
+	for _, sync := range c.Active() {
 		if sync.Type == "image" {
 			// Extract repository from target (strip tag)
 			targetRepo := sync.Target
@@ -355,7 +443,7 @@ func (c *RegsyncConfig) ValidateVEXStatements() error {
 			return fmt.Errorf("defaults.x-vex[%d]: %w", i, err)
 		}
 	}
-	for _, sync := range c.Sync {
+	for _, sync := range c.Active() {
 		for i, stmt := range sync.VEX {
 			if err := types.ValidateVEXStatement(stmt); err != nil {
 				return fmt.Errorf("sync[%s].x-vex[%d]: %w", sync.Target, i, err)

@@ -1,3 +1,10 @@
+{{- $mirrorEnabled := true }}
+{{- if kindIs "map" .Values.mirror }}
+{{- $mirrorEnabled = .Values.mirror.enabled }}
+{{- end }}
+{{- if and $mirrorEnabled .Values.regsync.enabled }}
+{{- fail "mirror.enabled and regsync.enabled cannot both be true; the in-process mirror and the regsync sidecar would copy the same images" }}
+{{- end }}
 apiVersion: apps/v1
 kind: StatefulSet
 metadata:
@@ -82,6 +89,8 @@ spec:
         # do not collide with the cosign RSS spike (see backend.resources).
         - name: TMPDIR
           value: /tmp
+        - name: SUPPLINE_MIRROR_ENABLED
+          value: {{ $mirrorEnabled | quote }}
         {{- if .Values.registry.enabled }}
         - name: SSL_CERT_FILE
           value: /registry-certs/ca-bundle.crt

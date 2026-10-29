@@ -38,7 +38,7 @@ One Go binary. SQLite or PostgreSQL state. No SaaS, no phone-home, air-gap compa
   <img src="suppline.cloud/images/architecture-diagram.svg" alt="suppline architecture: regsync mirrors remote registries into a local registry, the watcher and queue feed a worker pipeline that scans with Trivy, evaluates CEL policy and signs cosign attestations back into the registry, results are persisted in SQLite and exposed through the API, dashboard and metrics, while Kubernetes pulls verified images and an optional cluster agent reports what is actually running" width="760"/>
 </p>
 
-1. **Mirror** — regsync keeps your registry in sync with the upstream repositories listed in `suppline.yml`.
+1. **Mirror** — suppline copies the upstream repositories listed in `suppline.yml` into your registry. The regsync sidecar remains available as a rollback.
 2. **Scan** — the watcher notices new or changed digests and enqueues them; Trivy produces an SBOM and vulnerability set.
 3. **Gate** — active VEX statements are applied, then your CEL policy decides: `passed`, `failed`, or `pending`.
 4. **Triage** — a failed gate on an image running in a cluster can ask an LLM, with your gitops repos as context, whether the CVE affects this deployment. A guarded `not_affected` result is written to `x-vex-auto` and the image is evaluated again. See [docs/STATE_MACHINE.md](docs/STATE_MACHINE.md).
@@ -58,7 +58,7 @@ See [docs/STATE_MACHINE.md](docs/STATE_MACHINE.md) for the exact lifecycle, incl
 
 ## Quick start
 
-Zero credentials. Compose brings up a throwaway registry, Trivy, regsync, suppline, and the UI. One demo image **passes** (with attestations); one **fails**.
+Zero credentials. Compose brings up a throwaway registry, Trivy, suppline (with the in-process mirror), and the UI. One demo image **passes** (with attestations); one **fails**.
 
 ```bash
 git clone https://github.com/daimoniac/suppline.git && cd suppline

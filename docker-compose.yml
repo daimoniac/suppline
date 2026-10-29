@@ -88,6 +88,8 @@ services:
       - ATTESTATION_ALLOW_HTTP_REGISTRY=true
       - ATTESTATION_KEY_PASSWORD=demo
       - KEYS_DIR=/keys/demo
+      # In-process mirror. Set false when starting the sidecar-mirror profile.
+      - SUPPLINE_MIRROR_ENABLED=${SUPPLINE_MIRROR_ENABLED:-true}
     volumes:
       - ./keys:/keys
       - ./suppline.demo.yml:/config/suppline.yml:ro
@@ -151,7 +153,11 @@ services:
       retries: 3
       start_period: 30s
 
+  # Rollback path. Start with: docker compose --profile sidecar-mirror up
+  # and SUPPLINE_MIRROR_ENABLED=false, or the in-process mirror and this
+  # sidecar copy the same images.
   regsync:
+    profiles: ["sidecar-mirror"]
     image: daimon666/regsync:latest
     container_name: regsync
     command: ["server", "-c", "/config/suppline.yml"]

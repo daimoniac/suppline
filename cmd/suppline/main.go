@@ -16,6 +16,7 @@ import (
 	"github.com/daimoniac/suppline/internal/api"
 	"github.com/daimoniac/suppline/internal/attestation"
 	"github.com/daimoniac/suppline/internal/config"
+	"github.com/daimoniac/suppline/internal/mirror"
 	"github.com/daimoniac/suppline/internal/observability"
 	"github.com/daimoniac/suppline/internal/policy"
 	policycatalog "github.com/daimoniac/suppline/internal/policy/catalog"
@@ -73,6 +74,9 @@ func run() error {
 	healthChecker.RegisterComponent("trivy")
 	healthChecker.RegisterComponent("database")
 	healthChecker.RegisterComponent("watcher")
+	if cfg.MirrorEnabled {
+		healthChecker.RegisterComponent("mirror")
+	}
 
 	healthChecker.UpdateComponentHealth("config", observability.StatusHealthy, "")
 
@@ -340,6 +344,21 @@ func run() error {
 				errChan <- fmt.Errorf("API server error: %w", err)
 			}
 			logger.Debug("API server stopped")
+		}()
+	}
+
+	if cfg.MirrorEnabled {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			logger.Info("starting in-process mirror")
+			if err := mirror.Run(ctx, regsyncCfg, logger, mirror.WithReady(func() {
+				healthChecker.UpdateComponentHealth("mirror", observability.StatusHealthy, "")
+			})); err != nil && err != context.Canceled {
+				logger.Error("mirror error", "error", err.Error())
+				healthChecker.UpdateComponentHealth("mirror", observability.StatusUnhealthy, err.Error())
+			}
+			logger.Debug("mirror stopped")
 		}()
 	}
 

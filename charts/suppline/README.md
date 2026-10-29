@@ -101,7 +101,8 @@ Data PVCs may be retained (`helm.sh/resource-policy: keep`) so reinstalls can re
 | `frontend.image.repository` | UI image | `ghcr.io/daimoniac/suppline-ui` |
 | `frontend.image.tag` | UI tag | `""` → `Chart.AppVersion` |
 | `frontend.ingress.enabled` | UI Ingress | `false` |
-| `regsync.enabled` | Deploy regsync | `true` |
+| `mirror.enabled` | Copy images in the suppline process | `true` |
+| `regsync.enabled` | Deploy the regsync sidecar (rollback; cannot be combined with `mirror.enabled`) | `false` |
 | `registry.enabled` | Bundled registry | `false` (BYO) |
 | `postgres.enabled` | Bundled PostgreSQL | `true` |
 | `persistence.data.enabled` | SQLite PVC (ignored while Postgres is enabled) | `true` |

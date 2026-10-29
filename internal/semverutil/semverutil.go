@@ -1,5 +1,5 @@
 // Package semverutil wraps Masterminds semver for image tag version parsing,
-// shared by the tasks API and runtime image-usage filtering.
+// shared by the mirror, the tasks API, and runtime image-usage filtering.
 package semverutil
 
 import (
@@ -9,6 +9,19 @@ import (
 
 	semver "github.com/Masterminds/semver/v3"
 )
+
+// versionAfterSepRe finds a version preceded by a dash or underscore, with an
+// optional v/V prefix. "alpine-v18.10.0" and "alpine3.18-x86_64-v17.8.0" both
+// resolve to the software version. A bare fragment such as "alpine3.18" has
+// no separator and is left unchanged.
+var versionAfterSepRe = regexp.MustCompile(`[-_][vV]?\d+\.\d`)
+
+func versionText(tag string) string {
+	if loc := versionAfterSepRe.FindStringIndex(tag); loc != nil {
+		return tag[loc[0]+1:]
+	}
+	return tag
+}
 
 // bitnamiRevisionSuffix matches Bitnami-style image revisions (...-rN).
 // SemVer treats "r16" as an alphanumeric prerelease identifier and compares
@@ -29,12 +42,13 @@ func canonicalizeSemverText(s string) string {
 }
 
 // ParseVersion parses a tag as a semver version, or returns nil if it is not valid.
-// Bitnami-style "-rN" suffixes are canonicalized so r16 > r9.
+// A dash- or underscore-separated prefix is stripped first, then Bitnami-style
+// "-rN" suffixes are canonicalized so r16 > r9.
 func ParseVersion(tag string) (*semver.Version, bool) {
 	if tag == "" {
 		return nil, false
 	}
-	v, err := semver.NewVersion(canonicalizeSemverText(tag))
+	v, err := semver.NewVersion(canonicalizeSemverText(versionText(tag)))
 	if err != nil {
 		return nil, false
 	}

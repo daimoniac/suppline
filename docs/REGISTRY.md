@@ -37,7 +37,7 @@ registry:
     storageClass: ""
 ```
 
-Credentials are auto-generated (username `suppline`, random password) unless you set `registry.credentials`. They are injected as `SUPPLINE_REGISTRY_*` for the backend and regsync.
+Credentials are auto-generated (username `suppline`, random password) unless you set `registry.credentials`. They are injected as `SUPPLINE_REGISTRY_*` for the backend, which the in-process mirror uses.
 
 ### Storage
 

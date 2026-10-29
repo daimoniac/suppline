@@ -91,6 +91,9 @@ func (c *ConfigCatalog) effectiveLocked(repository string) (*config.PolicyConfig
 	policyOverridden := false
 	vexRepoOverridden := false
 	for _, sync := range c.config.Sync {
+		if sync.IsIgnored() {
+			continue
+		}
 		if targetRepository(sync) != repository {
 			continue
 		}
@@ -141,6 +144,9 @@ func (c *ConfigCatalog) ReplaceAutoVEX(repository string, statements []types.VEX
 	defer c.mu.Unlock()
 	matched := false
 	for i := range c.config.Sync {
+		if c.config.Sync[i].IsIgnored() {
+			continue
+		}
 		if targetRepository(c.config.Sync[i]) != repository {
 			continue
 		}
@@ -165,6 +171,9 @@ func (c *ConfigCatalog) UpsertManualVEX(repository string, statement types.VEXSt
 	defer c.mu.Unlock()
 	matched := false
 	for i := range c.config.Sync {
+		if c.config.Sync[i].IsIgnored() {
+			continue
+		}
 		if targetRepository(c.config.Sync[i]) != repository {
 			continue
 		}
@@ -197,6 +206,9 @@ func (c *ConfigCatalog) AutoVEX(repository string) []types.VEXStatement {
 	var out []types.VEXStatement
 	seen := make(map[string]struct{})
 	for _, sync := range c.config.Sync {
+		if sync.IsIgnored() {
+			continue
+		}
 		if targetRepository(sync) != repository {
 			continue
 		}
@@ -238,6 +250,9 @@ func (c *ConfigCatalog) ListPolicies() PolicyListing {
 	}
 
 	for _, sync := range c.config.Sync {
+		if sync.IsIgnored() {
+			continue
+		}
 		if sync.Policy == nil || sync.Policy.Expression == "" {
 			continue
 		}
@@ -271,6 +286,9 @@ func (c *ConfigCatalog) StatementIDs() []string {
 		ids[statement.ID] = struct{}{}
 	}
 	for _, sync := range c.config.Sync {
+		if sync.IsIgnored() {
+			continue
+		}
 		for _, statement := range sync.VEX {
 			ids[statement.ID] = struct{}{}
 		}
@@ -291,6 +309,9 @@ func (c *ConfigCatalog) UsesVEXRepo() bool {
 		return true
 	}
 	for _, sync := range c.config.Sync {
+		if sync.IsIgnored() {
+			continue
+		}
 		if sync.VEXRepo != nil && *sync.VEXRepo {
 			return true
 		}
@@ -318,6 +339,9 @@ func (c *ConfigCatalog) Upstream(repository string) (source, platform string, ok
 	c.mu.RLock()
 	defer c.mu.RUnlock()
 	for _, sync := range c.config.Sync {
+		if sync.IsIgnored() {
+			continue
+		}
 		if targetRepository(sync) != repository {
 			continue
 		}
@@ -342,6 +366,9 @@ func (c *ConfigCatalog) SetSemverRanges(target string, ranges []string) (int, er
 	defer c.mu.Unlock()
 	updated := 0
 	for i := range c.config.Sync {
+		if c.config.Sync[i].IsIgnored() {
+			continue
+		}
 		ok, err := config.SyncTargetMatches(c.config.Sync[i].Target, c.config.Sync[i].Type, target)
 		if err != nil {
 			return 0, err
@@ -365,6 +392,10 @@ func (c *ConfigCatalog) RemoveSyncTargets(targets []string) (int, error) {
 	next := make([]config.SyncEntry, 0, len(c.config.Sync))
 	removed := 0
 	for _, entry := range c.config.Sync {
+		if entry.IsIgnored() {
+			next = append(next, entry)
+			continue
+		}
 		drop := false
 		for _, target := range targets {
 			ok, err := config.SyncTargetMatches(entry.Target, entry.Type, target)
@@ -404,6 +435,9 @@ func (c *ConfigCatalog) RemoveVEXIDs(ids []string) (int, error) {
 	removed := 0
 	c.config.Defaults.VEX, removed = dropVEXIDs(c.config.Defaults.VEX, wanted, removed)
 	for i := range c.config.Sync {
+		if c.config.Sync[i].IsIgnored() {
+			continue
+		}
 		var n int
 		c.config.Sync[i].VEX, n = dropVEXIDs(c.config.Sync[i].VEX, wanted, 0)
 		removed += n
