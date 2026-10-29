@@ -65,6 +65,17 @@ func Resolve(cfg *config.TriageConfig, configPath string) (Settings, error) {
 		ConfigPath:       configPath,
 		Allowed:          justificationSet(config.DefaultTriageJustifications()),
 	}
+	// Config writes (semver, unused sync entries, unused VEX) use the same
+	// file or config repository even when the LLM triage loop is off.
+	if cfg != nil {
+		if dir := strings.TrimSpace(cfg.CheckoutDir); dir != "" {
+			settings.CheckoutDir = dir
+		}
+		settings.ConfigRepo = cfg.ConfigRepo
+		if cfg.BackupRetention > 0 {
+			settings.BackupRetention = cfg.BackupRetention
+		}
+	}
 	if cfg == nil || !cfg.Enabled {
 		settings.Enabled = false
 		return settings, nil

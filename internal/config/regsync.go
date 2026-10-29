@@ -152,6 +152,28 @@ func (s *SyncEntry) IsIgnored() bool {
 	return s.Ignore
 }
 
+// SyncTargetMatches reports whether a sync target names the same repository as wanted.
+// Image targets may include a tag. Templates are expanded before the comparison.
+func SyncTargetMatches(target, kind, wanted string) (bool, error) {
+	expanded, err := ExpandEnvTemplate(target)
+	if err != nil {
+		return false, fmt.Errorf("expand sync target: %w", err)
+	}
+	wanted = strings.TrimSpace(wanted)
+	if wanted == "" {
+		return false, nil
+	}
+	if expanded == wanted {
+		return true, nil
+	}
+	if kind == "image" {
+		if index := strings.LastIndex(expanded, ":"); index != -1 {
+			expanded = expanded[:index]
+		}
+	}
+	return expanded == wanted, nil
+}
+
 // GetTargetRepositories returns all target repositories from sync entries
 // For type=image entries, strips the tag to return just the repository name
 // Entries with x-suppline-ignore: true are excluded.

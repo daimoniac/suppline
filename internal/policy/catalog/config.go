@@ -329,6 +329,105 @@ func (c *ConfigCatalog) Upstream(repository string) (source, platform string, ok
 	return "", "", false
 }
 
+// SetSemverRanges replaces tags.semverRange on sync entries that match target.
+func (c *ConfigCatalog) SetSemverRanges(target string, ranges []string) (int, error) {
+	if c == nil || c.config == nil {
+		return 0, fmt.Errorf("no configuration catalog")
+	}
+	if strings.TrimSpace(target) == "" || len(ranges) == 0 {
+		return 0, fmt.Errorf("semver update needs a target and at least one range")
+	}
+	copied := append([]string(nil), ranges...)
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	updated := 0
+	for i := range c.config.Sync {
+		ok, err := config.SyncTargetMatches(c.config.Sync[i].Target, c.config.Sync[i].Type, target)
+		if err != nil {
+			return 0, err
+		}
+		if !ok || c.config.Sync[i].Tags == nil {
+			continue
+		}
+		c.config.Sync[i].Tags.SemverRange = append([]string(nil), copied...)
+		updated++
+	}
+	return updated, nil
+}
+
+// RemoveSyncTargets drops sync entries whose target matches one of targets.
+func (c *ConfigCatalog) RemoveSyncTargets(targets []string) (int, error) {
+	if c == nil || c.config == nil {
+		return 0, fmt.Errorf("no configuration catalog")
+	}
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	next := make([]config.SyncEntry, 0, len(c.config.Sync))
+	removed := 0
+	for _, entry := range c.config.Sync {
+		drop := false
+		for _, target := range targets {
+			ok, err := config.SyncTargetMatches(entry.Target, entry.Type, target)
+			if err != nil {
+				return 0, err
+			}
+			if ok {
+				drop = true
+				break
+			}
+		}
+		if drop {
+			removed++
+			continue
+		}
+		next = append(next, entry)
+	}
+	c.config.Sync = next
+	return removed, nil
+}
+
+// RemoveVEXIDs drops hand-written and auto statements with these ids.
+func (c *ConfigCatalog) RemoveVEXIDs(ids []string) (int, error) {
+	if c == nil || c.config == nil {
+		return 0, fmt.Errorf("no configuration catalog")
+	}
+	wanted := make(map[string]struct{}, len(ids))
+	for _, id := range ids {
+		id = strings.TrimSpace(id)
+		if id == "" {
+			continue
+		}
+		wanted[id] = struct{}{}
+	}
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	removed := 0
+	c.config.Defaults.VEX, removed = dropVEXIDs(c.config.Defaults.VEX, wanted, removed)
+	for i := range c.config.Sync {
+		var n int
+		c.config.Sync[i].VEX, n = dropVEXIDs(c.config.Sync[i].VEX, wanted, 0)
+		removed += n
+		c.config.Sync[i].VEXAuto, n = dropVEXIDs(c.config.Sync[i].VEXAuto, wanted, 0)
+		removed += n
+	}
+	return removed, nil
+}
+
+func dropVEXIDs(list []types.VEXStatement, wanted map[string]struct{}, removed int) ([]types.VEXStatement, int) {
+	if len(list) == 0 || len(wanted) == 0 {
+		return list, removed
+	}
+	next := make([]types.VEXStatement, 0, len(list))
+	for _, statement := range list {
+		if _, ok := wanted[statement.ID]; ok {
+			removed++
+			continue
+		}
+		next = append(next, statement)
+	}
+	return next, removed
+}
+
 func targetRepository(sync config.SyncEntry) string {
 	target := sync.Target
 	if sync.Type == "image" {

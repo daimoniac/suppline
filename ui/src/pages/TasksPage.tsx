@@ -2,24 +2,24 @@ import { type ReactNode, useCallback, useEffect, useState } from 'react';
 import { Link, useLocation } from 'react-router';
 import { useAuth } from '../lib/auth';
 import { useToast } from '../lib/toast';
-import { copyToClipboard, loadAllRuntimeUnusedRepositories, summarizeRuntimeUnusedRepositories } from '../lib/utils';
+import { loadAllRuntimeUnusedRepositories, summarizeRuntimeUnusedRepositories } from '../lib/utils';
 import { useImageUsageFilter } from '../lib/imageUsageFilter';
 import { fetchPolicyComplianceData, type PolicyComplianceSnapshot } from '../lib/policyComplianceData';
 import { scheduleEffectLoad } from '../lib/scheduleEffectLoad';
 import { LoadingState, ErrorState, PageHeader, EmptyState, ConfirmModal } from '../components/ui';
 import { PolicyCompliancePanel } from '../components/PolicyCompliancePanel';
-import { TriageStatusPanel } from '../components/TriageStatusPanel';
+import { TriageBoard } from '../components/TriageBoard';
 import type {
+  ConfigEditResult,
+  ConfigEditStatus,
   RepositoriesResponse,
   SemverUpdateEntry,
   SemverUpdateTasksResponse,
-  TriageRun,
-  TriageStatus,
   VEXSummary,
   VEXExpiryTaskEntry,
   VEXExpiryTasksResponse,
 } from '../lib/api';
-import { CheckCircle2, Clock3, Copy, RefreshCw, Scale, Server, ShieldAlert, Sparkles, Tag, TriangleAlert, Trash2 } from 'lucide-react';
+import { CheckCircle2, Clock3, RefreshCw, Scale, Server, ShieldAlert, Tag, TriangleAlert, Trash2 } from 'lucide-react';
 
 // ─── status badge ─────────────────────────────────────────────────────────────
 
@@ -81,30 +81,16 @@ function RuntimeVersionsCell({ entry }: { entry: SemverUpdateEntry }) {
   );
 }
 
-function TaskPromptCard({ hint, onCopy }: { hint: string; onCopy: () => void }) {
-  return (
-    <div className="relative overflow-hidden rounded-xl border border-accent/35 bg-gradient-to-r from-accent/15 via-bg-secondary to-warning/10 p-4">
-      <div className="absolute -top-10 -right-10 w-24 h-24 rounded-full bg-accent/20 blur-2xl pointer-events-none" />
-      <div className="relative flex flex-col gap-3">
-        <div className="flex items-center gap-2">
-          <span className="inline-flex items-center justify-center w-7 h-7 rounded-lg bg-accent/20 text-accent">
-            <Sparkles className="w-4 h-4" />
-          </span>
-          <div>
-            <h3 className="text-sm font-semibold text-text-primary">AI Agent Prompt</h3>
-            <p className="text-xs text-text-secondary">{hint}</p>
-          </div>
-        </div>
-        <button
-          onClick={onCopy}
-          className="inline-flex items-center justify-center gap-1.5 px-3 py-2 text-xs rounded-lg border border-accent/30 text-text-primary bg-bg-primary/70 hover:bg-bg-primary transition-colors"
-        >
-          <Copy className="w-3 h-3" />
-          Copy prompt to clipboard
-        </button>
-      </div>
-    </div>
-  );
+function configEditMessage(result: ConfigEditResult, noun: string) {
+  if (result.updated === 0) return 'No config changes were needed';
+  const commit = result.commit ? ` (${result.commit.slice(0, 7)})` : '';
+  if (result.mode === 'git') return `Updated ${result.updated} ${noun} and committed${commit}`;
+  return `Updated ${result.updated} ${noun} in the local config`;
+}
+
+function ConfigEditNote({ status }: { status: ConfigEditStatus | null }) {
+  if (!status) return <p className="text-xs text-text-muted">Checking whether the config can be edited…</p>;
+  return <p className={`text-xs ${status.available ? 'text-text-muted' : 'text-warning'}`}>{status.detail}</p>;
 }
 
 function TaskSection({
@@ -173,9 +159,20 @@ function TaskListControls({
 
 // ─── semver update task card ──────────────────────────────────────────────────
 
-function SemverUpdateTask({ data }: { data: SemverUpdateTasksResponse }) {
+function SemverUpdateTask({
+  data,
+  edits,
+  onChanged,
+}: {
+  data: SemverUpdateTasksResponse;
+  edits: ConfigEditStatus | null;
+  onChanged: () => void;
+}) {
+  const { apiClient } = useAuth();
   const { toast } = useToast();
   const [showAll, setShowAll] = useState(false);
+  const [applying, setApplying] = useState(false);
+  const [pending, setPending] = useState<Array<{ target: string; ranges: string[] }> | null>(null);
 
   if (data.no_runtime_data) {
     return (
@@ -201,41 +198,59 @@ function SemverUpdateTask({ data }: { data: SemverUpdateTasksResponse }) {
   const tightenCount = data.entries.filter(e => e.status === 'tighten').length;
   const defaultEntries = data.entries.filter(e => e.status === 'out_of_bounds' || e.status === 'tighten');
   const displayedEntries = showAll ? data.entries : defaultEntries;
-  const hasUpdates = data.ai_agent_prompt.trim().length > 0;
+  const actionable = data.entries.flatMap(entry => (
+    (entry.status === 'out_of_bounds' || entry.status === 'tighten') && entry.suggested_ranges && entry.suggested_ranges.length > 0
+      ? [{ target: entry.target, ranges: entry.suggested_ranges }]
+      : []
+  ));
+
+  const applyRanges = async (updates: Array<{ target: string; ranges: string[] }>) => {
+    setPending(null);
+    setApplying(true);
+    try {
+      const result = await apiClient.applySemverUpdates(updates);
+      toast(configEditMessage(result, result.updated === 1 ? 'range' : 'ranges'), result.updated > 0 ? 'success' : 'warning');
+      if (result.updated > 0) onChanged();
+    } catch (e: unknown) {
+      toast(e instanceof Error ? e.message : 'Failed to update semver ranges', 'error');
+    } finally {
+      setApplying(false);
+    }
+  };
 
   return (
     <div className="space-y-4">
-      {(outOfBoundsCount > 0 || tightenCount > 0 || hasUpdates) && (
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-3 items-start">
-          <div className="lg:col-span-2 space-y-2">
-            {outOfBoundsCount > 0 && (
-              <div className="flex items-center gap-2 px-4 py-3 rounded-lg bg-warning-bg border border-warning/20 text-sm text-warning">
-                <TriangleAlert className="w-4 h-4 flex-shrink-0" />
-                <span>
-                  {outOfBoundsCount} sync {outOfBoundsCount === 1 ? 'entry has' : 'entries have'} runtime versions outside the configured range.
-                </span>
-              </div>
-            )}
+      {(outOfBoundsCount > 0 || tightenCount > 0) && (
+        <div className="space-y-2">
+          {outOfBoundsCount > 0 && (
+            <div className="flex items-center gap-2 px-4 py-3 rounded-lg bg-warning-bg border border-warning/20 text-sm text-warning">
+              <TriangleAlert className="w-4 h-4 flex-shrink-0" />
+              <span>
+                {outOfBoundsCount} sync {outOfBoundsCount === 1 ? 'entry has' : 'entries have'} runtime versions outside the configured range.
+              </span>
+            </div>
+          )}
 
-            {tightenCount > 0 && (
-              <div className="flex items-center gap-2 px-4 py-3 rounded-lg bg-bg-secondary border border-border text-sm text-text-secondary">
-                <CheckCircle2 className="w-4 h-4 flex-shrink-0 text-accent" />
-                <span>
-                  {tightenCount} sync {tightenCount === 1 ? 'entry has' : 'entries have'} optional range tightening suggestions based on currently running versions.
-                </span>
-              </div>
-            )}
-          </div>
-
-          {hasUpdates && (
-            <TaskPromptCard
-              hint="Ready to apply semverRange updates."
-              onCopy={() => {
-                copyToClipboard(data.ai_agent_prompt).then(ok =>
-                  toast(ok ? 'Prompt copied to clipboard!' : 'Failed to copy', ok ? 'success' : 'error')
-                );
-              }}
-            />
+          {tightenCount > 0 && (
+            <div className="flex items-center gap-2 px-4 py-3 rounded-lg bg-bg-secondary border border-border text-sm text-text-secondary">
+              <CheckCircle2 className="w-4 h-4 flex-shrink-0 text-accent" />
+              <span>
+                {tightenCount} sync {tightenCount === 1 ? 'entry has' : 'entries have'} optional range tightening suggestions based on currently running versions.
+              </span>
+            </div>
+          )}
+          {actionable.length > 0 && (
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <ConfigEditNote status={edits} />
+              <button
+                type="button"
+                disabled={!edits?.available || applying}
+                onClick={() => setPending(actionable)}
+                className="px-3 py-1.5 text-xs rounded-lg border border-accent/30 text-text-primary hover:bg-bg-tertiary disabled:opacity-40 transition-colors"
+              >
+                {applying ? 'Applying…' : `Apply ${actionable.length} suggested ${actionable.length === 1 ? 'range' : 'ranges'}`}
+              </button>
+            </div>
           )}
         </div>
       )}
@@ -255,6 +270,7 @@ function SemverUpdateTask({ data }: { data: SemverUpdateTasksResponse }) {
               <th className="px-3 py-2 text-left text-xs font-semibold text-text-muted uppercase tracking-wide">Runtime Versions</th>
               <th className="px-3 py-2 text-left text-xs font-semibold text-text-muted uppercase tracking-wide">Status</th>
               <th className="px-3 py-2 text-left text-xs font-semibold text-text-muted uppercase tracking-wide">Suggested Range</th>
+              <th className="px-3 py-2 text-right text-xs font-semibold text-text-muted uppercase tracking-wide">Action</th>
             </tr>
           </thead>
           <tbody>
@@ -287,11 +303,25 @@ function SemverUpdateTask({ data }: { data: SemverUpdateTasksResponse }) {
                     <span className="text-text-muted text-xs">—</span>
                   )}
                 </td>
+                <td className="px-3 py-3 text-right">
+                  {entry.suggested_ranges && entry.suggested_ranges.length > 0 && (entry.status === 'out_of_bounds' || entry.status === 'tighten') ? (
+                    <button
+                      type="button"
+                      disabled={!edits?.available || applying}
+                      onClick={() => setPending([{ target: entry.target, ranges: entry.suggested_ranges || [] }])}
+                      className="px-2.5 py-1 text-xs rounded-lg border border-accent/30 text-text-secondary hover:bg-bg-tertiary disabled:opacity-40 transition-colors"
+                    >
+                      Apply
+                    </button>
+                  ) : (
+                    <span className="text-text-muted text-xs">—</span>
+                  )}
+                </td>
               </tr>
             ))}
             {displayedEntries.length === 0 && (
               <tr>
-                <td colSpan={5} className="px-3 py-8 text-center text-xs text-text-muted">
+                <td colSpan={6} className="px-3 py-8 text-center text-xs text-text-muted">
                   No out-of-bounds or tighten entries right now. Use Show all to view current entries.
                 </td>
               </tr>
@@ -299,7 +329,13 @@ function SemverUpdateTask({ data }: { data: SemverUpdateTasksResponse }) {
           </tbody>
         </table>
       </div>
-
+      <ConfirmModal
+        open={!!pending}
+        title="Update semver ranges"
+        message={pending ? `Write ${pending.length} suggested ${pending.length === 1 ? 'range' : 'ranges'} to the suppline config${edits?.mode === 'git' ? ' and commit it' : ''}?` : ''}
+        onConfirm={() => { if (pending) void applyRanges(pending); }}
+        onCancel={() => setPending(null)}
+      />
     </div>
   );
 }
@@ -313,27 +349,14 @@ function RuntimeUnusedRepoStatusBadge() {
   );
 }
 
-function buildRuntimeUnusedPrompt(entries: RepositoriesResponse['Repositories']): string {
-  if (!entries || entries.length === 0) {
-    return '';
-  }
-
-  const uniqueTargets = Array.from(new Set(entries.map(entry => entry.Name).filter(Boolean))).sort();
-  if (uniqueTargets.length === 0) {
-    return '';
-  }
-
-  const targetsList = uniqueTargets.map(target => `  - ${target}`).join('\n');
-  return [
-    'Remove the following sync entries completely:',
-    targetsList,
-  ].join('\n');
-}
-
 function RuntimeUnusedRepositoryTask({
   data,
+  edits,
+  onChanged,
 }: {
   data: RepositoriesResponse;
+  edits: ConfigEditStatus | null;
+  onChanged: () => void;
 }) {
   const { apiClient } = useAuth();
   const { toast } = useToast();
@@ -341,6 +364,8 @@ function RuntimeUnusedRepositoryTask({
   const [whitelist, setWhitelist] = useState<string[]>([]);
   const [busyKey, setBusyKey] = useState<string | null>(null);
   const [confirmRescan, setConfirmRescan] = useState('');
+  const [removing, setRemoving] = useState(false);
+  const [pendingRemoval, setPendingRemoval] = useState<string[] | null>(null);
 
   const loadWhitelist = useCallback(async () => {
     const result = await apiClient.getRuntimeUnusedWhitelist();
@@ -414,42 +439,55 @@ function RuntimeUnusedRepositoryTask({
   }
 
   const unusedCount = actionableRepositories.length;
-  const aiAgentPrompt = buildRuntimeUnusedPrompt(actionableRepositories);
-  const hasUpdates = aiAgentPrompt.trim().length > 0;
+  const removable = Array.from(new Set(actionableRepositories.map(entry => entry.Name).filter(Boolean)));
+
+  const removeTargets = async (targets: string[]) => {
+    setPendingRemoval(null);
+    setRemoving(true);
+    try {
+      const result = await apiClient.removeSyncTargets(targets);
+      toast(configEditMessage(result, result.updated === 1 ? 'sync entry' : 'sync entries'), result.updated > 0 ? 'success' : 'warning');
+      if (result.updated > 0) onChanged();
+    } catch (e: unknown) {
+      toast(e instanceof Error ? e.message : 'Failed to remove sync entries', 'error');
+    } finally {
+      setRemoving(false);
+    }
+  };
 
   return (
     <div className="space-y-4">
-      {(unusedCount > 0 || hasUpdates) && (
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-3 items-start">
-          <div className="lg:col-span-2">
-            {unusedCount > 0 && (
-              <div className="flex items-center gap-2 px-4 py-3 rounded-lg bg-warning-bg border border-warning/20 text-sm text-warning">
-                <TriangleAlert className="w-4 h-4 flex-shrink-0" />
-                <span>
-                  {unusedCount} {unusedCount === 1 ? 'repository is' : 'repositories are'} not observed in runtime inventory.
-                </span>
-              </div>
-            )}
+      {(unusedCount > 0 || hiddenByWhitelistCount > 0) && (
+        <div className="space-y-2">
+          {unusedCount > 0 && (
+            <div className="flex items-center gap-2 px-4 py-3 rounded-lg bg-warning-bg border border-warning/20 text-sm text-warning">
+              <TriangleAlert className="w-4 h-4 flex-shrink-0" />
+              <span>
+                {unusedCount} {unusedCount === 1 ? 'repository is' : 'repositories are'} not observed in runtime inventory.
+              </span>
+            </div>
+          )}
 
-            {hiddenByWhitelistCount > 0 && (
-              <div className="flex items-center gap-2 px-4 py-3 rounded-lg bg-bg-secondary border border-border text-sm text-text-secondary">
-                <CheckCircle2 className="w-4 h-4 flex-shrink-0 text-accent" />
-                <span>
-                  {hiddenByWhitelistCount} {hiddenByWhitelistCount === 1 ? 'repository is' : 'repositories are'} hidden by whitelist.
-                </span>
-              </div>
-            )}
-          </div>
-
-          {hasUpdates && (
-            <TaskPromptCard
-              hint="Ready to remove or disable unused sync targets."
-              onCopy={() => {
-                copyToClipboard(aiAgentPrompt).then(ok =>
-                  toast(ok ? 'Prompt copied to clipboard!' : 'Failed to copy', ok ? 'success' : 'error')
-                );
-              }}
-            />
+          {hiddenByWhitelistCount > 0 && (
+            <div className="flex items-center gap-2 px-4 py-3 rounded-lg bg-bg-secondary border border-border text-sm text-text-secondary">
+              <CheckCircle2 className="w-4 h-4 flex-shrink-0 text-accent" />
+              <span>
+                {hiddenByWhitelistCount} {hiddenByWhitelistCount === 1 ? 'repository is' : 'repositories are'} hidden by whitelist.
+              </span>
+            </div>
+          )}
+          {removable.length > 0 && (
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <ConfigEditNote status={edits} />
+              <button
+                type="button"
+                disabled={!edits?.available || removing}
+                onClick={() => setPendingRemoval(removable)}
+                className="px-3 py-1.5 text-xs rounded-lg border border-danger/30 text-danger hover:bg-danger-bg disabled:opacity-40 transition-colors"
+              >
+                {removing ? 'Removing…' : `Remove ${removable.length} unused ${removable.length === 1 ? 'repository' : 'repositories'}`}
+              </button>
+            </div>
           )}
         </div>
       )}
@@ -492,6 +530,16 @@ function RuntimeUnusedRepositoryTask({
                 </td>
                 <td className="px-3 py-3 text-right">
                   <div className="inline-flex items-center gap-2">
+                    {!isWhitelisted && (
+                      <button
+                        type="button"
+                        disabled={!edits?.available || removing}
+                        onClick={() => setPendingRemoval([entry.Name])}
+                        className="px-2.5 py-1 text-xs rounded-lg border border-danger/30 text-danger hover:bg-danger-bg disabled:opacity-40 transition-colors"
+                      >
+                        Remove
+                      </button>
+                    )}
                     <button
                       onClick={() => setConfirmRescan(entry.Name)}
                       className="px-2.5 py-1 text-xs rounded-lg border border-warning/30 text-warning hover:bg-warning-bg transition-colors flex items-center gap-1"
@@ -536,6 +584,13 @@ function RuntimeUnusedRepositoryTask({
         onConfirm={() => handleRescan(confirmRescan)}
         onCancel={() => setConfirmRescan('')}
       />
+      <ConfirmModal
+        open={!!pendingRemoval}
+        title="Remove unused sync repositories"
+        message={pendingRemoval ? `Remove ${pendingRemoval.length} sync ${pendingRemoval.length === 1 ? 'entry' : 'entries'} from the suppline config${edits?.mode === 'git' ? ' and commit it' : ''}?` : ''}
+        onConfirm={() => { if (pendingRemoval) void removeTargets(pendingRemoval); }}
+        onCancel={() => setPendingRemoval(null)}
+      />
     </div>
   );
 }
@@ -557,25 +612,22 @@ function VEXExpiryStatusBadge({ status }: { status: string }) {
   );
 }
 
-function buildInactiveVEXPrompt(entries: VEXSummary[]): string {
-  if (!entries || entries.length === 0) {
-    return '';
-  }
-
-  const lines = entries
-    .slice()
-    .sort((a, b) => a.CVEID.localeCompare(b.CVEID))
-    .map(entry => `- ${entry.CVEID} | state=${entry.State}`);
-
-  return [
-    'Update suppline.yml x-vex entries based on this inactive VEX review. Remove the following VEX Entries from all sync entries:',
-    ...lines,
-  ].join('\n');
-}
-
-function VEXExpiryTask({ data, inactiveEntries }: { data: VEXExpiryTasksResponse; inactiveEntries: VEXSummary[] }) {
+function VEXExpiryTask({
+  data,
+  inactiveEntries,
+  edits,
+  onChanged,
+}: {
+  data: VEXExpiryTasksResponse;
+  inactiveEntries: VEXSummary[];
+  edits: ConfigEditStatus | null;
+  onChanged: () => void;
+}) {
+  const { apiClient } = useAuth();
   const { toast } = useToast();
   const [showAll, setShowAll] = useState(false);
+  const [removing, setRemoving] = useState(false);
+  const [pendingRemoval, setPendingRemoval] = useState<string[] | null>(null);
 
   const inactiveCount = inactiveEntries.length;
   const hasExpiryEntries = data.entries.length > 0;
@@ -593,56 +645,61 @@ function VEXExpiryTask({ data, inactiveEntries }: { data: VEXExpiryTasksResponse
   const expiredCount = data.entries.filter(e => e.status === 'expired').length;
   const expiringSoonCount = data.entries.filter(e => e.status === 'expiring_soon').length;
   const displayedEntries = showAll ? data.entries : data.entries.slice(0, 12);
-  const expiryPrompt = data.ai_agent_prompt.trim();
-  const inactivePrompt = buildInactiveVEXPrompt(inactiveEntries).trim();
-  const combinedPrompt = [
-    expiryPrompt && `Expiry-related VEX review tasks:\n${expiryPrompt}`,
-    inactivePrompt && `Inactive VEX review tasks:\n${inactivePrompt}`,
-  ].filter(Boolean).join('\n\n---\n\n');
-  const hasUpdates = combinedPrompt.length > 0;
-  const showPromptHint = inactiveCount > 0
-    ? 'Ready to review inactive, expired, and expiring VEX statements.'
-    : 'Ready to review and fix expiring VEX statements.';
+  const removable = inactiveEntries.map(entry => entry.CVEID).filter(Boolean);
+
+  const removeStatements = async (ids: string[]) => {
+    setPendingRemoval(null);
+    setRemoving(true);
+    try {
+      const result = await apiClient.removeVEXStatements(ids);
+      toast(configEditMessage(result, result.updated === 1 ? 'statement' : 'statements'), result.updated > 0 ? 'success' : 'warning');
+      if (result.updated > 0) onChanged();
+    } catch (e: unknown) {
+      toast(e instanceof Error ? e.message : 'Failed to remove VEX statements', 'error');
+    } finally {
+      setRemoving(false);
+    }
+  };
 
   return (
     <div className="space-y-4">
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-3 items-start">
-        <div className="lg:col-span-2 space-y-2">
-          {inactiveCount > 0 && (
-            <div className="flex items-center gap-2 px-4 py-3 rounded-lg bg-warning-bg border border-warning/20 text-sm text-warning">
-              <TriangleAlert className="w-4 h-4 flex-shrink-0" />
-              <span>
-                {inactiveCount} VEX {inactiveCount === 1 ? 'statement is' : 'statements are'} inactive and should be removed or narrowed.
-              </span>
-            </div>
-          )}
-          {expiredCount > 0 && (
-            <div className="flex items-center gap-2 px-4 py-3 rounded-lg bg-danger-bg border border-danger/20 text-sm text-danger">
-              <TriangleAlert className="w-4 h-4 flex-shrink-0" />
-              <span>
-                {expiredCount} VEX {expiredCount === 1 ? 'statement is' : 'statements are'} expired and should be updated or removed.
-              </span>
-            </div>
-          )}
-          {expiringSoonCount > 0 && (
-            <div className="flex items-center gap-2 px-4 py-3 rounded-lg bg-warning-bg border border-warning/20 text-sm text-warning">
-              <Clock3 className="w-4 h-4 flex-shrink-0" />
-              <span>
-                {expiringSoonCount} VEX {expiringSoonCount === 1 ? 'statement is' : 'statements are'} expiring within 7 days.
-              </span>
-            </div>
-          )}
-        </div>
-
-        {hasUpdates && (
-          <TaskPromptCard
-            hint={showPromptHint}
-            onCopy={() => {
-              copyToClipboard(combinedPrompt).then(ok =>
-                toast(ok ? 'Prompt copied to clipboard!' : 'Failed to copy', ok ? 'success' : 'error')
-              );
-            }}
-          />
+      <div className="space-y-2">
+        {inactiveCount > 0 && (
+          <div className="flex items-center gap-2 px-4 py-3 rounded-lg bg-warning-bg border border-warning/20 text-sm text-warning">
+            <TriangleAlert className="w-4 h-4 flex-shrink-0" />
+            <span>
+              {inactiveCount} VEX {inactiveCount === 1 ? 'statement is' : 'statements are'} unused and can be removed.
+            </span>
+          </div>
+        )}
+        {expiredCount > 0 && (
+          <div className="flex items-center gap-2 px-4 py-3 rounded-lg bg-danger-bg border border-danger/20 text-sm text-danger">
+            <TriangleAlert className="w-4 h-4 flex-shrink-0" />
+            <span>
+              {expiredCount} VEX {expiredCount === 1 ? 'statement is' : 'statements are'} expired and should be updated or removed.
+            </span>
+          </div>
+        )}
+        {expiringSoonCount > 0 && (
+          <div className="flex items-center gap-2 px-4 py-3 rounded-lg bg-warning-bg border border-warning/20 text-sm text-warning">
+            <Clock3 className="w-4 h-4 flex-shrink-0" />
+            <span>
+              {expiringSoonCount} VEX {expiringSoonCount === 1 ? 'statement is' : 'statements are'} expiring within 7 days.
+            </span>
+          </div>
+        )}
+        {removable.length > 0 && (
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <ConfigEditNote status={edits} />
+            <button
+              type="button"
+              disabled={!edits?.available || removing}
+              onClick={() => setPendingRemoval(removable)}
+              className="px-3 py-1.5 text-xs rounded-lg border border-danger/30 text-danger hover:bg-danger-bg disabled:opacity-40 transition-colors"
+            >
+              {removing ? 'Removing…' : `Remove ${removable.length} unused ${removable.length === 1 ? 'statement' : 'statements'}`}
+            </button>
+          </div>
         )}
       </div>
 
@@ -694,6 +751,7 @@ function VEXExpiryTask({ data, inactiveEntries }: { data: VEXExpiryTasksResponse
                   <th className="px-3 py-2 text-left text-xs font-semibold text-text-muted uppercase tracking-wide">Repositories</th>
                   <th className="px-3 py-2 text-left text-xs font-semibold text-text-muted uppercase tracking-wide">State</th>
                   <th className="px-3 py-2 text-left text-xs font-semibold text-text-muted uppercase tracking-wide">Expires</th>
+                  <th className="px-3 py-2 text-right text-xs font-semibold text-text-muted uppercase tracking-wide">Action</th>
                 </tr>
               </thead>
               <tbody>
@@ -714,6 +772,16 @@ function VEXExpiryTask({ data, inactiveEntries }: { data: VEXExpiryTasksResponse
                         <td className="px-3 py-3 text-xs text-text-secondary">
                           {entry.ExpiresAt ? new Date(entry.ExpiresAt * 1000).toISOString().slice(0, 10) : 'No expiry'}
                         </td>
+                        <td className="px-3 py-3 text-right">
+                          <button
+                            type="button"
+                            disabled={!edits?.available || removing}
+                            onClick={() => setPendingRemoval([entry.CVEID])}
+                            className="px-2.5 py-1 text-xs rounded-lg border border-danger/30 text-danger hover:bg-danger-bg disabled:opacity-40 transition-colors"
+                          >
+                            Remove
+                          </button>
+                        </td>
                       </tr>
                     );
                   })}
@@ -722,6 +790,13 @@ function VEXExpiryTask({ data, inactiveEntries }: { data: VEXExpiryTasksResponse
           </div>
         </div>
       )}
+      <ConfirmModal
+        open={!!pendingRemoval}
+        title="Remove unused VEX statements"
+        message={pendingRemoval ? `Remove ${pendingRemoval.length} unused VEX ${pendingRemoval.length === 1 ? 'statement' : 'statements'} from the suppline config${edits?.mode === 'git' ? ' and commit it' : ''}?` : ''}
+        onConfirm={() => { if (pendingRemoval) void removeStatements(pendingRemoval); }}
+        onCancel={() => setPendingRemoval(null)}
+      />
     </div>
   );
 }
@@ -737,43 +812,35 @@ export default function TasksPage() {
   const [vexExpiryData, setVexExpiryData] = useState<VEXExpiryTasksResponse | null>(null);
   const [inactiveVEXData, setInactiveVEXData] = useState<VEXSummary[]>([]);
   const [policyCompliance, setPolicyCompliance] = useState<PolicyComplianceSnapshot | null>(null);
-  const [triageStatus, setTriageStatus] = useState<TriageStatus | null>(null);
-  const [triageRuns, setTriageRuns] = useState<TriageRun[]>([]);
+  const [configEdits, setConfigEdits] = useState<ConfigEditStatus | null>(null);
+  const [triageRefresh, setTriageRefresh] = useState(0);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
-
-  const loadTriage = useCallback(async () => {
-    const [status, runs] = await Promise.all([
-      apiClient.getTriageStatus().catch(() => null),
-      apiClient.getTriageRuns({ limit: 50 }).catch(() => [] as TriageRun[]),
-    ]);
-    setTriageStatus(status);
-    setTriageRuns(runs);
-  }, [apiClient]);
 
   const load = useCallback(async () => {
     setLoading(true);
     setError('');
     try {
-      const [semverResult, runtimeUnusedResult, vexExpiryResult, inactiveVEXResult, policySnap] = await Promise.all([
+      const [semverResult, runtimeUnusedResult, vexExpiryResult, inactiveVEXResult, policySnap, editStatus] = await Promise.all([
         apiClient.getSemverUpdateTasks(),
         loadAllRuntimeUnusedRepositories(apiClient),
         apiClient.getVEXExpiryTasks(),
         apiClient.getInactiveVEXStatements(),
         fetchPolicyComplianceData(apiClient, inUseRequestParams),
-        loadTriage(),
+        apiClient.getConfigEdits().catch(() => ({ available: false, mode: 'unavailable', detail: 'Config editing status is unavailable.' })),
       ]);
       setSemverData(semverResult);
       setRuntimeUnusedData(runtimeUnusedResult);
       setVexExpiryData(vexExpiryResult);
       setInactiveVEXData(inactiveVEXResult);
       setPolicyCompliance(policySnap);
+      setConfigEdits(editStatus);
     } catch (e: unknown) {
       setError(e instanceof Error ? e.message : 'Failed to load tasks');
     } finally {
       setLoading(false);
     }
-  }, [apiClient, inUseRequestParams, loadTriage]);
+  }, [apiClient, inUseRequestParams]);
 
   useEffect(() => { scheduleEffectLoad(load); }, [load]);
 
@@ -829,7 +896,7 @@ export default function TasksPage() {
             showCardHeading={false}
             policyByRepo={policyCompliance.policyByRepo}
             failedScans={policyCompliance.failedScans}
-            onTriageQueued={loadTriage}
+            onTriageQueued={() => setTriageRefresh(value => value + 1)}
           />
         ) : null}
       </TaskSection>
@@ -839,13 +906,13 @@ export default function TasksPage() {
         active={activeAnchor === 'triage-status'}
         icon={<Scale className="w-4 h-4 text-accent" />}
         title="Triage Status"
-        subtitle="Recent automated decisions. Counts cover the latest 50 runs."
-        loading={loading}
+        subtitle="Current rejected and unresolved automated triages. Accepted and manual statements stay on the Triage page."
+        loading={false}
         loadingMessage="Loading triage status…"
-        error={error}
+        error=""
         onRetry={load}
       >
-        <TriageStatusPanel status={triageStatus} runs={triageRuns} />
+        <TriageBoard mode="attention" refreshToken={triageRefresh} />
       </TaskSection>
 
       {/* SemVer Range Updates */}
@@ -860,7 +927,7 @@ export default function TasksPage() {
         error={error}
         onRetry={load}
       >
-        {semverData ? <SemverUpdateTask data={semverData} /> : null}
+        {semverData ? <SemverUpdateTask data={semverData} edits={configEdits} onChanged={load} /> : null}
       </TaskSection>
 
       {/* Runtime Unused Repositories */}
@@ -875,7 +942,7 @@ export default function TasksPage() {
         error={error}
         onRetry={load}
       >
-        {runtimeUnusedData ? <RuntimeUnusedRepositoryTask data={runtimeUnusedData} /> : null}
+        {runtimeUnusedData ? <RuntimeUnusedRepositoryTask data={runtimeUnusedData} edits={configEdits} onChanged={load} /> : null}
       </TaskSection>
 
       {/* VEX Review Tasks */}
@@ -890,7 +957,7 @@ export default function TasksPage() {
         error={error}
         onRetry={load}
       >
-        {vexExpiryData ? <VEXExpiryTask data={vexExpiryData} inactiveEntries={inactiveVEXData} /> : null}
+        {vexExpiryData ? <VEXExpiryTask data={vexExpiryData} inactiveEntries={inactiveVEXData} edits={configEdits} onChanged={load} /> : null}
       </TaskSection>
     </div>
   );

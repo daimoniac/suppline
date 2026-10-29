@@ -218,8 +218,29 @@ export class APIClient {
   async getKyvernoPolicy() { return this.requestText('/api/v1/integration/kyverno/policy'); }
 
   // Tasks
+  async getConfigEdits(): Promise<ConfigEditStatus> {
+    return this.request<ConfigEditStatus>('/api/v1/tasks/config-edits');
+  }
   async getSemverUpdateTasks(): Promise<SemverUpdateTasksResponse> {
     return this.request<SemverUpdateTasksResponse>('/api/v1/tasks/semver-updates');
+  }
+  async applySemverUpdates(updates: Array<{ target: string; ranges: string[] }>): Promise<ConfigEditResult> {
+    return this.request<ConfigEditResult>('/api/v1/tasks/semver-updates', {
+      method: 'POST',
+      body: JSON.stringify({ updates }),
+    });
+  }
+  async removeSyncTargets(targets: string[]): Promise<ConfigEditResult> {
+    return this.request<ConfigEditResult>('/api/v1/tasks/sync-removals', {
+      method: 'POST',
+      body: JSON.stringify({ targets }),
+    });
+  }
+  async removeVEXStatements(ids: string[]): Promise<ConfigEditResult> {
+    return this.request<ConfigEditResult>('/api/v1/tasks/vex-removals', {
+      method: 'POST',
+      body: JSON.stringify({ ids }),
+    });
   }
   async getVEXExpiryTasks(): Promise<VEXExpiryTasksResponse> {
     return this.request<VEXExpiryTasksResponse>('/api/v1/tasks/vex-expiry');
@@ -526,6 +547,18 @@ export interface KubernetesClusterImageSummary {
   ImageRef: string;
   Tag: string;
   Digest: string;
+}
+
+export interface ConfigEditStatus {
+  available: boolean;
+  mode: string;
+  detail?: string;
+}
+
+export interface ConfigEditResult {
+  mode: string;
+  commit?: string;
+  updated: number;
 }
 
 export interface SemverUpdateEntry {

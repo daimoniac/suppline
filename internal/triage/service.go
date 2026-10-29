@@ -731,6 +731,61 @@ func (s *Service) PromoteManual(ctx context.Context, repository string, statemen
 	return commit, nil
 }
 
+// ConfigWriteMode reports where housekeeping edits are written.
+// "git" commits the configured config repository. "local" updates the file
+// suppline was started with.
+func (s *Service) ConfigWriteMode() (string, error) {
+	if s == nil {
+		return "", fmt.Errorf("config editing is unavailable")
+	}
+	if s.settings.ConfigRepo != nil {
+		return "git", nil
+	}
+	if strings.TrimSpace(s.settings.ConfigPath) == "" {
+		return "", fmt.Errorf("suppline config path is not set")
+	}
+	if err := Writable(s.settings.ConfigPath); err != nil {
+		return "", err
+	}
+	return "local", nil
+}
+
+// CommitConfig applies mutate to suppline.yaml and either pushes a commit or
+// writes the local file. An unchanged document is not written.
+func (s *Service) CommitConfig(ctx context.Context, message string, mutate func([]byte) ([]byte, error)) (string, error) {
+	if s == nil {
+		return "", fmt.Errorf("config editing is unavailable")
+	}
+	if strings.TrimSpace(message) == "" {
+		return "", fmt.Errorf("commit message is required")
+	}
+	if s.settings.ConfigRepo != nil {
+		spec, err := s.settings.configSpec()
+		if err != nil {
+			return "", err
+		}
+		return s.git.CommitFile(ctx, spec, s.settings.ConfigRepo.Path, mutate, message)
+	}
+	if strings.TrimSpace(s.settings.ConfigPath) == "" {
+		return "", fmt.Errorf("suppline config path is not set")
+	}
+	current, err := readFile(s.settings.ConfigPath)
+	if err != nil {
+		return "", err
+	}
+	updated, err := mutate(current)
+	if err != nil {
+		return "", err
+	}
+	if string(updated) == string(current) {
+		return "", nil
+	}
+	if err := WriteLocal(s.settings.ConfigPath, s.settings.BackupRetention, updated); err != nil {
+		return "", err
+	}
+	return "", nil
+}
+
 func (s *Service) writeStatement(ctx context.Context, repository string, statement types.VEXStatement, message string, edit func([]byte, string, types.VEXStatement) ([]byte, error)) (string, error) {
 	if s.settings.ConfigRepo != nil {
 		spec, err := s.settings.configSpec()

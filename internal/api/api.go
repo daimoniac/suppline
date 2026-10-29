@@ -174,7 +174,10 @@ func (s *APIServer) setupRoutes() {
 	s.router.HandleFunc("/metrics", s.corsMiddleware(s.handleMetrics))
 
 	// Task endpoints
-	s.router.HandleFunc("/api/v1/tasks/semver-updates", s.corsMiddleware(s.authMiddleware(s.handleGetSemverUpdateTasks, true)))
+	s.router.HandleFunc("/api/v1/tasks/config-edits", s.corsMiddleware(s.authMiddleware(s.handleConfigEditStatus, false)))
+	s.router.HandleFunc("/api/v1/tasks/semver-updates", s.corsMiddleware(s.authMiddleware(s.handleSemverUpdateTasks, true)))
+	s.router.HandleFunc("/api/v1/tasks/sync-removals", s.corsMiddleware(s.authMiddleware(s.handleRemoveSyncTargets, true)))
+	s.router.HandleFunc("/api/v1/tasks/vex-removals", s.corsMiddleware(s.authMiddleware(s.handleRemoveVEXStatements, true)))
 	s.router.HandleFunc("/api/v1/tasks/vex-expiry", s.corsMiddleware(s.authMiddleware(s.handleGetVEXExpiryTasks, true)))
 	s.router.HandleFunc("/api/v1/tasks/runtime-unused-whitelist", s.corsMiddleware(s.authMiddleware(s.handleRuntimeUnusedWhitelistRouter, false)))
 

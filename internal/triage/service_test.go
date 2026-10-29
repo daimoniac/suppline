@@ -360,3 +360,59 @@ func TestSetImageLabelsKeepsUnpack(t *testing.T) {
 		t.Fatal("labels and unpack are one seam")
 	}
 }
+
+func TestResolveKeepsConfigRepoWhenDisabled(t *testing.T) {
+	settings, err := Resolve(&config.TriageConfig{
+		Enabled:         false,
+		CheckoutDir:     "/tmp/checkouts",
+		BackupRetention: 3,
+		ConfigRepo:      &config.ConfigRepoConfig{URL: "https://example.com/cfg.git", Path: "suppline.yml"},
+	}, "/tmp/suppline.yml")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if settings.Enabled {
+		t.Fatal("disabled triage became enabled")
+	}
+	if settings.ConfigRepo == nil || settings.ConfigRepo.Path != "suppline.yml" {
+		t.Fatalf("config repo = %+v", settings.ConfigRepo)
+	}
+	if settings.BackupRetention != 3 || settings.CheckoutDir != "/tmp/checkouts" || settings.ConfigPath != "/tmp/suppline.yml" {
+		t.Fatalf("settings = %+v", settings)
+	}
+}
+
+func TestCommitConfigWritesLocalFile(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "suppline.yml")
+	if err := os.WriteFile(path, []byte("version: 1\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	svc, err := New(nil, path, nil, nil, nil, slog.Default())
+	if err != nil {
+		t.Fatal(err)
+	}
+	mode, err := svc.ConfigWriteMode()
+	if err != nil || mode != "local" {
+		t.Fatalf("mode %q err %v", mode, err)
+	}
+	commit, err := svc.CommitConfig(context.Background(), "chore(config): test [skip ci]", func(current []byte) ([]byte, error) {
+		return append(current, []byte("sync: []\n")...), nil
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if commit != "" {
+		t.Fatalf("local write returned commit %q", commit)
+	}
+	body, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(body), "sync: []") {
+		t.Fatalf("file = %s", body)
+	}
+	if _, err := os.Stat(path + ".bak.1"); err != nil {
+		t.Fatal(err)
+	}
+}

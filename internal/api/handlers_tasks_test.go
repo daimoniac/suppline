@@ -56,7 +56,7 @@ func regsyncWithVEX(target string, statements []types.VEXStatement) *config.Regs
 func TestHandleGetSemverUpdateTasks_MethodNotAllowed(t *testing.T) {
 	server := tasksTestServer(t, &mockStateStore{}, mockRegsyncConfig())
 
-	req := httptest.NewRequest(http.MethodPost, "/api/v1/tasks/semver-updates", nil)
+	req := httptest.NewRequest(http.MethodPut, "/api/v1/tasks/semver-updates", nil)
 	w := httptest.NewRecorder()
 	server.router.ServeHTTP(w, req)
 
