@@ -91,6 +91,17 @@ function needsManualTriage(row: StatementRow) {
     || row.run.Verdict === 'uncertain';
 }
 
+function affectsImages(row: StatementRow) {
+  return row.affectedImages > 0;
+}
+
+// Settled "not affected" statements sit below everything else. Open runs and
+// any other state still need a look, even when the written verdict is not_affected.
+function needsAttention(row: StatementRow) {
+  if (row.needsFix || row.source === 'open') return true;
+  return row.state !== 'not_affected';
+}
+
 function StatusPill({ status }: { status: string }) {
   const styles: Record<string, string> = {
     dry_run: 'bg-info-bg text-info',
@@ -360,6 +371,7 @@ export function TriageBoard({
   }, [active.length, refresh]);
 
   let pool = mode === 'attention' ? rows.filter(needsManualTriage) : rows.filter(row => matchesOrigin(row, origin));
+  pool = pool.filter(affectsImages);
   if (search) {
     const query = search.toLowerCase();
     pool = pool.filter(row => row.cve.toLowerCase().includes(query) || row.repository.toLowerCase().includes(query));
@@ -375,21 +387,26 @@ export function TriageBoard({
   }
 
   const { sortColumn: sortBy, sortDirection: sortDir, toggleSort, page, setPage, totalPages, offset } = useSortablePaginationState({
-    initialSortColumn: 'affectedImages',
+    initialSortColumn: 'attention',
     initialSortDirection: 'desc',
-    resolveNewColumnDirection: col => (col === 'affectedImages' || col === 'createdAt' ? 'desc' : 'asc'),
+    resolveNewColumnDirection: col => (col === 'attention' || col === 'affectedImages' || col === 'createdAt' ? 'desc' : 'asc'),
     pageSize,
     totalItems: pool.length,
   });
 
   const sorted = [...pool].sort((a, b) => {
     const value = (row: StatementRow) => {
+      if (sortBy === 'attention') return needsAttention(row) ? 1 : 0;
       if (sortBy === 'affectedImages') return row.affectedImages;
       if (sortBy === 'expiresAt') return row.expiresAt;
       return row.createdAt;
     };
     const diff = value(a) - value(b);
-    return sortDir === 'asc' ? diff : -diff;
+    if (diff !== 0) return sortDir === 'asc' ? diff : -diff;
+    if (sortBy !== 'attention') return 0;
+    const images = b.affectedImages - a.affectedImages;
+    if (images !== 0) return images;
+    return b.createdAt - a.createdAt;
   });
   const paged = sorted.slice(offset, offset + pageSize);
 
@@ -434,6 +451,7 @@ export function TriageBoard({
   };
 
   const sortColumns = [
+    { col: 'attention', label: 'Attention' },
     { col: 'affectedImages', label: 'Affected Images' },
     { col: 'expiresAt', label: 'Expiry' },
     { col: 'createdAt', label: 'Created' },
@@ -442,7 +460,7 @@ export function TriageBoard({
   if (loading && rows.length === 0 && active.length === 0) return <LoadingState message="Loading triage..." />;
   if (error && rows.length === 0) return <ErrorState message={error} onRetry={() => refresh(false)} />;
 
-  const promptRows = mode === 'attention' ? rows.filter(needsManualTriage) : rows;
+  const promptRows = (mode === 'attention' ? rows.filter(needsManualTriage) : rows).filter(affectsImages);
 
   return (
     <div>
