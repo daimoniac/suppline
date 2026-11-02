@@ -10,6 +10,7 @@ func TestCurrentArtifactTagBindingJoinShape(t *testing.T) {
 		t.Fatalf("MAX(a2.id) count=%d, want 1", got)
 	}
 	for _, want := range []string{
+		"WHERE a2.superseded = 0",
 		"GROUP BY a2.repository_id, a2.tag",
 		"a.repository_id = latest.repository_id",
 		"a.tag IS NOT DISTINCT FROM latest.tag",

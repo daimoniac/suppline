@@ -860,7 +860,7 @@ func TestProcessTag_FailSafeBehavior(t *testing.T) {
 	}
 
 	// Process tag - should enqueue despite error (fail-safe)
-	err := w.processTag(ctx, "myorg/app1", "v1.0")
+	_, err := w.processTag(ctx, "myorg/app1", "v1.0")
 	if err != nil {
 		t.Fatalf("processTag failed: %v", err)
 	}
@@ -1214,5 +1214,72 @@ func TestWatcher_Discover_BindsAliasTagsForSharedDigest(t *testing.T) {
 	queueDepth, _ := mockQueue.GetQueueDepth(ctx)
 	if queueDepth != 0 {
 		t.Fatalf("expected 0 scan tasks for already-scanned digest, got %d", queueDepth)
+	}
+}
+
+type renewalStore struct {
+	*mockStateStore
+	renewals []statestore.DigestRenewal
+}
+
+func (s *renewalStore) ReconcileSupersededDigests(ctx context.Context, repository string, currentDigests []string, rescanInterval time.Duration) ([]statestore.DigestRenewal, error) {
+	return s.renewals, nil
+}
+
+func TestWatcher_Discover_RenewsSupersededDigest(t *testing.T) {
+	ctx := context.Background()
+	repo := "hostingmaloonde/dhi_traefik"
+	current := "sha256:1a64c035a0d036ffbcfa94d085a53290b0dccbfd9ad199f188f555e118f234aa"
+	pinned := "sha256:f3f03c346b8ef599c1ef8a975066d96561270c9737884dab222414e8d0fee473"
+
+	mockRegistry := &mockRegistryClient{
+		repositories: []string{repo},
+		tags:         map[string][]string{repo: {"3.7.13-debian13"}},
+		digests:      map[string]string{repo + ":3.7.13-debian13": current},
+	}
+	store := &renewalStore{
+		mockStateStore: &mockStateStore{scans: map[string]*statestore.ScanRecord{}},
+		renewals: []statestore.DigestRenewal{{
+			Repository: repo,
+			Digest:     pinned,
+			Tag:        "3.7.13-debian13",
+		}},
+	}
+	mockQueue := queue.NewInMemoryQueue(100)
+	logger := observability.NewLogger("error")
+	w := NewWatcher(mockRegistry, &config.RegsyncConfig{
+		Sync: []config.SyncEntry{{Target: repo}},
+	}, store, mockQueue, Config{PollInterval: time.Second, RescanInterval: 24 * time.Hour}, logger)
+
+	if err := w.Discover(ctx); err != nil {
+		t.Fatalf("Discover failed: %v", err)
+	}
+
+	depth, err := mockQueue.GetQueueDepth(ctx)
+	if err != nil {
+		t.Fatalf("GetQueueDepth: %v", err)
+	}
+	if depth != 2 {
+		t.Fatalf("queue depth = %d, want current tag scan and pinned digest renewal", depth)
+	}
+	var retained *queue.ScanTask
+	for i := 0; i < depth; i++ {
+		task, err := mockQueue.Dequeue(ctx)
+		if err != nil {
+			t.Fatalf("Dequeue: %v", err)
+		}
+		if task.RetainSuperseded {
+			retained = task
+			continue
+		}
+		if task.Digest != current || task.RetainSuperseded {
+			t.Fatalf("unexpected task %+v", task)
+		}
+	}
+	if retained == nil {
+		t.Fatal("pinned digest was not enqueued for renewal")
+	}
+	if retained.Repository != repo || retained.Digest != pinned || retained.Tag != "3.7.13-debian13" || !retained.IsRescan {
+		t.Fatalf("retained renewal = %+v", retained)
 	}
 }

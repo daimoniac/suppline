@@ -20,9 +20,10 @@ type Enqueuer struct {
 
 // Image identifies the image to scan.
 type Image struct {
-	Repository string
-	Digest     string
-	Tag        string
+	Repository       string
+	Digest           string
+	Tag              string
+	RetainSuperseded bool
 }
 
 // DiscoveryKind describes why discovery requested a scan.
@@ -85,17 +86,18 @@ func (e *Enqueuer) enqueue(ctx context.Context, image Image, isRescan, isFirstSc
 	}
 
 	task := &queue.ScanTask{
-		ID:            fmt.Sprintf("%s-%d", image.Digest, idTime.Unix()),
-		Repository:    image.Repository,
-		Digest:        image.Digest,
-		Tag:           image.Tag,
-		EnqueuedAt:    enqueuedAt,
-		Attempts:      0,
-		IsRescan:      isRescan,
-		IsFirstScan:   isFirstScan,
-		Priority:      priority,
-		VEXStatements: evidence.VEXStatements,
-		UseVEXRepo:    evidence.UseVEXRepo,
+		ID:               fmt.Sprintf("%s-%d", image.Digest, idTime.Unix()),
+		Repository:       image.Repository,
+		Digest:           image.Digest,
+		Tag:              image.Tag,
+		EnqueuedAt:       enqueuedAt,
+		Attempts:         0,
+		IsRescan:         isRescan,
+		IsFirstScan:      isFirstScan,
+		Priority:         priority,
+		VEXStatements:    evidence.VEXStatements,
+		UseVEXRepo:       evidence.UseVEXRepo,
+		RetainSuperseded: image.RetainSuperseded,
 	}
 
 	if err := e.taskQueue.Enqueue(ctx, task); err != nil {

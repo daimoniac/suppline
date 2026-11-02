@@ -60,6 +60,9 @@ type ScanTask struct {
 	// UseVEXRepo, when true, passes --vex repo to Trivy during vulnerability scanning
 	// to apply the Aqua VEX Hub and suppress not_affected CVEs before policy evaluation.
 	UseVEXRepo bool
+	// RetainSuperseded records the scan without taking over the tag's current
+	// binding. The digest is still referenced by a cluster after the tag moved.
+	RetainSuperseded bool
 }
 
 // InMemoryQueue implements TaskQueue using priority queues

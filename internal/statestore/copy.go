@@ -57,6 +57,10 @@ func CopySQLiteToPostgres(ctx context.Context, sqlitePath, postgresURL string, l
 	}
 	var artifactPtrs []artifactScanPtr
 
+	hasSuperseded, err := sqliteHasColumn(ctx, src, "artifacts", "superseded")
+	if err != nil {
+		return err
+	}
 	artRows, err := src.QueryContext(ctx, `
 		SELECT id, repository_id, digest, tag, first_seen, last_seen, image_created_at, last_scan_id, next_scan_at, created_at
 		FROM artifacts
@@ -81,6 +85,12 @@ func CopySQLiteToPostgres(ctx context.Context, sqlitePath, postgresURL string, l
 		return errors.NewTransientf("iterate artifacts: %w", err)
 	}
 
+	artifactCopyQuery := `SELECT id, repository_id, digest, tag, first_seen, last_seen, image_created_at, NULL, next_scan_at, created_at, 0 AS superseded FROM artifacts`
+	if hasSuperseded {
+		artifactCopyQuery = `SELECT id, repository_id, digest, tag, first_seen, last_seen, image_created_at, NULL, next_scan_at, created_at, superseded FROM artifacts`
+	}
+	artifactCopyInsert := `INSERT INTO artifacts (id, repository_id, digest, tag, first_seen, last_seen, image_created_at, last_scan_id, next_scan_at, created_at, superseded) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+
 	copies := []struct {
 		name   string
 		query  string
@@ -93,8 +103,8 @@ func CopySQLiteToPostgres(ctx context.Context, sqlitePath, postgresURL string, l
 		},
 		{
 			name:   "artifacts",
-			query:  `SELECT id, repository_id, digest, tag, first_seen, last_seen, image_created_at, NULL, next_scan_at, created_at FROM artifacts`,
-			insert: `INSERT INTO artifacts (id, repository_id, digest, tag, first_seen, last_seen, image_created_at, last_scan_id, next_scan_at, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+			query:  artifactCopyQuery,
+			insert: artifactCopyInsert,
 		},
 		{
 			name:   "scan_records",
@@ -209,6 +219,34 @@ func CopySQLiteToPostgres(ctx context.Context, sqlitePath, postgresURL string, l
 	}
 	logger.Info("sqlite to postgres copy complete")
 	return nil
+}
+
+func sqliteHasColumn(ctx context.Context, src *DB, table, column string) (bool, error) {
+	rows, err := src.QueryContext(ctx, fmt.Sprintf("PRAGMA table_info(%s)", table))
+	if err != nil {
+		return false, errors.NewTransientf("inspect %s columns: %w", table, err)
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var (
+			cid        int
+			name       string
+			colType    string
+			notNull    int
+			defaultV   sql.NullString
+			primaryKey int
+		)
+		if err := rows.Scan(&cid, &name, &colType, &notNull, &defaultV, &primaryKey); err != nil {
+			return false, errors.NewTransientf("scan %s column info: %w", table, err)
+		}
+		if name == column {
+			return true, nil
+		}
+	}
+	if err := rows.Err(); err != nil {
+		return false, errors.NewTransientf("iterate %s column info: %w", table, err)
+	}
+	return false, nil
 }
 
 func openSQLiteReadOnly(dbPath string) (*DB, error) {

@@ -122,6 +122,7 @@ func (s *SQLiteStore) initSchema() error {
 		image_created_at INTEGER,
 		last_scan_id INTEGER,
 		next_scan_at INTEGER,
+		superseded INTEGER NOT NULL DEFAULT 0,
 		created_at INTEGER NOT NULL DEFAULT (cast(strftime('%s', 'now') as integer)),
 		FOREIGN KEY (repository_id) REFERENCES repositories(id),
 		FOREIGN KEY (last_scan_id) REFERENCES scan_records(id),
@@ -295,6 +296,7 @@ func (s *SQLiteStore) ensureSchemaColumns() error {
 		{table: "scan_records", column: "release_age_source", definition: "TEXT NOT NULL DEFAULT ''"},
 		{table: "scan_records", column: "vex_statements_json", definition: "TEXT"},
 		{table: "scan_records", column: "vex_attested", definition: "BOOLEAN NOT NULL DEFAULT 0"},
+		{table: "artifacts", column: "superseded", definition: "INTEGER NOT NULL DEFAULT 0"},
 	}
 
 	for _, col := range columns {

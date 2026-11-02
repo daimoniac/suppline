@@ -51,6 +51,7 @@ func (s *SQLiteStore) initPostgresSchema() error {
 			image_created_at BIGINT,
 			last_scan_id BIGINT,
 			next_scan_at BIGINT,
+			superseded INTEGER NOT NULL DEFAULT 0,
 			created_at BIGINT NOT NULL DEFAULT (EXTRACT(EPOCH FROM CLOCK_TIMESTAMP())::BIGINT),
 			UNIQUE(repository_id, digest, tag)
 		)`,
@@ -199,6 +200,12 @@ func (s *SQLiteStore) initPostgresSchema() error {
 		`); err != nil {
 			return fmt.Errorf("add artifacts last_scan_id fk: %w", err)
 		}
+	}
+
+	if _, err := s.db.Exec(`
+		ALTER TABLE artifacts ADD COLUMN IF NOT EXISTS superseded INTEGER NOT NULL DEFAULT 0
+	`); err != nil {
+		return fmt.Errorf("add artifacts.superseded: %w", err)
 	}
 
 	return nil

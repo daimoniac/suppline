@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"encoding/json"
+	"strings"
 	"time"
 
 	"github.com/daimoniac/suppline/internal/errors"
@@ -84,10 +85,18 @@ func (s *SQLiteStore) RecordScan(ctx context.Context, record *ScanRecord) error 
 		}
 	}
 
-	// A tag can only point at one digest. Drop older (repo, tag, other digest) bindings
-	// so ListScans / GetRepository stay aligned after retags.
-	if err := pruneSupersededTagBindingsTx(ctx, tx, repositoryID, record.Digest, record.Tag); err != nil {
+	// A tag's current binding is the digest it points at now. Another digest for
+	// that tag is kept only when this record is a renewal of a digest the tag
+	// has left behind and a cluster still references, or when prune retains an
+	// in-use predecessor.
+	keepCurrent, err := s.markTagBindingTx(ctx, tx, repositoryID, artifactID, record)
+	if err != nil {
 		return err
+	}
+	if keepCurrent {
+		if err := s.pruneSupersededTagBindingsTx(ctx, tx, repositoryID, record.Digest, record.Tag); err != nil {
+			return err
+		}
 	}
 
 	// Insert scan record with applied VEX statements as JSON.
@@ -199,15 +208,45 @@ func (s *SQLiteStore) RecordScan(ctx context.Context, record *ScanRecord) error 
 	return nil
 }
 
-// pruneSupersededTagBindingsTx deletes older artifact rows for the same repository+tag
-// that point at a different digest. Empty tags are left untouched.
-func pruneSupersededTagBindingsTx(ctx context.Context, tx *Tx, repositoryID int64, digest, tag string) error {
+// markTagBindingTx records whether this scan owns the tag. A retained renewal
+// stays superseded when the tag already has a different current digest, so the
+// renewal cannot hide that binding. It returns true when prune should run.
+func (s *SQLiteStore) markTagBindingTx(ctx context.Context, tx *Tx, repositoryID, artifactID int64, record *ScanRecord) (bool, error) {
+	if !record.RetainSuperseded {
+		if _, err := tx.ExecContext(ctx, `UPDATE artifacts SET superseded = 0 WHERE id = ?`, artifactID); err != nil {
+			return false, errors.NewTransientf("failed to mark current tag binding: %w", err)
+		}
+		return true, nil
+	}
+
+	var others int
+	err := tx.QueryRowContext(ctx, `
+		SELECT COUNT(*) FROM artifacts
+		WHERE repository_id = ? AND tag = ? AND digest != ? AND superseded = 0 AND id != ?
+	`, repositoryID, record.Tag, record.Digest, artifactID).Scan(&others)
+	if err != nil {
+		return false, errors.NewTransientf("failed to count current tag bindings: %w", err)
+	}
+	superseded := 0
+	if others > 0 {
+		superseded = 1
+	}
+	if _, err := tx.ExecContext(ctx, `UPDATE artifacts SET superseded = ? WHERE id = ?`, superseded, artifactID); err != nil {
+		return false, errors.NewTransientf("failed to mark retained tag binding: %w", err)
+	}
+	return superseded == 0, nil
+}
+
+// pruneSupersededTagBindingsTx drops other digests for this tag. A digest that
+// cluster inventory still reports is marked superseded instead of deleted, so
+// a later renewal can attest it. Empty tags are left untouched.
+func (s *SQLiteStore) pruneSupersededTagBindingsTx(ctx context.Context, tx *Tx, repositoryID int64, digest, tag string) error {
 	if tag == "" {
 		return nil
 	}
 
 	rows, err := tx.QueryContext(ctx, `
-		SELECT id FROM artifacts
+		SELECT id, digest FROM artifacts
 		WHERE repository_id = ? AND tag = ? AND digest != ?
 	`, repositoryID, tag, digest)
 	if err != nil {
@@ -215,28 +254,68 @@ func pruneSupersededTagBindingsTx(ctx context.Context, tx *Tx, repositoryID int6
 	}
 	defer rows.Close()
 
-	var artifactIDs []int64
+	type supersededArtifact struct {
+		id     int64
+		digest string
+	}
+	var artifacts []supersededArtifact
 	for rows.Next() {
-		var id int64
-		if err := rows.Scan(&id); err != nil {
+		var artifact supersededArtifact
+		if err := rows.Scan(&artifact.id, &artifact.digest); err != nil {
 			return errors.NewTransientf("failed to scan superseded artifact id: %w", err)
 		}
-		artifactIDs = append(artifactIDs, id)
+		artifacts = append(artifacts, artifact)
 	}
 	if err := rows.Err(); err != nil {
 		return errors.NewTransientf("error iterating superseded artifacts: %w", err)
 	}
-	if len(artifactIDs) == 0 {
+	if len(artifacts) == 0 {
 		return nil
 	}
 
-	for _, artifactID := range artifactIDs {
-		if err := deleteArtifactWithScansTx(ctx, tx, artifactID); err != nil {
+	for _, artifact := range artifacts {
+		inUse, err := s.digestInUseTx(ctx, tx, artifact.digest)
+		if err != nil {
+			return err
+		}
+		if inUse {
+			if _, err := tx.ExecContext(ctx, `UPDATE artifacts SET superseded = 1 WHERE id = ?`, artifact.id); err != nil {
+				return errors.NewTransientf("failed to retain in-use digest binding: %w", err)
+			}
+			continue
+		}
+		if err := deleteArtifactWithScansTx(ctx, tx, artifact.id); err != nil {
 			return err
 		}
 	}
 
 	return nil
+}
+
+func (s *SQLiteStore) digestInUseTx(ctx context.Context, tx *Tx, digest string) (bool, error) {
+	digest = strings.TrimSpace(digest)
+	if digest == "" {
+		return false, nil
+	}
+	var one int
+	err := tx.QueryRowContext(ctx, `
+		SELECT 1
+		FROM cluster_images_seen ci
+		JOIN clusters c ON c.id = ci.cluster_id
+		WHERE ci.digest = ?
+		  AND (
+			ci.last_seen_at >= ?
+			OR ci.last_seen_at >= COALESCE(c.last_reported_at, 0)
+		  )
+		LIMIT 1
+	`, digest, s.runtimeInUseCutoffUnix()).Scan(&one)
+	if err == sql.ErrNoRows {
+		return false, nil
+	}
+	if err != nil {
+		return false, errors.NewTransientf("failed to query in-use digest: %w", err)
+	}
+	return true, nil
 }
 
 // deleteArtifactWithScansTx removes one artifact. Scan records still referenced as
@@ -329,21 +408,47 @@ func (s *SQLiteStore) EnsureArtifactTagBinding(ctx context.Context, repository, 
 	}
 
 	nowUnix := time.Now().Unix()
-	result, err := s.db.ExecContext(ctx, `
-		UPDATE artifacts
-		SET last_seen = ?
-		WHERE repository_id = (SELECT id FROM repositories WHERE name = ?)
-			AND digest = ?
-			AND tag = ?
-	`, nowUnix, repository, digest, tag)
-	if err != nil {
-		return false, errors.NewTransientf("failed to touch artifact last_seen: %w", err)
+	var artifactID int64
+	var repositoryID int64
+	var superseded int
+	err := s.db.QueryRowContext(ctx, `
+		SELECT a.id, a.repository_id, a.superseded
+		FROM artifacts a
+		JOIN repositories r ON r.id = a.repository_id
+		WHERE r.name = ? AND a.digest = ? AND a.tag = ?
+	`, repository, digest, tag).Scan(&artifactID, &repositoryID, &superseded)
+	if err != nil && err != sql.ErrNoRows {
+		return false, errors.NewTransientf("failed to query artifact tag binding: %w", err)
 	}
-	rowsAffected, err := result.RowsAffected()
-	if err != nil {
-		return false, errors.NewTransientf("failed to inspect artifact last_seen update: %w", err)
-	}
-	if rowsAffected > 0 {
+	if err == nil {
+		if superseded == 0 {
+			if _, err := s.db.ExecContext(ctx, `
+				UPDATE artifacts SET last_seen = ? WHERE id = ?
+			`, nowUnix, artifactID); err != nil {
+				return false, errors.NewTransientf("failed to touch artifact last_seen: %w", err)
+			}
+			return false, nil
+		}
+
+		// The registry tag points at this digest again. Restore it as the
+		// current binding even when the previous scan is still inside the
+		// rescan interval, and keep any other in-use digest for renewal.
+		tx, err := s.db.BeginTx(ctx, nil)
+		if err != nil {
+			return false, errors.NewTransientf("failed to begin tag binding transaction: %w", err)
+		}
+		defer func() { _ = tx.Rollback() }()
+		if _, err := tx.ExecContext(ctx, `
+			UPDATE artifacts SET last_seen = ?, superseded = 0 WHERE id = ?
+		`, nowUnix, artifactID); err != nil {
+			return false, errors.NewTransientf("failed to restore current tag binding: %w", err)
+		}
+		if err := s.pruneSupersededTagBindingsTx(ctx, tx, repositoryID, digest, tag); err != nil {
+			return false, err
+		}
+		if err := tx.Commit(); err != nil {
+			return false, errors.NewTransientf("failed to commit restored tag binding: %w", err)
+		}
 		return false, nil
 	}
 
@@ -353,7 +458,6 @@ func (s *SQLiteStore) EnsureArtifactTagBinding(ctx context.Context, repository, 
 	}
 	defer func() { _ = tx.Rollback() }()
 
-	var repositoryID int64
 	err = tx.QueryRowContext(ctx, `
 		SELECT id FROM repositories WHERE name = ?
 	`, repository).Scan(&repositoryID)
@@ -390,7 +494,7 @@ func (s *SQLiteStore) EnsureArtifactTagBinding(ctx context.Context, repository, 
 		return false, errors.NewTransientf("failed to insert alias artifact tag binding: %w", err)
 	}
 
-	if err := pruneSupersededTagBindingsTx(ctx, tx, repositoryID, digest, tag); err != nil {
+	if err := s.pruneSupersededTagBindingsTx(ctx, tx, repositoryID, digest, tag); err != nil {
 		return false, err
 	}
 

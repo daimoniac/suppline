@@ -200,12 +200,18 @@ func (w *watcherImpl) processRepository(ctx context.Context, repo string) error 
 			"tag_count", len(tags))
 	}
 
-	// Process each tag
+	// Process each tag. Digests resolved here are the tag's current point of
+	// truth; a cluster can still be pinned to an older digest of the same tag.
+	currentDigests := make([]string, 0, len(tags))
 	for _, tag := range tags {
 		if tag == "" {
 			continue
 		}
-		if err := w.processTag(ctx, repo, tag); err != nil {
+		digest, err := w.processTag(ctx, repo, tag)
+		if digest != "" {
+			currentDigests = append(currentDigests, digest)
+		}
+		if err != nil {
 			w.logger.Error("failed to process tag",
 				"repo", repo,
 				"tag", tag,
@@ -214,6 +220,7 @@ func (w *watcherImpl) processRepository(ctx context.Context, repo string) error 
 		}
 	}
 
+	w.renewSupersededDigests(ctx, repo, currentDigests)
 	w.reconcileStoredTags(ctx, repo, tags)
 
 	return nil
@@ -352,13 +359,14 @@ func (w *watcherImpl) shouldScanImage(
 	return false, fmt.Sprintf("already scanned %v ago, no changes", timeSinceLastScan), false, nil
 }
 
-// processTag processes a single image tag
-func (w *watcherImpl) processTag(ctx context.Context, repo, tag string) error {
+// processTag processes a single image tag. The returned digest is the one the
+// tag currently resolves to, including when a later step fails.
+func (w *watcherImpl) processTag(ctx context.Context, repo, tag string) (string, error) {
 	// Get current digest from registry
 	currentDigest, err := w.registryClient.GetDigest(ctx, repo, tag)
 	if err != nil {
 		// Error already classified in registry package
-		return fmt.Errorf("failed to get current digest: %w", err)
+		return "", fmt.Errorf("failed to get current digest: %w", err)
 	}
 
 	// When this digest was already scanned under a sibling tag, bind the alias so
@@ -446,7 +454,7 @@ func (w *watcherImpl) processTag(ctx context.Context, repo, tag string) error {
 
 		w.logger.Debug("skipping scan", attrs...)
 
-		return nil
+		return currentDigest, nil
 	}
 
 	discoveryKind := scanenqueue.DiscoveryScan
@@ -462,10 +470,61 @@ func (w *watcherImpl) processTag(ctx context.Context, repo, tag string) error {
 		Tag:        tag,
 	}, discoveryKind); err != nil {
 		// Error already classified in queue package
-		return fmt.Errorf("failed to enqueue task: %w", err)
+		return currentDigest, fmt.Errorf("failed to enqueue task: %w", err)
 	}
 
-	return nil
+	return currentDigest, nil
+}
+
+// supersededDigestRenewer keeps attestations for digests a tag has moved off
+// while a cluster still references them.
+type supersededDigestRenewer interface {
+	ReconcileSupersededDigests(ctx context.Context, repository string, currentDigests []string, rescanInterval time.Duration) ([]statestore.DigestRenewal, error)
+}
+
+// renewSupersededDigests enqueues a scan for each in-use digest that is not the
+// tag's current resolution and whose attestation window needs extending.
+func (w *watcherImpl) renewSupersededDigests(ctx context.Context, repo string, currentDigests []string) {
+	renewer, ok := w.stateStore.(supersededDigestRenewer)
+	if !ok {
+		return
+	}
+
+	rescanInterval, err := w.regsyncConfig.GetRescanInterval(repo)
+	if err != nil {
+		w.logger.Warn("failed to parse rescan interval, using default 7d",
+			"repo", repo,
+			"error", err.Error())
+		rescanInterval = 7 * 24 * time.Hour
+	}
+
+	renewals, err := renewer.ReconcileSupersededDigests(ctx, repo, currentDigests, rescanInterval)
+	if err != nil {
+		w.logger.Warn("failed to reconcile superseded digests",
+			"repo", repo,
+			"error", err.Error())
+		return
+	}
+
+	for _, renewal := range renewals {
+		if _, err := w.scanEnqueuer.EnqueueRescan(ctx, scanenqueue.Image{
+			Repository:       renewal.Repository,
+			Digest:           renewal.Digest,
+			Tag:              renewal.Tag,
+			RetainSuperseded: true,
+		}); err != nil {
+			w.logger.Error("failed to enqueue superseded digest renewal",
+				"repo", renewal.Repository,
+				"tag", renewal.Tag,
+				"digest", renewal.Digest,
+				"error", err.Error())
+			continue
+		}
+		w.logger.Info("enqueued attestation renewal for superseded digest",
+			"repo", renewal.Repository,
+			"tag", renewal.Tag,
+			"digest", renewal.Digest)
+	}
 }
 
 // ensureAliasTagBinding creates a stored tag binding when the digest was already

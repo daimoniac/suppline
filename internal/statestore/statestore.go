@@ -427,6 +427,19 @@ type ScanRecord struct {
 	VEXAttested           bool
 	RuntimeUsed           bool
 	Runtime               RuntimeInventory
+	// RetainSuperseded tells RecordScan to keep this digest behind the tag's
+	// current binding. It is a write instruction, not a stored scan column.
+	// The row stays available for attestation renewal while cluster inventory
+	// still reports the digest.
+	RetainSuperseded bool
+}
+
+// DigestRenewal is an in-use digest that is no longer the tag's current
+// binding and needs another scan so its attestation stays valid.
+type DigestRenewal struct {
+	Repository string
+	Digest     string
+	Tag        string
 }
 
 // VulnFilter defines criteria for querying vulnerabilities
