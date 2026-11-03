@@ -9,6 +9,55 @@ import (
 	"github.com/daimoniac/suppline/internal/types"
 )
 
+func TestCountFindingImagesByCVEUsesLatestScanDigests(t *testing.T) {
+	store, err := NewSQLiteStore(t.TempDir() + "/finding-images.db")
+	if err != nil {
+		t.Fatalf("create store: %v", err)
+	}
+	defer store.Close()
+
+	ctx := context.Background()
+	record := func(repo, digest, tag, cve string) {
+		t.Helper()
+		scan := &ScanRecord{
+			Repository:   repo,
+			Digest:       digest,
+			Tag:          tag,
+			PolicyPassed: true,
+			SBOMAttested: true,
+			VulnAttested: true,
+			SCAIAttested: true,
+		}
+		if cve != "" {
+			scan.Vulnerabilities = []types.VulnerabilityRecord{{
+				CVEID:       cve,
+				Severity:    "HIGH",
+				PackageName: "openssl",
+			}}
+		}
+		if err := store.RecordScan(ctx, scan); err != nil {
+			t.Fatalf("record %s %s %s: %v", repo, digest, tag, err)
+		}
+	}
+
+	record("example/app", "sha256:one", "1.0.0", "CVE-A")
+	record("example/app", "sha256:one", "latest", "CVE-A")
+	record("example/other", "sha256:two", "2.0.0", "CVE-A")
+	record("example/other", "sha256:old", "9.0.0", "CVE-B")
+	record("example/other", "sha256:old", "9.0.0", "")
+
+	counts, err := store.CountFindingImagesByCVE(ctx, []string{"CVE-A", "CVE-B", "CVE-A", " "})
+	if err != nil {
+		t.Fatalf("count finding images: %v", err)
+	}
+	if counts["CVE-A"] != 2 {
+		t.Fatalf("CVE-A images = %d, want 2 (two tags of one digest count once)", counts["CVE-A"])
+	}
+	if counts["CVE-B"] != 0 {
+		t.Fatalf("CVE-B images = %d, want 0 after the latest scan dropped it", counts["CVE-B"])
+	}
+}
+
 func TestNewSQLiteStoreRejectsLegacyVulnerabilitySchema(t *testing.T) {
 	path := t.TempDir() + "/legacy.db"
 	db, err := sql.Open("sqlite3", path)

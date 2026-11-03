@@ -412,6 +412,77 @@ func (s *SQLiteStore) ListVulnerabilityGroupSummariesByCVEIDs(ctx context.Contex
 	return groups, nil
 }
 
+// CountFindingImagesByCVE counts distinct latest-scan digests that contain each CVE.
+func (s *SQLiteStore) CountFindingImagesByCVE(ctx context.Context, cveIDs []string) (map[string]int, error) {
+	unique := make([]string, 0, len(cveIDs))
+	seen := make(map[string]struct{}, len(cveIDs))
+	for _, raw := range cveIDs {
+		cveID := strings.TrimSpace(raw)
+		if cveID == "" {
+			continue
+		}
+		if _, ok := seen[cveID]; ok {
+			continue
+		}
+		seen[cveID] = struct{}{}
+		unique = append(unique, cveID)
+	}
+	counts := make(map[string]int, len(unique))
+	const chunkSize = 200
+	for start := 0; start < len(unique); start += chunkSize {
+		end := start + chunkSize
+		if end > len(unique) {
+			end = len(unique)
+		}
+		part, err := s.countFindingImagesByCVE(ctx, unique[start:end])
+		if err != nil {
+			return nil, err
+		}
+		for cveID, count := range part {
+			counts[cveID] = count
+		}
+	}
+	return counts, nil
+}
+
+func (s *SQLiteStore) countFindingImagesByCVE(ctx context.Context, cveIDs []string) (map[string]int, error) {
+	placeholders := strings.TrimSuffix(strings.Repeat("?,", len(cveIDs)), ",")
+	query := `
+		SELECT v.cve_id, COUNT(DISTINCT la.digest)
+		FROM (
+			SELECT DISTINCT last_scan_id AS scan_record_id, digest
+			FROM artifacts
+			WHERE last_scan_id IS NOT NULL
+		) la
+		JOIN scan_findings v ON v.scan_record_id = la.scan_record_id
+		WHERE v.cve_id IN (` + placeholders + `)
+		GROUP BY v.cve_id
+	`
+	args := make([]interface{}, len(cveIDs))
+	for i, cveID := range cveIDs {
+		args[i] = cveID
+	}
+	rows, err := s.db.QueryContext(ctx, query, args...)
+	if err != nil {
+		return nil, errors.NewTransientf("failed to count finding images: %w", err)
+	}
+	defer rows.Close()
+
+	counts := make(map[string]int, len(cveIDs))
+	for rows.Next() {
+		var cveID string
+		var count int
+		if err := rows.Scan(&cveID, &count); err != nil {
+			return nil, errors.NewTransientf("failed to scan finding image count: %w", err)
+		}
+		counts[cveID] = count
+	}
+	if err := rows.Err(); err != nil {
+		return nil, errors.NewTransientf("error iterating finding image counts: %w", err)
+	}
+	return counts, nil
+}
+
 // GetImagesByCVE returns all images affected by a specific CVE
 func (s *SQLiteStore) GetImagesByCVE(ctx context.Context, cveID string) ([]*ScanRecord, error) {
 	query := `

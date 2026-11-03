@@ -27,18 +27,18 @@ func TestStatementListKeepsOneMeaningOfOpen(t *testing.T) {
 		{ID: 4, Repository: "app", CVEID: "CVE-4", Verdict: "not_affected", Status: "dry_run", CreatedAt: 6, Reasoning: "recorded"},
 		{ID: 5, Repository: "lib", CVEID: "CVE-2", Verdict: "not_affected", Status: "push_failed", CreatedAt: 5, Superseded: false},
 	}
-	rows := statementList(active, inactive, runs)
+	rows := statementList(active, inactive, runs, map[string]int{"CVE-1": 9, "CVE-3": 2})
 	byKey := map[string]TriageStatement{}
 	for _, row := range rows {
 		byKey[row.Repository+"\n"+row.CVEID] = row
 	}
-	if got := byKey["app\nCVE-1"]; got.Source != "auto" || got.AffectedImageCount != 4 || got.NeedsFix || got.CreatedAt != 50 {
+	if got := byKey["app\nCVE-1"]; got.Source != "auto" || got.AffectedImageCount != 9 || got.NeedsFix || got.CreatedAt != 50 {
 		t.Fatalf("auto row %+v", got)
 	}
 	if got := byKey["lib\nCVE-2"]; got.Source != "manual" || !got.NeedsFix || got.Run == nil || got.Run.Status != "push_failed" {
 		t.Fatalf("manual row still needs a fix %+v", got)
 	}
-	if got := byKey["app\nCVE-3"]; got.Source != "open" || !got.NeedsFix || got.Detail != "no commit" || got.State != "" {
+	if got := byKey["app\nCVE-3"]; got.Source != "open" || !got.NeedsFix || got.Detail != "no commit" || got.State != "" || got.AffectedImageCount != 2 {
 		t.Fatalf("open uncertain %+v", got)
 	}
 	if _, ok := byKey["app\nCVE-3-old"]; ok {

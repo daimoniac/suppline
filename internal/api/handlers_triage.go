@@ -98,7 +98,15 @@ func (s *APIServer) handleListTriageStatements(w http.ResponseWriter, r *http.Re
 		s.logger.Error("list inactive statements", "error", err)
 		return
 	}
-	rows := statementList(s.activeVEXSummaries(r.Context()), inactive, triageRunResponses(runs))
+	active := s.activeVEXSummaries(r.Context())
+	runRows := triageRunResponses(runs)
+	findingImages, err := s.stateStore.CountFindingImagesByCVE(r.Context(), statementCVEIDs(active, inactive, runRows))
+	if err != nil {
+		s.respondError(w, http.StatusInternalServerError, "Failed to list triage statements")
+		s.logger.Error("count finding images", "error", err)
+		return
+	}
+	rows := statementList(active, inactive, runRows, findingImages)
 	if rows == nil {
 		rows = []TriageStatement{}
 	}

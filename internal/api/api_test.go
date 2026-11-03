@@ -150,6 +150,10 @@ func (m *mockStateStore) GetExemptedCVEImageCounts(ctx context.Context) (map[str
 	return map[string]int{}, nil
 }
 
+func (m *mockStateStore) CountFindingImagesByCVE(ctx context.Context, cveIDs []string) (map[string]int, error) {
+	return map[string]int{}, nil
+}
+
 func (m *mockStateStore) GetInactiveVEXCount(ctx context.Context, definedCVEIDs []string) (int, error) {
 	return 0, nil
 }
