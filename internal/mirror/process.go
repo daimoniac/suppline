@@ -211,10 +211,7 @@ func (m *runner) processRef(ctx context.Context, s config.SyncEntry, src, tgt re
 	digestTags := s.DigestTags != nil && *s.DigestTags
 	mTgt, err := m.rc.ManifestHead(ctx, tgt, regclient.WithManifestRequireDigest())
 	tgtExists := err == nil
-	tgtMatches := false
-	if err == nil && manifest.GetDigest(mSrc).String() == manifest.GetDigest(mTgt).String() {
-		tgtMatches = true
-	}
+	tgtMatches := err == nil && manifest.GetDigest(mSrc).String() == manifest.GetDigest(mTgt).String()
 	if tgtMatches && (fastCheck || (!forceRecursive && !referrers && !digestTags)) {
 		m.log.Debug("image matches", "source", src.CommonName(), "target", tgt.CommonName())
 		return runHook(ctx, m.log, s.Hooks.Unchanged, "unchanged", src, tgt)
