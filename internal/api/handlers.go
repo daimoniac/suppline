@@ -789,7 +789,7 @@ func (s *APIServer) handleReevaluatePolicy(w http.ResponseWriter, r *http.Reques
 // @Description Check the health status of the API server
 // @Tags Health
 // @Produce json
-// @Success 200 {object} map[string]string
+// @Success 200 {object} healthResponse
 // @Router /health [get]
 func (s *APIServer) handleHealth(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {
@@ -799,10 +799,17 @@ func (s *APIServer) handleHealth(w http.ResponseWriter, r *http.Request) {
 
 	// TODO: Implement in task 10 (observability)
 	// For now, return basic health status
-	s.respondJSON(w, http.StatusOK, map[string]string{
-		"status":  "healthy",
-		"version": version.Version,
+	s.respondJSON(w, http.StatusOK, healthResponse{
+		Status:        "healthy",
+		Version:       version.Version,
+		MirrorEnabled: s.mirrorEnabled,
 	})
+}
+
+type healthResponse struct {
+	Status        string `json:"status"`
+	Version       string `json:"version"`
+	MirrorEnabled bool   `json:"mirrorEnabled"`
 }
 
 // handleMetrics provides Prometheus metrics endpoint

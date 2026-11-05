@@ -62,7 +62,9 @@ ui/
         ├── FailedImagesPage.tsx
         ├── VulnerabilitiesPage.tsx
         ├── TriagePage.tsx
-        └── IntegrationsPage.tsx
+        ├── IntegrationsPage.tsx
+        ├── TasksPage.tsx
+        └── MirrorPage.tsx
 ```
 
 ## Routing
@@ -81,6 +83,8 @@ All routes live in `src/App.tsx`. The app renders `<LoginPage />` full-screen wh
 /vex                           → redirects to /triage
 /triage                        → TriagePage (automated and hand-written VEX statements)
 /integrations                  → IntegrationsPage
+/tasks                         → TasksPage
+/mirror                        → MirrorPage (sidebar link only when the in-process mirror is enabled)
 *                              → redirect to /
 ```
 

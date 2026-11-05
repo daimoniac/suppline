@@ -503,6 +503,59 @@ type TriageStore interface {
 	TriageTokensSince(ctx context.Context, since time.Time) (int, error)
 }
 
+// MirrorDeletionRetention is how long a cleanup deletion stays listed.
+const MirrorDeletionRetention = 7 * 24 * time.Hour
+
+// MirrorSync is one configured sync entry tracked for the mirror page.
+type MirrorSync struct {
+	Key        string
+	Source     string
+	Target     string
+	Type       string
+	Schedule   string
+	Position   int
+	Status     string
+	FinishedAt *int64
+	Error      string
+}
+
+// MirrorSyncSummary is a sync row plus current counts.
+type MirrorSyncSummary struct {
+	MirrorSync
+	ImageCount       int
+	TagDeletionCount int
+}
+
+// MirrorImage is one tag the mirror currently wants and has seen on the target.
+type MirrorImage struct {
+	Repository string
+	Tag        string
+	LastSeen   int64
+}
+
+// MirrorDeletion is one tag or Docker Hub repository removed by cleanup.
+type MirrorDeletion struct {
+	Repository string
+	Tag        string
+	DeletedAt  int64
+}
+
+// MirrorStore persists in-process mirror health, current images, and cleanup deletions.
+type MirrorStore interface {
+	ReplaceMirrorSyncs(ctx context.Context, syncs []MirrorSync) error
+	FinishMirrorSync(ctx context.Context, key, status, errMsg string, finishedAt time.Time) error
+	ObserveMirrorImage(ctx context.Context, syncKey, repository, tag string, seenAt time.Time) error
+	PruneMirrorImages(ctx context.Context, syncKey string, keep []MirrorImage) error
+	RecordMirrorTagDeletion(ctx context.Context, syncKey, repository, tag string, deletedAt time.Time) error
+	RecordMirrorHubDeletion(ctx context.Context, repository string, deletedAt time.Time) error
+	SetMirrorHubError(ctx context.Context, message string) error
+	ListMirrorSyncs(ctx context.Context) ([]MirrorSyncSummary, error)
+	ListMirrorImages(ctx context.Context, syncKey string, limit, offset int) ([]MirrorImage, int, error)
+	ListMirrorTagDeletions(ctx context.Context, syncKey string, limit, offset int) ([]MirrorDeletion, int, error)
+	ListMirrorHubDeletions(ctx context.Context, limit, offset int) ([]MirrorDeletion, int, error)
+	MirrorHubError(ctx context.Context) (string, error)
+}
+
 // VEXFilter defines criteria for listing VEX statements
 type VEXFilter struct {
 	CVEID      string
