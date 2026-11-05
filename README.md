@@ -165,10 +165,11 @@ suppline generates a ready-to-apply Kyverno policy from the public key it signs 
 
 ```bash
 curl -s http://localhost:8080/api/v1/integration/kyverno/policy > suppline-policy.yaml
+kubectl delete clusterpolicy suppline-policy --ignore-not-found
 kubectl apply -f suppline-policy.yaml
 ```
 
-The generated `ClusterPolicy` verifies the SCAI attestation on every pod image and admits it only when `scanStatus` is `passed` (or passed with exceptions) **and** the attestation has not expired — so a stale verdict fails closed. It starts in `Audit` mode; switch `validationFailureAction` to `Enforce` when you're ready.
+The generated `ImageValidatingPolicy` (`policies.kyverno.io/v1`) verifies the SCAI attestation on every pod image and admits it only when `scanStatus` is `passed` (or passed with exceptions) **and** the attestation has not expired — so a stale verdict fails closed. It starts in `Audit` mode; switch `validationActions` to `Deny` when you're ready. Delete any previously applied `ClusterPolicy` of the same name — `kyverno.io/v1` ClusterPolicy is deprecated.
 
 Verify any attestation by hand:
 
