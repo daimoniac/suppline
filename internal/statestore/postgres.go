@@ -167,6 +167,38 @@ func (s *SQLiteStore) initPostgresSchema() error {
 		)`,
 		`CREATE INDEX IF NOT EXISTS idx_triage_runs_repo_cve ON triage_runs(repository, cve_id, created_at)`,
 		`CREATE INDEX IF NOT EXISTS idx_triage_runs_created ON triage_runs(created_at)`,
+		`CREATE TABLE IF NOT EXISTS mirror_syncs (
+			sync_key TEXT PRIMARY KEY,
+			source TEXT NOT NULL,
+			target TEXT NOT NULL,
+			sync_type TEXT NOT NULL,
+			schedule TEXT NOT NULL DEFAULT '',
+			position INTEGER NOT NULL,
+			status TEXT NOT NULL DEFAULT 'never',
+			finished_at BIGINT,
+			error TEXT NOT NULL DEFAULT ''
+		)`,
+		`CREATE TABLE IF NOT EXISTS mirror_images (
+			sync_key TEXT NOT NULL,
+			repository TEXT NOT NULL,
+			tag TEXT NOT NULL,
+			last_seen BIGINT NOT NULL,
+			PRIMARY KEY (sync_key, repository, tag)
+		)`,
+		`CREATE TABLE IF NOT EXISTS mirror_deletions (
+			sync_key TEXT NOT NULL DEFAULT '',
+			kind TEXT NOT NULL,
+			repository TEXT NOT NULL,
+			tag TEXT NOT NULL DEFAULT '',
+			deleted_at BIGINT NOT NULL,
+			PRIMARY KEY (sync_key, kind, repository, tag)
+		)`,
+		`CREATE TABLE IF NOT EXISTS mirror_hub_status (
+			id INTEGER PRIMARY KEY CHECK (id = 1),
+			last_error TEXT NOT NULL DEFAULT ''
+		)`,
+		`CREATE INDEX IF NOT EXISTS idx_mirror_images_sync ON mirror_images(sync_key)`,
+		`CREATE INDEX IF NOT EXISTS idx_mirror_deletions_lookup ON mirror_deletions(kind, sync_key, deleted_at)`,
 	}
 
 	for _, stmt := range stmts {

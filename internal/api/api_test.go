@@ -598,6 +598,7 @@ func TestHealthEndpoint(t *testing.T) {
 	}
 
 	server := NewAPIServer(cfg, mockAttestationConfig(), &mockStateStore{}, queue.NewInMemoryQueue(100), mockRegsyncConfig(), observability.NewLogger("error"))
+	server.SetMirror(true, nil)
 
 	req := httptest.NewRequest(http.MethodGet, "/health", nil)
 	w := httptest.NewRecorder()
@@ -608,10 +609,16 @@ func TestHealthEndpoint(t *testing.T) {
 		t.Errorf("Expected status 200, got %d", w.Code)
 	}
 
-	// Check response contains status
 	body := w.Body.String()
-	if body == "" {
-		t.Error("Expected non-empty response body")
+	if !strings.Contains(body, `"mirrorEnabled":true`) {
+		t.Fatalf("health body = %s", body)
+	}
+
+	server.SetMirror(false, nil)
+	w = httptest.NewRecorder()
+	server.router.ServeHTTP(w, req)
+	if !strings.Contains(w.Body.String(), `"mirrorEnabled":false`) {
+		t.Fatalf("health body = %s", w.Body.String())
 	}
 }
 

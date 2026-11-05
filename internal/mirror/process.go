@@ -56,11 +56,13 @@ func (m *runner) processRegistry(ctx context.Context, s config.SyncEntry, src, t
 		}
 		sRepos, err := m.rc.RepoList(ctx, src, repoOpts...)
 		if err != nil {
+			m.failListing(ctx)
 			m.log.Error("failed to list source repositories", "source", src, "error", err.Error())
 			return err
 		}
 		sRepoList, err := sRepos.GetRepos()
 		if err != nil {
+			m.failListing(ctx)
 			m.log.Error("failed to list source repositories", "source", src, "error", err.Error())
 			return err
 		}
@@ -70,6 +72,7 @@ func (m *runner) processRegistry(ctx context.Context, s config.SyncEntry, src, t
 		last = sRepoList[len(sRepoList)-1]
 		sRepoList, err = filterRepoList(s.Repos, sRepoList)
 		if err != nil {
+			m.failListing(ctx)
 			m.log.Error("failed processing repo filters", "source", src, "error", err.Error())
 			return err
 		}
@@ -90,11 +93,13 @@ func (m *runner) processRepo(ctx context.Context, s config.SyncEntry, src, tgt s
 	}
 	sTags, err := m.rc.TagList(ctx, sRepoRef)
 	if err != nil {
+		m.failListing(ctx)
 		m.log.Error("failed getting source tags", "source", sRepoRef.CommonName(), "error", err.Error())
 		return err
 	}
 	sTagsList, err := sTags.GetTags()
 	if err != nil {
+		m.failListing(ctx)
 		m.log.Error("failed getting source tags", "source", sRepoRef.CommonName(), "error", err.Error())
 		return err
 	}
@@ -106,6 +111,7 @@ func (m *runner) processRepo(ctx context.Context, s config.SyncEntry, src, tgt s
 	for _, set := range sets {
 		filtered, ferr := filterTagList(set, sTagsList)
 		if ferr != nil {
+			m.failListing(ctx)
 			m.log.Error("failed processing tag filters", "source", sRepoRef.CommonName(), "error", ferr.Error())
 			return ferr
 		}
@@ -120,9 +126,20 @@ func (m *runner) processRepo(ctx context.Context, s config.SyncEntry, src, tgt s
 		return nil
 	}
 	if act == actionMissing {
+		before := append([]string(nil), sTagsFiltered...)
 		sTagsFiltered, err = dropExistingTags(ctx, m, tgt, sTagsFiltered)
 		if err != nil {
 			return err
+		}
+		kept := map[string]struct{}{}
+		for _, tag := range sTagsFiltered {
+			kept[tag] = struct{}{}
+		}
+		for _, tag := range before {
+			if _, ok := kept[tag]; ok {
+				continue
+			}
+			m.observeTag(ctx, tgt, tag)
 		}
 	}
 	var errs []error
@@ -202,6 +219,7 @@ func (m *runner) processRef(ctx context.Context, s config.SyncEntry, src, tgt re
 		mSrc, err = m.rc.ManifestGet(ctx, src)
 	}
 	if err != nil {
+		m.failListing(ctx)
 		m.log.Error("failed to lookup source manifest", "source", src.CommonName(), "error", err.Error())
 		return err
 	}
@@ -214,10 +232,12 @@ func (m *runner) processRef(ctx context.Context, s config.SyncEntry, src, tgt re
 	tgtMatches := err == nil && manifest.GetDigest(mSrc).String() == manifest.GetDigest(mTgt).String()
 	if tgtMatches && (fastCheck || (!forceRecursive && !referrers && !digestTags)) {
 		m.log.Debug("image matches", "source", src.CommonName(), "target", tgt.CommonName())
+		m.observeRef(ctx, tgt)
 		return runHook(ctx, m.log, s.Hooks.Unchanged, "unchanged", src, tgt)
 	}
 	if tgtExists && act == actionMissing {
 		m.log.Debug("target exists", "source", src.CommonName(), "target", tgt.CommonName())
+		m.observeRef(ctx, tgt)
 		return nil
 	}
 	if !slices.Contains(s.MediaTypes, manifest.GetMediaType(mSrc)) {
@@ -238,6 +258,7 @@ func (m *runner) processRef(ctx context.Context, s config.SyncEntry, src, tgt re
 		}
 		if tgtMatches && (s.ForceRecursive == nil || !*s.ForceRecursive) {
 			m.log.Debug("image matches for platform", "source", src.CommonName(), "platform", s.Platform, "target", tgt.CommonName())
+			m.observeRef(ctx, tgt)
 			return runHook(ctx, m.log, s.Hooks.Unchanged, "unchanged", src, tgt)
 		}
 	}
@@ -307,8 +328,12 @@ func (m *runner) processRef(ctx context.Context, s config.SyncEntry, src, tgt re
 	m.log.Debug("image sync running", "source", src.CommonName(), "target", tgt.CommonName())
 	if err := m.rc.ImageCopy(ctx, src, tgt, rcOpts...); err != nil {
 		m.log.Error("failed to copy image", "source", src.CommonName(), "target", tgt.CommonName(), "error", err.Error())
+		if tgtExists {
+			m.observeRef(ctx, tgt)
+		}
 		return err
 	}
+	m.observeRef(ctx, tgt)
 	return runHook(ctx, m.log, s.Hooks.Post, "post", src, tgt)
 }
 
@@ -426,4 +451,25 @@ func (m *runner) getPlatformDigest(ctx context.Context, r ref.Ref, platStr strin
 		return "", errs.ErrNotFound
 	}
 	return descPlat.Digest, nil
+}
+
+func (m *runner) failListing(ctx context.Context) {
+	if m.journal == nil {
+		return
+	}
+	m.journal.FailListing(syncKeyFrom(ctx))
+}
+
+func (m *runner) observeRef(ctx context.Context, tgt ref.Ref) {
+	m.observeTag(ctx, refRepository(tgt), tgt.Tag)
+}
+
+func (m *runner) observeTag(ctx context.Context, repository, tag string) {
+	if m.journal == nil || tag == "" {
+		return
+	}
+	if parsed, err := ref.New(repository); err == nil && parsed.Repository != "" {
+		repository = refRepository(parsed)
+	}
+	m.journal.Observe(ctx, syncKeyFrom(ctx), repository, tag, time.Now())
 }

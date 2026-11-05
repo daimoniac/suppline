@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/daimoniac/suppline/internal/config"
+	"github.com/daimoniac/suppline/internal/mirror"
 	"github.com/daimoniac/suppline/internal/policy/catalog"
 	"github.com/daimoniac/suppline/internal/queue"
 	"github.com/daimoniac/suppline/internal/scanenqueue"
@@ -54,6 +55,8 @@ type APIServer struct {
 	regsyncConfig     *config.RegsyncConfig
 	policyCatalog     catalog.Catalog
 	triageService     *triage.Service
+	mirrorEnabled     bool
+	mirrorActivity    *mirror.Activity
 	router            *http.ServeMux
 	server            *http.Server
 	logger            *slog.Logger
@@ -143,6 +146,15 @@ func (s *APIServer) SetTriage(svc *triage.Service) {
 	s.triageService = svc
 }
 
+// SetMirror records whether the in-process mirror is enabled and which syncs are running.
+func (s *APIServer) SetMirror(enabled bool, activity *mirror.Activity) {
+	if s == nil {
+		return
+	}
+	s.mirrorEnabled = enabled
+	s.mirrorActivity = activity
+}
+
 // setupRoutes configures all API routes
 func (s *APIServer) setupRoutes() {
 	// Query endpoints (GET)
@@ -185,6 +197,9 @@ func (s *APIServer) setupRoutes() {
 	s.router.HandleFunc("/api/v1/integration/gitops", s.corsMiddleware(s.authMiddleware(s.handleGitopsStatus, false)))
 	s.router.HandleFunc("/api/v1/integration/kubernetes/clusters", s.corsMiddleware(s.handleListKubernetesClusters))
 	s.router.HandleFunc("/api/v1/integration/kubernetes/clusters/", s.corsMiddleware(s.authMiddleware(s.handleKubernetesClustersRouter, false)))
+	s.router.HandleFunc("/api/v1/mirror", s.corsMiddleware(s.authMiddleware(s.handleGetMirror, false)))
+	s.router.HandleFunc("/api/v1/mirror/", s.corsMiddleware(s.authMiddleware(s.handleMirrorSub, false)))
+
 	s.router.HandleFunc("/api/v1/integration/publickey", s.corsMiddleware(s.handleGetPublicKey))
 	s.router.HandleFunc("/api/v1/integration/kyverno/policy", s.corsMiddleware(s.handleGenerateKyvernoPolicy))
 

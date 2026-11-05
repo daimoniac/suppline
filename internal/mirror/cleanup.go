@@ -7,6 +7,7 @@ import (
 	"regexp"
 	"slices"
 	"strings"
+	"time"
 
 	"github.com/daimoniac/suppline/internal/config"
 	"github.com/regclient/regclient"
@@ -125,6 +126,10 @@ func (m *runner) cleanupTags(ctx context.Context, tgt string) error {
 		if err := m.rc.TagDelete(ctx, tgtRef.SetTag(tag)); err != nil {
 			m.log.Error("failed to delete tag", "target", tgtRef.CommonName(), "tag", tag, "error", err.Error())
 			errs = append(errs, fmt.Errorf("delete tag %s:%s: %w", tgtRef.CommonName(), tag, err))
+			continue
+		}
+		if m.journal != nil {
+			m.journal.RecordTagDeletion(ctx, refRepository(tgtRef), tag, time.Now())
 		}
 	}
 	return errors.Join(errs...)
@@ -176,6 +181,9 @@ func (m *runner) runCleanupForAllTargets(ctx context.Context) error {
 		}
 		if err := m.cleanupTags(ctx, tgt); err != nil {
 			m.log.Error("startup cleanup failed", "target", tgt, "error", err.Error())
+			if m.journal != nil {
+				m.journal.NoteCleanupError(tgt, err)
+			}
 			errs = append(errs, err)
 		}
 	}
