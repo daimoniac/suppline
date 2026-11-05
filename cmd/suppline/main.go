@@ -335,6 +335,10 @@ func run() error {
 		apiServer.SetVEXAudit(vexAudit)
 		logger.Debug("API server initialized")
 	}
+	mirrorActivity := mirror.NewActivity()
+	if apiServer != nil {
+		apiServer.SetMirror(cfg.MirrorEnabled, mirrorActivity)
+	}
 
 	var wg sync.WaitGroup
 	errChan := make(chan error, 4)
@@ -417,7 +421,8 @@ func run() error {
 			defer wg.Done()
 			mirrorLog := logger.With("module", "regsync")
 			mirrorLog.Info("starting in-process mirror")
-			if err := mirror.Run(ctx, regsyncCfg, logger, mirror.WithReady(func() {
+			mirrorStore, _ := store.(statestore.MirrorStore)
+			if err := mirror.Run(ctx, regsyncCfg, logger, mirror.WithStore(mirrorStore), mirror.WithActivity(mirrorActivity), mirror.WithReady(func() {
 				healthChecker.UpdateComponentHealth("mirror", observability.StatusHealthy, "")
 			}), mirror.WithRunway(tagRunway),
 				mirror.WithReload(repositoryPolicies.Current, repositoryPolicies.Changed)); err != nil && err != context.Canceled {
