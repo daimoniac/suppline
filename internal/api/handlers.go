@@ -1004,12 +1004,12 @@ func (s *APIServer) handleGetPublicKey(w http.ResponseWriter, r *http.Request) {
 	_, _ = w.Write([]byte(publicKey))
 }
 
-// handleGenerateKyvernoPolicy generates a Kyverno ClusterPolicy YAML for SCAI attestation verification
-// @Summary Generate Kyverno ClusterPolicy
-// @Description Generate a Kyverno ClusterPolicy YAML for verifying SCAI attestations with the configured public key
+// handleGenerateKyvernoPolicy generates a Kyverno ImageValidatingPolicy YAML for SCAI attestation verification
+// @Summary Generate Kyverno ImageValidatingPolicy
+// @Description Generate a Kyverno ImageValidatingPolicy YAML for verifying SCAI attestations with the configured public key
 // @Tags Integration
 // @Produce plain
-// @Success 200 {string} string "Kyverno ClusterPolicy YAML"
+// @Success 200 {string} string "Kyverno ImageValidatingPolicy YAML"
 // @Failure 500 {object} map[string]string "Internal server error"
 // @Router /integration/kyverno/policy [get]
 func (s *APIServer) handleGenerateKyvernoPolicy(w http.ResponseWriter, r *http.Request) {

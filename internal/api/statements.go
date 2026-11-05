@@ -1,12 +1,15 @@
 package api
 
 import (
+	"strings"
+
 	"github.com/daimoniac/suppline/internal/types"
 )
 
 // TriageStatement is one repository and CVE on the triage list.
 // Source is auto, manual, or open. NeedsFix is the single meaning of an open triage:
 // the latest run is uncertain, rejected, or failed, and a later run has not replaced it.
+// AffectedImageCount is how many current image digests contain the finding.
 type TriageStatement struct {
 	CVEID              string             `json:"CVEID"`
 	Repository         string             `json:"Repository"`
@@ -21,30 +24,43 @@ type TriageStatement struct {
 	Run                *TriageRunResponse `json:"Run,omitempty"`
 }
 
-func statementList(active, inactive []*types.VEXSummary, runs []TriageRunResponse) []TriageStatement {
+func statementCVEIDs(active, inactive []*types.VEXSummary, runs []TriageRunResponse) []string {
+	seen := make(map[string]struct{})
+	ids := make([]string, 0, len(active)+len(inactive)+len(runs))
+	add := func(raw string) {
+		cveID := strings.TrimSpace(raw)
+		if cveID == "" {
+			return
+		}
+		if _, ok := seen[cveID]; ok {
+			return
+		}
+		seen[cveID] = struct{}{}
+		ids = append(ids, cveID)
+	}
+	for _, summary := range active {
+		if summary != nil {
+			add(summary.CVEID)
+		}
+	}
+	for _, summary := range inactive {
+		if summary != nil {
+			add(summary.CVEID)
+		}
+	}
+	for _, run := range runs {
+		add(run.CVEID)
+	}
+	return ids
+}
+
+func statementList(active, inactive []*types.VEXSummary, runs []TriageRunResponse, findingImages map[string]int) []TriageStatement {
 	runsByPair := map[string]TriageRunResponse{}
 	for _, run := range runs {
 		key := run.Repository + "\n" + run.CVEID
 		prev, ok := runsByPair[key]
 		if !ok || betterStatementRun(run, prev) {
 			runsByPair[key] = run
-		}
-	}
-	imageCount := map[string]int{}
-	for _, summary := range active {
-		if summary == nil {
-			continue
-		}
-		if summary.AffectedImageCount > imageCount[summary.CVEID] {
-			imageCount[summary.CVEID] = summary.AffectedImageCount
-		}
-	}
-	for _, summary := range inactive {
-		if summary == nil || imageCount[summary.CVEID] > 0 {
-			continue
-		}
-		if summary.AffectedImageCount > imageCount[summary.CVEID] {
-			imageCount[summary.CVEID] = summary.AffectedImageCount
 		}
 	}
 
@@ -81,7 +97,7 @@ func statementList(active, inactive []*types.VEXSummary, runs []TriageRunRespons
 				Detail:             summary.Detail,
 				ExpiresAt:          expires,
 				CreatedAt:          created,
-				AffectedImageCount: imageCount[summary.CVEID],
+				AffectedImageCount: findingImages[summary.CVEID],
 				Source:             statementSource(repo.Source),
 				NeedsFix:           hasRun && runNeedsFix(run),
 				Run:                attached,
@@ -103,7 +119,7 @@ func statementList(active, inactive []*types.VEXSummary, runs []TriageRunRespons
 			Justification:      run.Justification,
 			Detail:             run.Reasoning,
 			CreatedAt:          run.CreatedAt,
-			AffectedImageCount: imageCount[run.CVEID],
+			AffectedImageCount: findingImages[run.CVEID],
 			Source:             "open",
 			NeedsFix:           runNeedsFix(run),
 			Run:                &run,

@@ -115,8 +115,8 @@ See `values.yaml` for the full set.
 
 1. Port-forward or open Ingress to the UI; log in with `SUPPLINE_API_KEY`
 2. Confirm sync targets appear and scans complete
-3. Fetch admission policy: `GET /api/v1/integration/kyverno/policy`
-4. Apply Kyverno/OPA in Audit, then Enforce
+3. Fetch admission policy: `GET /api/v1/integration/kyverno/policy` (Kyverno `ImageValidatingPolicy`)
+4. Apply Kyverno/OPA in Audit, then Deny (`validationActions`)
 
 ## Notes
 

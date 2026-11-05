@@ -307,7 +307,7 @@ export default function IntegrationsPage() {
         <div className="flex items-center justify-between px-5 py-4 border-b border-border">
           <div className="flex items-center gap-2">
             <Shield className="w-4 h-4 text-accent" />
-            <h2 className="text-sm font-semibold">Kyverno ClusterPolicy</h2>
+            <h2 className="text-sm font-semibold">Kyverno ImageValidatingPolicy</h2>
           </div>
           <div className="flex gap-2">
             <button onClick={() => handleCopy(kyvernoPolicy, 'Policy')} disabled={!kyvernoPolicy}

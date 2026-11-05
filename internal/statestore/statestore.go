@@ -301,6 +301,10 @@ type StateStoreQuery interface {
 	// with affected image counts, without loading per-image digest details.
 	ListVulnerabilityGroupSummariesByCVEIDs(ctx context.Context, filter VulnFilter, cveIDs []string) ([]*types.VulnerabilityGroup, error)
 
+	// CountFindingImagesByCVE returns, for each CVE, how many distinct image
+	// digests contain that finding on their latest scan.
+	CountFindingImagesByCVE(ctx context.Context, cveIDs []string) (map[string]int, error)
+
 	// GetImagesByCVE returns all images affected by a specific CVE
 	GetImagesByCVE(ctx context.Context, cveID string) ([]*ScanRecord, error)
 
