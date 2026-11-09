@@ -90,7 +90,7 @@ succeeds.
 | `ATTESTATION_KEY` | string | `` | Base64-encoded Cosign private key (required for signing) |
 | `ATTESTATION_KEY_PASSWORD` | string | `` | Password for encrypted private key |
 | `ATTESTATION_ALLOW_HTTP_REGISTRY` | bool | `false` | Pass `--allow-http-registry` to cosign (Compose eval / HTTP registries only) |
-| `ATTESTATION_NEW_BUNDLE_FORMAT` | bool | `false` | Pass `--new-bundle-format` to cosign. Default `false` writes classic `sha256-<digest>.att` tags; `true` uses Cosign v3 protobuf bundles / OCI referrers |
+| `ATTESTATION_NEW_BUNDLE_FORMAT` | bool | `true` | Pass `--new-bundle-format` to cosign. Default writes Cosign v3 protobuf bundles via OCI referrers; on registries without the referrers API cosign writes a `sha256-<digest>` fallback tag. Set `false` to write classic `sha256-<digest>.att` tags |
 | `FULCIO_URL` | string | `https://fulcio.sigstore.dev` | Fulcio certificate authority URL |
 | `ATTESTATION_COMMAND_TIMEOUT` | duration | `2m` | Timeout per Cosign attestation command |
 

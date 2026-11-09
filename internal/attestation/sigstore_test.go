@@ -286,7 +286,7 @@ func TestAttestSBOM_DisablesSigningConfigAndTlogUpload(t *testing.T) {
 		t.Fatalf("failed to read recorded args: %v", err)
 	}
 
-	for _, flag := range []string{"--tlog-upload=false", "--use-signing-config=false", "--new-bundle-format=false"} {
+	for _, flag := range []string{"--tlog-upload=false", "--use-signing-config=false", "--new-bundle-format=true"} {
 		if !strings.Contains(string(recorded), flag) {
 			t.Errorf("expected cosign args to contain %s, got %s", flag, recorded)
 		}
@@ -299,9 +299,11 @@ func TestAttestSBOM_NewBundleFormatEnv(t *testing.T) {
 		env  string
 		want string
 	}{
-		{name: "unset defaults to classic att tags", env: "", want: "--new-bundle-format=false"},
-		{name: "explicit false", env: "false", want: "--new-bundle-format=false"},
-		{name: "true enables protobuf bundles", env: "true", want: "--new-bundle-format=true"},
+		{name: "unset defaults to protobuf bundles", env: "", want: "--new-bundle-format=true"},
+		{name: "explicit true", env: "true", want: "--new-bundle-format=true"},
+		{name: "explicit false opts out to classic att tags", env: "false", want: "--new-bundle-format=false"},
+		{name: "explicit 0 opts out", env: "0", want: "--new-bundle-format=false"},
+		{name: "explicit no opts out", env: "no", want: "--new-bundle-format=false"},
 	}
 
 	for _, tt := range tests {
@@ -328,6 +330,9 @@ func TestAttestSBOM_NewBundleFormatEnv(t *testing.T) {
 			}
 			if tt.want == "--new-bundle-format=false" && strings.Contains(string(recorded), "--new-bundle-format=true") {
 				t.Errorf("did not expect --new-bundle-format=true, got %s", recorded)
+			}
+			if tt.want == "--new-bundle-format=true" && strings.Contains(string(recorded), "--new-bundle-format=false") {
+				t.Errorf("did not expect --new-bundle-format=false, got %s", recorded)
 			}
 		})
 	}

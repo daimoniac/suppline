@@ -2,6 +2,7 @@ package registry
 
 import (
 	"context"
+	"strings"
 	"testing"
 
 	"github.com/daimoniac/suppline/internal/types"
@@ -323,6 +324,26 @@ func TestFilterSigstoreArtifacts(t *testing.T) {
 			expectedCount: 0,
 		},
 		{
+			name: "filter out bundle fallback index tags",
+			inputTags: []string{
+				"latest",
+				"sha256-" + strings.Repeat("a", 64),
+				"sha256-" + strings.Repeat("b", 64) + ".att",
+				"v1.0.0",
+			},
+			expectedTags:  []string{"latest", "v1.0.0"},
+			expectedCount: 2,
+		},
+		{
+			name: "keep user tags that only look like digests",
+			inputTags: []string{
+				"sha256-abc123",
+				"sha256-" + strings.Repeat("a", 63) + "g",
+			},
+			expectedTags:  []string{"sha256-abc123", "sha256-" + strings.Repeat("a", 63) + "g"},
+			expectedCount: 2,
+		},
+		{
 			name:          "empty list",
 			inputTags:     []string{},
 			expectedTags:  []string{},
@@ -332,10 +353,10 @@ func TestFilterSigstoreArtifacts(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			// Simulate the filtering logic from ListTags
+			// Same predicate ListTags uses to drop cosign artifact tags
 			filteredTags := make([]string, 0, len(tt.inputTags))
 			for _, tag := range tt.inputTags {
-				if !hasSuffix(tag, ".sig") && !hasSuffix(tag, ".att") {
+				if !isCosignArtifactTag(tag) {
 					filteredTags = append(filteredTags, tag)
 				}
 			}
@@ -355,9 +376,4 @@ func TestFilterSigstoreArtifacts(t *testing.T) {
 			}
 		})
 	}
-}
-
-// hasSuffix is a helper function for testing
-func hasSuffix(s, suffix string) bool {
-	return len(s) >= len(suffix) && s[len(s)-len(suffix):] == suffix
 }
