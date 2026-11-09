@@ -24,6 +24,8 @@ type SigstoreAttestor struct {
 	logger        *slog.Logger
 	cleanup       func() // Cleanup function to remove temp key file
 	attestTimeout time.Duration
+	// cleaner deletes previous attestations of the same predicate. Nil uses the registry.
+	cleaner sameKindCleaner
 }
 
 func resolveCosignAttestTimeout(logger *slog.Logger) time.Duration {
@@ -249,11 +251,7 @@ func (a *SigstoreAttestor) AttestSBOM(ctx context.Context, imageRef string, sbom
 	}
 	defer cleanup()
 
-	// Use cosign CLI to attest
-	_, err = a.runCosignAttest(ctx, "attest SBOM",
-		a.attestArgs("https://cyclonedx.org/bom", predicatePath, imageRef)...,
-	)
-	if err != nil {
+	if err = a.attestReplacingSameKind(ctx, "attest SBOM", "https://cyclonedx.org/bom", predicatePath, imageRef); err != nil {
 		a.logger.Error("cosign SBOM attestation failed",
 			"image_ref", imageRef,
 			"error", err)
@@ -286,11 +284,7 @@ func (a *SigstoreAttestor) AttestVulnerabilities(ctx context.Context, imageRef s
 	}
 	defer cleanup()
 
-	// Use cosign CLI to attest
-	_, err = a.runCosignAttest(ctx, "attest vulnerabilities",
-		a.attestArgs("vuln", predicatePath, imageRef)...,
-	)
-	if err != nil {
+	if err = a.attestReplacingSameKind(ctx, "attest vulnerabilities", "vuln", predicatePath, imageRef); err != nil {
 		a.logger.Error("cosign vulnerability attestation failed",
 			"image_ref", imageRef,
 			"error", err)
@@ -353,11 +347,7 @@ func (a *SigstoreAttestor) AttestVEX(ctx context.Context, imageRef string, state
 	}
 	defer cleanup()
 
-	// Use cosign CLI to attest with CycloneDX VEX type
-	_, err = a.runCosignAttest(ctx, "attest VEX",
-		a.attestArgs("https://cyclonedx.org/vex", predicatePath, imageRef)...,
-	)
-	if err != nil {
+	if err = a.attestReplacingSameKind(ctx, "attest VEX", "https://cyclonedx.org/vex", predicatePath, imageRef); err != nil {
 		a.logger.Error("cosign VEX attestation failed",
 			"image_ref", imageRef,
 			"error", err)
@@ -393,11 +383,7 @@ func (a *SigstoreAttestor) AttestSCAI(ctx context.Context, imageRef string, scai
 	}
 	defer cleanup()
 
-	// Use cosign CLI to attest
-	_, err = a.runCosignAttest(ctx, "attest SCAI",
-		a.attestArgs("https://in-toto.io/attestation/scai/attribute-report/v0.3", predicatePath, imageRef)...,
-	)
-	if err != nil {
+	if err = a.attestReplacingSameKind(ctx, "attest SCAI", "https://in-toto.io/attestation/scai/attribute-report/v0.3", predicatePath, imageRef); err != nil {
 		a.logger.Error("cosign SCAI attestation failed",
 			"image_ref", imageRef,
 			"error", err)
