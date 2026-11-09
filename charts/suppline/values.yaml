@@ -86,6 +86,9 @@ backend:
     WORKER_RETRY_BACKOFF: "10s"
     SCANNER_TIMEOUT: "5m"
     RESCAN_INTERVAL: "24h"
+    # Cosign protobuf bundles via OCI referrers (sha256-<digest> fallback tag where referrers are
+    # unsupported). Set "false" to write classic sha256-<digest>.att tags.
+    ATTESTATION_NEW_BUNDLE_FORMAT: "true"
 
   # Optional: inline suppline.yml content (overrides the chart’s example file).
   # Prefer this for production so you do not edit files inside charts/suppline/.

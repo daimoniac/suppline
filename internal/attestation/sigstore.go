@@ -49,10 +49,10 @@ func resolveCosignAttestTimeout(logger *slog.Logger) time.Duration {
 // --use-signing-config=false is required: cosign v3 defaults to a TUF-provided signing config,
 // which rejects --tlog-upload=false outright (and silently ignored it before v3.0.3).
 //
-// --new-bundle-format defaults to false (classic sha256-<digest>.att tags). Cosign v3
-// otherwise writes protobuf bundles via OCI referrers, which Kyverno verifyImages and
-// registry UIs that list .att tags will not see. Set ATTESTATION_NEW_BUNDLE_FORMAT=true
-// to opt into the new format.
+// --new-bundle-format defaults to true: cosign v3 writes Sigstore protobuf bundles, which
+// the generated Kyverno ImageValidatingPolicy verifies. Registries without the OCI referrers
+// API get a sha256-<digest> fallback tag instead. Set ATTESTATION_NEW_BUNDLE_FORMAT=false to
+// write classic sha256-<digest>.att tags.
 func (a *SigstoreAttestor) attestArgs(predicateType, predicatePath, imageRef string) []string {
 	return []string{
 		"attest",
@@ -127,11 +127,16 @@ func allowHTTPRegistry() bool {
 	return v == "1" || v == "true" || v == "yes"
 }
 
-// useNewBundleFormat reports whether cosign should write Sigstore protobuf bundles via
-// OCI referrers. Default is false so attestations land as classic sha256-<digest>.att tags.
+// useNewBundleFormat reports whether cosign should write Sigstore protobuf bundles.
+// Unset or empty means true; only an explicit 0/false/no opts out to classic .att tags.
 func useNewBundleFormat() bool {
 	v := strings.ToLower(strings.TrimSpace(os.Getenv("ATTESTATION_NEW_BUNDLE_FORMAT")))
-	return v == "1" || v == "true" || v == "yes"
+	switch v {
+	case "0", "false", "no":
+		return false
+	default:
+		return true
+	}
 }
 
 func boolString(v bool) string {
