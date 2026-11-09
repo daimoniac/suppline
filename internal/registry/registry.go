@@ -8,6 +8,7 @@ import (
 	"log/slog"
 	"net/http"
 	"os"
+	"regexp"
 	"strings"
 	"time"
 
@@ -235,12 +236,23 @@ func (c *clientImpl) ListTags(ctx context.Context, repo string) ([]string, error
 
 	filteredTags := make([]string, 0, len(tags))
 	for _, tag := range tags {
-		if !strings.HasSuffix(tag, ".sig") && !strings.HasSuffix(tag, ".att") {
+		if !isCosignArtifactTag(tag) {
 			filteredTags = append(filteredTags, tag)
 		}
 	}
 
 	return filteredTags, nil
+}
+
+// cosignFallbackTagRe matches the sha256-<hex> index tag cosign writes when a registry does
+// not serve the OCI referrers API. It is a cosign artifact, not a user-visible image tag.
+var cosignFallbackTagRe = regexp.MustCompile(`^sha256-[0-9a-f]{64}$`)
+
+// isCosignArtifactTag reports whether tag is a cosign-written artifact tag: classic .sig/.att
+// tags, or the sha256-<hex> fallback index used for bundle attestations on registries without
+// referrers support.
+func isCosignArtifactTag(tag string) bool {
+	return strings.HasSuffix(tag, ".sig") || strings.HasSuffix(tag, ".att") || cosignFallbackTagRe.MatchString(tag)
 }
 
 // GetDigest returns the digest for a specific tag

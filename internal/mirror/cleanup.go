@@ -17,6 +17,11 @@ import (
 // digestTagRe matches cosign-style digest tags "<alg>-<hex>.(att|sig)".
 var digestTagRe = regexp.MustCompile(`^([a-z0-9]+)-([0-9a-f]+)\.(att|sig)$`)
 
+// cosignFallbackTagRe matches the bare sha256-<hex> bundle fallback index tag that cosign writes
+// on registries without the OCI referrers API. Only full 64-hex digests match, so user tags that
+// merely start with "sha256-" are not treated as cosign artifacts.
+var cosignFallbackTagRe = regexp.MustCompile(`^sha256-[0-9a-f]{64}$`)
+
 func matchesExclusionPattern(tag string, patterns []string) (bool, string, error) {
 	for _, pattern := range patterns {
 		exp, err := regexp.Compile(pattern)
@@ -31,11 +36,14 @@ func matchesExclusionPattern(tag string, patterns []string) (bool, string, error
 }
 
 func isOrphanedDigestTag(ctx context.Context, rc *regclient.RegClient, tgtRef ref.Ref, tag string) (bool, error) {
-	m := digestTagRe.FindStringSubmatch(tag)
-	if m == nil {
+	var digestStr string
+	if m := digestTagRe.FindStringSubmatch(tag); m != nil {
+		digestStr = m[1] + ":" + m[2]
+	} else if cosignFallbackTagRe.MatchString(tag) {
+		digestStr = "sha256:" + strings.TrimPrefix(tag, "sha256-")
+	} else {
 		return false, nil
 	}
-	digestStr := m[1] + ":" + m[2]
 	digestRef := tgtRef.SetTag("").SetDigest(digestStr)
 	_, err := rc.ManifestHead(ctx, digestRef)
 	if err == nil {
@@ -49,9 +57,21 @@ func isOrphanedDigestTag(ctx context.Context, rc *regclient.RegClient, tgtRef re
 
 // tagsToDelete chooses tags that no sync entry wants.
 // Orphaned .att/.sig tags are deleted even when a filter or exclusion would keep them.
+// Bundle fallback index tags (bare sha256-<hex>) follow the same rule: kept while their subject
+// digest exists, so a filter or exclusion can never strip bundle attestations.
 func tagsToDelete(present, wanted, excludes []string, orphan func(string) (bool, error)) ([]string, error) {
 	out := []string{}
 	for _, tag := range present {
+		if cosignFallbackTagRe.MatchString(tag) {
+			orphaned, err := orphan(tag)
+			if err != nil {
+				return nil, err
+			}
+			if orphaned {
+				out = append(out, tag)
+			}
+			continue
+		}
 		if slices.Contains(wanted, tag) {
 			orphaned, err := orphan(tag)
 			if err != nil {

@@ -4,6 +4,7 @@ import (
 	"context"
 	"log/slog"
 	"slices"
+	"strings"
 	"testing"
 
 	"github.com/daimoniac/suppline/internal/config"
@@ -20,6 +21,48 @@ func TestTagsToDelete_SharedTargetAndOrphans(t *testing.T) {
 	}
 	slices.Sort(deleted)
 	if !slices.Equal(deleted, []string{"latest", "sha256-abc.sig"}) {
+		t.Fatalf("deleted = %#v", deleted)
+	}
+}
+
+func TestTagsToDelete_BundleFallbackTagKeptWhileSubjectExists(t *testing.T) {
+	fallback := "sha256-" + strings.Repeat("a", 64)
+	present := []string{"latest", fallback}
+	// No sync entry wants it and no exclusion matches: it must still survive while its subject exists.
+	deleted, err := tagsToDelete(present, []string{"latest"}, nil, func(string) (bool, error) {
+		return false, nil
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(deleted) != 0 {
+		t.Fatalf("deleted = %#v, want none", deleted)
+	}
+}
+
+func TestTagsToDelete_BundleFallbackTagDeletedWhenOrphaned(t *testing.T) {
+	fallback := "sha256-" + strings.Repeat("a", 64)
+	deleted, err := tagsToDelete([]string{fallback}, nil, nil, func(string) (bool, error) {
+		return true, nil
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !slices.Equal(deleted, []string{fallback}) {
+		t.Fatalf("deleted = %#v", deleted)
+	}
+}
+
+func TestTagsToDelete_DigestLikeUserTagIsNotFallback(t *testing.T) {
+	// A short sha256-prefixed user tag is not a cosign fallback index and keeps the normal rule.
+	deleted, err := tagsToDelete([]string{"sha256-abc123"}, nil, nil, func(string) (bool, error) {
+		t.Fatal("orphan check must not run for a non-fallback user tag")
+		return false, nil
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !slices.Equal(deleted, []string{"sha256-abc123"}) {
 		t.Fatalf("deleted = %#v", deleted)
 	}
 }
