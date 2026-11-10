@@ -155,6 +155,86 @@ func RemoveVEXStatements(document []byte, ids []string) ([]byte, int, error) {
 	return []byte(text), len(edits), nil
 }
 
+// SyncVEXRef names one statement stored on the sync entries of a repository.
+// Source is the key it is written under: "x-vex" or "x-vex-auto".
+type SyncVEXRef struct {
+	Repository string
+	ID         string
+	Source     string
+}
+
+// RemoveSyncVEXStatements deletes the referenced statements from sync entries
+// whose repository matches. Each ref only touches the list named by its
+// Source, so a statement with the same id under the other key stays in place.
+// defaults and other repositories are never changed.
+func RemoveSyncVEXStatements(document []byte, refs []SyncVEXRef) ([]byte, int, error) {
+	if len(refs) == 0 {
+		return nil, 0, fmt.Errorf("no VEX statements")
+	}
+	wanted := make(map[string]map[string][]string)
+	for _, ref := range refs {
+		repository := strings.TrimSpace(ref.Repository)
+		id := strings.TrimSpace(ref.ID)
+		if repository == "" || id == "" {
+			return nil, 0, fmt.Errorf("VEX repository and id must not be empty")
+		}
+		if ref.Source != "x-vex" && ref.Source != "x-vex-auto" {
+			return nil, 0, fmt.Errorf("unknown VEX source %q", ref.Source)
+		}
+		if wanted[repository] == nil {
+			wanted[repository] = make(map[string][]string)
+		}
+		wanted[repository][ref.Source] = append(wanted[repository][ref.Source], id)
+	}
+	root, lines, err := parseDocument(document)
+	if err != nil {
+		return nil, 0, err
+	}
+	sync := mappingChild(root, "sync")
+	if sync == nil || sync.Kind != yaml.SequenceNode {
+		return nil, 0, fmt.Errorf("suppline document has no sync list")
+	}
+	var edits []spanEdit
+	for i, entry := range sync.Content {
+		if entry.Kind != yaml.MappingNode {
+			continue
+		}
+		byKey, err := matchedVEXKeys(mappingScalar(entry, "target"), mappingScalar(entry, "type"), wanted)
+		if err != nil {
+			return nil, 0, err
+		}
+		if len(byKey) == 0 {
+			continue
+		}
+		edits = append(edits, vexSpansByKey(lines, entry, byKey, entryLimit(root, sync, i, entry))...)
+	}
+	text, err := applySpans(lines, edits)
+	if err != nil {
+		return nil, 0, err
+	}
+	return []byte(text), len(edits), nil
+}
+
+// matchedVEXKeys returns the statement ids to delete from one sync entry.
+// Targets are matched after template expansion, and image targets match on the
+// repository with the tag removed.
+func matchedVEXKeys(target, kind string, wanted map[string]map[string][]string) (map[string][]string, error) {
+	matched := make(map[string][]string)
+	for repository, byKey := range wanted {
+		ok, err := config.SyncTargetMatches(target, kind, repository)
+		if err != nil {
+			return nil, err
+		}
+		if !ok {
+			continue
+		}
+		for key, ids := range byKey {
+			matched[key] = append(matched[key], ids...)
+		}
+	}
+	return matched, nil
+}
+
 func lastMatchingRanges(target, kind string, updates []SemverRangeUpdate) ([]string, bool, error) {
 	var ranges []string
 	found := false
@@ -186,8 +266,18 @@ func matchesAnyTarget(target, kind string, wanted []string) (bool, error) {
 }
 
 func vexSpans(lines []string, mapping *yaml.Node, ids []string, limit int) []spanEdit {
+	return vexSpansByKey(lines, mapping, map[string][]string{"x-vex": ids, "x-vex-auto": ids}, limit)
+}
+
+// vexSpansByKey finds items to delete under each VEX list key, using the ids
+// wanted for that key only.
+func vexSpansByKey(lines []string, mapping *yaml.Node, idsByKey map[string][]string, limit int) []spanEdit {
 	var edits []spanEdit
 	for _, key := range []string{"x-vex", "x-vex-auto"} {
+		ids := idsByKey[key]
+		if len(ids) == 0 {
+			continue
+		}
 		seq := mappingChild(mapping, key)
 		keyNode := mappingKey(mapping, key)
 		if seq == nil || seq.Kind != yaml.SequenceNode || keyNode == nil {

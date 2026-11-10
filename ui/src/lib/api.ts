@@ -245,6 +245,15 @@ export class APIClient {
   async getVEXExpiryTasks(): Promise<VEXExpiryTasksResponse> {
     return this.request<VEXExpiryTasksResponse>('/api/v1/tasks/vex-expiry');
   }
+  async getIneffectiveVEX(): Promise<IneffectiveVEXResponse> {
+    return this.request<IneffectiveVEXResponse>('/api/v1/tasks/ineffective-vex');
+  }
+  async removeIneffectiveVEX(statements: IneffectiveVEXRef[]): Promise<ConfigEditResult> {
+    return this.request<ConfigEditResult>('/api/v1/tasks/ineffective-vex-removals', {
+      method: 'POST',
+      body: JSON.stringify({ statements }),
+    });
+  }
   async getRuntimeUnusedWhitelist(): Promise<RuntimeUnusedWhitelistResponse> {
     return this.request<RuntimeUnusedWhitelistResponse>('/api/v1/tasks/runtime-unused-whitelist');
   }
@@ -593,6 +602,30 @@ export interface VEXExpiryTaskEntry {
 export interface VEXExpiryTasksResponse {
   entries: VEXExpiryTaskEntry[];
   ai_agent_prompt: string;
+}
+
+/** A sync-entry VEX statement that no current policy decision depends on. */
+export interface IneffectiveVEXStatement {
+  repository: string;
+  cve_id: string;
+  /** "x-vex" (hand-written) | "x-vex-auto" (triage-owned) */
+  source: string;
+  state: string;
+  justification?: string;
+  detail?: string;
+  expires_at?: number;
+}
+
+export interface IneffectiveVEXResponse {
+  statements: IneffectiveVEXStatement[];
+  /** Unix seconds of the last finished audit; 0 when none has finished yet. */
+  computed_at: number;
+}
+
+export interface IneffectiveVEXRef {
+  repository: string;
+  cve_id: string;
+  source: string;
 }
 
 export interface RuntimeUnusedWhitelistResponse {

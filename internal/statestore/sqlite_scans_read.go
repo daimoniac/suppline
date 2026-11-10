@@ -470,6 +470,62 @@ func (s *SQLiteStore) GetTagsForDigest(ctx context.Context, digest string) ([]Ta
 	return tags, nil
 }
 
+// LoadVulnerabilitiesByScanIDs returns the findings of many scans in a few
+// queries. A scan with no findings is absent from the map.
+func (s *SQLiteStore) LoadVulnerabilitiesByScanIDs(ctx context.Context, scanIDs []int64) (map[int64][]types.VulnerabilityRecord, error) {
+	out := make(map[int64][]types.VulnerabilityRecord)
+	const chunkSize = 400
+	for start := 0; start < len(scanIDs); start += chunkSize {
+		end := start + chunkSize
+		if end > len(scanIDs) {
+			end = len(scanIDs)
+		}
+		if err := s.loadVulnerabilityChunk(ctx, scanIDs[start:end], out); err != nil {
+			return nil, err
+		}
+	}
+	return out, nil
+}
+
+func (s *SQLiteStore) loadVulnerabilityChunk(ctx context.Context, scanIDs []int64, out map[int64][]types.VulnerabilityRecord) error {
+	placeholders := make([]string, len(scanIDs))
+	args := make([]any, len(scanIDs))
+	for i, id := range scanIDs {
+		placeholders[i] = "?"
+		args[i] = id
+	}
+	// Title, description and reference URL stay empty. They repeat per finding
+	// and are not needed to re-check a severity gate; loading them for every
+	// current scan dominates memory.
+	rows, err := s.db.QueryContext(ctx, `
+		SELECT f.scan_record_id, f.cve_id, c.severity, f.package_name, f.installed_version, f.fixed_version
+		FROM scan_findings f
+		JOIN cve_catalog c ON c.cve_id = f.cve_id
+		WHERE f.scan_record_id IN (`+strings.Join(placeholders, ",")+`)
+		ORDER BY f.scan_record_id, c.severity, f.cve_id
+	`, args...)
+	if err != nil {
+		return errors.NewTransientf("failed to query vulnerabilities: %w", err)
+	}
+	defer rows.Close()
+
+	for rows.Next() {
+		var scanID int64
+		var vuln types.VulnerabilityRecord
+		err := rows.Scan(
+			&scanID, &vuln.CVEID, &vuln.Severity, &vuln.PackageName, &vuln.InstalledVersion, &vuln.FixedVersion,
+		)
+		if err != nil {
+			return errors.NewTransientf("failed to scan vulnerability: %w", err)
+		}
+		out[scanID] = append(out[scanID], vuln)
+	}
+	if err := rows.Err(); err != nil {
+		return errors.NewTransientf("error iterating vulnerability rows: %w", err)
+	}
+	return nil
+}
+
 func (s *SQLiteStore) loadVulnerabilitiesByScan(ctx context.Context, scanRecordID int64) ([]types.VulnerabilityRecord, error) {
 	rows, err := s.db.QueryContext(ctx, `
 		SELECT f.cve_id, c.severity, f.package_name, f.installed_version, f.fixed_version,

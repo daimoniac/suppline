@@ -425,6 +425,103 @@ func (c *ConfigCatalog) RemoveVEXIDs(ids []string) (int, error) {
 	return removed, nil
 }
 
+// SyncVEX returns the statements written on the sync entries for repository,
+// without defaults. Source is the key each statement is stored under. An id is
+// left out when defaults also define it or when more than one entry stores it:
+// the effective statement is then not one copy the entry alone decides, so it
+// cannot be judged or removed one copy at a time.
+func (c *ConfigCatalog) SyncVEX(repository string) []types.VEXStatement {
+	if c == nil || c.config == nil {
+		return nil
+	}
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+
+	defaults := make(map[string]struct{}, len(c.config.Defaults.VEX))
+	for _, statement := range c.config.Defaults.VEX {
+		defaults[statement.ID] = struct{}{}
+	}
+	var all []types.VEXStatement
+	_ = c.config.ForEachActive(func(i int) error {
+		sync := c.config.Sync[i]
+		if targetRepository(sync) != repository {
+			return nil
+		}
+		for _, statement := range sync.VEX {
+			statement.Source = types.VEXSourceManual
+			all = append(all, statement)
+		}
+		for _, statement := range sync.VEXAuto {
+			statement.Source = types.VEXSourceAuto
+			all = append(all, statement)
+		}
+		return nil
+	})
+
+	counts := make(map[string]int, len(all))
+	for _, statement := range all {
+		counts[statement.ID]++
+	}
+	out := make([]types.VEXStatement, 0, len(all))
+	for _, statement := range all {
+		if counts[statement.ID] > 1 {
+			continue
+		}
+		if _, shadowed := defaults[statement.ID]; shadowed {
+			continue
+		}
+		out = append(out, statement)
+	}
+	return out
+}
+
+// EntryVEXRef names one statement stored on the sync entries of a repository.
+// Source is types.VEXSourceManual or types.VEXSourceAuto.
+type EntryVEXRef struct {
+	Repository string
+	ID         string
+	Source     string
+}
+
+// RemoveEntryVEX drops the referenced statements from the sync entries of their
+// repositories. Each ref only removes the copy stored under its own source
+// key. defaults and other repositories are not changed.
+func (c *ConfigCatalog) RemoveEntryVEX(refs []EntryVEXRef) (int, error) {
+	if c == nil || c.config == nil {
+		return 0, fmt.Errorf("no configuration catalog")
+	}
+	wanted := make(map[string]map[string]map[string]struct{})
+	for _, ref := range refs {
+		id := strings.TrimSpace(ref.ID)
+		if id == "" || strings.TrimSpace(ref.Repository) == "" {
+			continue
+		}
+		if wanted[ref.Repository] == nil {
+			wanted[ref.Repository] = make(map[string]map[string]struct{})
+		}
+		if wanted[ref.Repository][ref.Source] == nil {
+			wanted[ref.Repository][ref.Source] = make(map[string]struct{})
+		}
+		wanted[ref.Repository][ref.Source][id] = struct{}{}
+	}
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	removed := 0
+	_ = c.config.ForEachActive(func(i int) error {
+		byRepo, ok := wanted[targetRepository(c.config.Sync[i])]
+		if !ok {
+			return nil
+		}
+		var n int
+		c.config.Sync[i].VEX, n = dropVEXIDs(c.config.Sync[i].VEX, byRepo[types.VEXSourceManual], 0)
+		removed += n
+		c.config.Sync[i].VEXAuto, n = dropVEXIDs(c.config.Sync[i].VEXAuto, byRepo[types.VEXSourceAuto], 0)
+		removed += n
+		return nil
+	})
+	return removed, nil
+}
+
 func dropVEXIDs(list []types.VEXStatement, wanted map[string]struct{}, removed int) ([]types.VEXStatement, int) {
 	if len(list) == 0 || len(wanted) == 0 {
 		return list, removed

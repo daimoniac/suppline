@@ -26,6 +26,7 @@ import (
 	"github.com/daimoniac/suppline/internal/scanner"
 	"github.com/daimoniac/suppline/internal/statestore"
 	"github.com/daimoniac/suppline/internal/triage"
+	"github.com/daimoniac/suppline/internal/vexaudit"
 	"github.com/daimoniac/suppline/internal/watcher"
 	"github.com/daimoniac/suppline/internal/worker"
 	"github.com/joho/godotenv"
@@ -275,6 +276,20 @@ func run() error {
 	healthChecker.UpdateComponentHealth("worker", observability.StatusHealthy, "")
 	logger.Debug("worker initialized")
 
+	scanReads, ok := store.(*statestore.SQLiteStore)
+	if !ok {
+		return fmt.Errorf("state store cannot serve the VEX audit")
+	}
+	// The audit evaluates every current scan, so it keeps its own quiet logger.
+	// The shared engine would record each of those checks as a real scan.
+	quiet := slog.New(slog.DiscardHandler)
+	vexAudit := vexaudit.New(logger, repositoryPolicies, scanReads, func(cfg policy.PolicyConfig) (policy.PolicyEngine, error) {
+		if cfg.Expression == "" {
+			return policy.NewEngine(quiet, policy.PolicyConfig{Expression: "criticalCount == 0"})
+		}
+		return policy.NewEngine(quiet, cfg)
+	})
+
 	var apiServer *api.APIServer
 	if cfg.API.Enabled {
 		logger.Debug("initializing API server",
@@ -291,6 +306,7 @@ func run() error {
 			logger,
 		)
 		apiServer.SetTriage(triageService)
+		apiServer.SetVEXAudit(vexAudit)
 		logger.Debug("API server initialized")
 	}
 
@@ -318,6 +334,12 @@ func run() error {
 			errChan <- fmt.Errorf("triage error: %w", err)
 		}
 		logger.Debug("triage stopped")
+	}()
+
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		vexAudit.Run(ctx)
 	}()
 
 	wg.Add(1)

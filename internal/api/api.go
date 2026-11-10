@@ -15,6 +15,7 @@ import (
 	"github.com/daimoniac/suppline/internal/scanenqueue"
 	"github.com/daimoniac/suppline/internal/statestore"
 	"github.com/daimoniac/suppline/internal/triage"
+	"github.com/daimoniac/suppline/internal/vexaudit"
 	httpSwagger "github.com/swaggo/http-swagger"
 
 	_ "github.com/daimoniac/suppline/build/swagger" // Import generated docs
@@ -54,6 +55,7 @@ type APIServer struct {
 	regsyncConfig     *config.RegsyncConfig
 	policyCatalog     catalog.Catalog
 	triageService     *triage.Service
+	vexAudit          *vexaudit.Auditor
 	router            *http.ServeMux
 	server            *http.Server
 	logger            *slog.Logger
@@ -143,6 +145,14 @@ func (s *APIServer) SetTriage(svc *triage.Service) {
 	s.triageService = svc
 }
 
+// SetVEXAudit connects the background audit of ineffective sync-entry VEX statements.
+func (s *APIServer) SetVEXAudit(audit *vexaudit.Auditor) {
+	if s == nil {
+		return
+	}
+	s.vexAudit = audit
+}
+
 // setupRoutes configures all API routes
 func (s *APIServer) setupRoutes() {
 	// Query endpoints (GET)
@@ -179,6 +189,8 @@ func (s *APIServer) setupRoutes() {
 	s.router.HandleFunc("/api/v1/tasks/sync-removals", s.corsMiddleware(s.authMiddleware(s.handleRemoveSyncTargets, true)))
 	s.router.HandleFunc("/api/v1/tasks/vex-removals", s.corsMiddleware(s.authMiddleware(s.handleRemoveVEXStatements, true)))
 	s.router.HandleFunc("/api/v1/tasks/vex-expiry", s.corsMiddleware(s.authMiddleware(s.handleGetVEXExpiryTasks, true)))
+	s.router.HandleFunc("/api/v1/tasks/ineffective-vex", s.corsMiddleware(s.authMiddleware(s.handleGetIneffectiveVEX, true)))
+	s.router.HandleFunc("/api/v1/tasks/ineffective-vex-removals", s.corsMiddleware(s.authMiddleware(s.handleRemoveIneffectiveVEX, true)))
 	s.router.HandleFunc("/api/v1/tasks/runtime-unused-whitelist", s.corsMiddleware(s.authMiddleware(s.handleRuntimeUnusedWhitelistRouter, false)))
 
 	// Integration endpoints

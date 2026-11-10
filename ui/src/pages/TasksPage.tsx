@@ -18,6 +18,8 @@ import type {
   VEXSummary,
   VEXExpiryTaskEntry,
   VEXExpiryTasksResponse,
+  IneffectiveVEXRef,
+  IneffectiveVEXResponse,
 } from '../lib/api';
 import { CheckCircle2, Clock3, RefreshCw, Scale, Server, ShieldAlert, Tag, TriangleAlert, Trash2 } from 'lucide-react';
 
@@ -612,14 +614,24 @@ function VEXExpiryStatusBadge({ status }: { status: string }) {
   );
 }
 
+/** What a confirmed removal deletes: unused CVE ids and single sync-entry statements. */
+interface PendingVEXRemoval {
+  ids: string[];
+  ineffective: IneffectiveVEXRef[];
+}
+
+const noIneffectiveVEX: IneffectiveVEXResponse = { statements: [], computed_at: 0 };
+
 function VEXExpiryTask({
   data,
   inactiveEntries,
+  ineffective,
   edits,
   onChanged,
 }: {
   data: VEXExpiryTasksResponse;
   inactiveEntries: VEXSummary[];
+  ineffective: IneffectiveVEXResponse;
   edits: ConfigEditStatus | null;
   onChanged: () => void;
 }) {
@@ -627,12 +639,18 @@ function VEXExpiryTask({
   const { toast } = useToast();
   const [showAll, setShowAll] = useState(false);
   const [removing, setRemoving] = useState(false);
-  const [pendingRemoval, setPendingRemoval] = useState<string[] | null>(null);
+  const [pendingRemoval, setPendingRemoval] = useState<PendingVEXRemoval | null>(null);
 
   const inactiveCount = inactiveEntries.length;
   const hasExpiryEntries = data.entries.length > 0;
+  // Removing an unused CVE deletes every copy of it, so skip ineffective rows
+  // for those CVEs. The two removals then never target the same statement.
+  const inactiveCVEs = new Set(inactiveEntries.map(entry => entry.CVEID));
+  const ineffectiveRows = ineffective.statements.filter(entry => !inactiveCVEs.has(entry.cve_id));
+  const ineffectiveCount = ineffectiveRows.length;
+  const removableCount = inactiveCount + ineffectiveCount;
 
-  if (!hasExpiryEntries && inactiveCount === 0) {
+  if (!hasExpiryEntries && removableCount === 0) {
     return (
       <EmptyState
         icon={<CheckCircle2 className="w-12 h-12 mb-4 opacity-30" />}
@@ -646,18 +664,34 @@ function VEXExpiryTask({
   const expiringSoonCount = data.entries.filter(e => e.status === 'expiring_soon').length;
   const displayedEntries = showAll ? data.entries : data.entries.slice(0, 12);
   const removable = inactiveEntries.map(entry => entry.CVEID).filter(Boolean);
+  const bulkRemoval: PendingVEXRemoval = {
+    ids: removable,
+    ineffective: ineffectiveRows.map(entry => ({ repository: entry.repository, cve_id: entry.cve_id, source: entry.source })),
+  };
 
-  const removeStatements = async (ids: string[]) => {
+  const removeStatements = async (removal: PendingVEXRemoval) => {
     setPendingRemoval(null);
     setRemoving(true);
+    let updated = 0;
+    let last: ConfigEditResult | null = null;
     try {
-      const result = await apiClient.removeVEXStatements(ids);
-      toast(configEditMessage(result, result.updated === 1 ? 'statement' : 'statements'), result.updated > 0 ? 'success' : 'warning');
-      if (result.updated > 0) onChanged();
+      if (removal.ineffective.length > 0) {
+        last = await apiClient.removeIneffectiveVEX(removal.ineffective);
+        updated += last.updated;
+      }
+      if (removal.ids.length > 0) {
+        last = await apiClient.removeVEXStatements(removal.ids);
+        updated += last.updated;
+      }
+      if (last) {
+        toast(configEditMessage(last, updated === 1 ? 'statement' : 'statements'), updated > 0 ? 'success' : 'warning');
+      }
     } catch (e: unknown) {
       toast(e instanceof Error ? e.message : 'Failed to remove VEX statements', 'error');
     } finally {
       setRemoving(false);
+      // Refresh even after a partial failure, so the list shows what was written.
+      if (updated > 0) onChanged();
     }
   };
 
@@ -669,6 +703,14 @@ function VEXExpiryTask({
             <TriangleAlert className="w-4 h-4 flex-shrink-0" />
             <span>
               {inactiveCount} VEX {inactiveCount === 1 ? 'statement is' : 'statements are'} unused and can be removed.
+            </span>
+          </div>
+        )}
+        {ineffectiveCount > 0 && (
+          <div className="flex items-center gap-2 px-4 py-3 rounded-lg bg-warning-bg border border-warning/20 text-sm text-warning">
+            <TriangleAlert className="w-4 h-4 flex-shrink-0" />
+            <span>
+              {ineffectiveCount} VEX {ineffectiveCount === 1 ? 'statement has' : 'statements have'} no effect on policy results and can be removed.
             </span>
           </div>
         )}
@@ -688,16 +730,16 @@ function VEXExpiryTask({
             </span>
           </div>
         )}
-        {removable.length > 0 && (
+        {removableCount > 0 && (
           <div className="flex flex-wrap items-center justify-between gap-3">
             <ConfigEditNote status={edits} />
             <button
               type="button"
               disabled={!edits?.available || removing}
-              onClick={() => setPendingRemoval(removable)}
+              onClick={() => setPendingRemoval(bulkRemoval)}
               className="px-3 py-1.5 text-xs rounded-lg border border-danger/30 text-danger hover:bg-danger-bg disabled:opacity-40 transition-colors"
             >
-              {removing ? 'Removing…' : `Remove ${removable.length} unused ${removable.length === 1 ? 'statement' : 'statements'}`}
+              {removing ? 'Removing…' : `Remove ${removableCount} unused ${removableCount === 1 ? 'statement' : 'statements'}`}
             </button>
           </div>
         )}
@@ -776,7 +818,7 @@ function VEXExpiryTask({
                           <button
                             type="button"
                             disabled={!edits?.available || removing}
-                            onClick={() => setPendingRemoval([entry.CVEID])}
+                            onClick={() => setPendingRemoval({ ids: [entry.CVEID], ineffective: [] })}
                             className="px-2.5 py-1 text-xs rounded-lg border border-danger/30 text-danger hover:bg-danger-bg disabled:opacity-40 transition-colors"
                           >
                             Remove
@@ -790,10 +832,46 @@ function VEXExpiryTask({
           </div>
         </div>
       )}
+
+      {ineffectiveCount > 0 && (
+        <div className="space-y-2">
+          <p className="text-xs font-medium text-text-secondary uppercase tracking-wide">No effect on policy results</p>
+          <p className="text-xs text-text-muted">
+            Removing these leaves the pass/fail result of every artifact&apos;s latest scan unchanged.
+            {ineffective.computed_at > 0 && <> Checked {new Date(ineffective.computed_at * 1000).toISOString().slice(0, 10)}.</>}
+          </p>
+          <div className="overflow-x-auto">
+            <table className="min-w-full text-sm">
+              <thead>
+                <tr className="border-b border-border">
+                  <th className="px-3 py-2 text-left text-xs font-semibold text-text-muted uppercase tracking-wide">CVE</th>
+                  <th className="px-3 py-2 text-left text-xs font-semibold text-text-muted uppercase tracking-wide">Repository</th>
+                  <th className="px-3 py-2 text-left text-xs font-semibold text-text-muted uppercase tracking-wide">Source</th>
+                  <th className="px-3 py-2 text-left text-xs font-semibold text-text-muted uppercase tracking-wide">State</th>
+                  <th className="px-3 py-2 text-left text-xs font-semibold text-text-muted uppercase tracking-wide">Expires</th>
+                </tr>
+              </thead>
+              <tbody>
+                {ineffectiveRows.map(entry => (
+                  <tr key={`ineffective-${entry.repository}-${entry.source}-${entry.cve_id}`} className="border-b border-border/50 last:border-0">
+                    <td className="px-3 py-3 text-xs font-mono text-text-primary">{entry.cve_id}</td>
+                    <td className="px-3 py-3 text-xs text-text-secondary">{entry.repository}</td>
+                    <td className="px-3 py-3 text-xs font-mono text-text-secondary">{entry.source}</td>
+                    <td className="px-3 py-3 text-xs text-text-secondary">{entry.state || 'unknown'}</td>
+                    <td className="px-3 py-3 text-xs text-text-secondary">
+                      {entry.expires_at ? new Date(entry.expires_at * 1000).toISOString().slice(0, 10) : 'No expiry'}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
       <ConfirmModal
         open={!!pendingRemoval}
         title="Remove unused VEX statements"
-        message={pendingRemoval ? `Remove ${pendingRemoval.length} unused VEX ${pendingRemoval.length === 1 ? 'statement' : 'statements'} from the suppline config${edits?.mode === 'git' ? ' and commit it' : ''}?` : ''}
+        message={pendingRemoval ? `Remove ${pendingRemoval.ids.length + pendingRemoval.ineffective.length} unused VEX ${pendingRemoval.ids.length + pendingRemoval.ineffective.length === 1 ? 'statement' : 'statements'} from the suppline config${edits?.mode === 'git' ? ' and commit it' : ''}?` : ''}
         onConfirm={() => { if (pendingRemoval) void removeStatements(pendingRemoval); }}
         onCancel={() => setPendingRemoval(null)}
       />
@@ -811,6 +889,7 @@ export default function TasksPage() {
   const [runtimeUnusedData, setRuntimeUnusedData] = useState<RepositoriesResponse | null>(null);
   const [vexExpiryData, setVexExpiryData] = useState<VEXExpiryTasksResponse | null>(null);
   const [inactiveVEXData, setInactiveVEXData] = useState<VEXSummary[]>([]);
+  const [ineffectiveVEXData, setIneffectiveVEXData] = useState<IneffectiveVEXResponse>(noIneffectiveVEX);
   const [policyCompliance, setPolicyCompliance] = useState<PolicyComplianceSnapshot | null>(null);
   const [configEdits, setConfigEdits] = useState<ConfigEditStatus | null>(null);
   const [triageRefresh, setTriageRefresh] = useState(0);
@@ -821,11 +900,12 @@ export default function TasksPage() {
     setLoading(true);
     setError('');
     try {
-      const [semverResult, runtimeUnusedResult, vexExpiryResult, inactiveVEXResult, policySnap, editStatus] = await Promise.all([
+      const [semverResult, runtimeUnusedResult, vexExpiryResult, inactiveVEXResult, ineffectiveVEXResult, policySnap, editStatus] = await Promise.all([
         apiClient.getSemverUpdateTasks(),
         loadAllRuntimeUnusedRepositories(apiClient),
         apiClient.getVEXExpiryTasks(),
         apiClient.getInactiveVEXStatements(),
+        apiClient.getIneffectiveVEX().catch(() => noIneffectiveVEX),
         fetchPolicyComplianceData(apiClient, inUseRequestParams),
         apiClient.getConfigEdits().catch(() => ({ available: false, mode: 'unavailable', detail: 'Config editing status is unavailable.' })),
       ]);
@@ -833,6 +913,7 @@ export default function TasksPage() {
       setRuntimeUnusedData(runtimeUnusedResult);
       setVexExpiryData(vexExpiryResult);
       setInactiveVEXData(inactiveVEXResult);
+      setIneffectiveVEXData(ineffectiveVEXResult);
       setPolicyCompliance(policySnap);
       setConfigEdits(editStatus);
     } catch (e: unknown) {
@@ -957,7 +1038,7 @@ export default function TasksPage() {
         error={error}
         onRetry={load}
       >
-        {vexExpiryData ? <VEXExpiryTask data={vexExpiryData} inactiveEntries={inactiveVEXData} edits={configEdits} onChanged={load} /> : null}
+        {vexExpiryData ? <VEXExpiryTask data={vexExpiryData} inactiveEntries={inactiveVEXData} ineffective={ineffectiveVEXData} edits={configEdits} onChanged={load} /> : null}
       </TaskSection>
     </div>
   );
