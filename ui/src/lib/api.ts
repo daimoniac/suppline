@@ -263,11 +263,70 @@ export class APIClient {
 
   // Health
   async getHealth() {
-    return this.request<{ status: string; version?: string }>('/health');
+    return this.request<{ status: string; version?: string; mirrorEnabled?: boolean }>('/health');
+  }
+
+  // Mirror
+  async getMirror() {
+    return this.request<MirrorOverview>('/api/v1/mirror');
+  }
+  async getMirrorImages(key: string, limit: number, offset: number) {
+    const { data, response } = await this.requestWithResponse<MirrorImage[]>(
+      `/api/v1/mirror/syncs/${encodeURIComponent(key)}/images${this.qs({ limit, offset })}`,
+    );
+    return { images: data ?? [], total: totalCount(response, data?.length ?? 0) };
+  }
+  async getMirrorTagDeletions(key: string, limit: number, offset: number) {
+    const { data, response } = await this.requestWithResponse<MirrorDeletion[]>(
+      `/api/v1/mirror/syncs/${encodeURIComponent(key)}/deletions${this.qs({ limit, offset })}`,
+    );
+    return { deletions: data ?? [], total: totalCount(response, data?.length ?? 0) };
+  }
+  async getMirrorHubDeletions(limit: number, offset: number) {
+    const { data, response } = await this.requestWithResponse<MirrorDeletion[]>(
+      `/api/v1/mirror/hub-deletions${this.qs({ limit, offset })}`,
+    );
+    return { deletions: data ?? [], total: totalCount(response, data?.length ?? 0) };
   }
 }
 
+function totalCount(response: Response, fallback: number): number {
+  const total = parseInt(response.headers.get('X-Total-Count') || '', 10);
+  return Number.isNaN(total) ? fallback : total;
+}
+
 // Types
+export interface MirrorSync {
+  Key: string;
+  Source: string;
+  Target: string;
+  Type: string;
+  Schedule: string;
+  Status: string;
+  FinishedAt?: number | null;
+  Error: string;
+  ImageCount: number;
+  TagDeletionCount: number;
+}
+
+export interface MirrorOverview {
+  Syncs: MirrorSync[] | null;
+  HubDeletionCount: number;
+  HubError: string;
+}
+
+export interface MirrorImage {
+  Repository: string;
+  Tag: string;
+  LastSeen: number;
+}
+
+export interface MirrorDeletion {
+  Repository: string;
+  Tag: string;
+  DeletedAt: number;
+}
+
 export interface RuntimeImage {
   ImageRef: string;
   Tag: string;
