@@ -32,19 +32,19 @@ func TestStatementListKeepsOneMeaningOfOpen(t *testing.T) {
 	for _, row := range rows {
 		byKey[row.Repository+"\n"+row.CVEID] = row
 	}
-	if got := byKey["app\nCVE-1"]; got.Source != "auto" || got.AffectedImageCount != 9 || got.NeedsFix || got.CreatedAt != 50 {
+	if got := byKey["app\nCVE-1"]; got.Source != "auto" || got.AffectedImageCount != 9 || got.NeedsFix || got.CreatedAt != 50 || got.TriagedAt != 9 {
 		t.Fatalf("auto row %+v", got)
 	}
-	if got := byKey["lib\nCVE-2"]; got.Source != "manual" || !got.NeedsFix || got.Run == nil || got.Run.Status != "push_failed" {
+	if got := byKey["lib\nCVE-2"]; got.Source != "manual" || !got.NeedsFix || got.Run == nil || got.Run.Status != "push_failed" || got.TriagedAt != 5 {
 		t.Fatalf("manual row still needs a fix %+v", got)
 	}
-	if got := byKey["app\nCVE-3"]; got.Source != "open" || !got.NeedsFix || got.Detail != "no commit" || got.State != "" || got.AffectedImageCount != 2 {
+	if got := byKey["app\nCVE-3"]; got.Source != "open" || !got.NeedsFix || got.Detail != "no commit" || got.State != "" || got.AffectedImageCount != 2 || got.TriagedAt != 8 {
 		t.Fatalf("open uncertain %+v", got)
 	}
 	if _, ok := byKey["app\nCVE-3-old"]; ok {
 		t.Fatal("superseded run became its own row")
 	}
-	if got := byKey["app\nCVE-4"]; got.Source != "open" || got.NeedsFix || got.State != "not_affected" {
+	if got := byKey["app\nCVE-4"]; got.Source != "open" || got.NeedsFix || got.State != "not_affected" || got.TriagedAt != 6 {
 		t.Fatalf("dry run is listed and does not need a fix %+v", got)
 	}
 }

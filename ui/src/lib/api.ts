@@ -510,6 +510,7 @@ export interface TriageStatement {
   Detail?: string;
   ExpiresAt: number;
   CreatedAt: number;
+  TriagedAt: number;
   AffectedImageCount: number;
   Source: 'auto' | 'manual' | 'open';
   NeedsFix: boolean;

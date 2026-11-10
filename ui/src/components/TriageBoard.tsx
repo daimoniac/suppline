@@ -59,7 +59,7 @@ type StatementRow = {
   justification: string;
   detail: string;
   expiresAt: number;
-  createdAt: number;
+  triagedAt: number;
   affectedImages: number;
   source: 'auto' | 'manual' | 'open';
   needsFix: boolean;
@@ -75,7 +75,7 @@ function statementRow(item: TriageStatement): StatementRow {
     justification: item.Justification || '',
     detail: item.Detail || '',
     expiresAt: item.ExpiresAt || 0,
-    createdAt: item.CreatedAt || 0,
+    triagedAt: item.TriagedAt || item.Run?.CreatedAt || 0,
     affectedImages: item.AffectedImageCount || 0,
     source: item.Source,
     needsFix: item.NeedsFix,
@@ -93,13 +93,6 @@ function needsManualTriage(row: StatementRow) {
 
 function affectsImages(row: StatementRow) {
   return row.affectedImages > 0;
-}
-
-// Settled "not affected" statements sit below everything else. Open runs and
-// any other state still need a look, even when the written verdict is not_affected.
-function needsAttention(row: StatementRow) {
-  if (row.needsFix || row.source === 'open') return true;
-  return row.state !== 'not_affected';
 }
 
 function StatusPill({ status }: { status: string }) {
@@ -387,26 +380,23 @@ export function TriageBoard({
   }
 
   const { sortColumn: sortBy, sortDirection: sortDir, toggleSort, page, setPage, totalPages, offset } = useSortablePaginationState({
-    initialSortColumn: 'attention',
+    initialSortColumn: 'triagedAt',
     initialSortDirection: 'desc',
-    resolveNewColumnDirection: col => (col === 'attention' || col === 'affectedImages' || col === 'createdAt' ? 'desc' : 'asc'),
+    resolveNewColumnDirection: col => (col === 'affectedImages' || col === 'expiresAt' || col === 'triagedAt' ? 'desc' : 'asc'),
     pageSize,
     totalItems: pool.length,
   });
 
   const sorted = [...pool].sort((a, b) => {
     const value = (row: StatementRow) => {
-      if (sortBy === 'attention') return needsAttention(row) ? 1 : 0;
       if (sortBy === 'affectedImages') return row.affectedImages;
       if (sortBy === 'expiresAt') return row.expiresAt;
-      return row.createdAt;
+      return row.triagedAt;
     };
     const diff = value(a) - value(b);
     if (diff !== 0) return sortDir === 'asc' ? diff : -diff;
-    if (sortBy !== 'attention') return 0;
-    const images = b.affectedImages - a.affectedImages;
-    if (images !== 0) return images;
-    return b.createdAt - a.createdAt;
+    if (a.repository !== b.repository) return a.repository < b.repository ? -1 : 1;
+    return a.cve < b.cve ? -1 : a.cve > b.cve ? 1 : 0;
   });
   const paged = sorted.slice(offset, offset + pageSize);
 
@@ -451,10 +441,9 @@ export function TriageBoard({
   };
 
   const sortColumns = [
-    { col: 'attention', label: 'Attention' },
     { col: 'affectedImages', label: 'Affected Images' },
     { col: 'expiresAt', label: 'Expiry' },
-    { col: 'createdAt', label: 'Created' },
+    { col: 'triagedAt', label: 'Triaged' },
   ] as const;
 
   if (loading && rows.length === 0 && active.length === 0) return <LoadingState message="Loading triage..." />;
@@ -495,9 +484,9 @@ export function TriageBoard({
       {mode === 'full' ? (
         <PageFiltersBar>
           <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Search CVE ID or repository…"
-            className="flex-1 max-w-xs px-3 py-2 bg-bg-secondary border border-border rounded-lg text-sm text-text-primary placeholder:text-text-muted focus:outline-none focus:border-accent/50 transition-colors" />
+            className="w-full sm:flex-1 sm:max-w-xs px-3 py-2 bg-bg-secondary border border-border rounded-lg text-sm text-text-primary placeholder:text-text-muted focus:outline-none focus:border-accent/50 transition-colors" />
           <select value={stateFilter} onChange={e => { setStateFilter(e.target.value); setPage(1); }}
-            className="px-3 py-2 bg-bg-secondary border border-border rounded-lg text-sm text-text-primary focus:outline-none focus:border-accent/50 transition-colors">
+            className="w-full sm:w-auto px-3 py-2 bg-bg-secondary border border-border rounded-lg text-sm text-text-primary focus:outline-none focus:border-accent/50 transition-colors">
             <option value="all">All VEX States</option>
             <option value="not_affected">Not Affected</option>
             <option value="affected">Affected</option>
@@ -507,14 +496,14 @@ export function TriageBoard({
             <option value="resolved">Resolved</option>
           </select>
           <select value={expirationFilter} onChange={e => { setExpirationFilter(e.target.value); setPage(1); }}
-            className="px-3 py-2 bg-bg-secondary border border-border rounded-lg text-sm text-text-primary focus:outline-none focus:border-accent/50 transition-colors">
+            className="w-full sm:w-auto px-3 py-2 bg-bg-secondary border border-border rounded-lg text-sm text-text-primary focus:outline-none focus:border-accent/50 transition-colors">
             <option value="all">All Expirations</option>
             <option value="active">Active</option>
             <option value="expiring">Expiring Soon</option>
             <option value="expired">Expired</option>
           </select>
           <select value={origin} onChange={e => { setOrigin(e.target.value); setPage(1); }}
-            className="px-3 py-2 bg-bg-secondary border border-border rounded-lg text-sm text-text-primary focus:outline-none focus:border-accent/50 transition-colors">
+            className="w-full sm:w-auto px-3 py-2 bg-bg-secondary border border-border rounded-lg text-sm text-text-primary focus:outline-none focus:border-accent/50 transition-colors">
             <option value="auto">Auto</option>
             <option value="manual">Manual</option>
             <option value="all">All</option>
@@ -522,8 +511,9 @@ export function TriageBoard({
           <FilterActionButton onClick={() => setPage(1)}>Filter</FilterActionButton>
           <FilterActionButton variant="secondary" onClick={() => { setSearch(''); setStateFilter('all'); setExpirationFilter('all'); setOrigin('auto'); setPage(1); }}>Clear</FilterActionButton>
           <button type="button" onClick={() => copyRuns(openRuns(promptRows))} disabled={copying}
-            className="inline-flex items-center gap-1.5 px-3 py-2 text-sm rounded-lg border border-accent/30 text-text-primary bg-bg-secondary hover:bg-bg-tertiary disabled:opacity-50 transition-colors">
-            <Copy className="w-3.5 h-3.5" />
+            title="Fix all open using coding assistant"
+            className="inline-flex w-full sm:w-auto items-center justify-center gap-1.5 px-3 py-2 text-sm rounded-lg border border-accent/30 text-text-primary bg-bg-secondary hover:bg-bg-tertiary disabled:opacity-50 transition-colors">
+            <Copy className="w-3.5 h-3.5 shrink-0" />
             {copying ? 'Copying…' : 'Fix all open using coding assistant'}
           </button>
         </PageFiltersBar>
@@ -545,48 +535,53 @@ export function TriageBoard({
       {error && <p className="text-sm text-danger mb-3">{error}</p>}
       {notice && <p className="text-sm text-text-secondary mb-3">{notice}</p>}
       <div className="bg-bg-primary border border-border rounded-xl overflow-hidden">
-        <div className="flex items-center gap-1 px-4 py-2 border-b border-border bg-bg-secondary text-xs font-medium text-text-secondary uppercase">
-          <span className="flex-1 pl-2">Statement</span>
+        <div className="flex flex-wrap items-center gap-1 px-3 py-2 border-b border-border bg-bg-secondary text-xs font-medium text-text-secondary uppercase md:grid md:grid-cols-[minmax(0,1fr)_6.5rem_5.5rem_11.5rem_auto] md:items-center md:gap-x-3 md:px-4">
+          <span className="pl-1 mr-auto md:mr-0">Statement</span>
           {sortColumns.map(({ col, label }) => {
             const activeSort = sortBy === col;
             const Icon = activeSort ? (sortDir === 'asc' ? ArrowUp : ArrowDown) : ArrowUpDown;
             return (
               <button key={col} type="button" onClick={() => { setPage(1); toggleSort(col); }}
-                className={`flex items-center gap-1 px-2 py-1 rounded hover:bg-bg-tertiary transition-colors select-none ${activeSort ? 'text-accent' : ''}`}>
+                className={`flex items-center gap-1 px-2 py-1 rounded hover:bg-bg-tertiary transition-colors select-none md:justify-end ${activeSort ? 'text-accent' : ''}`}>
                 {label} <Icon className="w-3 h-3" />
               </button>
             );
           })}
+          <span className="hidden md:block" />
         </div>
         {paged.length === 0 ? (
-          <div className="p-12 text-center text-text-secondary text-sm">
+          <div className="p-8 sm:p-12 text-center text-text-secondary text-sm">
             {mode === 'attention' ? 'No rejected or unresolved auto-triages need manual review.' : 'No statements match filters'}
           </div>
         ) : (
           <div className="divide-y divide-border">
             {paged.map(row => (
-              <div key={row.key} className="flex items-center gap-3 px-4 py-3 hover:bg-bg-secondary transition-colors">
-                <button type="button" onClick={() => setEditing(row)} className="flex-1 min-w-0 flex items-center gap-3 text-left">
-                  {row.source === 'open' && row.run ? <StatusPill status={row.run.Status} /> : <StatePill state={row.state} />}
-                  <span className="px-2 py-0.5 rounded text-xs font-medium bg-bg-tertiary text-text-secondary shrink-0">
-                    {row.source === 'open' ? 'open' : row.source}
-                  </span>
-                  <div className="flex-1 min-w-0">
-                    <div className="text-sm font-mono font-medium">{row.cve}</div>
-                    <div className="text-xs text-text-muted truncate">
-                      {row.repository}{row.justification ? ` · ${row.justification}` : ''}
-                    </div>
+              <div key={row.key} className="px-3 py-3 hover:bg-bg-secondary transition-colors md:grid md:grid-cols-[minmax(0,1fr)_6.5rem_5.5rem_11.5rem_auto] md:items-center md:gap-x-3 md:px-4">
+                <button type="button" onClick={() => setEditing(row)} className="min-w-0 text-left">
+                  <div className="flex flex-wrap items-center gap-2">
+                    {row.source === 'open' && row.run ? <StatusPill status={row.run.Status} /> : <StatePill state={row.state} />}
+                    <span className="px-2 py-0.5 rounded text-xs font-medium bg-bg-tertiary text-text-secondary">
+                      {row.source === 'open' ? 'open' : row.source}
+                    </span>
+                    <span className="text-sm font-mono font-medium break-all">{row.cve}</span>
                   </div>
-                  <ExpirationBadge expiresAt={row.expiresAt} />
-                  <span className="text-xs text-text-muted shrink-0 w-16 text-right">{row.affectedImages} image{row.affectedImages === 1 ? '' : 's'}</span>
-                  <span className="text-xs text-text-muted shrink-0 w-28 text-right">{row.createdAt ? formatDate(row.createdAt) : '—'}</span>
+                  <div className="text-xs text-text-muted truncate mt-1">
+                    {row.repository}{row.justification ? ` · ${row.justification}` : ''}
+                  </div>
                 </button>
-                <div className="flex items-center gap-2 shrink-0">
+                <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 md:contents">
+                  <span className="text-xs text-text-muted md:mt-0 md:text-right">{row.affectedImages} image{row.affectedImages === 1 ? '' : 's'}</span>
+                  <span className="md:text-right"><ExpirationBadge expiresAt={row.expiresAt} /></span>
+                  <span className="text-xs text-text-muted md:text-right whitespace-nowrap">
+                    <span className="md:hidden">Triaged </span>{row.triagedAt ? formatDate(row.triagedAt) : '—'}
+                  </span>
+                </div>
+                <div className="mt-2 flex flex-wrap items-center gap-2 md:mt-0 md:justify-end">
                   {row.needsFix && row.run && (
                     <button type="button" onClick={() => copyRuns([row.run as TriageRun], row.key)}
                       disabled={copyingKey === row.key}
                       title="Fix this using coding assistant"
-                      className="px-2 py-1 text-xs rounded-md border border-accent/30 text-text-secondary hover:bg-bg-tertiary disabled:opacity-50">
+                      className="px-2 py-1 text-xs rounded-md border border-accent/30 text-text-secondary hover:bg-bg-tertiary disabled:opacity-50 max-w-full">
                       {copyingKey === row.key ? 'Copying…' : 'Fix this using coding assistant'}
                     </button>
                   )}

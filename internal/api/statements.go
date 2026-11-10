@@ -10,6 +10,9 @@ import (
 // Source is auto, manual, or open. NeedsFix is the single meaning of an open triage:
 // the latest run is uncertain, rejected, or failed, and a later run has not replaced it.
 // AffectedImageCount is how many current image digests contain the finding.
+// TriagedAt is the latest stored triage run for this repository and CVE.
+// A newer run replaces it. It stays zero when no run exists.
+// CreatedAt is when a statement was applied to a scan, which is a different time.
 type TriageStatement struct {
 	CVEID              string             `json:"CVEID"`
 	Repository         string             `json:"Repository"`
@@ -18,6 +21,7 @@ type TriageStatement struct {
 	Detail             string             `json:"Detail,omitempty"`
 	ExpiresAt          int64              `json:"ExpiresAt"`
 	CreatedAt          int64              `json:"CreatedAt"`
+	TriagedAt          int64              `json:"TriagedAt"`
 	AffectedImageCount int                `json:"AffectedImageCount"`
 	Source             string             `json:"Source"`
 	NeedsFix           bool               `json:"NeedsFix"`
@@ -89,6 +93,10 @@ func statementList(active, inactive []*types.VEXSummary, runs []TriageRunRespons
 			if hasRun {
 				attached = &run
 			}
+			triagedAt := int64(0)
+			if hasRun {
+				triagedAt = run.CreatedAt
+			}
 			rows = append(rows, TriageStatement{
 				CVEID:              summary.CVEID,
 				Repository:         repo.Repository,
@@ -97,6 +105,7 @@ func statementList(active, inactive []*types.VEXSummary, runs []TriageRunRespons
 				Detail:             summary.Detail,
 				ExpiresAt:          expires,
 				CreatedAt:          created,
+				TriagedAt:          triagedAt,
 				AffectedImageCount: findingImages[summary.CVEID],
 				Source:             statementSource(repo.Source),
 				NeedsFix:           hasRun && runNeedsFix(run),
@@ -119,6 +128,7 @@ func statementList(active, inactive []*types.VEXSummary, runs []TriageRunRespons
 			Justification:      run.Justification,
 			Detail:             run.Reasoning,
 			CreatedAt:          run.CreatedAt,
+			TriagedAt:          run.CreatedAt,
 			AffectedImageCount: findingImages[run.CVEID],
 			Source:             "open",
 			NeedsFix:           runNeedsFix(run),
