@@ -31,19 +31,63 @@ func TestSameKindDigestsIgnoresOtherPredicates(t *testing.T) {
 	}
 }
 
-func TestStaleSameKindKeepsTheNewAttestation(t *testing.T) {
-	previous := []string{"sha256:old1", "sha256:old2"}
-	current := []string{"sha256:old1", "sha256:old2", "sha256:new"}
-	got := staleSameKind(previous, current)
-	if len(got) != 2 || got[0] != "sha256:old1" || got[1] != "sha256:old2" {
+func TestAllButNewestIgnoresListOrder(t *testing.T) {
+	descs := []v1.Descriptor{
+		{Digest: hash(t, 'b'), Annotations: map[string]string{annotationBundlePredicate: predicateVuln, annotationCreated: "2026-11-09T00:00:00Z"}},
+		{Digest: hash(t, 'a'), Annotations: map[string]string{annotationBundlePredicate: predicateVuln, annotationCreated: "2026-11-01T00:00:00Z"}},
+	}
+	got := allButNewest(descs, predicateVuln)
+	if len(got) != 1 || got[0] != hash(t, 'a').String() {
 		t.Fatalf("stale = %#v", got)
 	}
 }
 
-func TestStaleSameKindKeepsTheOnlyCopy(t *testing.T) {
-	got := staleSameKind([]string{"sha256:only"}, []string{"sha256:only"})
-	if len(got) != 0 {
-		t.Fatalf("stale = %#v, want none", got)
+func TestCollapseRelistsUntilOneRemains(t *testing.T) {
+	t.Setenv("ATTESTATION_NEW_BUNDLE_FORMAT", "false")
+	const scai = "https://in-toto.io/attestation/scai/attribute-report/v0.3"
+	older := v1.Descriptor{Digest: hash(t, 'a'), Annotations: map[string]string{annotationBundlePredicate: scai, annotationCreated: "2026-10-01T00:00:00Z"}}
+	expired := v1.Descriptor{Digest: hash(t, 'b'), Annotations: map[string]string{annotationBundlePredicate: scai, annotationCreated: "2026-11-01T00:00:00Z"}}
+	fresh := v1.Descriptor{Digest: hash(t, 'c'), Annotations: map[string]string{annotationBundlePredicate: scai, annotationCreated: "2026-11-10T00:00:00Z"}}
+	lists := [][]v1.Descriptor{
+		{older, expired},
+		{expired, fresh},
+		{fresh},
+	}
+	calls := 0
+	prevLoad, prevRemove := loadReferrers, removeReferrers
+	t.Cleanup(func() {
+		loadReferrers = prevLoad
+		removeReferrers = prevRemove
+	})
+	loadReferrers = func(context.Context, name.Digest) ([]v1.Descriptor, error) {
+		i := calls
+		if i >= len(lists) {
+			i = len(lists) - 1
+		}
+		calls++
+		return lists[i], nil
+	}
+	var deleted []string
+	removeReferrers = func(_ context.Context, _ *SigstoreAttestor, _ name.Digest, predicate string, stale []string) error {
+		if predicate != scai {
+			t.Errorf("predicate = %s", predicate)
+		}
+		deleted = append(deleted, stale...)
+		return nil
+	}
+
+	digest, err := name.NewDigest("example.com/app@sha256:" + repeatHex('d'))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := collapseReferrers(context.Background(), testAttestor(t), digest, scai); err != nil {
+		t.Fatal(err)
+	}
+	if calls != 3 {
+		t.Fatalf("lists = %d, want 3", calls)
+	}
+	if len(deleted) != 2 || deleted[0] != older.Digest.String() || deleted[1] != expired.Digest.String() {
+		t.Fatalf("deleted = %#v", deleted)
 	}
 }
 
@@ -93,7 +137,7 @@ func TestAttestSBOMDeletesPreviousSameKind(t *testing.T) {
 	fakeBinDir := writeFakeCosign(t, "#!/bin/sh\nexit 0\n")
 	t.Setenv("PATH", fakeBinDir+string(os.PathListSeparator)+os.Getenv("PATH"))
 
-	cleaner := &recordingCleaner{list: []string{"sha256:old"}}
+	cleaner := &recordingCleaner{}
 	attestor := testAttestor(t)
 	attestor.cleaner = cleaner
 
@@ -101,11 +145,9 @@ func TestAttestSBOMDeletesPreviousSameKind(t *testing.T) {
 	if err := attestor.AttestSBOM(context.Background(), imageRef, testSBOM(t)); err != nil {
 		t.Fatalf("AttestSBOM: %v", err)
 	}
-	if cleaner.predicate != "https://cyclonedx.org/bom" {
-		t.Fatalf("predicate = %s", cleaner.predicate)
-	}
-	if !cleaner.listed || len(cleaner.previous) != 1 || cleaner.previous[0] != "sha256:old" {
-		t.Fatalf("previous = %#v listed=%v", cleaner.previous, cleaner.listed)
+	want := []string{"https://cyclonedx.org/bom", predicateCosignSign}
+	if len(cleaner.predicates) != len(want) || cleaner.predicates[0] != want[0] || cleaner.predicates[1] != want[1] {
+		t.Fatalf("predicates = %#v", cleaner.predicates)
 	}
 }
 
@@ -119,8 +161,8 @@ func TestAttestSBOMSkipsCleanupWithoutDigest(t *testing.T) {
 	if err := attestor.AttestSBOM(context.Background(), "example.com/app:latest", testSBOM(t)); err != nil {
 		t.Fatalf("AttestSBOM: %v", err)
 	}
-	if cleaner.predicate != "" {
-		t.Fatalf("cleanup ran for a tag ref: %#v", cleaner)
+	if len(cleaner.predicates) != 0 {
+		t.Fatalf("cleanup ran for a tag ref: %#v", cleaner.predicates)
 	}
 }
 
@@ -128,18 +170,15 @@ func TestAttestSBOMStillAttestsWhenListingFails(t *testing.T) {
 	fakeBinDir := writeFakeCosign(t, "#!/bin/sh\nexit 0\n")
 	t.Setenv("PATH", fakeBinDir+string(os.PathListSeparator)+os.Getenv("PATH"))
 
-	cleaner := &recordingCleaner{listErr: os.ErrClosed}
+	cleaner := &recordingCleaner{err: os.ErrClosed}
 	attestor := testAttestor(t)
 	attestor.cleaner = cleaner
 	imageRef := "example.com/app@sha256:" + repeatHex('c')
 	if err := attestor.AttestSBOM(context.Background(), imageRef, testSBOM(t)); err != nil {
 		t.Fatalf("AttestSBOM: %v", err)
 	}
-	if cleaner.listed || cleaner.previous != nil {
-		t.Fatalf("delete = %#v listed=%v", cleaner.previous, cleaner.listed)
-	}
-	if cleaner.deleteCalls != 1 {
-		t.Fatalf("delete calls = %d", cleaner.deleteCalls)
+	if len(cleaner.predicates) != 2 {
+		t.Fatalf("predicates = %#v", cleaner.predicates)
 	}
 }
 
@@ -147,38 +186,26 @@ func TestAttestSBOMSkipsCleanupWhenCosignFails(t *testing.T) {
 	fakeBinDir := writeFakeCosign(t, "#!/bin/sh\nexit 1\n")
 	t.Setenv("PATH", fakeBinDir+string(os.PathListSeparator)+os.Getenv("PATH"))
 
-	cleaner := &recordingCleaner{list: []string{"sha256:old"}}
+	cleaner := &recordingCleaner{}
 	attestor := testAttestor(t)
 	attestor.cleaner = cleaner
 	imageRef := "example.com/app@sha256:" + repeatHex('b')
 	if err := attestor.AttestSBOM(context.Background(), imageRef, testSBOM(t)); err == nil {
 		t.Fatal("expected cosign failure")
 	}
-	if cleaner.previous != nil {
-		t.Fatalf("deleted after a failed attest: %#v", cleaner.previous)
+	if len(cleaner.predicates) != 0 {
+		t.Fatalf("collapsed after a failed attest: %#v", cleaner.predicates)
 	}
 }
 
 type recordingCleaner struct {
-	list        []string
-	listErr     error
-	predicate   string
-	previous    []string
-	listed      bool
-	deleteCalls int
+	predicates []string
+	err        error
 }
 
-func (r *recordingCleaner) listSameKind(_ context.Context, _ name.Digest, predicate string) ([]string, error) {
-	r.predicate = predicate
-	return r.list, r.listErr
-}
-
-func (r *recordingCleaner) deletePrevious(_ context.Context, _ name.Digest, predicate string, previous []string, listed bool) error {
-	r.deleteCalls++
-	r.predicate = predicate
-	r.previous = append([]string(nil), previous...)
-	r.listed = listed
-	return nil
+func (r *recordingCleaner) collapse(_ context.Context, _ name.Digest, predicate string) error {
+	r.predicates = append(r.predicates, predicate)
+	return r.err
 }
 
 func hash(t *testing.T, seed byte) v1.Hash {

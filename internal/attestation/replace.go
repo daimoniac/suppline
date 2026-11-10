@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"sort"
 	"strings"
 
 	"github.com/google/go-containerregistry/pkg/authn"
@@ -23,14 +24,19 @@ const (
 	annotationPredicateType   = "predicateType"
 	annotationCreated         = "org.opencontainers.image.created"
 
-	predicateVuln = "https://cosign.sigstore.dev/attestation/vuln/v1"
+	predicateVuln       = "https://cosign.sigstore.dev/attestation/vuln/v1"
+	predicateCosignSign = "https://sigstore.dev/cosign/sign/v1"
+
+	// maxSameKindPasses bounds the list/delete loop. One pass can leave the previous
+	// newest in place when the attestation just written is not visible yet; the next
+	// pass sees it and removes that survivor.
+	maxSameKindPasses = 5
 )
 
 // sameKindCleaner removes attestations of one predicate from a registry.
 // Tests substitute it. Production leaves it nil and talks to the registry.
 type sameKindCleaner interface {
-	listSameKind(ctx context.Context, digest name.Digest, predicate string) ([]string, error)
-	deletePrevious(ctx context.Context, digest name.Digest, predicate string, previous []string, listed bool) error
+	collapse(ctx context.Context, digest name.Digest, predicate string) error
 }
 
 // canonicalPredicate maps a cosign --type value to the predicate type stored on the attestation.
@@ -77,37 +83,6 @@ func sameKindDigests(descs []v1.Descriptor, predicate string) []string {
 	return out
 }
 
-// staleSameKind returns snapshot digests that are still listed.
-// A digest listed now but absent from the snapshot is the attestation just written, so
-// every still-present snapshot digest is removed. When the new digest is not visible,
-// one listed digest is kept so a reused attestation is not deleted.
-func staleSameKind(previous, current []string) []string {
-	if len(current) == 0 {
-		return nil
-	}
-	present := map[string]struct{}{}
-	for _, digest := range current {
-		present[digest] = struct{}{}
-	}
-	var stale []string
-	for _, digest := range previous {
-		if _, ok := present[digest]; ok {
-			stale = append(stale, digest)
-		}
-	}
-	if len(present) > len(stale) {
-		return stale
-	}
-	keep := current[len(current)-1]
-	filtered := stale[:0]
-	for _, digest := range stale {
-		if digest != keep {
-			filtered = append(filtered, digest)
-		}
-	}
-	return filtered
-}
-
 func allButNewest(descs []v1.Descriptor, predicate string) []string {
 	var matched []v1.Descriptor
 	for _, desc := range descs {
@@ -142,25 +117,12 @@ func createdOf(desc v1.Descriptor) string {
 }
 
 // attestReplacingSameKind writes one attestation, then deletes older attestations of that
-// predicate for the image. Other predicates are left alone. Cleanup failure does not fail
-// the attest: the new attestation is already published, and failing here would retry and
-// publish another one.
+// predicate for the image. Cosign signature referrers are collapsed the same way. Other
+// predicates are left alone. Cleanup failure does not fail the attest: the new attestation
+// is already published, and failing here would retry and publish another one.
 func (a *SigstoreAttestor) attestReplacingSameKind(ctx context.Context, operation, cosignType, predicatePath, imageRef string) error {
 	predicate := canonicalPredicate(cosignType)
 	digest, digestErr := parseImageDigest(imageRef)
-	var previous []string
-	listed := false
-	if digestErr == nil {
-		var listErr error
-		previous, listErr = a.listSameKind(ctx, digest, predicate)
-		listed = listErr == nil
-		if listErr != nil {
-			a.logger.Warn("could not list attestations to replace",
-				"image_ref", imageRef,
-				"predicate", predicate,
-				"error", listErr)
-		}
-	}
 
 	if _, err := a.runCosignAttest(ctx, operation, a.attestArgs(cosignType, predicatePath, imageRef)...); err != nil {
 		return err
@@ -169,27 +131,28 @@ func (a *SigstoreAttestor) attestReplacingSameKind(ctx context.Context, operatio
 		a.logger.Debug("skipping attestation cleanup; image ref has no digest", "image_ref", imageRef)
 		return nil
 	}
-	if err := a.deletePrevious(ctx, digest, predicate, previous, listed); err != nil {
-		a.logger.Warn("failed to delete previous attestations",
-			"image_ref", imageRef,
-			"predicate", predicate,
-			"error", err)
+	a.collapseSameKind(ctx, digest, predicate)
+	// Each attest also leaves a cosign signature referrer. Collapse those with the same rule
+	// so historical sign/v1 bundles do not accumulate next to the attestation types.
+	if predicate != predicateCosignSign {
+		a.collapseSameKind(ctx, digest, predicateCosignSign)
 	}
 	return nil
 }
 
-func (a *SigstoreAttestor) listSameKind(ctx context.Context, digest name.Digest, predicate string) ([]string, error) {
+func (a *SigstoreAttestor) collapseSameKind(ctx context.Context, digest name.Digest, predicate string) {
+	var err error
 	if a.cleaner != nil {
-		return a.cleaner.listSameKind(ctx, digest, predicate)
+		err = a.cleaner.collapse(ctx, digest, predicate)
+	} else {
+		err = collapseReferrers(ctx, a, digest, predicate)
 	}
-	return listSameKind(ctx, digest, predicate)
-}
-
-func (a *SigstoreAttestor) deletePrevious(ctx context.Context, digest name.Digest, predicate string, previous []string, listed bool) error {
-	if a.cleaner != nil {
-		return a.cleaner.deletePrevious(ctx, digest, predicate, previous, listed)
+	if err != nil {
+		a.logger.Warn("failed to delete previous attestations",
+			"image_ref", digest.String(),
+			"predicate", predicate,
+			"error", err)
 	}
-	return deletePreviousAttestations(ctx, a, digest, predicate, previous, listed)
 }
 
 func parseImageDigest(imageRef string) (name.Digest, error) {
@@ -207,13 +170,12 @@ func remoteOptions(ctx context.Context) []remote.Option {
 	}
 }
 
-func listSameKind(ctx context.Context, digest name.Digest, predicate string) ([]string, error) {
-	descs, err := referrerDescriptors(ctx, digest)
-	if err != nil {
-		return nil, err
-	}
-	return sameKindDigests(descs, predicate), nil
-}
+// loadReferrers and removeReferrers are the registry calls behind a collapse pass.
+// Tests replace them.
+var (
+	loadReferrers   = referrerDescriptors
+	removeReferrers = deleteReferrers
+)
 
 func referrerDescriptors(ctx context.Context, digest name.Digest) ([]v1.Descriptor, error) {
 	index, err := remote.Referrers(digest, remoteOptions(ctx)...)
@@ -227,51 +189,62 @@ func referrerDescriptors(ctx context.Context, digest name.Digest) ([]v1.Descript
 	return manifest.Manifests, nil
 }
 
-func deletePreviousAttestations(ctx context.Context, a *SigstoreAttestor, digest name.Digest, predicate string, previous []string, listed bool) error {
+func collapseReferrers(ctx context.Context, a *SigstoreAttestor, digest name.Digest, predicate string) error {
 	var errs []error
-	var stale []string
-	current, err := referrerDescriptors(ctx, digest)
-	if err != nil && listed {
-		// The snapshot was taken before this write, so it does not include the new attestation.
-		a.logger.Warn("could not re-list attestations; deleting the pre-attest snapshot",
-			"image", digest.String(),
-			"predicate", predicate,
-			"error", err)
-		stale = previous
-	} else if err != nil {
-		return err
-	} else if listed {
-		stale = staleSameKind(previous, sameKindDigests(current, predicate))
-	} else {
-		stale = allButNewest(current, predicate)
-	}
-
-	// Rewrite a referrers fallback tag before deleting blobs. A failed rewrite leaves the
-	// tag pointing at those blobs, so deleting them would strand the index.
-	if err := dropFallbackDescriptors(ctx, digest, stale); err != nil {
-		errs = append(errs, err)
-	} else {
-		for _, old := range stale {
-			ref := digest.Context().Digest(old)
-			delErr := remote.Delete(ref, remoteOptions(ctx)...)
-			if delErr != nil && !isNotFound(delErr) {
-				errs = append(errs, fmt.Errorf("delete %s: %w", old, delErr))
-				continue
-			}
-			if delErr == nil {
-				a.logger.Info("deleted previous attestation",
-					"image", digest.String(),
-					"predicate", predicate,
-					"digest", old)
-			}
+	seen := ""
+	for pass := 0; pass < maxSameKindPasses; pass++ {
+		current, err := loadReferrers(ctx, digest)
+		if err != nil {
+			return errors.Join(append(errs, err)...)
+		}
+		stale := allButNewest(current, predicate)
+		if len(stale) == 0 {
+			break
+		}
+		keyParts := append([]string(nil), stale...)
+		sort.Strings(keyParts)
+		key := strings.Join(keyParts, ",")
+		if key == seen {
+			errs = append(errs, fmt.Errorf("still %d %s referrers after delete", len(stale)+1, predicate))
+			break
+		}
+		seen = key
+		if err := removeReferrers(ctx, a, digest, predicate, stale); err != nil {
+			errs = append(errs, err)
+			break
 		}
 	}
 	// Bundle mode publishes the new attestation as a referrer. The classic .att tag is then
 	// only historical, so drop this predicate from it. Classic mode just rewrote that tag
 	// with --replace, and stripping it would delete the attestation we just wrote.
-	if useNewBundleFormat() {
+	// Signature referrers are not stored in that tag.
+	if useNewBundleFormat() && predicate != predicateCosignSign {
 		if err := stripClassicAttestation(ctx, digest, predicate); err != nil {
 			errs = append(errs, err)
+		}
+	}
+	return errors.Join(errs...)
+}
+
+func deleteReferrers(ctx context.Context, a *SigstoreAttestor, digest name.Digest, predicate string, stale []string) error {
+	var errs []error
+	// Rewrite a referrers fallback tag before deleting blobs. A failed rewrite leaves the
+	// tag pointing at those blobs, so deleting them would strand the index.
+	if err := dropFallbackDescriptors(ctx, digest, stale); err != nil {
+		return err
+	}
+	for _, old := range stale {
+		ref := digest.Context().Digest(old)
+		delErr := remote.Delete(ref, remoteOptions(ctx)...)
+		if delErr != nil && !isNotFound(delErr) {
+			errs = append(errs, fmt.Errorf("delete %s: %w", old, delErr))
+			continue
+		}
+		if delErr == nil {
+			a.logger.Info("deleted previous attestation",
+				"image", digest.String(),
+				"predicate", predicate,
+				"digest", old)
 		}
 	}
 	return errors.Join(errs...)
