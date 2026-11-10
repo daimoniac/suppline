@@ -622,7 +622,9 @@ func (s *APIServer) handleTriggerScan(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 
-		task, err := s.scanEnqueuer.EnqueueRescan(ctx, scanenqueue.Image{
+		// A single explicit digest is an operator request for an image a
+		// cluster may be waiting on, so it jumps ahead of the discovery backlog.
+		task, err := s.scanEnqueuer.EnqueueUrgentRescan(ctx, scanenqueue.Image{
 			Repository: lastScan.Repository,
 			Digest:     req.Digest,
 			Tag:        lastScan.Tag,
@@ -1352,7 +1354,8 @@ func (s *APIServer) handleRescanTag(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	task, err := s.scanEnqueuer.EnqueueRescan(ctx, scanenqueue.Image{
+	// Single-tag rescans are operator requests and jump the discovery backlog.
+	task, err := s.scanEnqueuer.EnqueueUrgentRescan(ctx, scanenqueue.Image{
 		Repository: lastScan.Repository,
 		Digest:     digest,
 		Tag:        lastScan.Tag,

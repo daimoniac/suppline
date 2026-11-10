@@ -71,7 +71,8 @@ func (e *Enqueuer) EnqueueRescan(ctx context.Context, image Image) (*queue.ScanT
 }
 
 // EnqueueUrgentRescan submits a rescan that must jump ahead of regular scans,
-// such as the startup rescan of failed images that are running in a cluster.
+// such as the startup rescan of failed images that are running in a cluster
+// and single-image rescans requested through the API.
 func (e *Enqueuer) EnqueueUrgentRescan(ctx context.Context, image Image) (*queue.ScanTask, error) {
 	return e.enqueue(ctx, image, true, false, queue.PriorityHigh)
 }
