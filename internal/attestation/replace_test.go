@@ -80,7 +80,7 @@ func TestCollapseRelistsUntilOneRemains(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := collapseReferrers(context.Background(), testAttestor(t), digest, scai); err != nil {
+	if err := collapseReferrers(context.Background(), testAttestor(t), digest, scai, true); err != nil {
 		t.Fatal(err)
 	}
 	if calls != 3 {
@@ -133,6 +133,45 @@ func TestManifestWithoutPredicateDeletesWhenLastLayer(t *testing.T) {
 	}
 }
 
+func TestCollapseDeletesEverySignatureReferrer(t *testing.T) {
+	t.Setenv("ATTESTATION_NEW_BUNDLE_FORMAT", "false")
+	first := v1.Descriptor{Digest: hash(t, 'a'), Annotations: map[string]string{annotationBundlePredicate: predicateCosignSign, annotationCreated: "2026-04-11T00:00:00Z"}}
+	second := v1.Descriptor{Digest: hash(t, 'b'), Annotations: map[string]string{annotationBundlePredicate: predicateCosignSign, annotationCreated: "2026-04-14T00:00:00Z"}}
+	lists := [][]v1.Descriptor{{first, second}, {}}
+	calls := 0
+	prevLoad, prevRemove := loadReferrers, removeReferrers
+	t.Cleanup(func() {
+		loadReferrers = prevLoad
+		removeReferrers = prevRemove
+	})
+	loadReferrers = func(context.Context, name.Digest) ([]v1.Descriptor, error) {
+		i := calls
+		if i >= len(lists) {
+			i = len(lists) - 1
+		}
+		calls++
+		return lists[i], nil
+	}
+	var deleted []string
+	removeReferrers = func(_ context.Context, _ *SigstoreAttestor, _ name.Digest, predicate string, stale []string) error {
+		if predicate != predicateCosignSign {
+			t.Errorf("predicate = %s", predicate)
+		}
+		deleted = append(deleted, stale...)
+		return nil
+	}
+	digest, err := name.NewDigest("example.com/app@sha256:" + repeatHex('e'))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := collapseReferrers(context.Background(), testAttestor(t), digest, predicateCosignSign, false); err != nil {
+		t.Fatal(err)
+	}
+	if len(deleted) != 2 {
+		t.Fatalf("deleted = %#v", deleted)
+	}
+}
+
 func TestAttestSBOMDeletesPreviousSameKind(t *testing.T) {
 	fakeBinDir := writeFakeCosign(t, "#!/bin/sh\nexit 0\n")
 	t.Setenv("PATH", fakeBinDir+string(os.PathListSeparator)+os.Getenv("PATH"))
@@ -145,9 +184,11 @@ func TestAttestSBOMDeletesPreviousSameKind(t *testing.T) {
 	if err := attestor.AttestSBOM(context.Background(), imageRef, testSBOM(t)); err != nil {
 		t.Fatalf("AttestSBOM: %v", err)
 	}
-	want := []string{"https://cyclonedx.org/bom", predicateCosignSign}
-	if len(cleaner.predicates) != len(want) || cleaner.predicates[0] != want[0] || cleaner.predicates[1] != want[1] {
-		t.Fatalf("predicates = %#v", cleaner.predicates)
+	if len(cleaner.calls) != 2 || cleaner.calls[0].predicate != "https://cyclonedx.org/bom" || !cleaner.calls[0].keepNewest {
+		t.Fatalf("first collapse = %#v", cleaner.calls)
+	}
+	if cleaner.calls[1].predicate != predicateCosignSign || cleaner.calls[1].keepNewest {
+		t.Fatalf("sign collapse = %#v", cleaner.calls[1])
 	}
 }
 
@@ -161,8 +202,8 @@ func TestAttestSBOMSkipsCleanupWithoutDigest(t *testing.T) {
 	if err := attestor.AttestSBOM(context.Background(), "example.com/app:latest", testSBOM(t)); err != nil {
 		t.Fatalf("AttestSBOM: %v", err)
 	}
-	if len(cleaner.predicates) != 0 {
-		t.Fatalf("cleanup ran for a tag ref: %#v", cleaner.predicates)
+	if len(cleaner.calls) != 0 {
+		t.Fatalf("cleanup ran for a tag ref: %#v", cleaner.calls)
 	}
 }
 
@@ -177,8 +218,8 @@ func TestAttestSBOMStillAttestsWhenListingFails(t *testing.T) {
 	if err := attestor.AttestSBOM(context.Background(), imageRef, testSBOM(t)); err != nil {
 		t.Fatalf("AttestSBOM: %v", err)
 	}
-	if len(cleaner.predicates) != 2 {
-		t.Fatalf("predicates = %#v", cleaner.predicates)
+	if len(cleaner.calls) != 2 {
+		t.Fatalf("calls = %#v", cleaner.calls)
 	}
 }
 
@@ -193,18 +234,23 @@ func TestAttestSBOMSkipsCleanupWhenCosignFails(t *testing.T) {
 	if err := attestor.AttestSBOM(context.Background(), imageRef, testSBOM(t)); err == nil {
 		t.Fatal("expected cosign failure")
 	}
-	if len(cleaner.predicates) != 0 {
-		t.Fatalf("collapsed after a failed attest: %#v", cleaner.predicates)
+	if len(cleaner.calls) != 0 {
+		t.Fatalf("collapsed after a failed attest: %#v", cleaner.calls)
 	}
 }
 
-type recordingCleaner struct {
-	predicates []string
-	err        error
+type collapseCall struct {
+	predicate  string
+	keepNewest bool
 }
 
-func (r *recordingCleaner) collapse(_ context.Context, _ name.Digest, predicate string) error {
-	r.predicates = append(r.predicates, predicate)
+type recordingCleaner struct {
+	calls []collapseCall
+	err   error
+}
+
+func (r *recordingCleaner) collapse(_ context.Context, _ name.Digest, predicate string, keepNewest bool) error {
+	r.calls = append(r.calls, collapseCall{predicate: predicate, keepNewest: keepNewest})
 	return r.err
 }
 

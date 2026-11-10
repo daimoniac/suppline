@@ -144,14 +144,21 @@ type Defaults struct {
 	SkipDockerConf       bool             `yaml:"skipDockerConfig,omitempty"`
 	UserAgent            string           `yaml:"userAgent,omitempty"`
 
-	RescanInterval        string               `yaml:"x-rescanInterval,omitempty"`
-	RuntimeInUseWindow    string               `yaml:"x-runtimeInUseWindow,omitempty"`
-	WorkerPollInterval    string               `yaml:"x-worker-poll-interval,omitempty"`
-	WorkerConcurrency     int                  `yaml:"x-worker-concurrency,omitempty"`
-	WorkerRetryAttempts   int                  `yaml:"x-worker-retry-attempts,omitempty"`
-	WorkerRetryBackoff    string               `yaml:"x-worker-retry-backoff,omitempty"`
-	QueueBufferSize       int                  `yaml:"x-queue-buffer-size,omitempty"`
-	SCAIValidityExtension string               `yaml:"x-scaiValidityExtension,omitempty"`
+	RescanInterval        string `yaml:"x-rescanInterval,omitempty"`
+	RuntimeInUseWindow    string `yaml:"x-runtimeInUseWindow,omitempty"`
+	WorkerPollInterval    string `yaml:"x-worker-poll-interval,omitempty"`
+	WorkerConcurrency     int    `yaml:"x-worker-concurrency,omitempty"`
+	WorkerRetryAttempts   int    `yaml:"x-worker-retry-attempts,omitempty"`
+	WorkerRetryBackoff    string `yaml:"x-worker-retry-backoff,omitempty"`
+	QueueBufferSize       int    `yaml:"x-queue-buffer-size,omitempty"`
+	SCAIValidityExtension string `yaml:"x-scaiValidityExtension,omitempty"`
+	// CreateVulnerabilityAttestation reports whether a cosign vulnerability attestation is published.
+	// Nil means yes. Kyverno loads every referrer while checking SCAI, and vulnerability bundles are
+	// the large ones, so production sets this false.
+	CreateVulnerabilityAttestation *bool `yaml:"x-createVulnerabilityAttestation,omitempty"`
+	// CreateSBOMAttestation reports whether a cosign SBOM attestation is published.
+	// Nil means yes. Kyverno reads these referrers too, so production sets this false.
+	CreateSBOMAttestation *bool                `yaml:"x-createSBOMAttestation,omitempty"`
 	Policy                *PolicyConfig        `yaml:"x-policy,omitempty"`
 	VEXRepo               *bool                `yaml:"x-vex-repo,omitempty"`
 	VEX                   []types.VEXStatement `yaml:"x-vex,omitempty"` // CycloneDX VEX statements merged with sync-specific ones

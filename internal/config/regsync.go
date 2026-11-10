@@ -481,6 +481,24 @@ func (c *RegsyncConfig) GetWorkerRetryBackoff() (time.Duration, error) {
 	return 10 * time.Second, nil // Default backoff
 }
 
+// CreateVulnerabilityAttestation reports whether scans publish a cosign vulnerability attestation.
+// Unset means yes, so existing configs keep the previous behavior.
+func (c *RegsyncConfig) CreateVulnerabilityAttestation() bool {
+	if c == nil || c.Defaults.CreateVulnerabilityAttestation == nil {
+		return true
+	}
+	return *c.Defaults.CreateVulnerabilityAttestation
+}
+
+// CreateSBOMAttestation reports whether scans publish a cosign SBOM attestation.
+// Unset means yes, so existing configs keep the previous behavior.
+func (c *RegsyncConfig) CreateSBOMAttestation() bool {
+	if c == nil || c.Defaults.CreateSBOMAttestation == nil {
+		return true
+	}
+	return *c.Defaults.CreateSBOMAttestation
+}
+
 // GetQueueBufferSize returns the queue buffer size from defaults
 // Returns the default if specified, otherwise 1000
 func (c *RegsyncConfig) GetQueueBufferSize() int {

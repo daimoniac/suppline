@@ -68,14 +68,11 @@ func buildScanRecord(
 	)
 
 	// Attestation flags reflect the actual outcome of the attestation phase.
-	// SBOM and Vuln attestation failures abort the pipeline before persistence,
-	// so reaching here with ShouldAttest=true means those two succeeded. SCAI
-	// and VEX are optional/conditional, so we read their actual success from
-	// attestResult to avoid recording false negatives/positives.
-	sbomAttested := policyDecision.ShouldAttest
-	vulnAttested := policyDecision.ShouldAttest
-	var scaiAttested, vexAttested bool
+	// A skipped SBOM or vulnerability attestation is recorded as not attested.
+	var sbomAttested, vulnAttested, scaiAttested, vexAttested bool
 	if attestResult != nil {
+		sbomAttested = attestResult.SBOMAttested
+		vulnAttested = attestResult.VulnAttested
 		scaiAttested = attestResult.SCAIAttested
 		vexAttested = attestResult.VEXAttested
 	}

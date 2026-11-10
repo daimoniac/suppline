@@ -36,6 +36,9 @@ defaults:
   x-worker-retry-backoff: 10s
   x-queue-buffer-size: 1000
   x-scaiValidityExtension: 7d
+  # Vulnerability and SBOM bundles are what Kyverno downloads on every SCAI check.
+  x-createVulnerabilityAttestation: false
+  x-createSBOMAttestation: false
   x-vex-repo: false
   x-policy:
     expression: "criticalCount == 0"

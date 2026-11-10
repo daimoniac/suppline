@@ -740,3 +740,27 @@ func TestParseRegsyncServerFields(t *testing.T) {
 		t.Fatal("default media types were not applied")
 	}
 }
+
+func TestCreateVulnerabilityAttestationDefault(t *testing.T) {
+	var cfg RegsyncConfig
+	if !cfg.CreateVulnerabilityAttestation() {
+		t.Fatal("unset option should publish vulnerability attestations")
+	}
+	off := false
+	cfg.Defaults.CreateVulnerabilityAttestation = &off
+	if cfg.CreateVulnerabilityAttestation() {
+		t.Fatal("false option should skip vulnerability attestations")
+	}
+}
+
+func TestCreateSBOMAttestationDefault(t *testing.T) {
+	var cfg RegsyncConfig
+	if !cfg.CreateSBOMAttestation() {
+		t.Fatal("unset option should publish SBOM attestations")
+	}
+	off := false
+	cfg.Defaults.CreateSBOMAttestation = &off
+	if cfg.CreateSBOMAttestation() {
+		t.Fatal("false option should skip SBOM attestations")
+	}
+}

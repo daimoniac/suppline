@@ -251,7 +251,7 @@ func (a *SigstoreAttestor) AttestSBOM(ctx context.Context, imageRef string, sbom
 	}
 	defer cleanup()
 
-	if err = a.attestReplacingSameKind(ctx, "attest SBOM", "https://cyclonedx.org/bom", predicatePath, imageRef); err != nil {
+	if err = a.attestReplacingSameKind(ctx, "attest SBOM", PredicateBOM, predicatePath, imageRef); err != nil {
 		a.logger.Error("cosign SBOM attestation failed",
 			"image_ref", imageRef,
 			"error", err)

@@ -24,7 +24,10 @@ const (
 	annotationPredicateType   = "predicateType"
 	annotationCreated         = "org.opencontainers.image.created"
 
-	predicateVuln       = "https://cosign.sigstore.dev/attestation/vuln/v1"
+	PredicateVuln       = "https://cosign.sigstore.dev/attestation/vuln/v1"
+	predicateVuln       = PredicateVuln
+	PredicateBOM        = "https://cyclonedx.org/bom"
+	predicateBOM        = PredicateBOM
 	predicateCosignSign = "https://sigstore.dev/cosign/sign/v1"
 
 	// maxSameKindPasses bounds the list/delete loop. One pass can leave the previous
@@ -34,9 +37,10 @@ const (
 )
 
 // sameKindCleaner removes attestations of one predicate from a registry.
-// Tests substitute it. Production leaves it nil and talks to the registry.
+// keepNewest retains the referrer with the latest created time. Tests substitute it.
+// Production leaves it nil and talks to the registry.
 type sameKindCleaner interface {
-	collapse(ctx context.Context, digest name.Digest, predicate string) error
+	collapse(ctx context.Context, digest name.Digest, predicate string, keepNewest bool) error
 }
 
 // canonicalPredicate maps a cosign --type value to the predicate type stored on the attestation.
@@ -45,7 +49,7 @@ func canonicalPredicate(cosignType string) string {
 	case "vuln":
 		return predicateVuln
 	case "cyclonedx":
-		return "https://cyclonedx.org/bom"
+		return predicateBOM
 	case "spdx", "spdxjson":
 		return "https://spdx.dev/Document"
 	default:
@@ -131,21 +135,31 @@ func (a *SigstoreAttestor) attestReplacingSameKind(ctx context.Context, operatio
 		a.logger.Debug("skipping attestation cleanup; image ref has no digest", "image_ref", imageRef)
 		return nil
 	}
-	a.collapseSameKind(ctx, digest, predicate)
-	// Each attest also leaves a cosign signature referrer. Collapse those with the same rule
-	// so historical sign/v1 bundles do not accumulate next to the attestation types.
+	a.collapseSameKind(ctx, digest, predicate, true)
+	// Referrers annotated as cosign signatures are historical attestations stored under the
+	// wrong predicate. None of them is the attestation just written, so delete every one.
 	if predicate != predicateCosignSign {
-		a.collapseSameKind(ctx, digest, predicateCosignSign)
+		a.collapseSameKind(ctx, digest, predicateCosignSign, false)
 	}
 	return nil
 }
 
-func (a *SigstoreAttestor) collapseSameKind(ctx context.Context, digest name.Digest, predicate string) {
+// DeleteReferrers removes every referrer of one predicate. A scan that no longer publishes
+// that predicate uses this so old bundles do not stay for Kyverno to download.
+func (a *SigstoreAttestor) DeleteReferrers(ctx context.Context, imageRef, predicate string) error {
+	digest, err := parseImageDigest(imageRef)
+	if err != nil {
+		return nil
+	}
+	return collapseReferrers(ctx, a, digest, predicate, false)
+}
+
+func (a *SigstoreAttestor) collapseSameKind(ctx context.Context, digest name.Digest, predicate string, keepNewest bool) {
 	var err error
 	if a.cleaner != nil {
-		err = a.cleaner.collapse(ctx, digest, predicate)
+		err = a.cleaner.collapse(ctx, digest, predicate, keepNewest)
 	} else {
-		err = collapseReferrers(ctx, a, digest, predicate)
+		err = collapseReferrers(ctx, a, digest, predicate, keepNewest)
 	}
 	if err != nil {
 		a.logger.Warn("failed to delete previous attestations",
@@ -189,7 +203,7 @@ func referrerDescriptors(ctx context.Context, digest name.Digest) ([]v1.Descript
 	return manifest.Manifests, nil
 }
 
-func collapseReferrers(ctx context.Context, a *SigstoreAttestor, digest name.Digest, predicate string) error {
+func collapseReferrers(ctx context.Context, a *SigstoreAttestor, digest name.Digest, predicate string, keepNewest bool) error {
 	var errs []error
 	seen := ""
 	for pass := 0; pass < maxSameKindPasses; pass++ {
@@ -197,7 +211,10 @@ func collapseReferrers(ctx context.Context, a *SigstoreAttestor, digest name.Dig
 		if err != nil {
 			return errors.Join(append(errs, err)...)
 		}
-		stale := allButNewest(current, predicate)
+		stale := sameKindDigests(current, predicate)
+		if keepNewest {
+			stale = allButNewest(current, predicate)
+		}
 		if len(stale) == 0 {
 			break
 		}
@@ -205,7 +222,7 @@ func collapseReferrers(ctx context.Context, a *SigstoreAttestor, digest name.Dig
 		sort.Strings(keyParts)
 		key := strings.Join(keyParts, ",")
 		if key == seen {
-			errs = append(errs, fmt.Errorf("still %d %s referrers after delete", len(stale)+1, predicate))
+			errs = append(errs, fmt.Errorf("still %d %s referrers after delete", len(stale), predicate))
 			break
 		}
 		seen = key

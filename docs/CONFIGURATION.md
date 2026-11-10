@@ -135,6 +135,8 @@ creds:
 defaults:
   parallel: int               # Parallel sync operations
   x-rescanInterval: string    # Default rescan interval (e.g., "7d", "24h")
+  x-createVulnerabilityAttestation: bool  # Publish a cosign vulnerability attestation (default: true)
+  x-createSBOMAttestation: bool           # Publish a cosign SBOM attestation (default: true)
   x-policy:                   # Default policy
     expression: string        # CEL expression
     failureMessage: string    # Custom failure message

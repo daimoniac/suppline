@@ -6,6 +6,7 @@ import (
 	"log/slog"
 	"time"
 
+	"github.com/daimoniac/suppline/internal/attestation"
 	"github.com/daimoniac/suppline/internal/errors"
 	"github.com/daimoniac/suppline/internal/observability"
 	"github.com/daimoniac/suppline/internal/policy"
@@ -228,8 +229,15 @@ func (p *Pipeline) policyPhase(ctx context.Context, task *queue.ScanTask, imageR
 	return policyDecision, nil
 }
 
+// referrerCleaner deletes every referrer of one predicate. SigstoreAttestor implements it.
+type referrerCleaner interface {
+	DeleteReferrers(ctx context.Context, imageRef, predicate string) error
+}
+
 // attestationResult holds the results of attestation phase
 type attestationResult struct {
+	SBOMAttested bool
+	VulnAttested bool
 	SCAIAttested bool
 	VEXAttested  bool
 }
@@ -248,27 +256,45 @@ func (p *Pipeline) attestationPhase(ctx context.Context, task *queue.ScanTask, i
 		return durations, result, nil
 	}
 
-	// SBOM attestation
-	sbomStart := time.Now()
-	p.logger.Debug("creating SBOM attestation", "image_ref", imageRef)
-	if err := p.worker.attestor.AttestSBOM(ctx, imageRef, sbom); err != nil {
-		metrics.AttestationsFailed.WithLabelValues("sbom").Inc()
-		return nil, nil, fmt.Errorf("failed to create SBOM attestation: %w", err)
+	if p.worker.regsyncCfg != nil && !p.worker.regsyncCfg.CreateSBOMAttestation() {
+		p.logger.Info("skipping SBOM attestation", "image_ref", imageRef)
+		if cleaner, ok := p.worker.attestor.(referrerCleaner); ok {
+			if err := cleaner.DeleteReferrers(ctx, imageRef, attestation.PredicateBOM); err != nil {
+				p.logger.Warn("failed to delete SBOM attestations", "image_ref", imageRef, "error", err)
+			}
+		}
+	} else {
+		sbomStart := time.Now()
+		p.logger.Debug("creating SBOM attestation", "image_ref", imageRef)
+		if err := p.worker.attestor.AttestSBOM(ctx, imageRef, sbom); err != nil {
+			metrics.AttestationsFailed.WithLabelValues("sbom").Inc()
+			return nil, nil, fmt.Errorf("failed to create SBOM attestation: %w", err)
+		}
+		result.SBOMAttested = true
+		durations["sbom_attest"] = time.Since(sbomStart)
+		metrics.AttestationsCreated.WithLabelValues("sbom").Inc()
+		p.logger.Info("SBOM attestation created", "image_ref", imageRef, "duration", durations["sbom_attest"])
 	}
-	durations["sbom_attest"] = time.Since(sbomStart)
-	metrics.AttestationsCreated.WithLabelValues("sbom").Inc()
-	p.logger.Info("SBOM attestation created", "image_ref", imageRef, "duration", durations["sbom_attest"])
 
-	// Vulnerability attestation
-	vulnStart := time.Now()
-	p.logger.Debug("creating vulnerability attestation", "image_ref", imageRef)
-	if err := p.worker.attestor.AttestVulnerabilities(ctx, imageRef, scanResult); err != nil {
-		metrics.AttestationsFailed.WithLabelValues("vulnerability").Inc()
-		return nil, nil, fmt.Errorf("failed to create vulnerability attestation: %w", err)
+	if p.worker.regsyncCfg != nil && !p.worker.regsyncCfg.CreateVulnerabilityAttestation() {
+		p.logger.Info("skipping vulnerability attestation", "image_ref", imageRef)
+		if cleaner, ok := p.worker.attestor.(referrerCleaner); ok {
+			if err := cleaner.DeleteReferrers(ctx, imageRef, attestation.PredicateVuln); err != nil {
+				p.logger.Warn("failed to delete vulnerability attestations", "image_ref", imageRef, "error", err)
+			}
+		}
+	} else {
+		vulnStart := time.Now()
+		p.logger.Debug("creating vulnerability attestation", "image_ref", imageRef)
+		if err := p.worker.attestor.AttestVulnerabilities(ctx, imageRef, scanResult); err != nil {
+			metrics.AttestationsFailed.WithLabelValues("vulnerability").Inc()
+			return nil, nil, fmt.Errorf("failed to create vulnerability attestation: %w", err)
+		}
+		result.VulnAttested = true
+		durations["vuln_attest"] = time.Since(vulnStart)
+		metrics.AttestationsCreated.WithLabelValues("vulnerability").Inc()
+		p.logger.Info("vulnerability attestation created", "image_ref", imageRef, "duration", durations["vuln_attest"])
 	}
-	durations["vuln_attest"] = time.Since(vulnStart)
-	metrics.AttestationsCreated.WithLabelValues("vulnerability").Inc()
-	p.logger.Info("vulnerability attestation created", "image_ref", imageRef, "duration", durations["vuln_attest"])
 
 	// VEX attestation (if there are applied VEX statements)
 	if policyDecision != nil && len(policyDecision.ExemptedCVEs) > 0 {
