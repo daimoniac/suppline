@@ -28,7 +28,7 @@ export default function TriagePage() {
           </button>
         ))}
       </div>
-      {view === 'repositories' ? <TriageRepositories /> : <TriageBoard mode="full" />}
+      {view === 'repositories' ? <TriageRepositories /> : <TriageBoard />}
     </div>
   );
 }

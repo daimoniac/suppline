@@ -8,7 +8,6 @@ import { fetchPolicyComplianceData, type PolicyComplianceSnapshot } from '../lib
 import { scheduleEffectLoad } from '../lib/scheduleEffectLoad';
 import { LoadingState, ErrorState, PageHeader, EmptyState, ConfirmModal } from '../components/ui';
 import { PolicyCompliancePanel } from '../components/PolicyCompliancePanel';
-import { TriageBoard } from '../components/TriageBoard';
 import type {
   ConfigEditResult,
   ConfigEditStatus,
@@ -21,7 +20,7 @@ import type {
   IneffectiveVEXRef,
   IneffectiveVEXResponse,
 } from '../lib/api';
-import { CheckCircle2, Clock3, RefreshCw, Scale, Server, ShieldAlert, Tag, TriangleAlert, Trash2 } from 'lucide-react';
+import { CheckCircle2, Clock3, RefreshCw, Server, ShieldAlert, Tag, TriangleAlert, Trash2 } from 'lucide-react';
 
 // ─── status badge ─────────────────────────────────────────────────────────────
 
@@ -892,7 +891,6 @@ export default function TasksPage() {
   const [ineffectiveVEXData, setIneffectiveVEXData] = useState<IneffectiveVEXResponse>(noIneffectiveVEX);
   const [policyCompliance, setPolicyCompliance] = useState<PolicyComplianceSnapshot | null>(null);
   const [configEdits, setConfigEdits] = useState<ConfigEditStatus | null>(null);
-  const [triageRefresh, setTriageRefresh] = useState(0);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
 
@@ -977,23 +975,8 @@ export default function TasksPage() {
             showCardHeading={false}
             policyByRepo={policyCompliance.policyByRepo}
             failedScans={policyCompliance.failedScans}
-            onTriageQueued={() => setTriageRefresh(value => value + 1)}
           />
         ) : null}
-      </TaskSection>
-
-      <TaskSection
-        anchor="triage-status"
-        active={activeAnchor === 'triage-status'}
-        icon={<Scale className="w-4 h-4 text-accent" />}
-        title="Triage Status"
-        subtitle="Current rejected and unresolved automated triages. Accepted and manual statements stay on the Triage page."
-        loading={false}
-        loadingMessage="Loading triage status…"
-        error=""
-        onRetry={load}
-      >
-        <TriageBoard mode="attention" refreshToken={triageRefresh} />
       </TaskSection>
 
       {/* SemVer Range Updates */}

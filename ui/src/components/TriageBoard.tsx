@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from 'react';
-import { Link, useSearchParams } from 'react-router';
+import { useSearchParams } from 'react-router';
 import { ArrowDown, ArrowUp, ArrowUpDown, Clock, Copy, Loader2 } from 'lucide-react';
 import { useAuth } from '../lib/auth';
 import { useToast } from '../lib/toast';
@@ -38,14 +38,6 @@ function companions(rows: StatementRow[], row: StatementRow) {
   return rows.filter(item => item.key !== row.key && item.run?.SessionID === session);
 }
 
-function needsManualTriage(row: StatementRow) {
-  if (row.source === 'manual' || !row.needsFix || !row.run || row.run.Superseded) return false;
-  return row.run.Status === 'rejected_by_guardrail'
-    || row.run.Status === 'error'
-    || row.run.Status === 'push_failed'
-    || row.run.Verdict === 'uncertain';
-}
-
 function affectsImages(row: StatementRow) {
   return row.affectedImages > 0;
 }
@@ -64,13 +56,7 @@ function openRuns(rows: StatementRow[]): TriageRun[] {
   return rows.flatMap(row => (row.needsFix && row.run ? [row.run] : []));
 }
 
-export function TriageBoard({
-  mode,
-  refreshToken = 0,
-}: {
-  mode: 'full' | 'attention';
-  refreshToken?: number;
-}) {
+export function TriageBoard() {
   const { apiClient } = useAuth();
   const { toast } = useToast();
   const [searchParams] = useSearchParams();
@@ -82,9 +68,9 @@ export function TriageBoard({
   const [queued, setQueued] = useState<TriageQueued[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [search, setSearch] = useState(mode === 'full' ? (searchParams.get('cve_id') || searchParams.get('repository') || '') : '');
-  const [stateFilter, setStateFilter] = useState(mode === 'full' ? (searchParams.get('state') || 'all') : 'all');
-  const [expirationFilter, setExpirationFilter] = useState(mode === 'full' ? (searchParams.get('expiration_status') || 'all') : 'all');
+  const [search, setSearch] = useState(searchParams.get('cve_id') || searchParams.get('repository') || '');
+  const [stateFilter, setStateFilter] = useState(searchParams.get('state') || 'all');
+  const [expirationFilter, setExpirationFilter] = useState(searchParams.get('expiration_status') || 'all');
   const [origin, setOrigin] = useState('auto');
   const [editing, setEditing] = useState<StatementRow | null>(null);
   const [retryingKey, setRetryingKey] = useState<string | null>(null);
@@ -118,24 +104,19 @@ export function TriageBoard({
   useEffect(() => { scheduleEffectLoad(() => refresh(false)); }, [refresh]);
 
   useEffect(() => {
-    if (refreshToken === 0) return;
-    scheduleEffectLoad(() => refresh(true));
-  }, [refreshToken, refresh]);
-
-  useEffect(() => {
     if (sessions.length + queued.length === 0 && !budget.exhausted) return;
     const id = window.setInterval(() => { refresh(true); }, 3000);
     return () => window.clearInterval(id);
   }, [sessions.length, queued.length, budget.exhausted, refresh]);
 
-  let pool = mode === 'attention' ? rows.filter(needsManualTriage) : rows.filter(row => matchesOrigin(row, origin));
+  let pool = rows.filter(row => matchesOrigin(row, origin));
   pool = pool.filter(affectsImages);
   if (search) {
     const query = search.toLowerCase();
     pool = pool.filter(row => row.cve.toLowerCase().includes(query) || row.repository.toLowerCase().includes(query));
   }
-  if (mode === 'full' && stateFilter !== 'all') pool = pool.filter(row => row.state === stateFilter);
-  if (mode === 'full' && expirationFilter !== 'all') {
+  if (stateFilter !== 'all') pool = pool.filter(row => row.state === stateFilter);
+  if (expirationFilter !== 'all') {
     pool = pool.filter(row => {
       if (expirationFilter === 'active') return !row.expiresAt || !isPast(row.expiresAt);
       if (expirationFilter === 'expired') return row.expiresAt > 0 && isPast(row.expiresAt);
@@ -235,7 +216,7 @@ export function TriageBoard({
   if (loading && rows.length === 0 && sessions.length === 0 && queued.length === 0) return <LoadingState message="Loading triage..." />;
   if (error && rows.length === 0) return <ErrorState message={error} onRetry={() => refresh(false)} />;
 
-  const promptRows = (mode === 'attention' ? rows.filter(needsManualTriage) : rows).filter(affectsImages);
+  const promptRows = rows.filter(affectsImages);
 
   return (
     <div>
@@ -277,57 +258,41 @@ export function TriageBoard({
           ))}
         </div>
       )}
-      {mode === 'full' ? (
-        <PageFiltersBar>
-          <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Search CVE ID or repository…"
-            className="w-full sm:flex-1 sm:max-w-xs px-3 py-2 bg-bg-secondary border border-border rounded-lg text-sm text-text-primary placeholder:text-text-muted focus:outline-none focus:border-accent/50 transition-colors" />
-          <select value={stateFilter} onChange={e => { setStateFilter(e.target.value); setPage(1); }}
-            className="w-full sm:w-auto px-3 py-2 bg-bg-secondary border border-border rounded-lg text-sm text-text-primary focus:outline-none focus:border-accent/50 transition-colors">
-            <option value="all">All VEX States</option>
-            <option value="not_affected">Not Affected</option>
-            <option value="affected">Affected</option>
-            <option value="in_triage">In Triage</option>
-            <option value="fixed">Fixed</option>
-            <option value="false_positive">False Positive</option>
-            <option value="resolved">Resolved</option>
-          </select>
-          <select value={expirationFilter} onChange={e => { setExpirationFilter(e.target.value); setPage(1); }}
-            className="w-full sm:w-auto px-3 py-2 bg-bg-secondary border border-border rounded-lg text-sm text-text-primary focus:outline-none focus:border-accent/50 transition-colors">
-            <option value="all">All Expirations</option>
-            <option value="active">Active</option>
-            <option value="expiring">Expiring Soon</option>
-            <option value="expired">Expired</option>
-          </select>
-          <select value={origin} onChange={e => { setOrigin(e.target.value); setPage(1); }}
-            className="w-full sm:w-auto px-3 py-2 bg-bg-secondary border border-border rounded-lg text-sm text-text-primary focus:outline-none focus:border-accent/50 transition-colors">
-            <option value="auto">Auto</option>
-            <option value="manual">Manual</option>
-            <option value="all">All</option>
-          </select>
-          <FilterActionButton onClick={() => setPage(1)}>Filter</FilterActionButton>
-          <FilterActionButton variant="secondary" onClick={() => { setSearch(''); setStateFilter('all'); setExpirationFilter('all'); setOrigin('auto'); setPage(1); }}>Clear</FilterActionButton>
-          <button type="button" onClick={() => copyRuns(openRuns(promptRows))} disabled={copying}
-            title="Fix all open using coding assistant"
-            className="inline-flex w-full sm:w-auto items-center justify-center gap-1.5 px-3 py-2 text-sm rounded-lg border border-accent/30 text-text-primary bg-bg-secondary hover:bg-bg-tertiary disabled:opacity-50 transition-colors">
-            <Copy className="w-3.5 h-3.5 shrink-0" />
-            {copying ? 'Copying…' : 'Fix all open using coding assistant'}
-          </button>
-        </PageFiltersBar>
-      ) : (
-        <div className="flex flex-wrap items-center justify-between gap-3 mb-3">
-          <p className="text-xs text-text-muted">
-            {pool.length} current rejected or unresolved auto {pool.length === 1 ? 'triage needs' : 'triages need'} a manual decision.
-          </p>
-          <div className="flex flex-wrap items-center gap-2">
-            <Link to="/triage" className="text-xs text-accent hover:text-accent-hover">Open triage</Link>
-            <button type="button" onClick={() => copyRuns(openRuns(promptRows))} disabled={copying || pool.length === 0}
-              className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs rounded-lg border border-accent/30 text-text-primary bg-bg-primary/70 hover:bg-bg-primary disabled:opacity-50 transition-colors">
-              <Copy className="w-3 h-3" />
-              {copying ? 'Copying…' : 'Fix all open using coding assistant'}
-            </button>
-          </div>
-        </div>
-      )}
+      <PageFiltersBar>
+        <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Search CVE ID or repository…"
+          className="w-full sm:flex-1 sm:max-w-xs px-3 py-2 bg-bg-secondary border border-border rounded-lg text-sm text-text-primary placeholder:text-text-muted focus:outline-none focus:border-accent/50 transition-colors" />
+        <select value={stateFilter} onChange={e => { setStateFilter(e.target.value); setPage(1); }}
+          className="w-full sm:w-auto px-3 py-2 bg-bg-secondary border border-border rounded-lg text-sm text-text-primary focus:outline-none focus:border-accent/50 transition-colors">
+          <option value="all">All VEX States</option>
+          <option value="not_affected">Not Affected</option>
+          <option value="affected">Affected</option>
+          <option value="in_triage">In Triage</option>
+          <option value="fixed">Fixed</option>
+          <option value="false_positive">False Positive</option>
+          <option value="resolved">Resolved</option>
+        </select>
+        <select value={expirationFilter} onChange={e => { setExpirationFilter(e.target.value); setPage(1); }}
+          className="w-full sm:w-auto px-3 py-2 bg-bg-secondary border border-border rounded-lg text-sm text-text-primary focus:outline-none focus:border-accent/50 transition-colors">
+          <option value="all">All Expirations</option>
+          <option value="active">Active</option>
+          <option value="expiring">Expiring Soon</option>
+          <option value="expired">Expired</option>
+        </select>
+        <select value={origin} onChange={e => { setOrigin(e.target.value); setPage(1); }}
+          className="w-full sm:w-auto px-3 py-2 bg-bg-secondary border border-border rounded-lg text-sm text-text-primary focus:outline-none focus:border-accent/50 transition-colors">
+          <option value="auto">Auto</option>
+          <option value="manual">Manual</option>
+          <option value="all">All</option>
+        </select>
+        <FilterActionButton onClick={() => setPage(1)}>Filter</FilterActionButton>
+        <FilterActionButton variant="secondary" onClick={() => { setSearch(''); setStateFilter('all'); setExpirationFilter('all'); setOrigin('auto'); setPage(1); }}>Clear</FilterActionButton>
+        <button type="button" onClick={() => copyRuns(openRuns(promptRows))} disabled={copying}
+          title="Fix all open using coding assistant"
+          className="inline-flex w-full sm:w-auto items-center justify-center gap-1.5 px-3 py-2 text-sm rounded-lg border border-accent/30 text-text-primary bg-bg-secondary hover:bg-bg-tertiary disabled:opacity-50 transition-colors">
+          <Copy className="w-3.5 h-3.5 shrink-0" />
+          {copying ? 'Copying…' : 'Fix all open using coding assistant'}
+        </button>
+      </PageFiltersBar>
       {error && <p className="text-sm text-danger mb-3">{error}</p>}
       {notice && <p className="text-sm text-text-secondary mb-3">{notice}</p>}
       <div className="bg-bg-primary border border-border rounded-xl overflow-hidden">
@@ -347,7 +312,7 @@ export function TriageBoard({
         </div>
         {paged.length === 0 ? (
           <div className="p-8 sm:p-12 text-center text-text-secondary text-sm">
-            {mode === 'attention' ? 'No rejected or unresolved auto-triages need manual review.' : 'No statements match filters'}
+            No statements match filters
           </div>
         ) : (
           <div className="divide-y divide-border">
