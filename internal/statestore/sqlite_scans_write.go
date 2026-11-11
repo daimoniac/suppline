@@ -150,6 +150,8 @@ func (s *SQLiteStore) RecordScan(ctx context.Context, record *ScanRecord) error 
 
 	// Store CVE metadata once, then keep only package/version occurrences per scan.
 	if len(record.Vulnerabilities) > 0 {
+		// Catalog severity is the latest report of this CVE across images.
+		// Policy replay reads scan_findings.severity, which stays with the scan.
 		catalogStmt, err := tx.PrepareContext(ctx, `
 			INSERT INTO cve_catalog (cve_id, severity, title, description, primary_url)
 			VALUES (?, ?, ?, ?, ?)
@@ -166,8 +168,8 @@ func (s *SQLiteStore) RecordScan(ctx context.Context, record *ScanRecord) error 
 
 		findingStmt, err := tx.PrepareContext(ctx, `
 			INSERT INTO scan_findings (
-				scan_record_id, cve_id, package_name, installed_version, fixed_version
-			) VALUES (?, ?, ?, ?, ?)
+				scan_record_id, cve_id, package_name, installed_version, fixed_version, severity
+			) VALUES (?, ?, ?, ?, ?, ?)
 		`)
 		if err != nil {
 			return errors.NewTransientf("failed to prepare scan finding statement: %w", err)
@@ -191,7 +193,7 @@ func (s *SQLiteStore) RecordScan(ctx context.Context, record *ScanRecord) error 
 				return errors.NewTransientf("failed to upsert CVE catalog entry: %w", err)
 			}
 			if _, err := findingStmt.ExecContext(ctx,
-				scanRecordID, vuln.CVEID, vuln.PackageName, vuln.InstalledVersion, vuln.FixedVersion,
+				scanRecordID, vuln.CVEID, vuln.PackageName, vuln.InstalledVersion, vuln.FixedVersion, vuln.Severity,
 			); err != nil {
 				return errors.NewTransientf("failed to insert scan finding: %w", err)
 			}

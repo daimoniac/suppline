@@ -61,6 +61,10 @@ func CopySQLiteToPostgres(ctx context.Context, sqlitePath, postgresURL string, l
 	if err != nil {
 		return err
 	}
+	hasFindingSeverity, err := sqliteHasColumn(ctx, src, "scan_findings", "severity")
+	if err != nil {
+		return err
+	}
 	artRows, err := src.QueryContext(ctx, `
 		SELECT id, repository_id, digest, tag, first_seen, last_seen, image_created_at, last_scan_id, next_scan_at, created_at
 		FROM artifacts
@@ -118,8 +122,8 @@ func CopySQLiteToPostgres(ctx context.Context, sqlitePath, postgresURL string, l
 		},
 		{
 			name:   "scan_findings",
-			query:  `SELECT id, scan_record_id, cve_id, package_name, installed_version, fixed_version, created_at FROM scan_findings`,
-			insert: `INSERT INTO scan_findings (id, scan_record_id, cve_id, package_name, installed_version, fixed_version, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)`,
+			query:  findingCopyQuery(hasFindingSeverity),
+			insert: findingCopyInsert(hasFindingSeverity),
 		},
 		{
 			name:   "cve_first_seen",
@@ -273,6 +277,20 @@ func sqliteHasColumn(ctx context.Context, src *DB, table, column string) (bool, 
 		return false, errors.NewTransientf("iterate %s column info: %w", table, err)
 	}
 	return false, nil
+}
+
+func findingCopyQuery(hasSeverity bool) string {
+	if hasSeverity {
+		return `SELECT id, scan_record_id, cve_id, package_name, installed_version, fixed_version, severity, created_at FROM scan_findings`
+	}
+	return `SELECT id, scan_record_id, cve_id, package_name, installed_version, fixed_version, created_at FROM scan_findings`
+}
+
+func findingCopyInsert(hasSeverity bool) string {
+	if hasSeverity {
+		return `INSERT INTO scan_findings (id, scan_record_id, cve_id, package_name, installed_version, fixed_version, severity, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`
+	}
+	return `INSERT INTO scan_findings (id, scan_record_id, cve_id, package_name, installed_version, fixed_version, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)`
 }
 
 func openSQLiteReadOnly(dbPath string) (*DB, error) {

@@ -496,13 +496,14 @@ func (s *SQLiteStore) loadVulnerabilityChunk(ctx context.Context, scanIDs []int6
 	}
 	// Title, description and reference URL stay empty. They repeat per finding
 	// and are not needed to re-check a severity gate; loading them for every
-	// current scan dominates memory.
+	// current scan dominates memory. Severity is the value recorded for this
+	// finding. The catalog row is shared by every image and later scans
+	// overwrite it, so it cannot stand in for the severity policy saw.
 	rows, err := s.db.QueryContext(ctx, `
-		SELECT f.scan_record_id, f.cve_id, c.severity, f.package_name, f.installed_version, f.fixed_version
+		SELECT f.scan_record_id, f.cve_id, COALESCE(f.severity, ''), f.package_name, f.installed_version, f.fixed_version
 		FROM scan_findings f
-		JOIN cve_catalog c ON c.cve_id = f.cve_id
 		WHERE f.scan_record_id IN (`+strings.Join(placeholders, ",")+`)
-		ORDER BY f.scan_record_id, c.severity, f.cve_id
+		ORDER BY f.scan_record_id, f.severity, f.cve_id
 	`, args...)
 	if err != nil {
 		return errors.NewTransientf("failed to query vulnerabilities: %w", err)
@@ -528,7 +529,7 @@ func (s *SQLiteStore) loadVulnerabilityChunk(ctx context.Context, scanIDs []int6
 
 func (s *SQLiteStore) loadVulnerabilitiesByScan(ctx context.Context, scanRecordID int64) ([]types.VulnerabilityRecord, error) {
 	rows, err := s.db.QueryContext(ctx, `
-		SELECT f.cve_id, c.severity, f.package_name, f.installed_version, f.fixed_version,
+		SELECT f.cve_id, COALESCE(NULLIF(f.severity, ''), c.severity), f.package_name, f.installed_version, f.fixed_version,
 			c.title, c.description, c.primary_url
 		FROM scan_findings f
 		JOIN cve_catalog c ON c.cve_id = f.cve_id

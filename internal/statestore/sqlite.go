@@ -167,6 +167,7 @@ func (s *SQLiteStore) initSchema() error {
 		package_name TEXT NOT NULL,
 		installed_version TEXT,
 		fixed_version TEXT,
+		severity TEXT,
 		created_at INTEGER NOT NULL DEFAULT (cast(strftime('%s', 'now') as integer)),
 		FOREIGN KEY (scan_record_id) REFERENCES scan_records(id) ON DELETE CASCADE,
 		FOREIGN KEY (cve_id) REFERENCES cve_catalog(cve_id)
@@ -304,6 +305,7 @@ func (s *SQLiteStore) ensureSchemaColumns() error {
 		{table: "scan_records", column: "vex_attested", definition: "BOOLEAN NOT NULL DEFAULT 0"},
 		{table: "artifacts", column: "superseded", definition: "INTEGER NOT NULL DEFAULT 0"},
 		{table: "triage_runs", column: "session_id", definition: "TEXT NOT NULL DEFAULT ''"},
+		{table: "scan_findings", column: "severity", definition: "TEXT"},
 	}
 
 	for _, col := range columns {

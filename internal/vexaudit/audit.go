@@ -182,12 +182,16 @@ func (a *Auditor) auditRepository(ctx context.Context, repository string, record
 		return nil, fmt.Errorf("build policy engine: %w", err)
 	}
 	scans := completedScans(records)
+	// A finding recorded before severity lived on the row has only the shared
+	// catalog value. That value may already belong to a different image, so
+	// the statement is kept until a scan records its own severity.
+	unrecorded := cveIDsWithUnrecordedSeverity(scans)
 	for _, scan := range scans {
 		scan.Vulnerabilities = narrowFindings(cfg.Expression, scan.Vulnerabilities)
 	}
 	scans = scansWithCandidate(scans, candidates)
 	if len(scans) == 0 {
-		return findingsForUnseen(repository, candidates), nil
+		return findingsForUnseen(repository, candidates, unrecorded), nil
 	}
 
 	evidence := a.catalog.ResolveEvidence(repository).VEXStatements
@@ -202,6 +206,9 @@ func (a *Auditor) auditRepository(ctx context.Context, repository string, record
 
 	var findings []Finding
 	for _, candidate := range candidates {
+		if _, skip := unrecorded[candidate.ID]; skip {
+			continue
+		}
 		without := withoutStatement(evidence, candidate.ID)
 		if changesOutcome(ctx, a.logger, engine, scans, baseline, without, candidate.ID) {
 			continue
@@ -256,10 +263,14 @@ func scansWithCandidate(scans []*statestore.ScanRecord, candidates []types.VEXSt
 }
 
 // findingsForUnseen reports every candidate when no current scan still contains
-// it. Removing the statement cannot change a result.
-func findingsForUnseen(repository string, candidates []types.VEXStatement) []Finding {
+// it. Removing the statement cannot change a result. skip holds CVE ids whose
+// severity was not recorded on the finding; those stay in place.
+func findingsForUnseen(repository string, candidates []types.VEXStatement, skip map[string]struct{}) []Finding {
 	out := make([]Finding, 0, len(candidates))
 	for _, candidate := range candidates {
+		if _, ok := skip[candidate.ID]; ok {
+			continue
+		}
 		out = append(out, Finding{
 			Repository:    repository,
 			CVEID:         candidate.ID,
@@ -271,6 +282,22 @@ func findingsForUnseen(repository string, candidates []types.VEXStatement) []Fin
 		})
 	}
 	return out
+}
+
+// cveIDsWithUnrecordedSeverity collects CVEs present on a scan whose severity
+// was not stored with the finding. An empty severity is not evidence that the
+// statement has no effect.
+func cveIDsWithUnrecordedSeverity(scans []*statestore.ScanRecord) map[string]struct{} {
+	unknown := make(map[string]struct{})
+	for _, scan := range scans {
+		for _, vuln := range scan.Vulnerabilities {
+			if strings.TrimSpace(vuln.CVEID) == "" || strings.TrimSpace(vuln.Severity) != "" {
+				continue
+			}
+			unknown[vuln.CVEID] = struct{}{}
+		}
+	}
+	return unknown
 }
 
 // candidateStatements keeps statements that could exempt a CVE right now:

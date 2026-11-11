@@ -92,6 +92,7 @@ func (s *SQLiteStore) initPostgresSchema() error {
 			package_name TEXT NOT NULL,
 			installed_version TEXT,
 			fixed_version TEXT,
+			severity TEXT,
 			created_at BIGINT NOT NULL DEFAULT (EXTRACT(EPOCH FROM CLOCK_TIMESTAMP())::BIGINT)
 		)`,
 		`CREATE TABLE IF NOT EXISTS cve_first_seen (
@@ -216,6 +217,11 @@ func (s *SQLiteStore) initPostgresSchema() error {
 		ALTER TABLE triage_runs ADD COLUMN IF NOT EXISTS session_id TEXT NOT NULL DEFAULT ''
 	`); err != nil {
 		return fmt.Errorf("add triage_runs.session_id: %w", err)
+	}
+	if _, err := s.db.Exec(`
+		ALTER TABLE scan_findings ADD COLUMN IF NOT EXISTS severity TEXT
+	`); err != nil {
+		return fmt.Errorf("add scan_findings.severity: %w", err)
 	}
 
 	return nil

@@ -2,6 +2,7 @@ package vexaudit
 
 import (
 	"context"
+	"database/sql"
 	"io"
 	"log/slog"
 	"testing"
@@ -132,6 +133,115 @@ func TestAuditSkipsReleaseAgeGatedRepositories(t *testing.T) {
 	}
 	if len(findings) != 0 {
 		t.Fatalf("release-age gated repository produced findings: %+v", findings)
+	}
+}
+
+// The gate used in production ignores a critical finding until it has a fix.
+// Reloading that finding must keep the severity recorded on the scan. A later
+// scan of another image rewrites the shared CVE catalog, and trusting that
+// rewrite makes a load-bearing not_affected statement look unused.
+func TestAuditKeepsFixableCriticalAfterCatalogSeverityRewrite(t *testing.T) {
+	store, err := statestore.NewSQLiteStore(t.TempDir() + "/vex-audit.db")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = store.Close() })
+
+	ctx := context.Background()
+	if err := store.RecordScan(ctx, &statestore.ScanRecord{
+		Repository:   testRepository,
+		Digest:       "sha256:app",
+		Tag:          "v1",
+		PolicyPassed: true,
+		PolicyStatus: "passed",
+		Vulnerabilities: []types.VulnerabilityRecord{
+			{CVEID: "CVE-CRIT", Severity: "CRITICAL", PackageName: "stdlib", InstalledVersion: "1", FixedVersion: "2"},
+			{CVEID: "CVE-LOW", Severity: "LOW", PackageName: "libc", InstalledVersion: "1"},
+		},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	// A later image rates the same CVE as HIGH and rewrites the shared catalog row.
+	if err := store.RecordScan(ctx, &statestore.ScanRecord{
+		Repository:   "registry.local/other",
+		Digest:       "sha256:other",
+		Tag:          "v1",
+		PolicyPassed: true,
+		PolicyStatus: "passed",
+		Vulnerabilities: []types.VulnerabilityRecord{{
+			CVEID: "CVE-CRIT", Severity: "HIGH", PackageName: "stdlib", InstalledVersion: "1", FixedVersion: "2",
+		}},
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	statements := []types.VEXStatement{
+		{ID: "CVE-CRIT", State: types.VEXStateNotAffected, Source: types.VEXSourceManual},
+		{ID: "CVE-LOW", State: types.VEXStateNotAffected, Source: types.VEXSourceManual},
+	}
+	auditor := New(slog.New(slog.NewTextHandler(io.Discard, nil)),
+		fakeCatalog{statements: statements, policy: policy.PolicyConfig{Expression: `vulnerabilities.filter(v, v.severity == "CRITICAL" && v.fixedVersion != "" && !v.exempted).size() == 0`}},
+		store,
+		engineFor,
+	)
+	findings, err := auditor.Audit(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(findings) != 1 || findings[0].CVEID != "CVE-LOW" {
+		t.Fatalf("findings = %+v, want only CVE-LOW; removing CVE-CRIT fails the fixable-critical gate", findings)
+	}
+}
+
+// Findings stored before per-scan severity have only the shared catalog value.
+// That value may already have been rewritten, so those statements stay put.
+func TestAuditKeepsStatementWhenFindingSeverityWasNotRecorded(t *testing.T) {
+	path := t.TempDir() + "/vex-audit-legacy.db"
+	store, err := statestore.NewSQLiteStore(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = store.Close() })
+
+	ctx := context.Background()
+	if err := store.RecordScan(ctx, &statestore.ScanRecord{
+		Repository:   testRepository,
+		Digest:       "sha256:app",
+		Tag:          "v1",
+		PolicyPassed: true,
+		PolicyStatus: "passed",
+		Vulnerabilities: []types.VulnerabilityRecord{{
+			CVEID: "CVE-CRIT", Severity: "CRITICAL", PackageName: "stdlib", InstalledVersion: "1", FixedVersion: "2",
+		}},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	legacy, err := sql.Open("sqlite3", path+"?_foreign_keys=1&_busy_timeout=3000")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = legacy.Close() })
+	if _, err := legacy.ExecContext(ctx, `UPDATE scan_findings SET severity = NULL`); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := legacy.ExecContext(ctx, `UPDATE cve_catalog SET severity = 'HIGH' WHERE cve_id = 'CVE-CRIT'`); err != nil {
+		t.Fatal(err)
+	}
+
+	auditor := New(slog.New(slog.NewTextHandler(io.Discard, nil)),
+		fakeCatalog{
+			statements: []types.VEXStatement{{ID: "CVE-CRIT", State: types.VEXStateNotAffected, Source: types.VEXSourceManual}},
+			policy:     policy.PolicyConfig{Expression: `vulnerabilities.filter(v, v.severity == "CRITICAL" && v.fixedVersion != "" && !v.exempted).size() == 0`},
+		},
+		store,
+		engineFor,
+	)
+	findings, err := auditor.Audit(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(findings) != 0 {
+		t.Fatalf("findings = %+v, want none while the scan's own severity is missing", findings)
 	}
 }
 
