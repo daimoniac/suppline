@@ -294,3 +294,39 @@ func TestUpsertManualVEXWinsOverAuto(t *testing.T) {
 		t.Fatal("auto statement was removed")
 	}
 }
+
+func TestReplaceReportsRepositoriesWhoseDecisionChanged(t *testing.T) {
+	cat := NewConfigCatalog(&config.RegsyncConfig{
+		Sync: []config.SyncEntry{
+			{Target: "registry.example/app", Type: "repository", VEX: []types.VEXStatement{{ID: "CVE-1", State: types.VEXStateNotAffected}}},
+			{Target: "registry.example/other", Type: "repository"},
+		},
+	})
+	changed := cat.Replace(&config.RegsyncConfig{
+		Sync: []config.SyncEntry{
+			{Target: "registry.example/app", Type: "repository", VEX: []types.VEXStatement{
+				{ID: "CVE-1", State: types.VEXStateNotAffected},
+				{ID: "CVE-2", State: types.VEXStateNotAffected},
+			}},
+			{Target: "registry.example/other", Type: "repository"},
+		},
+	})
+	if len(changed) != 1 || changed[0] != "registry.example/app" {
+		t.Fatalf("changed = %v, want registry.example/app", changed)
+	}
+	evidence := cat.ResolveEvidence("registry.example/app")
+	if len(evidence.VEXStatements) != 2 || evidence.VEXStatements[1].ID != "CVE-2" {
+		t.Fatalf("evidence = %+v", evidence.VEXStatements)
+	}
+	if again := cat.Replace(&config.RegsyncConfig{
+		Sync: []config.SyncEntry{
+			{Target: "registry.example/app", Type: "repository", VEX: []types.VEXStatement{
+				{ID: "CVE-1", State: types.VEXStateNotAffected},
+				{ID: "CVE-2", State: types.VEXStateNotAffected},
+			}},
+			{Target: "registry.example/other", Type: "repository"},
+		},
+	}); len(again) != 0 {
+		t.Fatalf("unchanged replace reported %v", again)
+	}
+}

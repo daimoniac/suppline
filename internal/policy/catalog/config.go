@@ -3,6 +3,7 @@ package catalog
 import (
 	"fmt"
 	"sort"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -22,6 +23,66 @@ type ConfigCatalog struct {
 // NewConfigCatalog creates a production catalog over parsed configuration.
 func NewConfigCatalog(cfg *config.RegsyncConfig) *ConfigCatalog {
 	return &ConfigCatalog{config: cfg}
+}
+
+// Replace swaps in a newly parsed configuration. It returns the repositories
+// whose policy or VEX decision changed, so the caller can rescan those images.
+// A repository that was added or removed is included. Identical decisions are not.
+func (c *ConfigCatalog) Replace(next *config.RegsyncConfig) []string {
+	if c == nil || next == nil {
+		return nil
+	}
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	before := c.decisionFingerprintsLocked()
+	c.config = next
+	return changedRepositories(before, c.decisionFingerprintsLocked())
+}
+
+func (c *ConfigCatalog) decisionFingerprintsLocked() map[string]string {
+	out := map[string]string{}
+	if c == nil || c.config == nil {
+		return out
+	}
+	for _, repository := range c.config.GetTargetRepositories() {
+		policy, evidence := c.effectiveLocked(repository)
+		out[repository] = fingerprintDecision(policy, evidence)
+	}
+	return out
+}
+
+func fingerprintDecision(policy *config.PolicyConfig, evidence Evidence) string {
+	var b strings.Builder
+	if policy != nil {
+		fmt.Fprintf(&b, "%s\n%s\n%s\n", policy.Expression, policy.FailureMessage, policy.MinimumReleaseAge)
+	}
+	fmt.Fprintf(&b, "vexrepo=%t\n", evidence.UseVEXRepo)
+	for _, statement := range evidence.VEXStatements {
+		expires := ""
+		if statement.ExpiresAt != nil {
+			expires = strconv.FormatInt(*statement.ExpiresAt, 10)
+		}
+		fmt.Fprintf(&b, "%s\t%s\t%s\t%s\t%s\n", statement.ID, statement.State, statement.Justification, expires, statement.Detail)
+	}
+	return b.String()
+}
+
+func changedRepositories(before, after map[string]string) []string {
+	seen := map[string]struct{}{}
+	for repository := range before {
+		seen[repository] = struct{}{}
+	}
+	for repository := range after {
+		seen[repository] = struct{}{}
+	}
+	changed := make([]string, 0)
+	for repository := range seen {
+		if before[repository] != after[repository] {
+			changed = append(changed, repository)
+		}
+	}
+	sort.Strings(changed)
+	return changed
 }
 
 func (c *ConfigCatalog) ResolvePolicy(repository string) (policy.PolicyConfig, error) {

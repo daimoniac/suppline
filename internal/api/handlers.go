@@ -702,7 +702,7 @@ type ReevaluatePolicyResponse struct {
 
 // handleReevaluatePolicy reloads suppline.yml and re-evaluates policy for all images
 // @Summary Re-evaluate policy
-// @Description Reload suppline.yml configuration and re-evaluate policy for all images or a specific repository
+// @Description Queue scans again using the policy and VEX catalog already in memory. The config file is reloaded on its own when it changes.
 // @Tags Policy
 // @Accept json
 // @Produce json

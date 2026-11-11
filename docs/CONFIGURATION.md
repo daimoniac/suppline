@@ -18,6 +18,8 @@ Configuration is loaded from multiple sources in this priority order:
 2. **Regsync file** - Registry and VEX configuration from `suppline.yml`
 3. **Environment variables** - Runtime configuration overrides
 
+suppline reads `suppline.yml` at startup and checks that same file every 15 seconds. A change that still parses replaces the in-memory policy and VEX catalog, and current scans of repositories whose decision changed are queued again. The chart mounts the ConfigMap at `/config` without `subPath`, so kubelet refreshes the file and the running process picks it up. Registry credentials, the mirror's copy list, and triage settings stay as they were at startup until the process restarts. A Helm upgrade that changes the chart config still restarts the pod. A triage accept updates memory immediately. The reload applies when the file bytes change. An older ConfigMap that arrives before that accept is published drops the statement until a later file contains it.
+
 ## Environment Variables
 
 ### Core Configuration

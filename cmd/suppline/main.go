@@ -16,6 +16,7 @@ import (
 	"github.com/daimoniac/suppline/internal/api"
 	"github.com/daimoniac/suppline/internal/attestation"
 	"github.com/daimoniac/suppline/internal/config"
+	"github.com/daimoniac/suppline/internal/configreload"
 	"github.com/daimoniac/suppline/internal/mirror"
 	"github.com/daimoniac/suppline/internal/observability"
 	"github.com/daimoniac/suppline/internal/policy"
@@ -345,6 +346,16 @@ func run() error {
 	wg.Add(1)
 	go func() {
 		defer wg.Done()
+		configreload.Run(ctx, logger, cfg.RegsyncPath, configreload.Interval, func(parsed *config.RegsyncConfig) {
+			changed := repositoryPolicies.Replace(parsed)
+			logger.Info("reloaded suppline config", "path", cfg.RegsyncPath, "repositories_changed", len(changed))
+			requeueRepositories(ctx, store, scanEnqueuer, changed, logger)
+		})
+	}()
+
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
 		logger.Debug("starting worker")
 		if err := workerInstance.Start(ctx); err != nil && err != context.Canceled {
 			logger.Error("worker error",
@@ -460,6 +471,39 @@ func downloadVEXRepo(ctx context.Context, logger *slog.Logger) {
 			"stderr", stderr.String())
 	} else {
 		logger.Info("VEX repository downloaded successfully")
+	}
+}
+
+// requeueRepositories scans the current images of repositories whose policy or
+// VEX decision changed, so a config update shows up without a restart.
+func requeueRepositories(ctx context.Context, store statestore.StateStoreQuery, enqueuer *scanenqueue.Enqueuer, repositories []string, logger *slog.Logger) {
+	queued := 0
+	for _, repository := range repositories {
+		scans, err := store.ListScans(ctx, statestore.ScanFilter{Repository: repository, Limit: 1000})
+		if err != nil {
+			logger.Error("config reload list scans failed", "repository", repository, "error", err)
+			continue
+		}
+		seen := map[string]struct{}{}
+		for _, scan := range scans {
+			key := scan.Repository + "@" + scan.Digest
+			if _, ok := seen[key]; ok {
+				continue
+			}
+			seen[key] = struct{}{}
+			if _, err := enqueuer.EnqueueRescan(ctx, scanenqueue.Image{
+				Repository: scan.Repository,
+				Digest:     scan.Digest,
+				Tag:        scan.Tag,
+			}); err != nil {
+				logger.Error("config reload enqueue failed", "repository", scan.Repository, "digest", scan.Digest, "error", err)
+				continue
+			}
+			queued++
+		}
+	}
+	if queued > 0 {
+		logger.Info("queued scans after config reload", "images", queued, "repositories", len(repositories))
 	}
 }
 
