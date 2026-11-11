@@ -31,7 +31,7 @@ Workflow:
 Decision:
 ` + decision + `
 
-The conversation has two phases. In the context phase, use tools to learn this image, its source commit, and how the deployment runs it. Do not return a verdict in that phase. A later message names one CVE and asks you to decide it. Only then finish with one JSON object and no tool calls. Schema:
+The conversation has two phases. In the context phase, use tools to learn this image, its source commit, and how the deployment runs it: grep the gitops repos, call image_source, and public_checkout the application. Do not call dependency_sources or return a verdict in that phase. A later message names one CVE and asks you to decide it. In that turn, call cve_advisory, call dependency_sources for that CVE's package, and grep for the vulnerable code before you answer. Finish the turn with one JSON object and no tool calls. Schema:
 {"verdict":"not_affected|affected|uncertain","justification":"","confidence":0.0,"covers_listed_digests":false,"evidence":[{"repo":"","path":"","line":1,"quote":"","grep_id":""}],"reasoning":""}
 justification is required only for not_affected and must be one of: ` + strings.Join(allowed, ", ") + `.
 A not_affected verdict needs confidence of at least ` + fmt.Sprintf("%.2f", minConfidence) + `.
@@ -94,7 +94,7 @@ func cvePrompt(job Job, existing *types.VEXStatement) string {
 			kernel = "yes"
 		}
 	}
-	fmt.Fprintf(&b, "Decide %s now. Return only the JSON verdict.\nImage: %s\nTag: %s\nDigest: %s\nCVE: %s\nPackage: %s\nKernel package: %s\nInstalled: %s\nFixed: %s\nSeverity: %s\n",
+	fmt.Fprintf(&b, "Decide %s. Use tools for this CVE first: cve_advisory, dependency_sources for this package when image_source named a commit, and grep for the vulnerable symbol. Then return only the JSON verdict.\nImage: %s\nTag: %s\nDigest: %s\nCVE: %s\nPackage: %s\nKernel package: %s\nInstalled: %s\nFixed: %s\nSeverity: %s\n",
 		job.CVEID, job.ImageRef, job.Tag, job.Digest, job.CVEID, job.PackageName, kernel, job.Version, job.FixedVersion, job.Severity)
 	if len(job.InUse) > 1 {
 		b.WriteString("This CVE is being judged for every in-use digest. covers_listed_digests must be true only when the verdict holds for all of them.\n")

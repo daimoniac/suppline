@@ -26,7 +26,7 @@ func dependencySources(ctx context.Context, roots *Roots, upstream *publicChecko
 	}
 	pkg := strings.TrimSpace(job.PackageName)
 	if pkg == "" {
-		return "", fmt.Errorf("package name is empty")
+		return "", fmt.Errorf("no package in this turn; call dependency_sources when a CVE is being decided")
 	}
 	if strings.TrimSpace(owner) == "" || strings.TrimSpace(repo) == "" || strings.TrimSpace(ref) == "" {
 		return "", fmt.Errorf("owner, git_repo, and ref are required")

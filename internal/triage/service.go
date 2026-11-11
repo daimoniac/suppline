@@ -594,6 +594,9 @@ func (s *Service) resolveJobs(ctx context.Context, jobs []Job) ([]Job, error) {
 		}
 		return nil, nil
 	}
+	if err := s.loadFindings(ctx, jobs[0].Repository, records); err != nil {
+		return nil, err
+	}
 	ids := make([]string, 0, len(jobs))
 	flags := make(map[string]Job, len(jobs))
 	for _, job := range jobs {
@@ -607,6 +610,29 @@ func (s *Service) resolveJobs(ctx context.Context, jobs []Job) ([]Job, error) {
 		resolved[i].Renewal = src.Renewal
 	}
 	return resolved, nil
+}
+
+// loadFindings fills vulnerability rows that ListScans leaves out.
+func (s *Service) loadFindings(ctx context.Context, repository string, records []*statestore.ScanRecord) error {
+	full := map[string][]types.VulnerabilityRecord{}
+	for _, record := range records {
+		if record == nil || record.Repository != repository || record.Digest == "" || len(record.Vulnerabilities) > 0 {
+			continue
+		}
+		vulns, ok := full[record.Digest]
+		if !ok {
+			scan, err := s.scans.GetLastRepositoryScan(ctx, repository, record.Digest)
+			if err != nil && !errors.Is(err, statestore.ErrScanNotFound) {
+				return fmt.Errorf("load findings for %s@%s: %w", repository, record.Digest, err)
+			}
+			if scan != nil {
+				vulns = scan.Vulnerabilities
+			}
+			full[record.Digest] = vulns
+		}
+		record.Vulnerabilities = vulns
+	}
+	return nil
 }
 
 func jobsHaveFacts(jobs []Job) bool {

@@ -1,6 +1,8 @@
 package triage
 
 import (
+	"context"
+	"strings"
 	"testing"
 
 	"github.com/daimoniac/suppline/internal/statestore"
@@ -131,4 +133,55 @@ func scanRow(repo, digest, tag string, created int64, inUse bool, placements int
 		record.Runtime = statestore.RuntimeInventory{"c": {"ns": images}}
 	}
 	return record
+}
+
+type findingsOnlyStore struct {
+	statestore.StateStoreQuery
+	list []*statestore.ScanRecord
+	full map[string]*statestore.ScanRecord
+}
+
+func (f findingsOnlyStore) ListScans(context.Context, statestore.ScanFilter) ([]*statestore.ScanRecord, error) {
+	return f.list, nil
+}
+
+func (f findingsOnlyStore) GetLastRepositoryScan(_ context.Context, _ string, digest string) (*statestore.ScanRecord, error) {
+	return f.full[digest], nil
+}
+
+func TestResolveJobsLoadsFindingsListScansOmits(t *testing.T) {
+	listed := &statestore.ScanRecord{
+		Repository:            "app",
+		Digest:                "sha256:run",
+		Tag:                   "1.0",
+		RuntimeUsed:           true,
+		PolicyFailureFindings: []types.PolicyFailureFinding{{CVEID: "CVE-1", PackageName: "handlebars"}},
+	}
+	svc := &Service{
+		settings: Settings{OnlyInUse: true},
+		scans: findingsOnlyStore{
+			list: []*statestore.ScanRecord{listed},
+			full: map[string]*statestore.ScanRecord{"sha256:run": {Vulnerabilities: []types.VulnerabilityRecord{{
+				CVEID: "CVE-1", Severity: "CRITICAL", PackageName: "handlebars",
+				InstalledVersion: "4.7.9", FixedVersion: "4.7.10", Description: "lookupProperty bypass",
+			}}}},
+		},
+	}
+	jobs, err := svc.resolveJobs(context.Background(), []Job{{Repository: "app", CVEID: "CVE-1"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(jobs) != 1 {
+		t.Fatalf("jobs = %+v", jobs)
+	}
+	job := jobs[0]
+	if job.PackageName != "handlebars" || job.Version != "4.7.9" || job.FixedVersion != "4.7.10" || job.Severity != "CRITICAL" || job.Description != "lookupProperty bypass" {
+		t.Fatalf("job facts = %+v", job)
+	}
+	prompt := cvePrompt(job, nil)
+	for _, want := range []string{"Installed: 4.7.9", "Fixed: 4.7.10", "Severity: CRITICAL", "lookupProperty bypass", "dependency_sources"} {
+		if !strings.Contains(prompt, want) {
+			t.Fatalf("cve prompt is missing %q:\n%s", want, prompt)
+		}
+	}
 }
