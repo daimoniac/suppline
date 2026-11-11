@@ -125,7 +125,8 @@ func RemoveSyncTargets(document []byte, targets []string) ([]byte, int, error) {
 }
 
 // RemoveVEXStatements deletes x-vex and x-vex-auto items with the given ids
-// from defaults and every sync entry.
+// from defaults and every sync entry. A list key is removed with its last
+// item, so an emptied list is not left behind as a null key.
 func RemoveVEXStatements(document []byte, ids []string) ([]byte, int, error) {
 	wanted, err := cleanList(ids, "VEX id")
 	if err != nil {
@@ -270,7 +271,8 @@ func vexSpans(lines []string, mapping *yaml.Node, ids []string, limit int) []spa
 }
 
 // vexSpansByKey finds items to delete under each VEX list key, using the ids
-// wanted for that key only.
+// wanted for that key only. When every item under a key is deleted, the key
+// line is included so the file does not keep an empty x-vex or x-vex-auto.
 func vexSpansByKey(lines []string, mapping *yaml.Node, idsByKey map[string][]string, limit int) []spanEdit {
 	var edits []spanEdit
 	for _, key := range []string{"x-vex", "x-vex-auto"} {
@@ -284,6 +286,7 @@ func vexSpansByKey(lines []string, mapping *yaml.Node, idsByKey map[string][]str
 			continue
 		}
 		listLimit := boundedLimit(nextKeyLine(mapping, keyNode.Line, limit), limit)
+		var listEdits []spanEdit
 		for i, item := range seq.Content {
 			if item.Kind != yaml.MappingNode || item.Line < 1 {
 				continue
@@ -295,11 +298,15 @@ func vexSpansByKey(lines []string, mapping *yaml.Node, idsByKey map[string][]str
 			if i+1 < len(seq.Content) && seq.Content[i+1].Line > item.Line {
 				next = seq.Content[i+1].Line
 			}
-			edits = append(edits, spanEdit{
+			listEdits = append(listEdits, spanEdit{
 				start: item.Line,
 				end:   entryLastLine(lines, item.Line, next),
 			})
 		}
+		if len(listEdits) > 0 && len(listEdits) == len(seq.Content) && keyNode.Line > 0 && keyNode.Line < listEdits[0].start {
+			listEdits[0].start = keyNode.Line
+		}
+		edits = append(edits, listEdits...)
 	}
 	return edits
 }

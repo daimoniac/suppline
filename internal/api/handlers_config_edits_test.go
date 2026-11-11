@@ -136,7 +136,7 @@ sync:
 	if len(parsed.Sync[0].Tags.Deny) != 1 {
 		t.Fatalf("deny lost:\n%s", body)
 	}
-	if strings.Contains(string(body), "legacy") || strings.Contains(string(body), "CVE-OLD") {
+	if strings.Contains(string(body), "legacy") || strings.Contains(string(body), "CVE-OLD") || strings.Contains(string(body), "x-vex:") {
 		t.Fatalf("removed content remains:\n%s", body)
 	}
 }

@@ -158,6 +158,62 @@ x-triage:
 	}
 }
 
+func TestUpsertReplacesNullAutoList(t *testing.T) {
+	for _, value := range []string{"", "null", "~", "Null"} {
+		suffix := ""
+		if value != "" {
+			suffix = " " + value
+		}
+		original := []byte(`version: 1
+sync:
+  - source: example.com/app
+    target: registry.local/app
+    type: repository
+    x-vex-auto:` + suffix + `
+    x-rescanInterval: 12h
+`)
+		updated, err := Upsert(original, "registry.local/app", types.VEXStatement{
+			ID: "CVE-AUTO", State: types.VEXStateNotAffected, Justification: types.VEXJustCodeNotReachable, Detail: "again",
+		})
+		if err != nil {
+			t.Fatalf("value %q: %v\n%s", value, err, original)
+		}
+		text := string(updated)
+		if !strings.Contains(text, "x-rescanInterval: 12h") || strings.Contains(text, "null") || strings.Contains(text, "~") {
+			t.Fatalf("value %q left the null in place:\n%s", value, text)
+		}
+		path := t.TempDir() + "/suppline.yml"
+		if err := os.WriteFile(path, updated, 0o644); err != nil {
+			t.Fatal(err)
+		}
+		parsed, err := config.ParseRegsync(path)
+		if err != nil {
+			t.Fatalf("value %q: %v\n%s", value, err, text)
+		}
+		if len(parsed.Sync) != 1 || len(parsed.Sync[0].VEXAuto) != 1 || parsed.Sync[0].VEXAuto[0].ID != "CVE-AUTO" {
+			t.Fatalf("value %q: x-vex-auto = %+v\n%s", value, parsed.Sync[0].VEXAuto, text)
+		}
+		if parsed.Sync[0].RescanInterval != "12h" {
+			t.Fatalf("value %q: rescan = %q\n%s", value, parsed.Sync[0].RescanInterval, text)
+		}
+	}
+}
+
+func TestUpsertStillRejectsNonListAuto(t *testing.T) {
+	_, err := Upsert([]byte(`version: 1
+sync:
+  - source: example.com/app
+    target: registry.local/app
+    type: repository
+    x-vex-auto: "not a list"
+`), "registry.local/app", types.VEXStatement{
+		ID: "CVE-AUTO", State: types.VEXStateAffected, Detail: "nope",
+	})
+	if err == nil || !strings.Contains(err.Error(), "x-vex-auto must be a list") {
+		t.Fatalf("got %v", err)
+	}
+}
+
 func TestUpsertRejectsUnknownRepository(t *testing.T) {
 	_, err := Upsert([]byte("version: 1\nsync: []\n"), "missing", types.VEXStatement{
 		ID: "CVE-1", State: types.VEXStateAffected,

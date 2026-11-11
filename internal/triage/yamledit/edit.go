@@ -58,7 +58,7 @@ func upsertList(document []byte, repository, key string, statement types.VEXStat
 			continue
 		}
 		seq := mappingChild(entry, key)
-		if seq != nil && seq.Kind != yaml.SequenceNode {
+		if seq != nil && !isVEXList(seq) {
 			return nil, fmt.Errorf("%s must be a list", key)
 		}
 		limit := nextRootLine(root, entry.Line)
@@ -84,6 +84,18 @@ func upsertList(document []byte, repository, key string, statement types.VEXStat
 		}
 	}
 	return []byte(text), nil
+}
+
+// isVEXList reports a sequence, or a null left after every entry was removed.
+// A cleared list is often left as "x-vex-auto:" or "x-vex-auto: null".
+func isVEXList(node *yaml.Node) bool {
+	if node == nil {
+		return false
+	}
+	if node.Kind == yaml.SequenceNode {
+		return true
+	}
+	return node.Kind == yaml.ScalarNode && node.ShortTag() == "!!null"
 }
 
 func mappingChild(mapping *yaml.Node, key string) *yaml.Node {

@@ -108,6 +108,9 @@ func TestRemoveVEXStatementsFromDefaultsAndSync(t *testing.T) {
 	if !strings.Contains(text, "CVE-KEEP") || !strings.Contains(text, "registry.local/drop") {
 		t.Fatalf("unrelated content missing:\n%s", text)
 	}
+	if strings.Count(text, "x-vex:") != 1 || strings.Contains(text, "x-vex-auto:") {
+		t.Fatalf("empty vex keys left behind:\n%s", text)
+	}
 	parsed := parseConfig(t, updated)
 	if len(parsed.Defaults.VEX) != 0 {
 		t.Fatalf("defaults = %+v", parsed.Defaults.VEX)
@@ -117,6 +120,51 @@ func TestRemoveVEXStatementsFromDefaultsAndSync(t *testing.T) {
 	}
 	if len(parsed.Sync[1].VEXAuto) != 0 {
 		t.Fatalf("auto = %+v", parsed.Sync[1].VEXAuto)
+	}
+}
+
+func TestRemoveVEXStatementsDropsEmptyKeysAndKeepsSiblings(t *testing.T) {
+	doc := []byte(`version: 1
+sync:
+- source: example.com/app
+  target: registry.local/app
+  type: repository
+  x-vex:
+  - id: CVE-KEEP
+    state: not_affected
+    justification: code_not_present
+  - id: CVE-DROP
+    state: not_affected
+    justification: code_not_present
+  x-vex-auto:
+  - id: CVE-DROP
+    state: not_affected
+    justification: code_not_reachable
+  x-rescanInterval: 12h
+`)
+	updated, n, err := RemoveVEXStatements(doc, []string{"CVE-DROP"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if n != 2 {
+		t.Fatalf("removed %d statements", n)
+	}
+	text := string(updated)
+	if strings.Contains(text, "x-vex-auto:") || strings.Contains(text, "CVE-DROP") || strings.Contains(text, "code_not_reachable") {
+		t.Fatalf("empty auto key left behind:\n%s", text)
+	}
+	if strings.Count(text, "x-vex:") != 1 || !strings.Contains(text, "CVE-KEEP") || !strings.Contains(text, "x-rescanInterval: 12h") {
+		t.Fatalf("sibling key missing:\n%s", text)
+	}
+	if strings.Contains(text, "  - source:") {
+		t.Fatalf("reindented catalog:\n%s", text)
+	}
+	parsed := parseConfig(t, updated)
+	if len(parsed.Sync) != 1 || len(parsed.Sync[0].VEX) != 1 || parsed.Sync[0].VEX[0].ID != "CVE-KEEP" {
+		t.Fatalf("vex = %+v", parsed.Sync[0].VEX)
+	}
+	if len(parsed.Sync[0].VEXAuto) != 0 || parsed.Sync[0].RescanInterval != "12h" {
+		t.Fatalf("entry = %+v", parsed.Sync[0])
 	}
 }
 

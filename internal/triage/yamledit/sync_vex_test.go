@@ -66,6 +66,9 @@ func TestRemoveSyncVEXStatementsOnlyTouchesMatchingKeyAndRepository(t *testing.T
 	if got := ids(raw.Sync[1].VEX); len(got) != 0 {
 		t.Fatalf("sync[1] x-vex = %v, want empty", got)
 	}
+	if strings.Count(string(updated), "x-vex:") != 3 {
+		t.Fatalf("emptied sync x-vex key left behind:\n%s", updated)
+	}
 	if got := ids(raw.Sync[2].VEX); len(got) != 1 || got[0] != "CVE-1" {
 		t.Fatalf("other repository lost its statement: %v", got)
 	}
@@ -93,6 +96,9 @@ func TestRemoveSyncVEXStatementsRemovesAutoCopyOnly(t *testing.T) {
 	}
 	if got := ids(raw.Sync[0].VEXAuto); len(got) != 0 {
 		t.Fatalf("auto copy not removed: %v", got)
+	}
+	if strings.Contains(string(updated), "x-vex-auto:") {
+		t.Fatalf("empty x-vex-auto key left behind:\n%s", updated)
 	}
 }
 
