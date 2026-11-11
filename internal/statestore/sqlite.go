@@ -250,11 +250,17 @@ func (s *SQLiteStore) initSchema() error {
 		cve_hash TEXT NOT NULL DEFAULT '',
 		tokens INTEGER NOT NULL DEFAULT 0,
 		status TEXT NOT NULL,
+		session_id TEXT NOT NULL DEFAULT '',
 		commit_sha TEXT NOT NULL DEFAULT '',
 		created_at INTEGER NOT NULL
 	);
 	CREATE INDEX IF NOT EXISTS idx_triage_runs_repo_cve ON triage_runs(repository, cve_id, created_at);
 	CREATE INDEX IF NOT EXISTS idx_triage_runs_created ON triage_runs(created_at);
+
+	CREATE TABLE IF NOT EXISTS triage_budget (
+		id INTEGER PRIMARY KEY CHECK (id = 1),
+		reset_at INTEGER NOT NULL DEFAULT 0
+	);
 	`
 
 	_, err := s.db.Exec(schema)
@@ -297,6 +303,7 @@ func (s *SQLiteStore) ensureSchemaColumns() error {
 		{table: "scan_records", column: "vex_statements_json", definition: "TEXT"},
 		{table: "scan_records", column: "vex_attested", definition: "BOOLEAN NOT NULL DEFAULT 0"},
 		{table: "artifacts", column: "superseded", definition: "INTEGER NOT NULL DEFAULT 0"},
+		{table: "triage_runs", column: "session_id", definition: "TEXT NOT NULL DEFAULT ''"},
 	}
 
 	for _, col := range columns {

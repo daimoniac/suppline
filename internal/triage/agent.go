@@ -14,11 +14,12 @@ type completer interface {
 }
 
 type modelVerdict struct {
-	Verdict       string          `json:"verdict"`
-	Justification string          `json:"justification"`
-	Confidence    float64         `json:"confidence"`
-	Evidence      []modelEvidence `json:"evidence"`
-	Reasoning     string          `json:"reasoning"`
+	Verdict             string          `json:"verdict"`
+	Justification       string          `json:"justification"`
+	Confidence          float64         `json:"confidence"`
+	CoversListedDigests bool            `json:"covers_listed_digests"`
+	Evidence            []modelEvidence `json:"evidence"`
+	Reasoning           string          `json:"reasoning"`
 }
 
 type modelEvidence struct {
@@ -69,6 +70,42 @@ func runAgent(ctx context.Context, llm completer, roots *Roots, runtime clusterQ
 		}
 	}
 	return modelVerdict{}, tokens, fmt.Errorf("triage agent exceeded %d steps", maxSteps)
+}
+
+// runPhase continues one conversation. On the last step, tools are dropped and
+// conclude is appended. An earlier reply with no tool calls ends the phase.
+func runPhase(ctx context.Context, llm completer, roots *Roots, runtime clusterQuerier, pub *publicSource, upstream *publicCheckouts, images imageLabeler, manifests manifestSource, messages *[]chatMessage, tools []toolDef, job Job, maxSteps int, conclude string) (string, int, error) {
+	if messages == nil {
+		return "", 0, fmt.Errorf("triage phase has no conversation")
+	}
+	if maxSteps < 1 {
+		maxSteps = 1
+	}
+	tokens := 0
+	for step := 0; step < maxSteps; step++ {
+		stepTools := tools
+		if step == maxSteps-1 {
+			if strings.TrimSpace(conclude) != "" {
+				*messages = append(*messages, chatMessage{Role: "user", Content: conclude})
+			}
+			stepTools = nil
+		}
+		result, err := llm.Complete(ctx, *messages, stepTools)
+		if err != nil {
+			return "", tokens, err
+		}
+		tokens += result.Tokens
+		if len(result.ToolCalls) == 0 || step == maxSteps-1 {
+			*messages = append(*messages, chatMessage{Role: "assistant", Content: result.Content})
+			return result.Content, tokens, nil
+		}
+		*messages = append(*messages, chatMessage{Role: "assistant", Content: result.Content, ToolCalls: result.ToolCalls})
+		for _, call := range result.ToolCalls {
+			output := dispatchTool(ctx, roots, runtime, pub, upstream, images, manifests, job, call)
+			*messages = append(*messages, chatMessage{Role: "tool", ToolCallID: call.ID, Content: untrusted("tool "+call.Function.Name, output)})
+		}
+	}
+	return "", tokens, fmt.Errorf("triage phase exceeded %d steps", maxSteps)
 }
 
 type clusterQuerier interface {

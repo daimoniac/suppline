@@ -101,25 +101,25 @@ Triage is the escalation layer for a CEL failure. It answers whether that CVE af
 ```mermaid
 flowchart TD
     fail[CEL status failed] --> queue[Queue one job per repository and CVE]
-    queue --> skip{Already decided for these git SHAs and this CVE text?}
+    queue --> skip{Already decided for these git SHAs and this package set?}
     skip -->|yes| done[Leave the gate failed]
     skip -->|commit changed inside retriage_interval| done
     skip -->|no| pull[Pull every context repo once per batch]
-    pull --> agent[LLM with gitops, cluster runtime, advisory, and public GitHub tools]
-    agent --> guard[Guardrails]
+    pull --> session[One session per repository: image context, then one verdict per CVE]
+    session --> guard[Guardrails per CVE]
     guard -->|dry-run or rejected| record[triage_runs row]
-    guard -->|not_affected or flipped to affected| write[Upsert x-vex-auto]
-    write --> swap[Hot-swap x-vex-auto and rescan the repository]
+    guard -->|not_affected or flipped to affected| write[One x-vex-auto commit for the session]
+    write --> swap[Hot-swap x-vex-auto and rescan the repository once]
     swap --> fail
 ```
 
 ### What gets queued
 
-A failed scan queues one job for each policy-failure finding that does not already have an unexpired `not_affected` statement. By default only images currently running in a cluster are queued (`only_in_use`, the same runtime window as the `source="runtime"` alerts). Set `only_in_use: false` to triage every failure. Hand-written `x-vex` and generated `x-vex-auto` both count. Jobs sit on a separate queue so scans are not blocked. Each batch pulls the configured gitops repositories once. Renewal skips a repository that has no in-use image when `only_in_use` is on. **Triage now** in the UI queues the policy failures in the current view and runs them again even when a cached decision exists. The same views also copy a coding-agent prompt for those failures. The Triage view and the Tasks triage card copy a prompt for the current runs that stayed uncertain or were rejected, one finding at a time or all of them together. Semver range updates, unused sync entries, and unused VEX statements are written from the Tasks view with the same config commit path.
+A failed scan queues one job for each policy-failure finding that does not already have an unexpired `not_affected` statement. The job is the repository and the CVE. The digest is chosen when the job runs, not when the scan is recorded, because `x-vex` and `x-vex-auto` apply to every tag of that repository. By default a repository is queued only when one of its digests is running in a cluster (`only_in_use`, the same runtime window as the `source="runtime"` alerts). Set `only_in_use: false` to triage every failure. At run time, with `only_in_use` on, a CVE that is absent from every in-use digest is skipped. A renewal or retry whose CVE is gone from the current scans is skipped and the statement is left to expire. Hand-written `x-vex` and generated `x-vex-auto` both count. Jobs sit on a separate queue so scans are not blocked. Each batch pulls the configured gitops repositories once, then groups jobs by repository. A group larger than `llm.max_group` (default 8) is split. **Triage now** in the UI queues the policy failures in the current view and runs them again even when a cached decision exists. The same views also copy a coding-agent prompt for those failures. The Triage view and the Tasks triage card copy a prompt for the current runs that stayed uncertain or were rejected, one finding at a time or all of them together. Semver range updates, unused sync entries, and unused VEX statements are written from the Tasks view with the same config commit path.
 
 ### Dedupe
 
-A job is skipped when the latest cached run (`dry_run`, `committed`, `written`, `rejected_by_guardrail`) used the same checkout SHAs and the same CVE text (package, versions, severity, description). A changed checkout is retried at most once per `retriage_interval` (default 24h). `error` and `push_failed` are not cached, so those pairs are tried again. Renewal of a statement inside `renew_before` of `expires_at` bypasses the same-SHA cache once the interval has elapsed.
+A job is skipped when the latest cached run (`dry_run`, `committed`, `written`, `rejected_by_guardrail`) used the same checkout SHAs and the same CVE facts: the id, the sorted set of package name, installed version, and fixed version across current scans of the repository, and the highest severity. The advisory description and the digest are not part of the key, so two digests of one image do not retrigger each other. A changed checkout is retried at most once per `retriage_interval` (default 24h). `error` and `push_failed` are not cached, so those pairs are tried again. Renewal of a statement inside `renew_before` of `expires_at` bypasses the same-SHA cache once the interval has elapsed.
 
 ### Decision
 
@@ -131,7 +131,7 @@ The model may only create `not_affected` when all of the following hold:
 - the CVE is not in the CISA KEV feed (`block_kev`, default true). If `cisa.gov` rejects the fetch, triage uses CISA's GitHub copy of the same catalog. If both fetches fail, no new exemption is written and the run is retried
 - `mode` is `enforce`. `dry-run` (the default) only records the decision
 
-`x-vex` is never edited by the agent. The statement is upserted into `x-vex-auto` on the matching sync entry. A person can edit a run in the Triage view and save it into `x-vex`, which then wins on that id. Older runs for the same repository and CVE stay in the list and are marked superseded. Jobs still waiting are shown as queued, and jobs in flight are shown as running. A finished run can be queued again from the Triage view, and each policy failure can be queued from Policy Exceptions. On a matching id, `x-vex` wins and the auto statement has no effect. `detail` records that the statement was auto-generated, plus the model, triage id, timestamp, and checkout SHAs. `expires_at` is set to now plus `expiry` (default 30 days).
+`x-vex` is never edited by the agent. One session inspects a single representative digest (an in-use digest first, newest image, then widest placement) and decides each CVE in its own turn after a shared context phase. When more than one digest of the repository is in use, a `not_affected` verdict must set `covers_listed_digests`. A grep recorded for another CVE cannot be cited. The statements from one session are upserted into `x-vex-auto` in one commit, the in-memory set is hot-swapped once, and the repository is rescanned once. A CVE turn that fails does not drop statements already decided. A person can edit a run in the Triage view and save it into `x-vex`, which then wins on that id. Older runs for the same repository and CVE stay in the list and are marked superseded. `GET /api/v1/triage/status` reports `Sessions` (one per repository in flight, with the CVE currently being decided) and `Queued`. A finished run can be queued again from the Triage view, and each policy failure can be queued from Policy Exceptions. On a matching id, `x-vex` wins and the auto statement has no effect. `detail` records that the statement was auto-generated, plus the model, session id, timestamp, and checkout SHAs. `expires_at` is set to now plus `expiry` (default 30 days).
 
 ### Apply
 
@@ -147,7 +147,7 @@ A sweep, hourly and once at startup, requeues auto statements within `renew_befo
 
 ### Budget and audit
 
-`triage_runs` stores the verdict, justification, confidence, evidence, model, checkout SHAs, token count, status, and commit SHA. `GET /api/v1/triage` reads that table. `GET /api/v1/triage/statements` is the triage list: one row per repository and CVE, including hand-written exemptions, with `NeedsFix` set on an open triage. `TriagedAt` is the latest run for that row and is what the triage view sorts by. A repeat run moves the row. A statement with no run stays at zero. Tokens count toward `daily_token_budget` (default 2,000,000) per UTC day. When the budget is spent, triage waits until the next UTC day. `suppline_triage_budget_exhausted` is 1 during that wait.
+`triage_runs` stores the verdict, justification, confidence, evidence, model, checkout SHAs, token count, status, session id, and commit SHA. Context-phase tokens are split across the CVEs that returned a verdict. `GET /api/v1/triage` reads that table. `GET /api/v1/triage/statements` is the triage list: one row per repository and CVE, including hand-written exemptions, with `NeedsFix` set on an open triage. `TriagedAt` is the latest run for that row and is what the triage view sorts by. A repeat run moves the row. A statement with no run stays at zero. Tokens count toward `daily_token_budget` (default 2,000,000) per UTC day. When the budget is spent, triage waits until the next UTC day. `suppline_triage_budget_exhausted` is 1 during that wait. `POST /api/v1/triage/budget/reset` starts a new window at the current time, leaves earlier runs in `triage_runs`, and wakes that wait. The Triage view shows the spend and the reset button when a limit is configured. The window still ends at the next UTC midnight.
 
 ## Error handling
 

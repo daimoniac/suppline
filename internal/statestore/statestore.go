@@ -482,6 +482,7 @@ type TriageRun struct {
 	CVEHash       string
 	Tokens        int
 	Status        string
+	SessionID     string
 	CommitSHA     string
 	CreatedAt     time.Time
 }
@@ -501,6 +502,8 @@ type TriageStore interface {
 	LatestTriageCommit(ctx context.Context) (*TriageRun, error)
 	ListTriageRuns(ctx context.Context, filter TriageFilter) ([]TriageRun, error)
 	TriageTokensSince(ctx context.Context, since time.Time) (int, error)
+	BudgetResetAt(ctx context.Context) (time.Time, error)
+	SetBudgetResetAt(ctx context.Context, at time.Time) error
 }
 
 // VEXFilter defines criteria for listing VEX statements

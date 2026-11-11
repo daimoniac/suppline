@@ -51,6 +51,8 @@ func decide(settings Settings, job Job, verdict modelVerdict, evidenceErr string
 		reason = evidenceErr
 	case len(verdict.Evidence) == 0:
 		reason = "not_affected requires evidence"
+	case len(job.InUse) > 1 && !verdict.CoversListedDigests:
+		reason = "covers_listed_digests is not true"
 	default:
 		justification := types.NormalizeVEXJustification(types.VEXJustification(verdict.Justification))
 		if _, ok := settings.Allowed[justification]; !ok {
@@ -127,6 +129,10 @@ func verifyEvidence(roots Roots, pub *publicSource, job Job, verdict *modelVerdi
 			if pub == nil || !ok {
 				verdict.Evidence = filtered
 				return fmt.Errorf("evidence[%d] grep_id %s was not returned by a public grep", i, id)
+			}
+			if hit.Phase != "" && hit.Phase != phaseContext && job.CVEID != "" && hit.Phase != job.CVEID {
+				verdict.Evidence = filtered
+				return fmt.Errorf("evidence[%d] grep_id %s was recorded for %s", i, id, hit.Phase)
 			}
 			switch hit.Cite {
 			case citeAbsence:

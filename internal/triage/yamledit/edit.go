@@ -18,6 +18,20 @@ func Upsert(document []byte, repository string, statement types.VEXStatement) ([
 	return upsertList(document, repository, "x-vex-auto", statement)
 }
 
+// UpsertMany inserts or replaces several auto-VEX statements in one pass over
+// the resulting document. Each statement is applied to the output of the previous.
+func UpsertMany(document []byte, repository string, statements []types.VEXStatement) ([]byte, error) {
+	out := document
+	for _, statement := range statements {
+		var err error
+		out, err = Upsert(out, repository, statement)
+		if err != nil {
+			return nil, err
+		}
+	}
+	return out, nil
+}
+
 // UpsertManual inserts or replaces one hand-written x-vex statement.
 // x-vex-auto is never modified.
 func UpsertManual(document []byte, repository string, statement types.VEXStatement) ([]byte, error) {

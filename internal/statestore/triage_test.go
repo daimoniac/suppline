@@ -29,6 +29,17 @@ func TestTriageRunRoundTrip(t *testing.T) {
 	if err != nil || used != 12 {
 		t.Fatalf("tokens = %d err=%v", used, err)
 	}
+	if err := store.SetBudgetResetAt(ctx, now); err != nil {
+		t.Fatal(err)
+	}
+	reset, err := store.BudgetResetAt(ctx)
+	if err != nil || !reset.Equal(now) {
+		t.Fatalf("reset = %s err=%v", reset, err)
+	}
+	used, err = store.TriageTokensSince(ctx, reset.Add(time.Second))
+	if err != nil || used != 0 {
+		t.Fatalf("tokens after reset = %d err=%v", used, err)
+	}
 	listed, err := store.ListTriageRuns(ctx, TriageFilter{Repository: "app", Status: "written"})
 	if err != nil || len(listed) != 1 {
 		t.Fatalf("list = %+v err=%v", listed, err)

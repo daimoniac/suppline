@@ -46,6 +46,7 @@ type TriageLLMConfig struct {
 	BaseURL          string `yaml:"base_url"`
 	Model            string `yaml:"model"`
 	MaxSteps         int    `yaml:"max_steps,omitempty"`
+	MaxGroup         int    `yaml:"max_group,omitempty"`
 	DailyTokenBudget int    `yaml:"daily_token_budget,omitempty"`
 }
 
@@ -155,6 +156,9 @@ func (t *TriageConfig) Validate() error {
 	}
 	if t.BackupRetention < 0 {
 		return fmt.Errorf("x-triage.backup_retention must be >= 0")
+	}
+	if t.LLM.MaxGroup < 0 || t.LLM.MaxGroup > 32 {
+		return fmt.Errorf("x-triage.llm.max_group must be at most 32")
 	}
 	if len(t.Prompt) > 16*1024 {
 		return fmt.Errorf("x-triage.prompt must be at most 16KiB")

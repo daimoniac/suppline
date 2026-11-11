@@ -26,6 +26,7 @@ type Settings struct {
 	Model            string
 	APIKey           string
 	MaxSteps         int
+	MaxGroup         int
 	DailyTokenBudget int
 	MinConfidence    float64
 	Expiry           time.Duration
@@ -51,6 +52,7 @@ func Resolve(cfg *config.TriageConfig, configPath string) (Settings, error) {
 		Mode:             config.TriageModeDryRun,
 		OnlyInUse:        true,
 		MaxSteps:         20,
+		MaxGroup:         8,
 		DailyTokenBudget: 2_000_000,
 		MinConfidence:    0.8,
 		Expiry:           30 * 24 * time.Hour,
@@ -105,6 +107,9 @@ func Resolve(cfg *config.TriageConfig, configPath string) (Settings, error) {
 	settings.Model = strings.TrimSpace(cfg.LLM.Model)
 	if cfg.LLM.MaxSteps > 0 {
 		settings.MaxSteps = cfg.LLM.MaxSteps
+	}
+	if cfg.LLM.MaxGroup > 0 {
+		settings.MaxGroup = cfg.LLM.MaxGroup
 	}
 	if cfg.LLM.DailyTokenBudget > 0 {
 		settings.DailyTokenBudget = cfg.LLM.DailyTokenBudget

@@ -9,7 +9,7 @@ import { ErrorState, FilterActionButton, LoadingState, PageFiltersBar, Paginatio
 import { scheduleEffectLoad } from '../lib/scheduleEffectLoad';
 import { usePageSizePreference } from '../lib/pageSizePreference';
 import { useSortablePaginationState } from '../lib/useSortablePaginationState';
-import type { TriageAccept, TriageActive, TriageRun, TriageStatement, VulnerabilityGroup } from '../lib/api';
+import type { TriageAccept, TriageQueued, TriageRun, TriageSession, TriageStatement, VulnerabilityGroup } from '../lib/api';
 
 const STATUS_LABELS: Record<string, string> = {
   dry_run: 'Dry run',
@@ -81,6 +81,12 @@ function statementRow(item: TriageStatement): StatementRow {
     needsFix: item.NeedsFix,
     run: item.Run,
   };
+}
+
+function companions(rows: StatementRow[], row: StatementRow) {
+  const session = row.run?.SessionID;
+  if (!session) return [];
+  return rows.filter(item => item.key !== row.key && item.run?.SessionID === session);
 }
 
 function needsManualTriage(row: StatementRow) {
@@ -168,10 +174,12 @@ function openRuns(rows: StatementRow[]): TriageRun[] {
 
 function EditModal({
   row,
+  withCVEs,
   onClose,
   onSave,
 }: {
   row: StatementRow;
+  withCVEs: string[];
   onClose: () => void;
   onSave: (body: TriageAccept) => Promise<void>;
 }) {
@@ -257,6 +265,9 @@ function EditModal({
                 Automated triage
                 {row.run ? ` · ${STATUS_LABELS[row.run.Status] || row.run.Status} · ${row.run.Confidence.toFixed(2)} confidence` : ''}
               </p>
+              {withCVEs.length > 0 && (
+                <p className="text-xs text-text-muted mb-2">Triaged with {withCVEs.join(', ')}</p>
+              )}
               {row.run?.Reasoning ? (
                 <p className="text-text-secondary whitespace-pre-wrap">{row.run.Reasoning}</p>
               ) : (
@@ -322,7 +333,8 @@ export function TriageBoard({
   const [copying, setCopying] = useState(false);
   const [copyingKey, setCopyingKey] = useState<string | null>(null);
   const [rows, setRows] = useState<StatementRow[]>([]);
-  const [active, setActive] = useState<TriageActive[]>([]);
+  const [sessions, setSessions] = useState<TriageSession[]>([]);
+  const [queued, setQueued] = useState<TriageQueued[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [search, setSearch] = useState(mode === 'full' ? (searchParams.get('cve_id') || searchParams.get('repository') || '') : '');
@@ -331,6 +343,8 @@ export function TriageBoard({
   const [origin, setOrigin] = useState('auto');
   const [editing, setEditing] = useState<StatementRow | null>(null);
   const [retryingKey, setRetryingKey] = useState<string | null>(null);
+  const [resettingBudget, setResettingBudget] = useState(false);
+  const [budget, setBudget] = useState({ used: 0, limit: 0, exhausted: false });
   const [notice, setNotice] = useState<string | null>(null);
 
   const refresh = useCallback(async (quiet: boolean) => {
@@ -341,7 +355,13 @@ export function TriageBoard({
         apiClient.getTriageStatus().catch(() => null),
       ]);
       setRows((statements || []).map(statementRow));
-      setActive(triageStatus?.Active ?? []);
+      setSessions(triageStatus?.Sessions ?? []);
+      setQueued(triageStatus?.Queued ?? []);
+      setBudget({
+        used: triageStatus?.BudgetUsed ?? 0,
+        limit: triageStatus?.BudgetLimit ?? 0,
+        exhausted: triageStatus?.BudgetExhausted ?? false,
+      });
       setError(null);
     } catch (e: unknown) {
       setError(e instanceof Error ? e.message : 'Failed to load triage');
@@ -358,10 +378,10 @@ export function TriageBoard({
   }, [refreshToken, refresh]);
 
   useEffect(() => {
-    if (active.length === 0) return;
+    if (sessions.length + queued.length === 0 && !budget.exhausted) return;
     const id = window.setInterval(() => { refresh(true); }, 3000);
     return () => window.clearInterval(id);
-  }, [active.length, refresh]);
+  }, [sessions.length, queued.length, budget.exhausted, refresh]);
 
   let pool = mode === 'attention' ? rows.filter(needsManualTriage) : rows.filter(row => matchesOrigin(row, origin));
   pool = pool.filter(affectsImages);
@@ -400,9 +420,16 @@ export function TriageBoard({
   });
   const paged = sorted.slice(offset, offset + pageSize);
 
-  const running = active.filter(job => job.Running);
-  const queued = active.filter(job => !job.Running);
-  const busyKey = new Set(active.map(job => pairKey(job.Repository, job.CVEID)));
+  const busyKey = new Set<string>();
+  for (const session of sessions) {
+    for (const cve of session.CVEs) busyKey.add(pairKey(session.Repository, cve.CVEID));
+  }
+  for (const job of queued) busyKey.add(pairKey(job.Repository, job.CVEID));
+  const queuedByImage = new Map<string, TriageQueued[]>();
+  for (const job of queued) {
+    const key = job.Image || job.Repository;
+    queuedByImage.set(key, [...(queuedByImage.get(key) ?? []), job]);
+  }
 
   const copyRuns = async (runs: TriageRun[], key?: string) => {
     if (key) setCopyingKey(key);
@@ -420,6 +447,20 @@ export function TriageBoard({
     } finally {
       if (key) setCopyingKey(null);
       else setCopying(false);
+    }
+  };
+
+  const resetBudget = async () => {
+    if (!window.confirm("Reset today's triage token budget? Queued triage will start.")) return;
+    setResettingBudget(true);
+    try {
+      await apiClient.resetTriageBudget();
+      toast('Daily triage limit reset', 'success');
+      await refresh(true);
+    } catch (e: unknown) {
+      toast(e instanceof Error ? e.message : 'Failed to reset the daily limit', 'error');
+    } finally {
+      setResettingBudget(false);
     }
   };
 
@@ -446,36 +487,62 @@ export function TriageBoard({
     { col: 'triagedAt', label: 'Triaged' },
   ] as const;
 
-  if (loading && rows.length === 0 && active.length === 0) return <LoadingState message="Loading triage..." />;
+  if (loading && rows.length === 0 && sessions.length === 0 && queued.length === 0) return <LoadingState message="Loading triage..." />;
   if (error && rows.length === 0) return <ErrorState message={error} onRetry={() => refresh(false)} />;
 
   const promptRows = (mode === 'attention' ? rows.filter(needsManualTriage) : rows).filter(affectsImages);
 
   return (
     <div>
-      {running.length > 0 && (
-        <div className="mb-4 bg-bg-primary border border-border rounded-xl overflow-hidden divide-y divide-border">
-          <div className="px-4 py-2 text-xs font-medium text-text-secondary">Currently running</div>
-          {running.map(job => (
-            <div key={pairKey(job.Repository, job.CVEID)} className="flex items-center gap-3 px-4 py-3">
-              <Loader2 className="w-4 h-4 animate-spin text-accent shrink-0" />
+      {budget.limit > 0 && (
+        <div className={`mb-4 flex flex-wrap items-center justify-between gap-3 px-4 py-3 rounded-xl border text-sm ${budget.exhausted ? 'bg-warning-bg border-warning/30 text-warning' : 'bg-bg-primary border-border text-text-secondary'}`}>
+          <div>
+            <span className="font-medium text-text-primary">{budget.used.toLocaleString()} / {budget.limit.toLocaleString()}</span>
+            <span> tokens today</span>
+            {budget.exhausted && <span> · triage is waiting until the limit resets</span>}
+          </div>
+          <button
+            type="button"
+            onClick={resetBudget}
+            disabled={resettingBudget || budget.used === 0}
+            className="px-3 py-1.5 text-xs rounded-lg border border-border bg-bg-secondary text-text-primary hover:bg-bg-tertiary transition-colors disabled:opacity-50"
+          >
+            {resettingBudget ? 'Resetting…' : 'Reset daily limit'}
+          </button>
+        </div>
+      )}
+      {sessions.map(session => (
+        <div key={session.SessionID} className="mb-4 bg-bg-primary border border-border rounded-xl overflow-hidden divide-y divide-border">
+          <div className="px-4 py-2 text-xs font-medium text-text-secondary">
+            {session.Phase === 'deciding' ? `Deciding ${session.CurrentCVE}` : 'Gathering image context'}
+            <span className="text-text-muted"> · {session.Image || session.Repository}</span>
+          </div>
+          {session.CVEs.map(cve => (
+            <div key={cve.CVEID} className="flex items-center gap-3 px-4 py-3">
+              {cve.Status === 'running'
+                ? <Loader2 className="w-4 h-4 animate-spin text-accent shrink-0" />
+                : <Clock className="w-4 h-4 text-text-muted shrink-0" />}
               <div className="min-w-0">
-                <div className="text-sm font-mono font-medium">{job.CVEID}</div>
-                <div className="text-xs text-text-muted truncate">{job.Image || job.Repository}</div>
+                <div className="text-sm font-mono font-medium">{cve.CVEID}</div>
+                <div className="text-xs text-text-muted truncate">{cve.Status === 'running' ? 'In progress' : 'Waiting in this session'}</div>
               </div>
             </div>
           ))}
         </div>
-      )}
+      ))}
       {queued.length > 0 && (
         <div className="mb-4 bg-bg-primary border border-border rounded-xl overflow-hidden divide-y divide-border">
           <div className="px-4 py-2 text-xs font-medium text-text-secondary">Queued</div>
-          {queued.map(job => (
-            <div key={pairKey(job.Repository, job.CVEID)} className="flex items-center gap-3 px-4 py-3">
-              <Clock className="w-4 h-4 text-text-muted shrink-0" />
-              <div className="min-w-0">
-                <div className="text-sm font-mono font-medium">{job.CVEID}</div>
-                <div className="text-xs text-text-muted truncate">{job.Image || job.Repository}</div>
+          {[...queuedByImage.entries()].map(([image, jobs]) => (
+            <div key={image} className="px-4 py-3">
+              <div className="text-xs text-text-muted truncate mb-2">{image}</div>
+              <div className="flex flex-wrap gap-2">
+                {jobs.map(job => (
+                  <span key={pairKey(job.Repository, job.CVEID)} className="inline-flex items-center gap-1.5 text-sm font-mono">
+                    <Clock className="w-3.5 h-3.5 text-text-muted" />
+                    {job.CVEID}
+                  </span>
+                ))}
               </div>
             </div>
           ))}
@@ -610,6 +677,7 @@ export function TriageBoard({
         <EditModal
           key={editing.key}
           row={editing}
+          withCVEs={companions(rows, editing).map(item => item.cve)}
           onClose={() => setEditing(null)}
           onSave={async body => {
             await apiClient.acceptTriage(body);

@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -94,6 +95,96 @@ sync:
 	}
 }
 
+func TestSessionWritesEveryCVEOnce(t *testing.T) {
+	t.Setenv("SUPPLINE_LLM_API_KEY", "test-key")
+	dir := t.TempDir()
+	path := filepath.Join(dir, "suppline.yml")
+	if err := os.WriteFile(path, []byte(`version: 1
+sync:
+  - source: example.com/app
+    target: registry.local/app
+    type: repository
+`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	parsed, err := config.ParseRegsync(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	parsed.Triage = &config.TriageConfig{
+		Enabled: true,
+		Mode:    config.TriageModeEnforce,
+		LLM:     config.TriageLLMConfig{BaseURL: "http://llm.example/v1", Model: "stub"},
+	}
+	cat := catalog.NewConfigCatalog(parsed)
+	store, err := statestore.NewSQLiteStore(filepath.Join(dir, "triage.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { store.Close() })
+	svc, err := New(parsed.Triage, path, cat, store, nil, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	root := t.TempDir()
+	if err := os.WriteFile(filepath.Join(root, "app.yaml"), []byte("ingress: internal\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	kev := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = w.Write([]byte(`{"vulnerabilities":[]}`))
+	}))
+	t.Cleanup(kev.Close)
+	svc.kev = &KEVCache{URL: kev.URL, TTL: time.Hour}
+	verdict := `{"verdict":"not_affected","justification":"protected_at_perimeter","confidence":0.95,"evidence":[{"repo":"infra","path":"app.yaml","line":1,"quote":"ingress: internal"}],"reasoning":"only an internal ingress is exposed"}`
+	svc.llm = &seqLLM{bodies: []string{"context ready", verdict, "not-json"}}
+	roots := Roots{Checkouts: []CheckoutRoot{{Name: "infra", Dir: root}}}
+	checkouts := []gitops.Checkout{{Name: "infra", Dir: root, SHA: "abc123"}}
+	jobs := []Job{
+		{Repository: "registry.local/app", CVEID: "CVE-2026-1", PackageName: "nginx", Severity: "HIGH"},
+		{Repository: "registry.local/app", CVEID: "CVE-2026-2", PackageName: "openssl", Severity: "HIGH"},
+	}
+	svc.executeSession(context.Background(), jobs, checkouts, roots)
+
+	body, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(body), "CVE-2026-1") || strings.Contains(string(body), "CVE-2026-2") {
+		t.Fatalf("file:\n%s", body)
+	}
+	backup, err := os.ReadFile(path + ".bak.1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(backup), "x-vex-auto") {
+		t.Fatal("backup was taken after the first statement")
+	}
+	first, err := store.LatestTriageRun(context.Background(), jobs[0].Repository, "CVE-2026-1")
+	if err != nil || first == nil || first.Status != StatusWritten || first.SessionID == "" {
+		t.Fatalf("first = %+v err=%v", first, err)
+	}
+	second, err := store.LatestTriageRun(context.Background(), jobs[0].Repository, "CVE-2026-2")
+	if err != nil || second == nil || second.Status != StatusError || second.SessionID != first.SessionID {
+		t.Fatalf("second = %+v err=%v", second, err)
+	}
+	if first.Tokens == 0 || second.Tokens == 0 {
+		t.Fatalf("tokens first=%d second=%d", first.Tokens, second.Tokens)
+	}
+}
+
+type seqLLM struct {
+	bodies []string
+	i      int
+}
+
+func (s *seqLLM) Complete(context.Context, []chatMessage, []toolDef) (completion, error) {
+	body := s.bodies[s.i]
+	if s.i+1 < len(s.bodies) {
+		s.i++
+	}
+	return completion{Content: body, Tokens: 4}, nil
+}
+
 func TestPromoteManualWritesXVEX(t *testing.T) {
 	t.Setenv("SUPPLINE_LLM_API_KEY", "test-key")
 	dir := t.TempDir()
@@ -164,9 +255,9 @@ func TestActiveListsPendingJob(t *testing.T) {
 	if !svc.enqueue(Job{Repository: "app", CVEID: "CVE-1", ImageRef: "app:1"}) {
 		t.Fatal("enqueue")
 	}
-	active := svc.Active()
-	if len(active) != 1 || active[0].CVEID != "CVE-1" || active[0].Image != "app:1" || active[0].Running || svc.Pending() != 1 {
-		t.Fatalf("active = %+v pending %d", active, svc.Pending())
+	queued := svc.Queued()
+	if len(queued) != 1 || queued[0].CVEID != "CVE-1" || queued[0].Image != "app:1" || len(svc.Sessions()) != 0 || svc.Pending() != 1 {
+		t.Fatalf("queued = %+v sessions = %+v pending %d", queued, svc.Sessions(), svc.Pending())
 	}
 }
 
@@ -180,14 +271,19 @@ func TestRetryQueuesAndMarksRunning(t *testing.T) {
 	if svc.Retry(context.Background(), "app", "CVE-1") != 1 {
 		t.Fatal("retry")
 	}
-	active := svc.Active()
-	if len(active) != 1 || active[0].Running || active[0].CVEID != "CVE-1" {
-		t.Fatalf("queued = %+v", active)
+	queued := svc.Queued()
+	if len(queued) != 1 || queued[0].CVEID != "CVE-1" || len(svc.Sessions()) != 0 {
+		t.Fatalf("queued = %+v", queued)
 	}
-	svc.markRunning([]Job{{Repository: "app", CVEID: "CVE-1"}})
-	active = svc.Active()
-	if len(active) != 1 || !active[0].Running {
-		t.Fatalf("running = %+v", active)
+	svc.beginSession([]Job{{Repository: "app", CVEID: "CVE-1"}}, "s1", "app:1")
+	sessions := svc.Sessions()
+	if len(sessions) != 1 || sessions[0].Phase != "context" || sessions[0].CurrentCVE != "" || len(svc.Queued()) != 0 {
+		t.Fatalf("session = %+v", sessions)
+	}
+	svc.focusCVE("app", "CVE-1")
+	sessions = svc.Sessions()
+	if len(sessions) != 1 || sessions[0].CurrentCVE != "CVE-1" || sessions[0].CVEs[0].Status != "running" {
+		t.Fatalf("running = %+v", sessions)
 	}
 	if svc.Retry(context.Background(), "app", "CVE-1") != 0 {
 		t.Fatal("duplicate retry was queued")
@@ -308,6 +404,73 @@ func (s stubRuns) ListTriageRuns(context.Context, statestore.TriageFilter) ([]st
 	return nil, nil
 }
 func (s stubRuns) TriageTokensSince(context.Context, time.Time) (int, error) { return 0, nil }
+func (s stubRuns) BudgetResetAt(context.Context) (time.Time, error)          { return time.Time{}, nil }
+func (s stubRuns) SetBudgetResetAt(context.Context, time.Time) error         { return nil }
+
+type budgetRuns struct {
+	mu     sync.Mutex
+	tokens int
+	reset  time.Time
+}
+
+func (b *budgetRuns) InsertTriageRun(context.Context, *statestore.TriageRun) error { return nil }
+func (b *budgetRuns) LatestTriageRun(context.Context, string, string) (*statestore.TriageRun, error) {
+	return nil, nil
+}
+func (b *budgetRuns) LatestTriageCommit(context.Context) (*statestore.TriageRun, error) {
+	return nil, nil
+}
+func (b *budgetRuns) ListTriageRuns(context.Context, statestore.TriageFilter) ([]statestore.TriageRun, error) {
+	return nil, nil
+}
+func (b *budgetRuns) TriageTokensSince(_ context.Context, since time.Time) (int, error) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	if !b.reset.IsZero() && since.After(b.reset) {
+		return 0, nil
+	}
+	return b.tokens, nil
+}
+func (b *budgetRuns) BudgetResetAt(context.Context) (time.Time, error) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return b.reset, nil
+}
+func (b *budgetRuns) SetBudgetResetAt(_ context.Context, at time.Time) error {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	b.reset = at
+	return nil
+}
+
+func TestResetDailyBudgetClearsSpendAndWakesWaiter(t *testing.T) {
+	svc := &Service{
+		settings: Settings{DailyTokenBudget: 10},
+		runs:     &budgetRuns{tokens: 10},
+		now:      func() time.Time { return time.Date(2026, 11, 11, 8, 0, 0, 0, time.UTC) },
+		logger:   slog.Default(),
+	}
+	if !svc.overBudget(context.Background()) {
+		t.Fatal("expected the budget to be exhausted")
+	}
+	done := make(chan struct{})
+	go func() {
+		svc.waitForBudget(context.Background())
+		close(done)
+	}()
+	if err := svc.ResetDailyBudget(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case <-done:
+	case <-time.After(2 * time.Second):
+		t.Fatal("budget wait did not return")
+	}
+	status := svc.BudgetStatus(context.Background())
+	if status.Exhausted || status.Used != 0 || status.Limit != 10 {
+		t.Fatalf("budget = %+v", status)
+	}
+}
 
 func TestGitopsStatusMergesSharedRepo(t *testing.T) {
 	when := time.Date(2026, 10, 23, 9, 0, 0, 0, time.UTC)
@@ -337,8 +500,11 @@ func TestGitopsStatusMergesSharedRepo(t *testing.T) {
 }
 
 func TestAutoCommitSkipsGitLabCI(t *testing.T) {
-	message := autoCommitMessage("GHSA-cg2g-xh64-v4q7", "hostingmaloonde/elasticsearch_kibana", "not_affected", "the call returns a string")
-	if !strings.Contains(message, "chore(vex): auto-triage GHSA-cg2g-xh64-v4q7 for hostingmaloonde/elasticsearch_kibana [skip ci]\n") {
+	message := autoCommitMessage("hostingmaloonde/elasticsearch_kibana", []string{"GHSA-cg2g-xh64-v4q7 not_affected"})
+	if !strings.Contains(message, "chore(vex): auto-triage 1 CVE for hostingmaloonde/elasticsearch_kibana [skip ci]\n") {
+		t.Fatalf("message = %q", message)
+	}
+	if !strings.Contains(message, "GHSA-cg2g-xh64-v4q7 not_affected") {
 		t.Fatalf("message = %q", message)
 	}
 }

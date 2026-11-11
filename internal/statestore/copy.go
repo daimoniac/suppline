@@ -153,14 +153,40 @@ func CopySQLiteToPostgres(ctx context.Context, sqlitePath, postgresURL string, l
 		return errors.NewTransientf("inspect triage_runs: %w", err)
 	}
 	if triageTable > 0 {
+		hasSession, err := sqliteHasColumn(ctx, src, "triage_runs", "session_id")
+		if err != nil {
+			return err
+		}
+		query := `SELECT id, repository, cve_id, verdict, justification, confidence, evidence_json, reasoning, model, repo_shas_json, cve_hash, tokens, status, commit_sha, created_at FROM triage_runs`
+		insert := `INSERT INTO triage_runs (id, repository, cve_id, verdict, justification, confidence, evidence_json, reasoning, model, repo_shas_json, cve_hash, tokens, status, commit_sha, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+		if hasSession {
+			query = `SELECT id, repository, cve_id, verdict, justification, confidence, evidence_json, reasoning, model, repo_shas_json, cve_hash, tokens, status, session_id, commit_sha, created_at FROM triage_runs`
+			insert = `INSERT INTO triage_runs (id, repository, cve_id, verdict, justification, confidence, evidence_json, reasoning, model, repo_shas_json, cve_hash, tokens, status, session_id, commit_sha, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+		}
 		copies = append(copies, struct {
 			name   string
 			query  string
 			insert string
 		}{
 			name:   "triage_runs",
-			query:  `SELECT id, repository, cve_id, verdict, justification, confidence, evidence_json, reasoning, model, repo_shas_json, cve_hash, tokens, status, commit_sha, created_at FROM triage_runs`,
-			insert: `INSERT INTO triage_runs (id, repository, cve_id, verdict, justification, confidence, evidence_json, reasoning, model, repo_shas_json, cve_hash, tokens, status, commit_sha, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+			query:  query,
+			insert: insert,
+		})
+	}
+
+	var budgetTable int
+	if err := src.QueryRowContext(ctx, `SELECT COUNT(*) FROM sqlite_master WHERE type = 'table' AND name = 'triage_budget'`).Scan(&budgetTable); err != nil {
+		return errors.NewTransientf("inspect triage_budget: %w", err)
+	}
+	if budgetTable > 0 {
+		copies = append(copies, struct {
+			name   string
+			query  string
+			insert string
+		}{
+			name:   "triage_budget",
+			query:  `SELECT id, reset_at FROM triage_budget`,
+			insert: `INSERT INTO triage_budget (id, reset_at) VALUES (?, ?)`,
 		})
 	}
 

@@ -162,11 +162,16 @@ func (s *SQLiteStore) initPostgresSchema() error {
 			cve_hash TEXT NOT NULL DEFAULT '',
 			tokens INTEGER NOT NULL DEFAULT 0,
 			status TEXT NOT NULL,
+			session_id TEXT NOT NULL DEFAULT '',
 			commit_sha TEXT NOT NULL DEFAULT '',
 			created_at BIGINT NOT NULL
 		)`,
 		`CREATE INDEX IF NOT EXISTS idx_triage_runs_repo_cve ON triage_runs(repository, cve_id, created_at)`,
 		`CREATE INDEX IF NOT EXISTS idx_triage_runs_created ON triage_runs(created_at)`,
+		`CREATE TABLE IF NOT EXISTS triage_budget (
+			id INTEGER PRIMARY KEY CHECK (id = 1),
+			reset_at BIGINT NOT NULL DEFAULT 0
+		)`,
 	}
 
 	for _, stmt := range stmts {
@@ -206,6 +211,11 @@ func (s *SQLiteStore) initPostgresSchema() error {
 		ALTER TABLE artifacts ADD COLUMN IF NOT EXISTS superseded INTEGER NOT NULL DEFAULT 0
 	`); err != nil {
 		return fmt.Errorf("add artifacts.superseded: %w", err)
+	}
+	if _, err := s.db.Exec(`
+		ALTER TABLE triage_runs ADD COLUMN IF NOT EXISTS session_id TEXT NOT NULL DEFAULT ''
+	`); err != nil {
+		return fmt.Errorf("add triage_runs.session_id: %w", err)
 	}
 
 	return nil

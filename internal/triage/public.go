@@ -43,6 +43,18 @@ type publicSource struct {
 	mu    sync.Mutex
 	lines map[string]string
 	greps []grepHit
+	phase string
+}
+
+const phaseContext = "context"
+
+func (p *publicSource) setPhase(phase string) {
+	if p == nil {
+		return
+	}
+	p.mu.Lock()
+	p.phase = strings.TrimSpace(phase)
+	p.mu.Unlock()
 }
 
 type grepRow struct {
@@ -62,6 +74,8 @@ type grepHit struct {
 	Absence bool
 	Cite    citeKind
 	Rows    []grepRow
+	// Phase is "context" or the CVE id of the turn that ran the grep.
+	Phase string
 }
 
 func newPublicSource() *publicSource {
@@ -556,6 +570,7 @@ func (p *publicSource) storeGrep(repo, pattern, path, commit, rows string, absen
 		Absence: empty && absence,
 		Cite:    cite(empty, absence),
 		Rows:    parsed,
+		Phase:   p.phase,
 	}
 	p.greps = append(p.greps, hit)
 	return hit.ID

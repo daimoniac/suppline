@@ -43,6 +43,51 @@ func TestShouldSkip(t *testing.T) {
 	}
 }
 
+func TestDecideRequiresCoverageForSeveralDigests(t *testing.T) {
+	now := time.Date(2026, 10, 23, 12, 0, 0, 0, time.UTC)
+	settings := Settings{
+		MinConfidence: 0.8,
+		Expiry:        30 * 24 * time.Hour,
+		Allowed:       justificationSet(config.DefaultTriageJustifications()),
+	}
+	job := Job{CVEID: "CVE-1", Repository: "app", InUse: []DigestFact{{Digest: "sha256:a"}, {Digest: "sha256:b"}}}
+	verdict := modelVerdict{
+		Verdict: "not_affected", Justification: "protected_at_perimeter", Confidence: 0.95,
+		Evidence:  []modelEvidence{{Repo: "infra", Path: "app.yaml", Line: 1, Quote: "ingress: internal"}},
+		Reasoning: "internal only",
+	}
+	if got := decide(settings, job, verdict, "", false, nil, nil, nil, "ts", now); got.Action != outcomeReject {
+		t.Fatalf("missing coverage = %+v", got)
+	}
+	verdict.CoversListedDigests = true
+	if got := decide(settings, job, verdict, "", false, nil, nil, nil, "ts", now); got.Action != outcomeNotAffected {
+		t.Fatalf("covered = %+v", got)
+	}
+}
+
+func TestEvidenceRejectsAnotherCVEsGrep(t *testing.T) {
+	pub := newPublicSource()
+	pub.setPhase("CVE-A")
+	id := pub.recordGrep("acme/app", "sink", "apps", "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", "")
+	verdict := modelVerdict{
+		Verdict: "not_affected", Justification: "code_not_reachable",
+		Evidence: []modelEvidence{{GrepID: id}},
+	}
+	err := verifyEvidence(Roots{}, pub, Job{CVEID: "CVE-B", PackageName: "dompurify"}, &verdict)
+	if err == nil || !strings.Contains(err.Error(), "CVE-A") {
+		t.Fatalf("err = %v", err)
+	}
+	pub.setPhase(phaseContext)
+	contextID := pub.recordGrep("acme/app", "sink", "apps", "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", "")
+	ok := modelVerdict{
+		Verdict: "not_affected", Justification: "code_not_reachable",
+		Evidence: []modelEvidence{{GrepID: contextID}},
+	}
+	if err := verifyEvidence(Roots{}, pub, Job{CVEID: "CVE-B", PackageName: "dompurify"}, &ok); err != nil {
+		t.Fatal(err)
+	}
+}
+
 func TestDecideFlipsExistingAutoStatement(t *testing.T) {
 	now := time.Date(2026, 10, 23, 12, 0, 0, 0, time.UTC)
 	settings := Settings{

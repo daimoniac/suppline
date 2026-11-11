@@ -25,6 +25,7 @@ type TriageRunResponse struct {
 	Tokens        int             `json:"Tokens"`
 	Status        string          `json:"Status"`
 	CommitSHA     string          `json:"CommitSHA,omitempty"`
+	SessionID     string          `json:"SessionID,omitempty"`
 	CreatedAt     int64           `json:"CreatedAt"`
 	Superseded    bool            `json:"Superseded"`
 }
@@ -135,6 +136,7 @@ func triageRunResponses(runs []statestore.TriageRun) []TriageRunResponse {
 			Tokens:        run.Tokens,
 			Status:        run.Status,
 			CommitSHA:     run.CommitSHA,
+			SessionID:     run.SessionID,
 			CreatedAt:     run.CreatedAt.Unix(),
 			Superseded:    latest[run.Repository+"\n"+run.CVEID] != run.ID,
 		}
@@ -151,19 +153,38 @@ func triageRunResponses(runs []statestore.TriageRun) []TriageRunResponse {
 
 // TriageStatusResponse describes whether triage can accept work.
 type TriageStatusResponse struct {
-	Enabled   bool                   `json:"Enabled"`
-	Mode      string                 `json:"Mode,omitempty"`
-	OnlyInUse bool                   `json:"OnlyInUse"`
-	Pending   int                    `json:"Pending"`
-	Active    []TriageActiveResponse `json:"Active"`
+	Enabled         bool                    `json:"Enabled"`
+	Mode            string                  `json:"Mode,omitempty"`
+	OnlyInUse       bool                    `json:"OnlyInUse"`
+	Pending         int                     `json:"Pending"`
+	Sessions        []TriageSessionResponse `json:"Sessions"`
+	Queued          []TriageQueuedResponse  `json:"Queued"`
+	BudgetUsed      int                     `json:"BudgetUsed"`
+	BudgetLimit     int                     `json:"BudgetLimit"`
+	BudgetExhausted bool                    `json:"BudgetExhausted"`
 }
 
-// TriageActiveResponse is one job waiting or in flight.
-type TriageActiveResponse struct {
+// TriageSessionResponse is one repository session in flight.
+type TriageSessionResponse struct {
+	SessionID  string             `json:"SessionID"`
+	Repository string             `json:"Repository"`
+	Image      string             `json:"Image,omitempty"`
+	Phase      string             `json:"Phase,omitempty"`
+	CurrentCVE string             `json:"CurrentCVE,omitempty"`
+	CVEs       []TriageSessionCVE `json:"CVEs"`
+}
+
+// TriageSessionCVE is one CVE inside a session.
+type TriageSessionCVE struct {
+	CVEID  string `json:"CVEID"`
+	Status string `json:"Status"`
+}
+
+// TriageQueuedResponse is one CVE accepted but not yet in a session.
+type TriageQueuedResponse struct {
 	Repository string `json:"Repository"`
 	CVEID      string `json:"CVEID"`
 	Image      string `json:"Image,omitempty"`
-	Running    bool   `json:"Running"`
 }
 
 // TriageRunRequest selects the failed images to queue.
@@ -209,22 +230,78 @@ func (s *APIServer) handleTriageStatus(w http.ResponseWriter, r *http.Request) {
 		s.respondError(w, http.StatusMethodNotAllowed, "Method not allowed")
 		return
 	}
-	response := TriageStatusResponse{OnlyInUse: true, Active: []TriageActiveResponse{}}
+	response := TriageStatusResponse{OnlyInUse: true, Sessions: []TriageSessionResponse{}, Queued: []TriageQueuedResponse{}}
 	if s.triageService != nil {
 		response.Enabled = s.triageService.Enabled()
 		response.Mode = s.triageService.Mode()
 		response.OnlyInUse = s.triageService.OnlyInUse()
 		response.Pending = s.triageService.Pending()
-		for _, job := range s.triageService.Active() {
-			response.Active = append(response.Active, TriageActiveResponse{
+		for _, session := range s.triageService.Sessions() {
+			item := TriageSessionResponse{
+				SessionID:  session.SessionID,
+				Repository: session.Repository,
+				Image:      session.Image,
+				Phase:      session.Phase,
+				CurrentCVE: session.CurrentCVE,
+				CVEs:       make([]TriageSessionCVE, 0, len(session.CVEs)),
+			}
+			for _, cve := range session.CVEs {
+				item.CVEs = append(item.CVEs, TriageSessionCVE{CVEID: cve.CVEID, Status: cve.Status})
+			}
+			response.Sessions = append(response.Sessions, item)
+		}
+		for _, job := range s.triageService.Queued() {
+			response.Queued = append(response.Queued, TriageQueuedResponse{
 				Repository: job.Repository,
 				CVEID:      job.CVEID,
 				Image:      job.Image,
-				Running:    job.Running,
 			})
 		}
+		budget := s.triageService.BudgetStatus(r.Context())
+		response.BudgetUsed = budget.Used
+		response.BudgetLimit = budget.Limit
+		response.BudgetExhausted = budget.Exhausted
 	}
 	s.respondJSON(w, http.StatusOK, response)
+}
+
+// handleTriageBudgetReset starts a new daily token window and wakes triage parked on the old one.
+// @Summary Reset the daily triage token budget
+// @Description Ignores tokens spent before this moment and lets queued triage continue. The window still ends at the next UTC midnight.
+// @Tags Triage
+// @Produce json
+// @Success 200 {object} TriageBudgetResponse
+// @Failure 409 {object} map[string]string "Triage is not enabled"
+// @Failure 500 {object} map[string]string "Reset failed"
+// @Security BearerAuth
+// @Router /triage/budget/reset [post]
+func (s *APIServer) handleTriageBudgetReset(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		s.respondError(w, http.StatusMethodNotAllowed, "Method not allowed")
+		return
+	}
+	if s.triageService == nil || !s.triageService.Enabled() {
+		s.respondError(w, http.StatusConflict, "triage is not enabled")
+		return
+	}
+	if err := s.triageService.ResetDailyBudget(r.Context()); err != nil {
+		s.respondError(w, http.StatusInternalServerError, "Failed to reset the daily token budget")
+		s.logger.Error("reset triage budget", "error", err)
+		return
+	}
+	budget := s.triageService.BudgetStatus(r.Context())
+	s.respondJSON(w, http.StatusOK, TriageBudgetResponse{
+		BudgetUsed:      budget.Used,
+		BudgetLimit:     budget.Limit,
+		BudgetExhausted: budget.Exhausted,
+	})
+}
+
+// TriageBudgetResponse is the token window after a reset.
+type TriageBudgetResponse struct {
+	BudgetUsed      int  `json:"BudgetUsed"`
+	BudgetLimit     int  `json:"BudgetLimit"`
+	BudgetExhausted bool `json:"BudgetExhausted"`
 }
 
 // handleTriageRun queues triage for the failed images in the request.

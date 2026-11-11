@@ -20,10 +20,10 @@ func (s *SQLiteStore) InsertTriageRun(ctx context.Context, run *TriageRun) error
 	_, err := s.db.ExecContext(ctx, `
 		INSERT INTO triage_runs (
 			repository, cve_id, verdict, justification, confidence, evidence_json, reasoning,
-			model, repo_shas_json, cve_hash, tokens, status, commit_sha, created_at
-		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+			model, repo_shas_json, cve_hash, tokens, status, session_id, commit_sha, created_at
+		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 	`, run.Repository, run.CVEID, run.Verdict, run.Justification, run.Confidence, run.EvidenceJSON, run.Reasoning,
-		run.Model, run.RepoSHAsJSON, run.CVEHash, run.Tokens, run.Status, run.CommitSHA, created.Unix())
+		run.Model, run.RepoSHAsJSON, run.CVEHash, run.Tokens, run.Status, run.SessionID, run.CommitSHA, created.Unix())
 	if err != nil {
 		return errors.NewTransientf("insert triage run: %w", err)
 	}
@@ -33,7 +33,7 @@ func (s *SQLiteStore) InsertTriageRun(ctx context.Context, run *TriageRun) error
 func (s *SQLiteStore) LatestTriageRun(ctx context.Context, repository, cveID string) (*TriageRun, error) {
 	row := s.db.QueryRowContext(ctx, `
 		SELECT id, repository, cve_id, verdict, justification, confidence, evidence_json, reasoning,
-			model, repo_shas_json, cve_hash, tokens, status, commit_sha, created_at
+			model, repo_shas_json, cve_hash, tokens, status, session_id, commit_sha, created_at
 		FROM triage_runs
 		WHERE repository = ? AND cve_id = ?
 		ORDER BY created_at DESC, id DESC
@@ -52,7 +52,7 @@ func (s *SQLiteStore) LatestTriageRun(ctx context.Context, repository, cveID str
 func (s *SQLiteStore) LatestTriageCommit(ctx context.Context) (*TriageRun, error) {
 	row := s.db.QueryRowContext(ctx, `
 		SELECT id, repository, cve_id, verdict, justification, confidence, evidence_json, reasoning,
-			model, repo_shas_json, cve_hash, tokens, status, commit_sha, created_at
+			model, repo_shas_json, cve_hash, tokens, status, session_id, commit_sha, created_at
 		FROM triage_runs
 		WHERE commit_sha != ''
 		ORDER BY created_at DESC, id DESC
@@ -85,7 +85,7 @@ func (s *SQLiteStore) ListTriageRuns(ctx context.Context, filter TriageFilter) (
 	}
 	query := `
 		SELECT id, repository, cve_id, verdict, justification, confidence, evidence_json, reasoning,
-			model, repo_shas_json, cve_hash, tokens, status, commit_sha, created_at
+			model, repo_shas_json, cve_hash, tokens, status, session_id, commit_sha, created_at
 		FROM triage_runs`
 	if len(where) > 0 {
 		query += " WHERE " + strings.Join(where, " AND ")
@@ -125,6 +125,29 @@ func (s *SQLiteStore) TriageTokensSince(ctx context.Context, since time.Time) (i
 	return total, nil
 }
 
+func (s *SQLiteStore) BudgetResetAt(ctx context.Context) (time.Time, error) {
+	var unix int64
+	err := s.db.QueryRowContext(ctx, `SELECT reset_at FROM triage_budget WHERE id = 1`).Scan(&unix)
+	if err == sql.ErrNoRows || (err == nil && unix <= 0) {
+		return time.Time{}, nil
+	}
+	if err != nil {
+		return time.Time{}, errors.NewTransientf("triage budget reset: %w", err)
+	}
+	return time.Unix(unix, 0).UTC(), nil
+}
+
+func (s *SQLiteStore) SetBudgetResetAt(ctx context.Context, at time.Time) error {
+	_, err := s.db.ExecContext(ctx, `
+		INSERT INTO triage_budget (id, reset_at) VALUES (1, ?)
+		ON CONFLICT(id) DO UPDATE SET reset_at = excluded.reset_at
+	`, at.Unix())
+	if err != nil {
+		return errors.NewTransientf("set triage budget reset: %w", err)
+	}
+	return nil
+}
+
 type triageScanner interface {
 	Scan(dest ...any) error
 }
@@ -135,7 +158,7 @@ func scanTriageRun(row triageScanner) (*TriageRun, error) {
 	err := row.Scan(
 		&run.ID, &run.Repository, &run.CVEID, &run.Verdict, &run.Justification, &run.Confidence,
 		&run.EvidenceJSON, &run.Reasoning, &run.Model, &run.RepoSHAsJSON, &run.CVEHash,
-		&run.Tokens, &run.Status, &run.CommitSHA, &created,
+		&run.Tokens, &run.Status, &run.SessionID, &run.CommitSHA, &created,
 	)
 	if err != nil {
 		return nil, err

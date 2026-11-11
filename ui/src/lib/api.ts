@@ -176,6 +176,9 @@ export class APIClient {
   async getTriageStatus() {
     return this.request<TriageStatus>('/api/v1/triage/status');
   }
+  async resetTriageBudget() {
+    return this.request<TriageBudget>('/api/v1/triage/budget/reset', { method: 'POST', body: '{}' });
+  }
 
   async acceptTriage(statement: TriageAccept) {
     return this.request<TriageAcceptResult>('/api/v1/triage/accept', {
@@ -448,14 +451,37 @@ export interface TriageStatus {
   Mode?: string;
   OnlyInUse: boolean;
   Pending: number;
-  Active?: TriageActive[];
+  Sessions?: TriageSession[];
+  Queued?: TriageQueued[];
+  BudgetUsed?: number;
+  BudgetLimit?: number;
+  BudgetExhausted?: boolean;
 }
 
-export interface TriageActive {
+export interface TriageBudget {
+  BudgetUsed: number;
+  BudgetLimit: number;
+  BudgetExhausted: boolean;
+}
+
+export interface TriageSession {
+  SessionID: string;
+  Repository: string;
+  Image?: string;
+  Phase?: string;
+  CurrentCVE?: string;
+  CVEs: TriageSessionCVE[];
+}
+
+export interface TriageSessionCVE {
+  CVEID: string;
+  Status: string;
+}
+
+export interface TriageQueued {
   Repository: string;
   CVEID: string;
   Image?: string;
-  Running?: boolean;
 }
 
 export interface TriageAccept {
@@ -507,6 +533,7 @@ export interface TriageRun {
   Tokens: number;
   Status: string;
   CommitSHA?: string;
+  SessionID?: string;
   CreatedAt: number;
   Superseded?: boolean;
 }
