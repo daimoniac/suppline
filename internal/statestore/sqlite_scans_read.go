@@ -749,13 +749,17 @@ func paginateScanRecords(records []*ScanRecord, limit, offset int) []*ScanRecord
 }
 
 func (s *SQLiteStore) queryScanRecords(ctx context.Context, filter ScanFilter) ([]*ScanRecord, error) {
+	exemptionColumn := ""
+	if filter.IncludeExemptions {
+		exemptionColumn = ", sr.vex_statements_json"
+	}
 	query := `
 		SELECT sr.id, sr.artifact_id, sr.scan_duration_ms,
 			sr.critical_vuln_count, sr.high_vuln_count, sr.medium_vuln_count, sr.low_vuln_count,
 			sr.policy_passed, sr.policy_status, sr.policy_reason, sr.policy_failure_findings_json, sr.release_age_seconds, sr.minimum_release_age_seconds, sr.release_age_source,
 			sr.sbom_attested, sr.vuln_attested, sr.scai_attested, sr.error_message, sr.created_at,
 			COALESCE(a.image_created_at, 0) as image_created_at,
-			a.digest, a.tag, r.name
+			a.digest, a.tag, r.name` + exemptionColumn + `
 		FROM artifacts a
 		JOIN repositories r ON a.repository_id = r.id
 		JOIN scan_records sr ON a.last_scan_id = sr.id
@@ -812,20 +816,29 @@ func (s *SQLiteStore) queryScanRecords(ctx context.Context, filter ScanFilter) (
 	for rows.Next() {
 		var record ScanRecord
 		var failureFindingsJSON sql.NullString
+		var vexJSON sql.NullString
 
-		err := rows.Scan(
+		dest := []any{
 			&record.ID, &record.ArtifactID, &record.ScanDurationMs,
 			&record.CriticalVulnCount, &record.HighVulnCount, &record.MediumVulnCount, &record.LowVulnCount,
 			&record.PolicyPassed, &record.PolicyStatus, &record.PolicyReason, &failureFindingsJSON, &record.ReleaseAgeSeconds, &record.MinimumReleaseAgeSeconds, &record.ReleaseAgeSource,
 			&record.SBOMAttested, &record.VulnAttested, &record.SCAIAttested, &record.ErrorMessage, &record.CreatedAt,
 			&record.ImageCreatedAt,
 			&record.Digest, &record.Tag, &record.Repository,
-		)
-		if err != nil {
+		}
+		if filter.IncludeExemptions {
+			dest = append(dest, &vexJSON)
+		}
+		if err := rows.Scan(dest...); err != nil {
 			return nil, errors.NewTransientf("failed to scan row: %w", err)
 		}
+		if filter.IncludeExemptions {
+			if err := applyStoredExemptions(&record, vexJSON); err != nil {
+				return nil, err
+			}
+		}
 
-		// Don't load vulnerabilities or applied VEX statements for list operations.
+		// Don't load vulnerabilities for list operations, and applied VEX statements only on request.
 		// These are only needed for detail views, which use GetLastScan directly
 		// This keeps list responses lightweight and fast
 		if err := applyStoredPolicyFailureFindings(&record, failureFindingsJSON); err != nil {

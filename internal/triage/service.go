@@ -44,6 +44,9 @@ type Service struct {
 	pending   map[string]ActiveJob
 	pendingMu sync.Mutex
 
+	skips  map[string]Skip
+	skipMu sync.Mutex
+
 	budgetMu   sync.Mutex
 	budgetWait chan struct{}
 
@@ -324,12 +327,16 @@ func (s *Service) queuePolicyFailure(ctx context.Context, notice worker.PolicyFa
 		}
 		if !used {
 			s.logger.Debug("triage skipped, repository not in use", "repository", notice.Repository)
+			for _, finding := range notice.Findings {
+				s.noteSkip(notice.Repository, finding.CVEID, SkipNotInUse, "")
+			}
 			return 0
 		}
 	}
 	queued := 0
 	for _, finding := range notice.Findings {
 		if s.exempt(notice.Repository, finding.CVEID) {
+			s.noteSkip(notice.Repository, finding.CVEID, SkipExempt, "")
 			continue
 		}
 		job := Job{
@@ -404,6 +411,7 @@ func (s *Service) enqueue(job Job) bool {
 	}
 	s.pending[job.key()] = ActiveJob{Repository: job.Repository, CVEID: job.CVEID, Image: job.ImageRef}
 	s.pendingMu.Unlock()
+	s.clearSkip(job.Repository, job.CVEID)
 	select {
 	case s.jobs <- job:
 		return true
@@ -559,6 +567,7 @@ func (s *Service) processBatch(ctx context.Context, batch []Job) {
 				}
 				s.finish(job)
 				s.logger.Debug("triage skipped, cve not in current scans", "repository", job.Repository, "cve", job.CVEID)
+				s.noteSkip(job.Repository, job.CVEID, SkipNotInScans, "")
 			}
 			s.executeSession(ctx, resolved, checkouts, roots)
 		}
@@ -654,7 +663,7 @@ func (s *Service) executeSession(ctx context.Context, jobs []Job, checkouts []gi
 	}
 	shas := shaKey(checkouts)
 	runnable := make([]Job, 0, len(jobs))
-	for _, job := range jobs {
+	for i, job := range jobs {
 		if s.catalog != nil {
 			if source, platform, ok := s.catalog.Upstream(job.Repository); ok {
 				job.Upstream = source
@@ -673,12 +682,20 @@ func (s *Service) executeSession(ctx context.Context, jobs []Job, checkouts []gi
 		}
 		if !job.Force && ShouldSkip(last, job.Renewal, shas, job.cveHash(), s.settings.RetriageInterval, s.now()) {
 			s.logger.Debug("triage skipped", "repository", job.Repository, "cve", job.CVEID, "renewal", job.Renewal)
+			detail := ""
+			if last != nil {
+				detail = last.Status
+			}
+			s.noteSkip(job.Repository, job.CVEID, SkipCached, detail)
 			s.finish(job)
 			continue
 		}
 		if s.overBudget(ctx) {
 			observability.GetMetrics().TriageBudgetExhausted.Set(1)
 			s.logger.Warn("triage daily token budget exhausted", "repository", job.Repository, "cve", job.CVEID)
+			for _, rest := range jobs[i:] {
+				s.noteSkip(rest.Repository, rest.CVEID, SkipBudget, "")
+			}
 			break
 		}
 		runnable = append(runnable, job)
@@ -828,6 +845,7 @@ func (s *Service) record(ctx context.Context, job Job, verdict modelVerdict, tok
 		observability.GetMetrics().TriageTokens.Add(float64(tokens))
 	}
 	observability.GetMetrics().TriageRuns.WithLabelValues(status).Inc()
+	s.clearSkip(job.Repository, job.CVEID)
 	if s.runs == nil {
 		return
 	}

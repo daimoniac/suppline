@@ -38,6 +38,7 @@ type TriageRunResponse struct {
 // @Param repository query string false "Repository name"
 // @Param cve query string false "CVE ID"
 // @Param status query string false "dry_run, committed, written, push_failed, rejected_by_guardrail, or error"
+// @Param latest query boolean false "Only the newest run of each repository and CVE"
 // @Success 200 {array} TriageRunResponse
 // @Failure 401 {object} map[string]string "Unauthorized"
 // @Failure 500 {object} map[string]string "Internal server error"
@@ -53,10 +54,15 @@ func (s *APIServer) handleListTriage(w http.ResponseWriter, r *http.Request) {
 		s.respondError(w, http.StatusNotImplemented, "triage store is not available")
 		return
 	}
+	latestOnly := false
+	if latest := parseQueryParamBool(r, "latest"); latest != nil {
+		latestOnly = *latest
+	}
 	runs, err := store.ListTriageRuns(r.Context(), statestore.TriageFilter{
 		Repository: r.URL.Query().Get("repository"),
 		CVEID:      r.URL.Query().Get("cve"),
 		Status:     r.URL.Query().Get("status"),
+		LatestOnly: latestOnly,
 		Limit:      parseQueryParamInt(r, "limit", 200),
 	})
 	if err != nil {
@@ -87,7 +93,7 @@ func (s *APIServer) handleListTriageStatements(w http.ResponseWriter, r *http.Re
 		s.respondError(w, http.StatusNotImplemented, "triage store is not available")
 		return
 	}
-	runs, err := store.ListTriageRuns(r.Context(), statestore.TriageFilter{Limit: 500})
+	runs, err := store.ListTriageRuns(r.Context(), statestore.TriageFilter{LatestOnly: true, Limit: 5000})
 	if err != nil {
 		s.respondError(w, http.StatusInternalServerError, "Failed to list triage runs")
 		s.logger.Error("list triage statements", "error", err)

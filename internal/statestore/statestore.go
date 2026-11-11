@@ -463,8 +463,10 @@ type ScanFilter struct {
 	ImageUsage   ImageUsage
 	MaxAge       int    // Maximum age of scans in seconds (0 = no limit)
 	SortBy       string // Sorting option: "age_desc" (default)
-	Limit        int
-	Offset       int
+	// IncludeExemptions also loads AppliedVEXStatements. Lists leave them out by default.
+	IncludeExemptions bool
+	Limit             int
+	Offset            int
 }
 
 // TriageRun is one automated triage decision.
@@ -492,6 +494,9 @@ type TriageFilter struct {
 	Repository string
 	CVEID      string
 	Status     string
+	// LatestOnly keeps the newest run of each repository and CVE and drops the
+	// runs a later one replaced. Status still filters the result afterwards.
+	LatestOnly bool
 	Limit      int
 }
 

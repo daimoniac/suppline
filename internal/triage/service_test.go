@@ -443,6 +443,21 @@ func (b *budgetRuns) SetBudgetResetAt(_ context.Context, at time.Time) error {
 	return nil
 }
 
+func TestNoteSkipIsClearedWhenJobIsAccepted(t *testing.T) {
+	s := &Service{pending: map[string]ActiveJob{}, jobs: make(chan Job, 1), logger: slog.Default()}
+	s.noteSkip("r/app", "CVE-1", SkipBudget, "")
+	got := s.Skips()[SkipKey("r/app", "CVE-1")]
+	if got.Code != SkipBudget || got.At.IsZero() {
+		t.Fatalf("skip = %+v", got)
+	}
+	if !s.enqueue(Job{Repository: "r/app", CVEID: "CVE-1"}) {
+		t.Fatal("job was not accepted")
+	}
+	if _, ok := s.Skips()[SkipKey("r/app", "CVE-1")]; ok {
+		t.Fatal("an accepted job must clear the skip reason")
+	}
+}
+
 func TestResetDailyBudgetClearsSpendAndWakesWaiter(t *testing.T) {
 	svc := &Service{
 		settings: Settings{DailyTokenBudget: 10},

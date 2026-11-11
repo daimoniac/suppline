@@ -173,6 +173,9 @@ export class APIClient {
   async getTriageStatements() {
     return this.request<TriageStatement[]>('/api/v1/triage/statements');
   }
+  async getTriageRepositories() {
+    return this.request<TriageRepository[]>('/api/v1/triage/repositories');
+  }
   async getTriageStatus() {
     return this.request<TriageStatus>('/api/v1/triage/status');
   }
@@ -551,6 +554,52 @@ export interface TriageStatement {
   Source: 'auto' | 'manual' | 'open';
   NeedsFix: boolean;
   Run?: TriageRun;
+}
+
+export type TriagePhase = 'uncertain' | 'error' | 'not_triaged' | 'running' | 'queued' | 'decided' | 'exempt';
+
+export interface TriageRepositoryTag {
+  Tag: string;
+  Digest: string;
+  PolicyPassed: boolean;
+  PolicyStatus: string;
+}
+
+export interface TriageRepositoryCounts {
+  Blocking: number;
+  NeedsAttention: number;
+  NotTriaged: number;
+  Uncertain: number;
+  Failed: number;
+  InProgress: number;
+  Decided: number;
+  ExemptAuto: number;
+  ExemptManual: number;
+}
+
+export interface TriageRepositoryCVE {
+  CVEID: string;
+  Phase: TriagePhase;
+  Blocking: boolean;
+  Packages?: string[];
+  Tags: string[];
+  Origin?: 'auto' | 'manual';
+  State?: string;
+  Justification?: string;
+  Detail?: string;
+  ExpiresAt?: number;
+  Reason: string;
+  ReasonCode?: 'exempt' | 'not_in_use' | 'not_in_scans' | 'cached' | 'budget';
+  ReasonAt?: number;
+  Run?: TriageRun;
+}
+
+export interface TriageRepository {
+  Repository: string;
+  PolicyPassed: boolean;
+  Tags: TriageRepositoryTag[];
+  Counts: TriageRepositoryCounts;
+  CVEs: TriageRepositoryCVE[];
 }
 
 export interface VEXSummary {

@@ -83,6 +83,14 @@ func (s *SQLiteStore) ListTriageRuns(ctx context.Context, filter TriageFilter) (
 		where = append(where, "status = ?")
 		args = append(args, filter.Status)
 	}
+	if filter.LatestOnly {
+		where = append(where, `NOT EXISTS (
+			SELECT 1 FROM triage_runs newer
+			WHERE newer.repository = triage_runs.repository AND newer.cve_id = triage_runs.cve_id
+				AND (newer.created_at > triage_runs.created_at
+					OR (newer.created_at = triage_runs.created_at AND newer.id > triage_runs.id))
+		)`)
+	}
 	query := `
 		SELECT id, repository, cve_id, verdict, justification, confidence, evidence_json, reasoning,
 			model, repo_shas_json, cve_hash, tokens, status, session_id, commit_sha, created_at
@@ -92,7 +100,11 @@ func (s *SQLiteStore) ListTriageRuns(ctx context.Context, filter TriageFilter) (
 	}
 	query += " ORDER BY created_at DESC, id DESC"
 	limit := filter.Limit
-	if limit <= 0 || limit > 500 {
+	maxLimit := 500
+	if filter.LatestOnly {
+		maxLimit = 5000
+	}
+	if limit <= 0 || limit > maxLimit {
 		limit = 200
 	}
 	query += " LIMIT ?"
