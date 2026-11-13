@@ -79,6 +79,8 @@ flowchart TD
     B -. lookup error .-> K[Enqueue anyway, fail-open]
 ```
 
+When a tag already exists and upstream moves it to a new digest, the mirror copies that digest without moving the tag. The tag stays on the previous digest until the new one has a passing SCAI attestation (`passed` or `passed-with-exceptions`). A failed or pending scan leaves the tag where it is and is retried on the rescan interval, or sooner when the attestation itself failed to publish. A tag that does not exist yet is published immediately and scanned afterwards.
+
 A tag move records the new digest as that tag's current binding. The previous digest stays on this same rescan schedule while cluster inventory still reports it, so its SCAI `validUntil` is renewed for clusters pinned to `tag@digest`. Inventory includes workload specs, so a pin is enough even when the pod is not running. A tag-only reference follows the tag's new digest. Once inventory stops reporting the old digest, its retained binding is removed and renewal stops.
 
 ## Pipeline phases

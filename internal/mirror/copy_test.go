@@ -129,10 +129,79 @@ func writeConfig(t *testing.T, content string) string {
 	return f.Name()
 }
 
+func TestProcessRef_HoldsExistingTagUntilAttested(t *testing.T) {
+	regHandler := olareg.New(oConfig.Config{Storage: oConfig.ConfigStorage{StoreType: oConfig.StoreMem}})
+	ts := httptest.NewServer(regHandler)
+	t.Cleanup(func() {
+		ts.Close()
+		_ = regHandler.Close()
+	})
+	host := mustHost(t, ts.URL)
+	rc := regclient.New(regclient.WithConfigHost(rcconfig.Host{
+		Name: host, Hostname: host, TLS: rcconfig.TLSDisabled,
+	}))
+	src := host + "/src"
+	dst := host + "/dst"
+	putImageConfig(t, rc, src, "app", "amd64-old")
+	oldDigest := putImageConfig(t, rc, dst, "app", "amd64-old")
+	newDigest := putImageConfig(t, rc, src, "app", "amd64-new")
+	if oldDigest == newDigest {
+		t.Fatal("test images share a digest")
+	}
+
+	m := &runner{
+		log:       slog.New(slog.NewTextHandler(io.Discard, nil)),
+		rc:        rc,
+		throttle:  newGate(1),
+		manifests: map[string]manifest.Manifest{},
+		tagGate:   readyGate{ready: false},
+	}
+	entry := config.SyncEntry{
+		Source: src, Target: dst, Type: "repository",
+		MediaTypes: []string{mediatype.OCI1Manifest},
+	}
+	srcRef, err := ref.New(src + ":app")
+	if err != nil {
+		t.Fatal(err)
+	}
+	tgtRef, err := ref.New(dst + ":app")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := m.processRef(context.Background(), entry, srcRef, tgtRef, actionCopy); err != nil {
+		t.Fatal(err)
+	}
+	if got := tagDigest(t, rc, dst+":app"); got != oldDigest {
+		t.Fatalf("tag digest = %s, want held %s", got, oldDigest)
+	}
+	if !digestExists(t, rc, dst, newDigest) {
+		t.Fatalf("new digest %s was not copied", newDigest)
+	}
+
+	m.tagGate = readyGate{ready: true}
+	if err := m.processRef(context.Background(), entry, srcRef, tgtRef, actionCopy); err != nil {
+		t.Fatal(err)
+	}
+	if got := tagDigest(t, rc, dst+":app"); got != newDigest {
+		t.Fatalf("tag digest = %s, want promoted %s", got, newDigest)
+	}
+}
+
+type readyGate struct{ ready bool }
+
+func (g readyGate) Ready(context.Context, string, string, string) (bool, error) {
+	return g.ready, nil
+}
+
 func putImage(t *testing.T, rc *regclient.RegClient, repo, tag string) {
 	t.Helper()
+	putImageConfig(t, rc, repo, tag, "amd64")
+}
+
+func putImageConfig(t *testing.T, rc *regclient.RegClient, repo, tag, arch string) string {
+	t.Helper()
 	ctx := context.Background()
-	body := []byte(`{"architecture":"amd64","os":"linux","rootfs":{"type":"layers","diff_ids":[]}}`)
+	body := []byte(fmt.Sprintf(`{"architecture":"%s","os":"linux","rootfs":{"type":"layers","diff_ids":[]}}`, arch))
 	repoRef, err := ref.New(repo)
 	if err != nil {
 		t.Fatal(err)
@@ -158,6 +227,30 @@ func putImage(t *testing.T, rc *regclient.RegClient, repo, tag string) {
 	if err := rc.ManifestPut(ctx, tagRef, man); err != nil {
 		t.Fatal(err)
 	}
+	return manifest.GetDigest(man).String()
+}
+
+func tagDigest(t *testing.T, rc *regclient.RegClient, image string) string {
+	t.Helper()
+	imageRef, err := ref.New(image)
+	if err != nil {
+		t.Fatal(err)
+	}
+	man, err := rc.ManifestHead(context.Background(), imageRef, regclient.WithManifestRequireDigest())
+	if err != nil {
+		t.Fatal(err)
+	}
+	return manifest.GetDigest(man).String()
+}
+
+func digestExists(t *testing.T, rc *regclient.RegClient, repo, dig string) bool {
+	t.Helper()
+	imageRef, err := ref.New(repo + "@" + dig)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = rc.ManifestHead(context.Background(), imageRef)
+	return err == nil
 }
 
 func listTags(t *testing.T, rc *regclient.RegClient, repo string) []string {

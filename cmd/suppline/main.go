@@ -21,6 +21,7 @@ import (
 	"github.com/daimoniac/suppline/internal/observability"
 	"github.com/daimoniac/suppline/internal/policy"
 	policycatalog "github.com/daimoniac/suppline/internal/policy/catalog"
+	"github.com/daimoniac/suppline/internal/promote"
 	"github.com/daimoniac/suppline/internal/queue"
 	"github.com/daimoniac/suppline/internal/registry"
 	"github.com/daimoniac/suppline/internal/scanenqueue"
@@ -386,9 +387,28 @@ func run() error {
 			defer wg.Done()
 			mirrorLog := logger.With("module", "regsync")
 			mirrorLog.Info("starting in-process mirror")
+			tagGate := &promote.Gate{
+				Store: store,
+				Enqueue: func(ctx context.Context, repository, tag, digest string) error {
+					_, err := scanEnqueuer.EnqueuePromotion(ctx, scanenqueue.Image{
+						Repository: repository,
+						Tag:        tag,
+						Digest:     digest,
+					})
+					return err
+				},
+				RescanInterval: func(repository string) time.Duration {
+					interval, err := regsyncCfg.GetRescanInterval(repository)
+					if err != nil || interval <= 0 {
+						return 7 * 24 * time.Hour
+					}
+					return interval
+				},
+				Log: logger,
+			}
 			if err := mirror.Run(ctx, regsyncCfg, logger, mirror.WithReady(func() {
 				healthChecker.UpdateComponentHealth("mirror", observability.StatusHealthy, "")
-			})); err != nil && err != context.Canceled {
+			}), mirror.WithTagGate(tagGate)); err != nil && err != context.Canceled {
 				mirrorLog.Error("mirror error", "error", err.Error())
 				healthChecker.UpdateComponentHealth("mirror", observability.StatusUnhealthy, err.Error())
 			}

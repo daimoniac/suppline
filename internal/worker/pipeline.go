@@ -86,6 +86,10 @@ func (p *Pipeline) Execute(ctx context.Context, task *queue.ScanTask) error {
 		return err
 	}
 
+	if err := p.promoteTag(ctx, task, policyDecision, attestResult); err != nil {
+		return err
+	}
+
 	// Phase 4: Persistence
 	if err := p.persistencePhase(ctx, task, scanResult, policyDecision, attestResult, startTime); err != nil {
 		// Check if persistence or cleanup failed with transient error
@@ -460,7 +464,49 @@ func (p *Pipeline) logCompletion(task *queue.ScanTask, imageRef string, startTim
 
 // recordScanError persists a failed-scan record so the image appears as FAILED in the UI.
 // Errors here are only logged – we don't want to change the original error being returned.
+// promoteTag moves the registry tag onto a digest that now has a passing SCAI
+// attestation. Any other result keeps the tag on its previous digest and
+// records this scan without taking over that binding.
+func (p *Pipeline) promoteTag(ctx context.Context, task *queue.ScanTask, decision *policy.PolicyDecision, attestResult *attestationResult) error {
+	if task == nil || !task.PromoteTag {
+		return nil
+	}
+	if decision != nil && decision.Passed && attestResult != nil && attestResult.SCAIAttested {
+		mover, ok := p.worker.registry.(interface {
+			MoveTag(ctx context.Context, repository, tag, digest string) error
+		})
+		if !ok {
+			return errors.NewPermanentf("registry client cannot move tag %s to %s", task.Tag, task.Digest)
+		}
+		if err := mover.MoveTag(ctx, task.Repository, task.Tag, task.Digest); err != nil {
+			return fmt.Errorf("move tag %s to attested digest: %w", task.Tag, err)
+		}
+		p.logger.Info("moved tag to attested digest",
+			"repository", task.Repository,
+			"tag", task.Tag,
+			"digest", task.Digest)
+		return nil
+	}
+	task.RetainSuperseded = true
+	p.logger.Info("holding tag; new digest is not attested as passed",
+		"repository", task.Repository,
+		"tag", task.Tag,
+		"digest", task.Digest,
+		"policy_status", decisionStatus(decision))
+	return nil
+}
+
+func decisionStatus(decision *policy.PolicyDecision) string {
+	if decision == nil {
+		return ""
+	}
+	return string(decision.Status)
+}
+
 func (p *Pipeline) recordScanError(ctx context.Context, task *queue.ScanTask, scanErr error) {
+	if task != nil && task.PromoteTag {
+		task.RetainSuperseded = true
+	}
 	if p.worker.stateStore == nil {
 		return
 	}
@@ -727,6 +773,11 @@ func (p *Pipeline) isStoredTagStale(ctx context.Context, repository, digest, tag
 }
 
 func (p *Pipeline) retargetTaskTag(ctx context.Context, task *queue.ScanTask, repository, digest string, validStoredTags map[string]struct{}) error {
+	// A promotion scan runs before the tag points at this digest. Cleaning it
+	// up for having no live tag would delete the scan that has to attest it.
+	if task.PromoteTag {
+		return nil
+	}
 	if task.Tag == "latest" {
 		return nil
 	}

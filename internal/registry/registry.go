@@ -442,6 +442,35 @@ func (c *clientImpl) VerifyTagExists(ctx context.Context, repo, tag string) erro
 	return nil
 }
 
+// MoveTag points tag at a digest that is already stored in the repository.
+// The manifest is not rebuilt. Callers use it after the digest is attested.
+func (c *clientImpl) MoveTag(ctx context.Context, repo, tag, digest string) error {
+	registry, repository, err := parseImageRef(repo)
+	if err != nil {
+		return errors.NewPermanentf("failed to parse repository: %w", err)
+	}
+
+	srcRef, err := name.NewDigest(fmt.Sprintf("%s/%s@%s", registry, repository, digest), c.nameOptions(registry)...)
+	if err != nil {
+		return errors.NewPermanentf("failed to parse digest reference: %w", err)
+	}
+	tagRef, err := name.NewTag(fmt.Sprintf("%s/%s:%s", registry, repository, tag), c.nameOptions(registry)...)
+	if err != nil {
+		return errors.NewPermanentf("failed to parse tag reference: %w", err)
+	}
+
+	auth := c.getAuthForRegistry(registry)
+	opts := append([]remote.Option{remote.WithAuth(auth), remote.WithContext(ctx)}, c.remoteOpts...)
+	desc, err := remote.Get(srcRef, opts...)
+	if err != nil {
+		return errors.ClassifyRegistryError(fmt.Errorf("failed to read %s@%s: %w", repo, digest, err))
+	}
+	if err := remote.Tag(tagRef, desc, opts...); err != nil {
+		return errors.ClassifyRegistryError(fmt.Errorf("failed to move %s:%s to %s: %w", repo, tag, digest, err))
+	}
+	return nil
+}
+
 // GetManifestWithTagVerification verifies tag exists then retrieves manifest by digest
 func (c *clientImpl) GetManifestWithTagVerification(ctx context.Context, repo, tag, digest string) (*Manifest, error) {
 	// Step 1: Verify tag still exists (will trigger MANIFEST_UNKNOWN if tag is deleted)

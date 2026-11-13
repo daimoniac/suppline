@@ -23,6 +23,21 @@ func WithReady(fn func()) Option {
 	}
 }
 
+// TagGate reports whether an existing tag may move onto a digest that is
+// already stored in the target repository. Ready false leaves the tag where
+// it is. The gate enqueues the scan that attests the digest.
+type TagGate interface {
+	Ready(ctx context.Context, repository, tag, digest string) (bool, error)
+}
+
+// WithTagGate holds a tag on its current digest until the gate says the new
+// digest is attested. Without a gate, a changed digest moves the tag immediately.
+func WithTagGate(gate TagGate) Option {
+	return func(m *runner) {
+		m.tagGate = gate
+	}
+}
+
 type runner struct {
 	cfg        *config.RegsyncConfig
 	log        *slog.Logger
@@ -30,6 +45,7 @@ type runner struct {
 	throttle   *gate
 	hub        hubRepoAPI
 	ready      func()
+	tagGate    TagGate
 	manifestMu sync.Mutex
 	manifests  map[string]manifest.Manifest
 }

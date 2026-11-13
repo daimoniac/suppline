@@ -63,6 +63,9 @@ type ScanTask struct {
 	// RetainSuperseded records the scan without taking over the tag's current
 	// binding. The digest is still referenced by a cluster after the tag moved.
 	RetainSuperseded bool
+	// PromoteTag moves the registry tag onto this digest after a passing SCAI
+	// attestation. Until then the tag stays on its previous digest.
+	PromoteTag bool
 }
 
 // InMemoryQueue implements TaskQueue using priority queues
