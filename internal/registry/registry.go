@@ -44,6 +44,9 @@ type Client interface {
 
 	// GetManifestWithTagVerification verifies tag exists then retrieves manifest by digest
 	GetManifestWithTagVerification(ctx context.Context, repo, tag, digest string) (*Manifest, error)
+
+	// MoveTag points tag at a digest that is already stored in the repository.
+	MoveTag(ctx context.Context, repo, tag, digest string) error
 }
 
 // Manifest represents a container image manifest
@@ -443,7 +446,7 @@ func (c *clientImpl) VerifyTagExists(ctx context.Context, repo, tag string) erro
 }
 
 // MoveTag points tag at a digest that is already stored in the repository.
-// The manifest is not rebuilt. Callers use it after the digest is attested.
+// The manifest is not rebuilt.
 func (c *clientImpl) MoveTag(ctx context.Context, repo, tag, digest string) error {
 	registry, repository, err := parseImageRef(repo)
 	if err != nil {

@@ -20,14 +20,9 @@ type Enqueuer struct {
 
 // Image identifies the image to scan.
 type Image struct {
-	Repository       string
-	Digest           string
-	Tag              string
-	RetainSuperseded bool
-	// PromoteTag asks the worker to move this tag onto Digest only after a
-	// passing SCAI attestation. The mirror sets it when a tag would otherwise
-	// move onto a digest that is not attested yet.
-	PromoteTag bool
+	Repository string
+	Digest     string
+	Tag        string
 }
 
 // DiscoveryKind describes why discovery requested a scan.
@@ -74,13 +69,6 @@ func (e *Enqueuer) EnqueueRescan(ctx context.Context, image Image) (*queue.ScanT
 	return e.enqueue(ctx, image, true, false, queue.PriorityNormal)
 }
 
-// EnqueuePromotion submits a high-priority scan of a digest that is already in
-// the target repository but must not own the tag until it passes attestation.
-func (e *Enqueuer) EnqueuePromotion(ctx context.Context, image Image) (*queue.ScanTask, error) {
-	image.PromoteTag = true
-	return e.enqueue(ctx, image, false, false, queue.PriorityHigh)
-}
-
 // EnqueueUrgentRescan submits a rescan that must jump ahead of regular scans,
 // such as the startup rescan of failed images that are running in a cluster
 // and single-image rescans requested through the API.
@@ -98,19 +86,17 @@ func (e *Enqueuer) enqueue(ctx context.Context, image Image, isRescan, isFirstSc
 	}
 
 	task := &queue.ScanTask{
-		ID:               fmt.Sprintf("%s-%d", image.Digest, idTime.Unix()),
-		Repository:       image.Repository,
-		Digest:           image.Digest,
-		Tag:              image.Tag,
-		EnqueuedAt:       enqueuedAt,
-		Attempts:         0,
-		IsRescan:         isRescan,
-		IsFirstScan:      isFirstScan,
-		Priority:         priority,
-		VEXStatements:    evidence.VEXStatements,
-		UseVEXRepo:       evidence.UseVEXRepo,
-		RetainSuperseded: image.RetainSuperseded,
-		PromoteTag:       image.PromoteTag,
+		ID:            fmt.Sprintf("%s-%d", image.Digest, idTime.Unix()),
+		Repository:    image.Repository,
+		Digest:        image.Digest,
+		Tag:           image.Tag,
+		EnqueuedAt:    enqueuedAt,
+		Attempts:      0,
+		IsRescan:      isRescan,
+		IsFirstScan:   isFirstScan,
+		Priority:      priority,
+		VEXStatements: evidence.VEXStatements,
+		UseVEXRepo:    evidence.UseVEXRepo,
 	}
 
 	if err := e.taskQueue.Enqueue(ctx, task); err != nil {

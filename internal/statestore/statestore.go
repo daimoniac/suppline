@@ -433,8 +433,9 @@ type ScanRecord struct {
 	Runtime               RuntimeInventory
 	// RetainSuperseded tells RecordScan to keep this digest behind the tag's
 	// current binding. It is a write instruction, not a stored scan column.
-	// The row stays available for attestation renewal while cluster inventory
-	// still reports the digest.
+	// The worker sets it when the registry tag does not name this digest: a
+	// digest the tag runway holds, or one a cluster still runs after the tag
+	// moved.
 	RetainSuperseded bool
 }
 

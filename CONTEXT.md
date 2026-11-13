@@ -16,6 +16,10 @@ _Avoid_: deployment status, scan activity, registry presence
 The digest a repository tag currently identifies. A tag has one current binding even when it previously identified other digests.
 _Avoid_: latest scan, newest tag, tag history
 
+**Tag runway**:
+The path a mirrored digest takes onto an existing tag: copied by digest, held while a Scan request attests it, then published by moving the tag. A held digest never takes the tag's Current tag binding before the registry tag names it.
+_Avoid_: promotion, tag gate, retag
+
 **Scan request**:
 An expressed intent to scan a specific container image, whether discovered automatically or initiated as a rescan.
 _Avoid_: queue task, worker job

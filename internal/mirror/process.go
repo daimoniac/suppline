@@ -19,6 +19,7 @@ import (
 	"github.com/regclient/regclient/types/ref"
 
 	"github.com/daimoniac/suppline/internal/config"
+	"github.com/daimoniac/suppline/internal/runway"
 )
 
 type action int
@@ -186,7 +187,7 @@ func (m *runner) processImage(ctx context.Context, s config.SyncEntry, src, tgt 
 		m.log.Error("failed parsing target", "target", tgt, "error", err.Error())
 		return err
 	}
-	err = m.processRef(ctx, s, sRef, tRef, act)
+	err = m.processRef(ctx, s, sRef, tRef, trimTag(tgt), act)
 	if err != nil {
 		m.log.Error("failed to sync", "target", tRef.CommonName(), "source", sRef.CommonName(), "error", err.Error())
 	}
@@ -196,7 +197,8 @@ func (m *runner) processImage(ctx context.Context, s config.SyncEntry, src, tgt 
 	return err
 }
 
-func (m *runner) processRef(ctx context.Context, s config.SyncEntry, src, tgt ref.Ref, act action) error {
+// repository is the target as the watcher and the state store name it.
+func (m *runner) processRef(ctx context.Context, s config.SyncEntry, src, tgt ref.Ref, repository string, act action) error {
 	mSrc, err := m.rc.ManifestHead(ctx, src, regclient.WithManifestRequireDigest())
 	if err != nil && errors.Is(err, errs.ErrUnsupportedAPI) {
 		mSrc, err = m.rc.ManifestGet(ctx, src)
@@ -305,10 +307,16 @@ func (m *runner) processRef(ctx context.Context, s config.SyncEntry, src, tgt re
 	}
 	rcOpts := imageOpts(m, s)
 	m.log.Debug("image sync running", "source", src.CommonName(), "target", tgt.CommonName())
-	if held, err := m.holdUntestedDigest(ctx, s, src, tgt, tgtExists, tgtMatches, mSrc, rcOpts); err != nil {
-		return err
-	} else if held {
-		return nil
+	if m.runway != nil && !tgtMatches && tgt.Tag != "" {
+		previous := ""
+		if tgtExists {
+			previous = manifest.GetDigest(mTgt).String()
+		}
+		published, err := m.offerDigest(ctx, src, tgt, repository, previous, mSrc, rcOpts)
+		if err != nil || !published {
+			return err
+		}
+		return runHook(ctx, m.log, s.Hooks.Post, "post", src, tgt)
 	}
 	if err := m.rc.ImageCopy(ctx, src, tgt, rcOpts...); err != nil {
 		m.log.Error("failed to copy image", "source", src.CommonName(), "target", tgt.CommonName(), "error", err.Error())
@@ -317,21 +325,14 @@ func (m *runner) processRef(ctx context.Context, s config.SyncEntry, src, tgt re
 	return runHook(ctx, m.log, s.Hooks.Post, "post", src, tgt)
 }
 
-// holdUntestedDigest copies a changed digest into the target repository
-// without moving an existing tag, until tagGate reports the digest attested.
-// It returns held when the tag must stay on its previous digest.
-func (m *runner) holdUntestedDigest(ctx context.Context, s config.SyncEntry, src, tgt ref.Ref, tgtExists, tgtMatches bool, mSrc manifest.Manifest, rcOpts []regclient.ImageOpts) (bool, error) {
-	if m.tagGate == nil || !tgtExists || tgtMatches || tgt.Tag == "" {
-		return false, nil
-	}
+// offerDigest copies the source digest into the target repository by digest
+// and hands the tag to the runway. It reports whether the tag moved.
+func (m *runner) offerDigest(ctx context.Context, src, tgt ref.Ref, repository, previous string, mSrc manifest.Manifest, rcOpts []regclient.ImageOpts) (bool, error) {
 	digest := src.Digest
 	if digest == "" {
 		digest = manifest.GetDigest(mSrc).String()
 	}
 	digestRef := tgt.SetDigest(digest)
-	m.log.Info("copying digest before tag move",
-		"source", src.CommonName(),
-		"target", digestRef.CommonName())
 	if err := m.rc.ImageCopy(ctx, src, digestRef, rcOpts...); err != nil {
 		m.log.Error("failed to copy digest",
 			"source", src.CommonName(),
@@ -339,29 +340,25 @@ func (m *runner) holdUntestedDigest(ctx context.Context, s config.SyncEntry, src
 			"error", err.Error())
 		return false, err
 	}
-	ready, err := m.tagGate.Ready(ctx, repositoryOf(s), tgt.Tag, digest)
+	published, err := m.runway.Offer(ctx, runway.Candidate{
+		Repository: repository,
+		Tag:        tgt.Tag,
+		Digest:     digest,
+		Previous:   previous,
+	})
 	if err != nil {
-		return false, fmt.Errorf("tag gate: %w", err)
+		return false, fmt.Errorf("runway: %w", err)
 	}
-	if ready {
-		return false, nil
-	}
-	m.log.Info("holding tag until the new digest is attested",
-		"target", tgt.CommonName(),
-		"digest", digest)
-	return true, nil
+	return published, nil
 }
 
-// repositoryOf is the repository name the watcher and the state store use.
-// type=image targets include the tag; other types are already a repository.
-func repositoryOf(s config.SyncEntry) string {
-	target := s.Target
-	if s.Type == "image" {
-		if idx := strings.LastIndex(target, ":"); idx != -1 {
-			target = target[:idx]
-		}
+// trimTag drops the tag from a repo:tag reference. A port in the registry
+// host is not a tag.
+func trimTag(reference string) string {
+	if idx := strings.LastIndex(reference, ":"); idx > strings.LastIndex(reference, "/") {
+		return reference[:idx]
 	}
-	return target
+	return reference
 }
 
 func (m *runner) backup(ctx context.Context, s config.SyncEntry, tgt ref.Ref) error {

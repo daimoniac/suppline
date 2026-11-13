@@ -75,6 +75,20 @@ type ImageWorker struct {
 	scaiGenerator   *attestation.SCAIGenerator
 	pipeline        *Pipeline
 	failureNotifier PolicyFailureNotifier
+	scanObserver    ScanObserver
+}
+
+// ScanObserver hears about each scan after it is persisted, whatever its
+// outcome. The tag runway uses it to publish a held digest once attested.
+type ScanObserver interface {
+	Scanned(ctx context.Context, repository, digest string)
+}
+
+// SetScanObserver registers the observer of persisted scans.
+func (w *ImageWorker) SetScanObserver(observer ScanObserver) {
+	if w != nil {
+		w.scanObserver = observer
+	}
 }
 
 // SetPolicyFailureNotifier receives CEL failures after they are persisted.
