@@ -9,6 +9,7 @@ import (
 	"github.com/robfig/cron/v3"
 
 	"github.com/daimoniac/suppline/internal/config"
+	"github.com/daimoniac/suppline/internal/runway"
 	"github.com/regclient/regclient"
 	"github.com/regclient/regclient/types/manifest"
 )
@@ -23,6 +24,20 @@ func WithReady(fn func()) Option {
 	}
 }
 
+// Runway decides when a tag may name a digest the mirror copied by digest,
+// and moves the tag. Offer reports whether the tag now names the digest.
+type Runway interface {
+	Offer(ctx context.Context, c runway.Candidate) (bool, error)
+}
+
+// WithRunway copies a changed digest by digest and leaves the tag to the
+// runway. Without one, the copy moves the tag immediately.
+func WithRunway(r Runway) Option {
+	return func(m *runner) {
+		m.runway = r
+	}
+}
+
 type runner struct {
 	cfg        *config.RegsyncConfig
 	log        *slog.Logger
@@ -30,6 +45,7 @@ type runner struct {
 	throttle   *gate
 	hub        hubRepoAPI
 	ready      func()
+	runway     Runway
 	manifestMu sync.Mutex
 	manifests  map[string]manifest.Manifest
 }

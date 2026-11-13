@@ -23,6 +23,7 @@ import (
 	policycatalog "github.com/daimoniac/suppline/internal/policy/catalog"
 	"github.com/daimoniac/suppline/internal/queue"
 	"github.com/daimoniac/suppline/internal/registry"
+	"github.com/daimoniac/suppline/internal/runway"
 	"github.com/daimoniac/suppline/internal/scanenqueue"
 	"github.com/daimoniac/suppline/internal/scanner"
 	"github.com/daimoniac/suppline/internal/statestore"
@@ -211,9 +212,29 @@ func run() error {
 	logger.Debug("initializing registry watcher",
 		"poll_interval", cfg.Worker.PollInterval,
 		"rescan_interval", cfg.StateStore.RescanInterval)
+	var tagRunway *runway.Runway
+	if cfg.MirrorEnabled {
+		tagRunway = runway.New(runway.Config{
+			Store:     store,
+			Tagger:    registryClient,
+			Scheduler: scanEnqueuer,
+			RescanInterval: func(repository string) time.Duration {
+				interval, err := regsyncCfg.GetRescanInterval(repository)
+				if err != nil {
+					return 0
+				}
+				return interval
+			},
+			Log: logger.With("module", "runway"),
+		})
+	}
+
 	watcherConfig := watcher.Config{
 		PollInterval:   cfg.Worker.PollInterval,
 		RescanInterval: cfg.StateStore.RescanInterval,
+	}
+	if tagRunway != nil {
+		watcherConfig.HeldDigests = tagRunway.HeldDigests
 	}
 	registryWatcher := watcher.NewWatcherWithCatalogAndEnqueuer(
 		registryClient,
@@ -274,6 +295,9 @@ func run() error {
 		return err
 	}
 	workerInstance.SetPolicyFailureNotifier(triageService)
+	if tagRunway != nil {
+		workerInstance.SetScanObserver(tagRunway)
+	}
 	healthChecker.UpdateComponentHealth("worker", observability.StatusHealthy, "")
 	logger.Debug("worker initialized")
 
@@ -388,7 +412,7 @@ func run() error {
 			mirrorLog.Info("starting in-process mirror")
 			if err := mirror.Run(ctx, regsyncCfg, logger, mirror.WithReady(func() {
 				healthChecker.UpdateComponentHealth("mirror", observability.StatusHealthy, "")
-			})); err != nil && err != context.Canceled {
+			}), mirror.WithRunway(tagRunway)); err != nil && err != context.Canceled {
 				mirrorLog.Error("mirror error", "error", err.Error())
 				healthChecker.UpdateComponentHealth("mirror", observability.StatusUnhealthy, err.Error())
 			}

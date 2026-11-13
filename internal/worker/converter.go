@@ -102,7 +102,6 @@ func buildScanRecord(
 		AppliedVEXStatements:     appliedVEX,
 		PolicyFailureFindings:    policyDecision.PolicyFailureFindings,
 		ErrorMessage:             "",
-		RetainSuperseded:         task.RetainSuperseded,
 	}
 }
 
@@ -116,11 +115,10 @@ func buildErrorScanRecord(task *queue.ScanTask, scanErr error) *statestore.ScanR
 		Tag:        task.Tag,
 		CreatedAt:  time.Now().Unix(),
 		// Zero vuln counts – we never got results
-		PolicyPassed:     false,
-		PolicyStatus:     policy.PolicyStatusFailed,
-		PolicyReason:     scanErr.Error(),
-		ErrorMessage:     scanErr.Error(),
-		RetainSuperseded: task.RetainSuperseded,
+		PolicyPassed: false,
+		PolicyStatus: policy.PolicyStatusFailed,
+		PolicyReason: scanErr.Error(),
+		ErrorMessage: scanErr.Error(),
 	}
 }
 

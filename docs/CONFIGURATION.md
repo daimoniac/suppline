@@ -155,7 +155,7 @@ sync:
     target: string            # Target repository
     type: string              # Type: "image" or "repository"
     schedule: string          # Cron schedule (optional)
-    x-suppline-ignore: bool   # If true, suppline skips this entry entirely (default: false)
+    x-suppline-ignore: bool   # If true, the entry is only mirrored: no scan, policy, or attestation (default: false)
     x-rescanInterval: string  # Rescan interval override (optional)
     x-policy:                 # Policy override (optional)
       expression: string
@@ -250,7 +250,7 @@ sync:
 The `x-suppline-ignore` field lets you temporarily disable a sync entry without deleting it from `suppline.yml`.
 
 **Behaviour:**
-- When `true`, suppline skips the entry for scanning, policy, and tasks. The in-process mirror still copies it.
+- When `true`, the entry is only mirrored. Suppline skips scanning, policy, and attestation for it, and the in-process mirror moves its tags as soon as it copies, without waiting for an attestation. Use it for artifacts Trivy cannot scan, such as Helm charts.
 - When `false` (default), the entry is scanned and copied.
 - The field is per-entry only; there is no defaults-level equivalent.
 

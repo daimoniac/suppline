@@ -78,4 +78,4 @@ sync:
   - source: legacy-app
     target: myprivateregistry/legacy-app
     type: repository
-    x-suppline-ignore: true   # Set to true to skip this entry entirely (default: false)
+    x-suppline-ignore: true   # true = mirror only, no scan or attestation (default: false)

@@ -9,6 +9,7 @@ import (
 	"os"
 	"os/exec"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/daimoniac/suppline/internal/errors"
@@ -26,6 +27,8 @@ type SigstoreAttestor struct {
 	attestTimeout time.Duration
 	// cleaner deletes previous attestations of the same predicate. Nil uses the registry.
 	cleaner sameKindCleaner
+	// deferred holds the image+predicate pairs with a retry collapse in flight.
+	deferred sync.Map
 }
 
 func resolveCosignAttestTimeout(logger *slog.Logger) time.Duration {

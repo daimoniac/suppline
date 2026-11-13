@@ -69,6 +69,10 @@ func (m *mockRegistry) UnpackImage(context.Context, string, string, string) erro
 	return errors.New("image unpack is not available")
 }
 
+func (m *mockRegistry) MoveTag(context.Context, string, string, string) error {
+	return errors.New("tag moves are not available")
+}
+
 func (m *mockRegistry) VerifyTagExists(ctx context.Context, repo, tag string) error {
 	_, err := m.GetDigest(ctx, repo, tag)
 	return err
@@ -145,6 +149,7 @@ type mockStateStore struct {
 	cleanupCalled    map[string]bool
 	cleanupErrors    map[string]error
 	tagsForDigest    map[string][]statestore.TagRef
+	recorded         []statestore.ScanRecord
 }
 
 func newMockStateStore() *mockStateStore {
@@ -157,6 +162,9 @@ func newMockStateStore() *mockStateStore {
 }
 
 func (m *mockStateStore) RecordScan(ctx context.Context, record *statestore.ScanRecord) error {
+	if m.recordScanError == nil {
+		m.recorded = append(m.recorded, *record)
+	}
 	return m.recordScanError
 }
 
@@ -831,6 +839,74 @@ func TestPipeline_RetargetsTaskWhenOwnTagDeleted(t *testing.T) {
 	if mockStore.cleanupCalled["artifact_"+digest] {
 		t.Fatal("did not expect full digest cleanup")
 	}
+}
+
+// A live tag that names another digest is the runway holding this digest, or
+// a cluster still running it after the tag moved. The scan is recorded behind
+// the tag's current binding instead of being cleaned up.
+func TestPipeline_RecordsDigestBehindLiveTagThatNamesAnother(t *testing.T) {
+	mockQ := queue.NewInMemoryQueue(10)
+	defer mockQ.Close()
+
+	digest := "sha256:held"
+	repo := "hostingmaloonde/postgres"
+	mockReg := &mockRegistry{
+		liveTags:   []string{"15-alpine"},
+		tagDigests: map[string]string{"15-alpine": "sha256:current"},
+	}
+	mockStore := newMockStateStore()
+	mockStore.tagsForDigest[digest] = []statestore.TagRef{{Repository: repo, Tag: "15-alpine"}}
+	observer := &scanObserver{}
+
+	w := worker.NewImageWorker(mockQ, &mockScanner{}, &mockPolicyEngine{}, &mockAttestor{}, mockReg, mockStore, worker.DefaultConfig(), slog.Default(), nil)
+	w.SetScanObserver(observer)
+
+	for _, stored := range []bool{true, false} {
+		mockStore.recorded = nil
+		task := &queue.ScanTask{ID: "test-held", Repository: repo, Digest: digest, Tag: "15-alpine", EnqueuedAt: time.Now()}
+		if !stored {
+			mockStore.tagsForDigest[digest] = nil
+		}
+		if err := w.ProcessTask(context.Background(), task); err != nil {
+			t.Fatalf("stored=%t: expected scan of held digest to succeed, got: %v", stored, err)
+		}
+		if mockStore.cleanupCalled["artifact_tag_"+repo+"_"+digest+"_15-alpine"] || mockStore.cleanupCalled["artifact_"+digest] {
+			t.Fatalf("stored=%t: held digest was cleaned up: %v", stored, mockStore.cleanupCalled)
+		}
+		if len(mockStore.recorded) != 1 || !mockStore.recorded[0].RetainSuperseded {
+			t.Fatalf("stored=%t: recorded = %+v, want one scan behind the current binding", stored, mockStore.recorded)
+		}
+	}
+	if len(observer.scanned) != 2 || observer.scanned[0] != repo+"@"+digest {
+		t.Fatalf("observer saw %v", observer.scanned)
+	}
+}
+
+func TestPipeline_ScanOfTaggedDigestTakesBinding(t *testing.T) {
+	mockQ := queue.NewInMemoryQueue(10)
+	defer mockQ.Close()
+
+	digest := "sha256:current"
+	mockReg := &mockRegistry{
+		liveTags:   []string{"15-alpine"},
+		tagDigests: map[string]string{"15-alpine": digest},
+	}
+	mockStore := newMockStateStore()
+	w := worker.NewImageWorker(mockQ, &mockScanner{}, &mockPolicyEngine{}, &mockAttestor{}, mockReg, mockStore, worker.DefaultConfig(), slog.Default(), nil)
+
+	task := &queue.ScanTask{ID: "test-current", Repository: "hostingmaloonde/postgres", Digest: digest, Tag: "15-alpine", EnqueuedAt: time.Now()}
+	if err := w.ProcessTask(context.Background(), task); err != nil {
+		t.Fatal(err)
+	}
+	if len(mockStore.recorded) != 1 || mockStore.recorded[0].RetainSuperseded {
+		t.Fatalf("recorded = %+v, want the scan to take the binding", mockStore.recorded)
+	}
+}
+
+type scanObserver struct{ scanned []string }
+
+func (o *scanObserver) Scanned(_ context.Context, repository, digest string) {
+	o.scanned = append(o.scanned, repository+"@"+digest)
 }
 
 func TestPipeline_CleansDigestWhenNoLiveTagsRemain(t *testing.T) {

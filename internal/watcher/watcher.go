@@ -35,6 +35,7 @@ type watcherImpl struct {
 	scanEnqueuer   *scanenqueue.Enqueuer
 	pollInterval   time.Duration
 	rescanInterval time.Duration
+	heldDigests    func(repository string) []string
 	logger         *slog.Logger
 }
 
@@ -42,6 +43,9 @@ type watcherImpl struct {
 type Config struct {
 	PollInterval   time.Duration
 	RescanInterval time.Duration
+	// HeldDigests lists digests the tag runway holds off a tag. Their scans
+	// are kept like current digests so the runway can publish them.
+	HeldDigests func(repository string) []string
 }
 
 // NewWatcher creates a new registry watcher
@@ -100,6 +104,7 @@ func NewWatcherWithCatalogAndEnqueuer(
 		scanEnqueuer:   scanEnqueuer,
 		pollInterval:   config.PollInterval,
 		rescanInterval: config.RescanInterval,
+		heldDigests:    config.HeldDigests,
 		logger:         logger,
 	}
 }
@@ -498,6 +503,9 @@ func (w *watcherImpl) renewSupersededDigests(ctx context.Context, repo string, c
 		rescanInterval = 7 * 24 * time.Hour
 	}
 
+	if w.heldDigests != nil {
+		currentDigests = append(currentDigests, w.heldDigests(repo)...)
+	}
 	renewals, err := renewer.ReconcileSupersededDigests(ctx, repo, currentDigests, rescanInterval)
 	if err != nil {
 		w.logger.Warn("failed to reconcile superseded digests",
@@ -508,10 +516,9 @@ func (w *watcherImpl) renewSupersededDigests(ctx context.Context, repo string, c
 
 	for _, renewal := range renewals {
 		if _, err := w.scanEnqueuer.EnqueueRescan(ctx, scanenqueue.Image{
-			Repository:       renewal.Repository,
-			Digest:           renewal.Digest,
-			Tag:              renewal.Tag,
-			RetainSuperseded: true,
+			Repository: renewal.Repository,
+			Digest:     renewal.Digest,
+			Tag:        renewal.Tag,
 		}); err != nil {
 			w.logger.Error("failed to enqueue superseded digest renewal",
 				"repo", renewal.Repository,

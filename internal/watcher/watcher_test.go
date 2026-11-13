@@ -65,6 +65,10 @@ func (m *mockRegistryClient) UnpackImage(context.Context, string, string, string
 	return fmt.Errorf("image unpack is not available")
 }
 
+func (m *mockRegistryClient) MoveTag(context.Context, string, string, string) error {
+	return fmt.Errorf("tag moves are not available")
+}
+
 func (m *mockRegistryClient) VerifyTagExists(ctx context.Context, repo, tag string) error {
 	if m.err != nil {
 		return m.err
@@ -1268,11 +1272,11 @@ func TestWatcher_Discover_RenewsSupersededDigest(t *testing.T) {
 		if err != nil {
 			t.Fatalf("Dequeue: %v", err)
 		}
-		if task.RetainSuperseded {
+		if task.Digest == pinned {
 			retained = task
 			continue
 		}
-		if task.Digest != current || task.RetainSuperseded {
+		if task.Digest != current {
 			t.Fatalf("unexpected task %+v", task)
 		}
 	}

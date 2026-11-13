@@ -86,21 +86,6 @@ func fixedClock(e *Enqueuer, idTime, enqueuedAt time.Time) {
 	}
 }
 
-func TestEnqueueRescanRetainsSupersededDigest(t *testing.T) {
-	taskQueue := &capturingQueue{}
-	enqueuer := NewWithCatalog(taskQueue, testCatalog())
-	image := testImage()
-	image.RetainSuperseded = true
-
-	task, err := enqueuer.EnqueueRescan(context.Background(), image)
-	if err != nil {
-		t.Fatalf("EnqueueRescan: %v", err)
-	}
-	if !task.RetainSuperseded || !task.IsRescan {
-		t.Fatalf("task = %+v, want retained rescan", task)
-	}
-}
-
 func TestEnqueueDiscoveryConstructsTask(t *testing.T) {
 	taskQueue := &capturingQueue{}
 	enqueuer := NewWithCatalog(taskQueue, testCatalog())

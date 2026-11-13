@@ -1989,6 +1989,10 @@ func (m *mockWorkerRegistry) UnpackImage(context.Context, string, string, string
 	return fmt.Errorf("image unpack is not available")
 }
 
+func (m *mockWorkerRegistry) MoveTag(context.Context, string, string, string) error {
+	return fmt.Errorf("tag moves are not available")
+}
+
 func (m *mockWorkerRegistry) GetManifest(ctx context.Context, repository, digest string) (*registry.Manifest, error) {
 	if m.manifestError != nil {
 		return nil, m.manifestError

@@ -19,6 +19,7 @@ import (
 	"github.com/regclient/regclient/types/ref"
 
 	"github.com/daimoniac/suppline/internal/config"
+	"github.com/daimoniac/suppline/internal/runway"
 )
 
 type action int
@@ -186,7 +187,7 @@ func (m *runner) processImage(ctx context.Context, s config.SyncEntry, src, tgt 
 		m.log.Error("failed parsing target", "target", tgt, "error", err.Error())
 		return err
 	}
-	err = m.processRef(ctx, s, sRef, tRef, act)
+	err = m.processRef(ctx, s, sRef, tRef, trimTag(tgt), act)
 	if err != nil {
 		m.log.Error("failed to sync", "target", tRef.CommonName(), "source", sRef.CommonName(), "error", err.Error())
 	}
@@ -196,7 +197,8 @@ func (m *runner) processImage(ctx context.Context, s config.SyncEntry, src, tgt 
 	return err
 }
 
-func (m *runner) processRef(ctx context.Context, s config.SyncEntry, src, tgt ref.Ref, act action) error {
+// repository is the target as the watcher and the state store name it.
+func (m *runner) processRef(ctx context.Context, s config.SyncEntry, src, tgt ref.Ref, repository string, act action) error {
 	mSrc, err := m.rc.ManifestHead(ctx, src, regclient.WithManifestRequireDigest())
 	if err != nil && errors.Is(err, errs.ErrUnsupportedAPI) {
 		mSrc, err = m.rc.ManifestGet(ctx, src)
@@ -305,11 +307,60 @@ func (m *runner) processRef(ctx context.Context, s config.SyncEntry, src, tgt re
 	}
 	rcOpts := imageOpts(m, s)
 	m.log.Debug("image sync running", "source", src.CommonName(), "target", tgt.CommonName())
+	// An ignored entry is only mirrored. It is never scanned, so nothing would
+	// attest a held digest and the tag would never move.
+	if m.runway != nil && !s.IsIgnored() && !tgtMatches && tgt.Tag != "" {
+		previous := ""
+		if tgtExists {
+			previous = manifest.GetDigest(mTgt).String()
+		}
+		published, err := m.offerDigest(ctx, src, tgt, repository, previous, mSrc, rcOpts)
+		if err != nil || !published {
+			return err
+		}
+		return runHook(ctx, m.log, s.Hooks.Post, "post", src, tgt)
+	}
 	if err := m.rc.ImageCopy(ctx, src, tgt, rcOpts...); err != nil {
 		m.log.Error("failed to copy image", "source", src.CommonName(), "target", tgt.CommonName(), "error", err.Error())
 		return err
 	}
 	return runHook(ctx, m.log, s.Hooks.Post, "post", src, tgt)
+}
+
+// offerDigest copies the source digest into the target repository by digest
+// and hands the tag to the runway. It reports whether the tag moved.
+func (m *runner) offerDigest(ctx context.Context, src, tgt ref.Ref, repository, previous string, mSrc manifest.Manifest, rcOpts []regclient.ImageOpts) (bool, error) {
+	digest := src.Digest
+	if digest == "" {
+		digest = manifest.GetDigest(mSrc).String()
+	}
+	digestRef := tgt.SetDigest(digest)
+	if err := m.rc.ImageCopy(ctx, src, digestRef, rcOpts...); err != nil {
+		m.log.Error("failed to copy digest",
+			"source", src.CommonName(),
+			"target", digestRef.CommonName(),
+			"error", err.Error())
+		return false, err
+	}
+	published, err := m.runway.Offer(ctx, runway.Candidate{
+		Repository: repository,
+		Tag:        tgt.Tag,
+		Digest:     digest,
+		Previous:   previous,
+	})
+	if err != nil {
+		return false, fmt.Errorf("runway: %w", err)
+	}
+	return published, nil
+}
+
+// trimTag drops the tag from a repo:tag reference. A port in the registry
+// host is not a tag.
+func trimTag(reference string) string {
+	if idx := strings.LastIndex(reference, ":"); idx > strings.LastIndex(reference, "/") {
+		return reference[:idx]
+	}
+	return reference
 }
 
 func (m *runner) backup(ctx context.Context, s config.SyncEntry, tgt ref.Ref) error {
