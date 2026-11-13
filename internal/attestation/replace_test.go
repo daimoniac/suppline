@@ -2,7 +2,9 @@ package attestation
 
 import (
 	"context"
+	"errors"
 	"os"
+	"sync"
 	"testing"
 	"time"
 
@@ -175,6 +177,8 @@ func TestCollapseDeletesEverySignatureReferrer(t *testing.T) {
 
 const scaiPredicate = "https://in-toto.io/attestation/scai/attribute-report/v0.3"
 
+var stubMu sync.Mutex
+
 func stubRegistry(t *testing.T, lists [][]v1.Descriptor, exists func(string) bool) (calls *int, deleted *[]string) {
 	t.Helper()
 	t.Setenv("ATTESTATION_NEW_BUNDLE_FORMAT", "false")
@@ -185,6 +189,8 @@ func stubRegistry(t *testing.T, lists [][]v1.Descriptor, exists func(string) boo
 	visibilityWaits = []time.Duration{0, 0, 0}
 	calls, deleted = new(int), new([]string)
 	loadReferrers = func(context.Context, name.Digest) ([]v1.Descriptor, error) {
+		stubMu.Lock()
+		defer stubMu.Unlock()
 		i := *calls
 		if i >= len(lists) {
 			i = len(lists) - 1
@@ -193,6 +199,8 @@ func stubRegistry(t *testing.T, lists [][]v1.Descriptor, exists func(string) boo
 		return lists[i], nil
 	}
 	removeReferrers = func(_ context.Context, _ *SigstoreAttestor, _ name.Digest, _ string, stale []string) error {
+		stubMu.Lock()
+		defer stubMu.Unlock()
 		*deleted = append(*deleted, stale...)
 		return nil
 	}
@@ -229,12 +237,49 @@ func TestCollapseWaitsForTheNewAttestationToBeListed(t *testing.T) {
 func TestCollapseReportsANewAttestationThatNeverAppears(t *testing.T) {
 	started := time.Now()
 	older := scaiReferrer(t, 'a', started.Add(-24*time.Hour))
-	stubRegistry(t, [][]v1.Descriptor{{older}}, func(string) bool { return false })
+	_, deleted := stubRegistry(t, [][]v1.Descriptor{{older}}, func(string) bool { return false })
 
 	digest, _ := name.NewDigest("example.com/app@sha256:" + repeatHex('d'))
 	err := collapseReferrers(context.Background(), testAttestor(t), digest, scaiPredicate, true, started)
-	if err == nil {
-		t.Fatal("expected an error when the new attestation is never listed")
+	if !errors.Is(err, errNotListedYet) {
+		t.Fatalf("err = %v, want errNotListedYet", err)
+	}
+	if len(*deleted) != 0 {
+		t.Fatalf("deleted %v while the new attestation was unlisted", *deleted)
+	}
+}
+
+// Docker Hub can list the new attestation after the scan stopped waiting. A background
+// retry then removes the older one.
+func TestCollapseLaterDeletesOnceTheNewAttestationIsListed(t *testing.T) {
+	started := time.Now()
+	older := scaiReferrer(t, 'a', started.Add(-24*time.Hour))
+	fresh := scaiReferrer(t, 'b', started)
+	// Four lists without the new attestation exhaust the first collapse; the retry then sees it.
+	lists := [][]v1.Descriptor{{older}, {older}, {older}, {older}, {older, fresh}, {fresh}}
+	_, deleted := stubRegistry(t, lists, func(string) bool { return false })
+	prev := laterWaits
+	laterWaits = []time.Duration{time.Millisecond, time.Millisecond}
+	t.Cleanup(func() { laterWaits = prev })
+
+	attestor := testAttestor(t)
+	digest, _ := name.NewDigest("example.com/app@sha256:" + repeatHex('d'))
+	attestor.collapseSameKind(context.Background(), digest, scaiPredicate, true, started)
+
+	// The retry is done when it clears its in-flight marker.
+	deadline := time.Now().Add(5 * time.Second)
+	for time.Now().Before(deadline) {
+		inFlight := false
+		attestor.deferred.Range(func(any, any) bool { inFlight = true; return false })
+		if !inFlight {
+			break
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	stubMu.Lock()
+	defer stubMu.Unlock()
+	if len(*deleted) != 1 || (*deleted)[0] != older.Digest.String() {
+		t.Fatalf("deleted = %v, want the older attestation", *deleted)
 	}
 }
 

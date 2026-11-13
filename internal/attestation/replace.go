@@ -41,6 +41,14 @@ const (
 	createdSkew = 2 * time.Second
 )
 
+// errNotListedYet means the registry does not list the attestation just written. Docker
+// Hub can take over a minute to list it, which is too long to block a scan on.
+var errNotListedYet = errors.New("new attestation is not listed yet")
+
+// laterWaits spaces the background retries of a collapse that found the new attestation
+// unlisted. Tests shorten it.
+var laterWaits = []time.Duration{30 * time.Second, time.Minute, 2 * time.Minute, 4 * time.Minute}
+
 // visibilityWaits is how long collapse waits, between listings, for the attestation it
 // just wrote to appear in the referrers list. Docker Hub lists a new referrer a few
 // seconds after the push. Without waiting, the list holds only older attestations, the
@@ -176,12 +184,46 @@ func (a *SigstoreAttestor) collapseSameKind(ctx context.Context, digest name.Dig
 	} else {
 		err = collapseReferrers(ctx, a, digest, predicate, keepNewest, since)
 	}
+	if errors.Is(err, errNotListedYet) {
+		a.collapseLater(ctx, digest, predicate, since)
+		return
+	}
 	if err != nil {
 		a.logger.Warn("failed to delete previous attestations",
 			"image_ref", digest.String(),
 			"predicate", predicate,
 			"error", err)
 	}
+}
+
+// collapseLater retries a collapse in the background until the registry lists the new
+// attestation. The scan does not wait for it. A restart drops the retry; the next scan
+// of the image collapses again.
+func (a *SigstoreAttestor) collapseLater(ctx context.Context, digest name.Digest, predicate string, since time.Time) {
+	key := digest.String() + "|" + predicate
+	if _, running := a.deferred.LoadOrStore(key, struct{}{}); running {
+		return
+	}
+	a.logger.Debug("new attestation not listed yet; collapsing later",
+		"image_ref", digest.String(), "predicate", predicate)
+	go func() {
+		defer a.deferred.Delete(key)
+		ctx := context.WithoutCancel(ctx)
+		var err error
+		for _, wait := range laterWaits {
+			time.Sleep(wait)
+			err = collapseReferrers(ctx, a, digest, predicate, true, since)
+			if !errors.Is(err, errNotListedYet) {
+				break
+			}
+		}
+		if err != nil {
+			a.logger.Warn("failed to delete previous attestations",
+				"image_ref", digest.String(),
+				"predicate", predicate,
+				"error", err)
+		}
+	}()
 }
 
 func parseImageDigest(imageRef string) (name.Digest, error) {
@@ -269,7 +311,7 @@ func listAfterWrite(ctx context.Context, digest name.Digest, predicate string, s
 		return nil, err
 	}
 	if !listedSince(current, predicate, since) {
-		return current, fmt.Errorf("new %s attestation is not listed yet; older ones stay until the next scan", predicate)
+		return current, fmt.Errorf("%w: %s", errNotListedYet, predicate)
 	}
 	return current, nil
 }
@@ -294,9 +336,9 @@ func collapseReferrers(ctx context.Context, a *SigstoreAttestor, digest name.Dig
 		var err error
 		if pass == 0 && keepNewest && !since.IsZero() {
 			current, err = listAfterWrite(ctx, digest, predicate, since)
-			if err != nil && current != nil {
-				errs = append(errs, err)
-				err = nil
+			if errors.Is(err, errNotListedYet) {
+				// Collapsing now would keep an older attestation as the newest.
+				return err
 			}
 		} else {
 			current, err = loadReferrers(ctx, digest)
