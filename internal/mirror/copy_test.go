@@ -207,6 +207,49 @@ func TestProcessImage_RunwayHoldsExistingTagUntilAttested(t *testing.T) {
 	}
 }
 
+// An ignored entry is never scanned, so the runway must not hold its tags.
+func TestProcessImage_IgnoredEntryMovesTagWithoutRunway(t *testing.T) {
+	regHandler := olareg.New(oConfig.Config{Storage: oConfig.ConfigStorage{StoreType: oConfig.StoreMem}})
+	ts := httptest.NewServer(regHandler)
+	t.Cleanup(func() {
+		ts.Close()
+		_ = regHandler.Close()
+	})
+	host := mustHost(t, ts.URL)
+	rc := regclient.New(regclient.WithConfigHost(rcconfig.Host{
+		Name: host, Hostname: host, TLS: rcconfig.TLSDisabled,
+	}))
+	src := host + "/src"
+	dst := host + "/dst"
+	putImageConfig(t, rc, dst, "app", "amd64-old")
+	newDigest := putImageConfig(t, rc, src, "app", "amd64-new")
+
+	scans := &scanState{}
+	m := &runner{
+		log:       slog.New(slog.NewTextHandler(io.Discard, nil)),
+		rc:        rc,
+		throttle:  newGate(1),
+		manifests: map[string]manifest.Manifest{},
+		runway: runway.New(runway.Config{
+			Store: scans, Tagger: regTagger{rc: rc}, Scheduler: scans,
+			Log: slog.New(slog.NewTextHandler(io.Discard, nil)),
+		}),
+	}
+	entry := config.SyncEntry{
+		Source: src, Target: dst, Type: "repository", Ignore: true,
+		MediaTypes: []string{mediatype.OCI1Manifest},
+	}
+	if err := m.processImage(context.Background(), entry, src+":app", dst+":app", actionCopy); err != nil {
+		t.Fatal(err)
+	}
+	if got := tagDigest(t, rc, dst+":app"); got != newDigest {
+		t.Fatalf("tag digest = %s, want mirrored %s", got, newDigest)
+	}
+	if len(scans.queued) != 0 {
+		t.Fatalf("ignored entry queued scans: %v", scans.queued)
+	}
+}
+
 // scanState is the scan store and scheduler the runway sees in mirror tests.
 type scanState struct {
 	rec      *statestore.ScanRecord

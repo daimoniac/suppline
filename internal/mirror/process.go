@@ -307,7 +307,9 @@ func (m *runner) processRef(ctx context.Context, s config.SyncEntry, src, tgt re
 	}
 	rcOpts := imageOpts(m, s)
 	m.log.Debug("image sync running", "source", src.CommonName(), "target", tgt.CommonName())
-	if m.runway != nil && !tgtMatches && tgt.Tag != "" {
+	// An ignored entry is only mirrored. It is never scanned, so nothing would
+	// attest a held digest and the tag would never move.
+	if m.runway != nil && !s.IsIgnored() && !tgtMatches && tgt.Tag != "" {
 		previous := ""
 		if tgtExists {
 			previous = manifest.GetDigest(mTgt).String()

@@ -4,6 +4,7 @@ import (
 	"context"
 	"os"
 	"testing"
+	"time"
 
 	"github.com/google/go-containerregistry/pkg/name"
 	v1 "github.com/google/go-containerregistry/pkg/v1"
@@ -80,7 +81,7 @@ func TestCollapseRelistsUntilOneRemains(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := collapseReferrers(context.Background(), testAttestor(t), digest, scai, true); err != nil {
+	if err := collapseReferrers(context.Background(), testAttestor(t), digest, scai, true, time.Time{}); err != nil {
 		t.Fatal(err)
 	}
 	if calls != 3 {
@@ -164,11 +165,101 @@ func TestCollapseDeletesEverySignatureReferrer(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := collapseReferrers(context.Background(), testAttestor(t), digest, predicateCosignSign, false); err != nil {
+	if err := collapseReferrers(context.Background(), testAttestor(t), digest, predicateCosignSign, false, time.Time{}); err != nil {
 		t.Fatal(err)
 	}
 	if len(deleted) != 2 {
 		t.Fatalf("deleted = %#v", deleted)
+	}
+}
+
+const scaiPredicate = "https://in-toto.io/attestation/scai/attribute-report/v0.3"
+
+func stubRegistry(t *testing.T, lists [][]v1.Descriptor, exists func(string) bool) (calls *int, deleted *[]string) {
+	t.Helper()
+	t.Setenv("ATTESTATION_NEW_BUNDLE_FORMAT", "false")
+	prevLoad, prevRemove, prevExists, prevWaits := loadReferrers, removeReferrers, manifestExists, visibilityWaits
+	t.Cleanup(func() {
+		loadReferrers, removeReferrers, manifestExists, visibilityWaits = prevLoad, prevRemove, prevExists, prevWaits
+	})
+	visibilityWaits = []time.Duration{0, 0, 0}
+	calls, deleted = new(int), new([]string)
+	loadReferrers = func(context.Context, name.Digest) ([]v1.Descriptor, error) {
+		i := *calls
+		if i >= len(lists) {
+			i = len(lists) - 1
+		}
+		*calls++
+		return lists[i], nil
+	}
+	removeReferrers = func(_ context.Context, _ *SigstoreAttestor, _ name.Digest, _ string, stale []string) error {
+		*deleted = append(*deleted, stale...)
+		return nil
+	}
+	manifestExists = func(_ context.Context, ref name.Digest) (bool, error) {
+		return exists(ref.DigestStr()), nil
+	}
+	return calls, deleted
+}
+
+func scaiReferrer(t *testing.T, seed byte, created time.Time) v1.Descriptor {
+	return v1.Descriptor{Digest: hash(t, seed), Annotations: map[string]string{
+		annotationBundlePredicate: scaiPredicate,
+		annotationCreated:         created.UTC().Format(time.RFC3339),
+	}}
+}
+
+// The registry lists a new referrer a few seconds after the push. Collapsing the first
+// list, which holds only the older attestation, would keep that one and leave it behind.
+func TestCollapseWaitsForTheNewAttestationToBeListed(t *testing.T) {
+	started := time.Now()
+	older := scaiReferrer(t, 'a', started.Add(-24*time.Hour))
+	fresh := scaiReferrer(t, 'b', started)
+	calls, deleted := stubRegistry(t, [][]v1.Descriptor{{older}, {older}, {older, fresh}, {fresh}}, func(string) bool { return false })
+
+	digest, _ := name.NewDigest("example.com/app@sha256:" + repeatHex('d'))
+	if err := collapseReferrers(context.Background(), testAttestor(t), digest, scaiPredicate, true, started); err != nil {
+		t.Fatal(err)
+	}
+	if len(*deleted) != 1 || (*deleted)[0] != older.Digest.String() {
+		t.Fatalf("deleted = %v after %d lists, want the older attestation", *deleted, *calls)
+	}
+}
+
+func TestCollapseReportsANewAttestationThatNeverAppears(t *testing.T) {
+	started := time.Now()
+	older := scaiReferrer(t, 'a', started.Add(-24*time.Hour))
+	stubRegistry(t, [][]v1.Descriptor{{older}}, func(string) bool { return false })
+
+	digest, _ := name.NewDigest("example.com/app@sha256:" + repeatHex('d'))
+	err := collapseReferrers(context.Background(), testAttestor(t), digest, scaiPredicate, true, started)
+	if err == nil {
+		t.Fatal("expected an error when the new attestation is never listed")
+	}
+}
+
+// A list that keeps naming a manifest the registry no longer serves is a stale list.
+func TestCollapseAcceptsDeletedManifestsStillListed(t *testing.T) {
+	started := time.Now()
+	older := scaiReferrer(t, 'a', started.Add(-24*time.Hour))
+	fresh := scaiReferrer(t, 'b', started)
+	stubRegistry(t, [][]v1.Descriptor{{older, fresh}}, func(string) bool { return false })
+
+	digest, _ := name.NewDigest("example.com/app@sha256:" + repeatHex('d'))
+	if err := collapseReferrers(context.Background(), testAttestor(t), digest, scaiPredicate, true, started); err != nil {
+		t.Fatalf("stale list reported as failure: %v", err)
+	}
+}
+
+func TestCollapseReportsManifestsThatSurviveDelete(t *testing.T) {
+	started := time.Now()
+	older := scaiReferrer(t, 'a', started.Add(-24*time.Hour))
+	fresh := scaiReferrer(t, 'b', started)
+	stubRegistry(t, [][]v1.Descriptor{{older, fresh}}, func(string) bool { return true })
+
+	digest, _ := name.NewDigest("example.com/app@sha256:" + repeatHex('d'))
+	if err := collapseReferrers(context.Background(), testAttestor(t), digest, scaiPredicate, true, started); err == nil {
+		t.Fatal("expected an error when the manifest is still served")
 	}
 }
 
@@ -242,6 +333,7 @@ func TestAttestSBOMSkipsCleanupWhenCosignFails(t *testing.T) {
 type collapseCall struct {
 	predicate  string
 	keepNewest bool
+	since      time.Time
 }
 
 type recordingCleaner struct {
@@ -249,8 +341,8 @@ type recordingCleaner struct {
 	err   error
 }
 
-func (r *recordingCleaner) collapse(_ context.Context, _ name.Digest, predicate string, keepNewest bool) error {
-	r.calls = append(r.calls, collapseCall{predicate: predicate, keepNewest: keepNewest})
+func (r *recordingCleaner) collapse(_ context.Context, _ name.Digest, predicate string, keepNewest bool, since time.Time) error {
+	r.calls = append(r.calls, collapseCall{predicate: predicate, keepNewest: keepNewest, since: since})
 	return r.err
 }
 

@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"sort"
 	"strings"
+	"time"
 
 	"github.com/google/go-containerregistry/pkg/authn"
 	"github.com/google/go-containerregistry/pkg/name"
@@ -34,13 +35,26 @@ const (
 	// newest in place when the attestation just written is not visible yet; the next
 	// pass sees it and removes that survivor.
 	maxSameKindPasses = 5
+
+	// createdSkew absorbs the one-second resolution of the created annotation when
+	// matching it against the moment the attest started.
+	createdSkew = 2 * time.Second
 )
+
+// visibilityWaits is how long collapse waits, between listings, for the attestation it
+// just wrote to appear in the referrers list. Docker Hub lists a new referrer a few
+// seconds after the push. Without waiting, the list holds only older attestations, the
+// newest of which is kept, and they stay until the next scan. Tests shorten it.
+var visibilityWaits = []time.Duration{time.Second, 2 * time.Second, 3 * time.Second, 4 * time.Second, 5 * time.Second}
 
 // sameKindCleaner removes attestations of one predicate from a registry.
 // keepNewest retains the referrer with the latest created time. Tests substitute it.
 // Production leaves it nil and talks to the registry.
+//
+// since is when the attestation being kept started. With keepNewest it makes collapse
+// wait until that attestation is listed. The zero value skips the wait.
 type sameKindCleaner interface {
-	collapse(ctx context.Context, digest name.Digest, predicate string, keepNewest bool) error
+	collapse(ctx context.Context, digest name.Digest, predicate string, keepNewest bool, since time.Time) error
 }
 
 // canonicalPredicate maps a cosign --type value to the predicate type stored on the attestation.
@@ -128,6 +142,7 @@ func (a *SigstoreAttestor) attestReplacingSameKind(ctx context.Context, operatio
 	predicate := canonicalPredicate(cosignType)
 	digest, digestErr := parseImageDigest(imageRef)
 
+	started := time.Now()
 	if _, err := a.runCosignAttest(ctx, operation, a.attestArgs(cosignType, predicatePath, imageRef)...); err != nil {
 		return err
 	}
@@ -135,11 +150,11 @@ func (a *SigstoreAttestor) attestReplacingSameKind(ctx context.Context, operatio
 		a.logger.Debug("skipping attestation cleanup; image ref has no digest", "image_ref", imageRef)
 		return nil
 	}
-	a.collapseSameKind(ctx, digest, predicate, true)
+	a.collapseSameKind(ctx, digest, predicate, true, started)
 	// Referrers annotated as cosign signatures are historical attestations stored under the
 	// wrong predicate. None of them is the attestation just written, so delete every one.
 	if predicate != predicateCosignSign {
-		a.collapseSameKind(ctx, digest, predicateCosignSign, false)
+		a.collapseSameKind(ctx, digest, predicateCosignSign, false, time.Time{})
 	}
 	return nil
 }
@@ -151,15 +166,15 @@ func (a *SigstoreAttestor) DeleteReferrers(ctx context.Context, imageRef, predic
 	if err != nil {
 		return nil
 	}
-	return collapseReferrers(ctx, a, digest, predicate, false)
+	return collapseReferrers(ctx, a, digest, predicate, false, time.Time{})
 }
 
-func (a *SigstoreAttestor) collapseSameKind(ctx context.Context, digest name.Digest, predicate string, keepNewest bool) {
+func (a *SigstoreAttestor) collapseSameKind(ctx context.Context, digest name.Digest, predicate string, keepNewest bool, since time.Time) {
 	var err error
 	if a.cleaner != nil {
-		err = a.cleaner.collapse(ctx, digest, predicate, keepNewest)
+		err = a.cleaner.collapse(ctx, digest, predicate, keepNewest, since)
 	} else {
-		err = collapseReferrers(ctx, a, digest, predicate, keepNewest)
+		err = collapseReferrers(ctx, a, digest, predicate, keepNewest, since)
 	}
 	if err != nil {
 		a.logger.Warn("failed to delete previous attestations",
@@ -189,6 +204,7 @@ func remoteOptions(ctx context.Context) []remote.Option {
 var (
 	loadReferrers   = referrerDescriptors
 	removeReferrers = deleteReferrers
+	manifestExists  = registryManifestExists
 )
 
 func referrerDescriptors(ctx context.Context, digest name.Digest) ([]v1.Descriptor, error) {
@@ -203,11 +219,88 @@ func referrerDescriptors(ctx context.Context, digest name.Digest) ([]v1.Descript
 	return manifest.Manifests, nil
 }
 
-func collapseReferrers(ctx context.Context, a *SigstoreAttestor, digest name.Digest, predicate string, keepNewest bool) error {
+// registryManifestExists reports whether the registry still serves a manifest.
+func registryManifestExists(ctx context.Context, ref name.Digest) (bool, error) {
+	_, err := remote.Head(ref, remoteOptions(ctx)...)
+	if err == nil {
+		return true, nil
+	}
+	if isNotFound(err) {
+		return false, nil
+	}
+	return false, err
+}
+
+// listedSince reports whether the list holds a referrer of this predicate created at or
+// after since. A referrer without a readable created time counts, so a registry that does
+// not annotate it is not waited on.
+func listedSince(descs []v1.Descriptor, predicate string, since time.Time) bool {
+	for _, desc := range descs {
+		if predicateOf(desc) != predicate {
+			continue
+		}
+		created, err := time.Parse(time.RFC3339, createdOf(desc))
+		if err != nil || !created.Before(since.Add(-createdSkew)) {
+			return true
+		}
+	}
+	return false
+}
+
+// listAfterWrite lists referrers, waiting until the attestation written at since appears.
+// It returns the last list even when that attestation never shows, with an error saying so.
+func listAfterWrite(ctx context.Context, digest name.Digest, predicate string, since time.Time) ([]v1.Descriptor, error) {
+	for _, wait := range visibilityWaits {
+		current, err := loadReferrers(ctx, digest)
+		if err != nil {
+			return nil, err
+		}
+		if listedSince(current, predicate, since) {
+			return current, nil
+		}
+		select {
+		case <-ctx.Done():
+			return current, ctx.Err()
+		case <-time.After(wait):
+		}
+	}
+	current, err := loadReferrers(ctx, digest)
+	if err != nil {
+		return nil, err
+	}
+	if !listedSince(current, predicate, since) {
+		return current, fmt.Errorf("new %s attestation is not listed yet; older ones stay until the next scan", predicate)
+	}
+	return current, nil
+}
+
+// goneFromRegistry reports whether none of the manifests is served any more. A referrers
+// list can keep naming a deleted manifest for a while; the manifest itself is the truth.
+func goneFromRegistry(ctx context.Context, digest name.Digest, stale []string) bool {
+	for _, old := range stale {
+		exists, err := manifestExists(ctx, digest.Context().Digest(old))
+		if err != nil || exists {
+			return false
+		}
+	}
+	return true
+}
+
+func collapseReferrers(ctx context.Context, a *SigstoreAttestor, digest name.Digest, predicate string, keepNewest bool, since time.Time) error {
 	var errs []error
 	seen := ""
 	for pass := 0; pass < maxSameKindPasses; pass++ {
-		current, err := loadReferrers(ctx, digest)
+		var current []v1.Descriptor
+		var err error
+		if pass == 0 && keepNewest && !since.IsZero() {
+			current, err = listAfterWrite(ctx, digest, predicate, since)
+			if err != nil && current != nil {
+				errs = append(errs, err)
+				err = nil
+			}
+		} else {
+			current, err = loadReferrers(ctx, digest)
+		}
 		if err != nil {
 			return errors.Join(append(errs, err)...)
 		}
@@ -222,6 +315,13 @@ func collapseReferrers(ctx context.Context, a *SigstoreAttestor, digest name.Dig
 		sort.Strings(keyParts)
 		key := strings.Join(keyParts, ",")
 		if key == seen {
+			if goneFromRegistry(ctx, digest, stale) {
+				a.logger.Debug("referrers list still names deleted attestations",
+					"image_ref", digest.String(),
+					"predicate", predicate,
+					"count", len(stale))
+				break
+			}
 			errs = append(errs, fmt.Errorf("still %d %s referrers after delete", len(stale), predicate))
 			break
 		}
