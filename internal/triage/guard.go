@@ -1,6 +1,7 @@
 package triage
 
 import (
+	"context"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -31,6 +32,36 @@ type verdictDecision struct {
 	Action    outcome
 	Reason    string
 	Statement types.VEXStatement
+}
+
+// kevLookup reports whether a CVE is in the CISA KEV catalog.
+type kevLookup interface {
+	Contains(ctx context.Context, cveID string) (bool, error)
+}
+
+// guard decides what a model verdict may change. It checks the cited evidence
+// against what the session's tools returned, consults the KEV catalog, and
+// applies the confidence, justification and flip rules, in that order.
+type guard struct {
+	settings Settings
+	kev      kevLookup // nil skips the KEV check
+	now      func() time.Time
+}
+
+// judge returns the decision for one verdict. It filters verdict.Evidence down
+// to the citations that check out, so the caller records what was accepted.
+func (g guard) judge(ctx context.Context, tools *toolbox, job Job, verdict *modelVerdict, existing *types.VEXStatement, checkouts []gitops.Checkout, triageID string) verdictDecision {
+	tools = tools.ready()
+	evidenceErr := ""
+	if err := verifyEvidence(*tools.roots, tools.pub, job, verdict); err != nil {
+		evidenceErr = err.Error()
+	}
+	var kevHit bool
+	var kevErr error
+	if g.settings.BlockKEV && g.kev != nil {
+		kevHit, kevErr = g.kev.Contains(ctx, job.CVEID)
+	}
+	return decide(g.settings, job, *verdict, evidenceErr, kevHit, kevErr, existing, checkouts, triageID, g.now())
 }
 
 func decide(settings Settings, job Job, verdict modelVerdict, evidenceErr string, kev bool, kevErr error, existing *types.VEXStatement, checkouts []gitops.Checkout, triageID string, now time.Time) verdictDecision {
