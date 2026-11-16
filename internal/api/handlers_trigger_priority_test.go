@@ -17,7 +17,7 @@ import (
 func TestHandleTriggerScan_DigestJumpsDiscoveryBacklog(t *testing.T) {
 	cfg := &config.APIConfig{Enabled: true, Port: 8080}
 	taskQueue := queue.NewInMemoryQueue(100)
-	enqueuer := scanenqueue.New(taskQueue)
+	enqueuer := scanenqueue.New(taskQueue, nil)
 	server := NewAPIServerWithEnqueuer(cfg, mockAttestationConfig(), &mockStateStore{}, taskQueue, enqueuer, mockRegsyncConfig(), observability.NewLogger("error"))
 
 	backlog := scanenqueue.Image{Repository: "example/backlog", Digest: "sha256:backlog", Tag: "v1"}

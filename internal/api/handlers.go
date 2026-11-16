@@ -642,38 +642,11 @@ func (s *APIServer) handleTriggerScan(w http.ResponseWriter, r *http.Request) {
 
 	} else if req.Repository != "" {
 		// Trigger rescan for all images in repository
-		// Query all scans for this repository
-		filter := statestore.ScanFilter{
-			Repository: req.Repository,
-			Limit:      1000, // Reasonable limit
-		}
-
-		scans, err := s.stateStore.ListScans(ctx, filter)
-		if err != nil {
-			s.respondError(w, http.StatusInternalServerError, fmt.Sprintf("Failed to list scans: %v", err))
+		queued, ok := s.requeueRepository(ctx, w, req.Repository, "No scans found for repository")
+		if !ok {
 			return
 		}
-
-		if len(scans) == 0 {
-			s.respondError(w, http.StatusNotFound, "No scans found for repository")
-			return
-		}
-
-		// Enqueue tasks for all scans
-		for _, scan := range scans {
-			if _, err := s.scanEnqueuer.EnqueueRescan(ctx, scanenqueue.Image{
-				Repository: scan.Repository,
-				Digest:     scan.Digest,
-				Tag:        scan.Tag,
-			}); err != nil {
-				s.logger.Error("failed to enqueue task",
-					"digest", scan.Digest,
-					"error", err.Error())
-				continue
-			}
-
-			queuedCount++
-		}
+		queuedCount = queued
 
 		s.logger.Info("triggered rescan for repository",
 			"repository", req.Repository,
@@ -737,40 +710,28 @@ func (s *APIServer) handleReevaluatePolicy(w http.ResponseWriter, r *http.Reques
 
 	s.logger.Info("reprocessing scans with current regsync configuration")
 
-	// Build scan filter
-	filter := statestore.ScanFilter{
-		Repository: req.Repository,
-		Limit:      1000, // Reasonable limit per query
-	}
-
-	// Query scans to re-evaluate
-	scans, err := s.stateStore.ListScans(ctx, filter)
-	if err != nil {
-		s.respondError(w, http.StatusInternalServerError, fmt.Sprintf("Failed to list scans: %v", err))
-		return
-	}
-
-	if len(scans) == 0 {
-		s.respondError(w, http.StatusNotFound, "No scans found to re-evaluate")
-		return
-	}
-
-	queuedCount := 0
-
-	// Enqueue rescan tasks for all matching images with updated VEX statements
-	for _, scan := range scans {
-		if _, err := s.scanEnqueuer.EnqueueRescan(ctx, scanenqueue.Image{
-			Repository: scan.Repository,
-			Digest:     scan.Digest,
-			Tag:        scan.Tag,
-		}); err != nil {
-			s.logger.Error("failed to enqueue task for policy re-evaluation",
-				"digest", scan.Digest,
-				"error", err.Error())
-			continue
+	// Requeue every current image, or only the named repository's.
+	var queuedCount int
+	if req.Repository != "" {
+		queued, ok := s.requeueRepository(ctx, w, req.Repository, "No scans found to re-evaluate")
+		if !ok {
+			return
 		}
-
-		queuedCount++
+		queuedCount = queued
+	} else {
+		queued, err := s.scanEnqueuer.RequeueAll(ctx)
+		if queued == 0 && err != nil {
+			s.respondError(w, http.StatusInternalServerError, fmt.Sprintf("Failed to requeue scans: %v", err))
+			return
+		}
+		if err != nil {
+			s.logger.Error("policy re-evaluation requeue incomplete", "queued", queued, "error", err)
+		}
+		if queued == 0 {
+			s.respondError(w, http.StatusNotFound, "No scans found to re-evaluate")
+			return
+		}
+		queuedCount = queued
 	}
 
 	s.logger.Info("queued images for policy re-evaluation",
@@ -1200,38 +1161,9 @@ func (s *APIServer) handleRescanRepository(w http.ResponseWriter, r *http.Reques
 
 	ctx := r.Context()
 
-	// Query all scans for this repository
-	filter := statestore.ScanFilter{
-		Repository: name,
-		Limit:      1000,
-	}
-
-	scans, err := s.stateStore.ListScans(ctx, filter)
-	if err != nil {
-		s.respondError(w, http.StatusInternalServerError, fmt.Sprintf("Failed to list scans: %v", err))
+	queuedCount, ok := s.requeueRepository(ctx, w, name, "Repository not found")
+	if !ok {
 		return
-	}
-
-	if len(scans) == 0 {
-		s.respondError(w, http.StatusNotFound, "Repository not found")
-		return
-	}
-
-	// Enqueue tasks for all scans
-	queuedCount := 0
-	for _, scan := range scans {
-		if _, err := s.scanEnqueuer.EnqueueRescan(ctx, scanenqueue.Image{
-			Repository: scan.Repository,
-			Digest:     scan.Digest,
-			Tag:        scan.Tag,
-		}); err != nil {
-			s.logger.Error("failed to enqueue task",
-				"digest", scan.Digest,
-				"error", err.Error())
-			continue
-		}
-
-		queuedCount++
 	}
 
 	s.logger.Info("triggered rescan for repository",
@@ -1808,4 +1740,22 @@ func (s *APIServer) handleGetCoverage(w http.ResponseWriter, r *http.Request) {
 		StaleAfterSeconds:     int64(staleAfter.Seconds()),
 		StaleClusterCount:     staleCount,
 	})
+}
+
+// requeueRepository rescans every current image of one repository and writes
+// the error response itself when nothing could be queued.
+func (s *APIServer) requeueRepository(ctx context.Context, w http.ResponseWriter, repository, notFound string) (int, bool) {
+	queued, err := s.scanEnqueuer.RequeueRepositories(ctx, []string{repository})
+	if queued == 0 && err != nil {
+		s.respondError(w, http.StatusInternalServerError, fmt.Sprintf("Failed to requeue repository: %v", err))
+		return 0, false
+	}
+	if err != nil {
+		s.logger.Error("repository requeue incomplete", "repository", repository, "queued", queued, "error", err)
+	}
+	if queued == 0 {
+		s.respondError(w, http.StatusNotFound, notFound)
+		return 0, false
+	}
+	return queued, true
 }

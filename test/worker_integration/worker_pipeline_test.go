@@ -989,7 +989,7 @@ func TestPipeline_PendingTaskScansWithEvidenceAtRunTime(t *testing.T) {
 	repo := "test/repo"
 	before := &config.RegsyncConfig{Sync: []config.SyncEntry{{Source: "src/repo", Target: repo, Type: "repository"}}}
 	policyCatalog := catalog.NewConfigCatalog(before)
-	enqueuer := scanenqueue.New(taskQueue)
+	enqueuer := scanenqueue.New(taskQueue, nil)
 	image := scanenqueue.Image{Repository: repo, Digest: "sha256:abc123", Tag: "latest"}
 
 	if _, err := enqueuer.EnqueueRescan(ctx, image); err != nil {

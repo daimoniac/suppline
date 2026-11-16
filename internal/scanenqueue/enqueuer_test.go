@@ -56,7 +56,7 @@ func fixedClock(e *Enqueuer, idTime, enqueuedAt time.Time) {
 
 func TestEnqueueDiscoveryConstructsTask(t *testing.T) {
 	taskQueue := &capturingQueue{}
-	enqueuer := New(taskQueue)
+	enqueuer := New(taskQueue, nil)
 	idTime := time.Unix(1234, 0)
 	enqueuedAt := time.Unix(1235, 42)
 	fixedClock(enqueuer, idTime, enqueuedAt)
@@ -137,7 +137,7 @@ func TestEnqueueScanMetadata(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			taskQueue := &capturingQueue{}
-			enqueuer := New(taskQueue)
+			enqueuer := New(taskQueue, nil)
 
 			if _, err := tt.enqueue(enqueuer); err != nil {
 				t.Fatalf("enqueue error = %v", err)
@@ -162,7 +162,7 @@ func TestEnqueueScanMetadata(t *testing.T) {
 
 func TestEnqueueRescanPreservesQueueDedupe(t *testing.T) {
 	taskQueue := queue.NewInMemoryQueue(4)
-	enqueuer := New(taskQueue)
+	enqueuer := New(taskQueue, nil)
 	image := Image{Repository: "repo", Digest: "sha256:same", Tag: "latest"}
 
 	if _, err := enqueuer.EnqueueRescan(context.Background(), image); err != nil {
@@ -190,7 +190,7 @@ func TestEnqueueRescanReturnsQueueError(t *testing.T) {
 	if err := taskQueue.Close(); err != nil {
 		t.Fatalf("Close() error = %v", err)
 	}
-	enqueuer := New(taskQueue)
+	enqueuer := New(taskQueue, nil)
 
 	task, err := enqueuer.EnqueueRescan(context.Background(), Image{Digest: "sha256:abc"})
 	if err == nil {

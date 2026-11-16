@@ -62,7 +62,7 @@ func NewWatcher(
 		regsyncConfig,
 		stateStore,
 		taskQueue,
-		scanenqueue.New(taskQueue),
+		scanenqueue.New(taskQueue, nil),
 		config,
 		logger,
 	)

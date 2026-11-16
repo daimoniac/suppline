@@ -148,7 +148,7 @@ func run() error {
 	logger.Debug("initializing task queue",
 		"buffer_size", cfg.Queue.BufferSize)
 	taskQueue := queue.NewInMemoryQueue(cfg.Queue.BufferSize)
-	scanEnqueuer := scanenqueue.New(taskQueue)
+	scanEnqueuer := scanenqueue.New(taskQueue, store)
 	healthChecker.UpdateComponentHealth("queue", observability.StatusHealthy, "")
 	logger.Debug("task queue initialized")
 
@@ -373,7 +373,13 @@ func run() error {
 		configreload.Run(ctx, logger, cfg.RegsyncPath, configreload.Interval, func(parsed *config.RegsyncConfig) {
 			changed := repositoryPolicies.Replace(parsed)
 			logger.Info("reloaded suppline config", "path", cfg.RegsyncPath, "repositories_changed", len(changed))
-			requeueRepositories(ctx, store, scanEnqueuer, changed, logger)
+			queued, err := scanEnqueuer.RequeueRepositories(ctx, changed)
+			if err != nil {
+				logger.Error("config reload requeue failed", "repositories", len(changed), "queued", queued, "error", err)
+			}
+			if queued > 0 {
+				logger.Info("queued scans after config reload", "images", queued, "repositories", len(changed))
+			}
 		})
 	}()
 
@@ -495,39 +501,6 @@ func downloadVEXRepo(ctx context.Context, logger *slog.Logger) {
 			"stderr", stderr.String())
 	} else {
 		logger.Info("VEX repository downloaded successfully")
-	}
-}
-
-// requeueRepositories scans the current images of repositories whose policy or
-// VEX decision changed, so a config update shows up without a restart.
-func requeueRepositories(ctx context.Context, store statestore.StateStoreQuery, enqueuer *scanenqueue.Enqueuer, repositories []string, logger *slog.Logger) {
-	queued := 0
-	for _, repository := range repositories {
-		scans, err := store.ListScans(ctx, statestore.ScanFilter{Repository: repository, Limit: 1000})
-		if err != nil {
-			logger.Error("config reload list scans failed", "repository", repository, "error", err)
-			continue
-		}
-		seen := map[string]struct{}{}
-		for _, scan := range scans {
-			key := scan.Repository + "@" + scan.Digest
-			if _, ok := seen[key]; ok {
-				continue
-			}
-			seen[key] = struct{}{}
-			if _, err := enqueuer.EnqueueRescan(ctx, scanenqueue.Image{
-				Repository: scan.Repository,
-				Digest:     scan.Digest,
-				Tag:        scan.Tag,
-			}); err != nil {
-				logger.Error("config reload enqueue failed", "repository", scan.Repository, "digest", scan.Digest, "error", err)
-				continue
-			}
-			queued++
-		}
-	}
-	if queued > 0 {
-		logger.Info("queued scans after config reload", "images", queued, "repositories", len(repositories))
 	}
 }
 

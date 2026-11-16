@@ -1146,28 +1146,11 @@ func writeLocalStatement(path string, retention int, repository string, statemen
 }
 
 func (s *Service) reevaluate(ctx context.Context, repository string) {
-	if s.enqueuer == nil || s.scans == nil {
+	if s.enqueuer == nil {
 		return
 	}
-	scans, err := s.scans.ListScans(ctx, statestore.ScanFilter{Repository: repository, Limit: 1000})
-	if err != nil {
-		s.logger.Error("triage reevaluate list failed", "repository", repository, "error", err)
-		return
-	}
-	seen := make(map[string]struct{})
-	for _, scan := range scans {
-		key := scan.Repository + "@" + scan.Digest
-		if _, ok := seen[key]; ok {
-			continue
-		}
-		seen[key] = struct{}{}
-		if _, err := s.enqueuer.EnqueueRescan(ctx, scanenqueue.Image{
-			Repository: scan.Repository,
-			Digest:     scan.Digest,
-			Tag:        scan.Tag,
-		}); err != nil {
-			s.logger.Error("triage reevaluate enqueue failed", "repository", scan.Repository, "digest", scan.Digest, "error", err)
-		}
+	if queued, err := s.enqueuer.RequeueRepositories(ctx, []string{repository}); err != nil {
+		s.logger.Error("triage reevaluate requeue failed", "repository", repository, "queued", queued, "error", err)
 	}
 }
 
