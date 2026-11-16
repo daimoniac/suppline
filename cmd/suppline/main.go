@@ -16,6 +16,7 @@ import (
 	"github.com/daimoniac/suppline/internal/api"
 	"github.com/daimoniac/suppline/internal/attestation"
 	"github.com/daimoniac/suppline/internal/config"
+	"github.com/daimoniac/suppline/internal/configedit"
 	"github.com/daimoniac/suppline/internal/configreload"
 	"github.com/daimoniac/suppline/internal/mirror"
 	"github.com/daimoniac/suppline/internal/observability"
@@ -142,7 +143,7 @@ func run() error {
 	logger.Debug("initializing task queue",
 		"buffer_size", cfg.Queue.BufferSize)
 	taskQueue := queue.NewInMemoryQueue(cfg.Queue.BufferSize)
-	scanEnqueuer := scanenqueue.NewWithCatalog(taskQueue, repositoryPolicies)
+	scanEnqueuer := scanenqueue.New(taskQueue, store)
 	healthChecker.UpdateComponentHealth("queue", observability.StatusHealthy, "")
 	logger.Debug("task queue initialized")
 
@@ -197,7 +198,7 @@ func run() error {
 	logger.Debug("policy engine initialized")
 
 	logger.Debug("initializing registry client")
-	registryClient, err := registry.NewClient(regsyncCfg)
+	registryClient, err := registry.NewClient(regsyncCfg, registry.WithConfigSource(repositoryPolicies.Current))
 	if err != nil {
 		return fmt.Errorf("failed to initialize registry client: %w", err)
 	}
@@ -213,7 +214,7 @@ func run() error {
 			Tagger:    registryClient,
 			Scheduler: scanEnqueuer,
 			RescanInterval: func(repository string) time.Duration {
-				interval, err := regsyncCfg.GetRescanInterval(repository)
+				interval, err := repositoryPolicies.Current().GetRescanInterval(repository)
 				if err != nil {
 					return 0
 				}
@@ -232,7 +233,7 @@ func run() error {
 	}
 	registryWatcher := watcher.NewWatcherWithCatalogAndEnqueuer(
 		registryClient,
-		regsyncCfg,
+		repositoryPolicies.Current,
 		store,
 		taskQueue,
 		scanEnqueuer,
@@ -277,10 +278,15 @@ func run() error {
 		store,
 		workerConfig,
 		logger,
-		regsyncCfg,
+		repositoryPolicies.Current,
 		repositoryPolicies,
 	)
-	triageService, err := triage.New(regsyncCfg.Triage, cfg.RegsyncPath, repositoryPolicies, store, scanEnqueuer, logger)
+	editTarget, err := triage.ConfigTarget(regsyncCfg.Triage, cfg.RegsyncPath)
+	if err != nil {
+		return fmt.Errorf("failed to resolve config edit target: %w", err)
+	}
+	configEditor := configedit.New(editTarget, repositoryPolicies, scanEnqueuer, logger.With("module", "configedit"))
+	triageService, err := triage.New(regsyncCfg.Triage, cfg.RegsyncPath, repositoryPolicies, store, configEditor, logger)
 	if err != nil {
 		return fmt.Errorf("failed to initialize triage: %w", err)
 	}
@@ -320,11 +326,12 @@ func run() error {
 			store,
 			taskQueue,
 			scanEnqueuer,
-			regsyncCfg,
+			repositoryPolicies.Current,
 			repositoryPolicies,
 			logger,
 		)
 		apiServer.SetTriage(triageService)
+		apiServer.SetConfigEditor(configEditor)
 		apiServer.SetVEXAudit(vexAudit)
 		logger.Debug("API server initialized")
 	}
@@ -367,7 +374,13 @@ func run() error {
 		configreload.Run(ctx, logger, cfg.RegsyncPath, configreload.Interval, func(parsed *config.RegsyncConfig) {
 			changed := repositoryPolicies.Replace(parsed)
 			logger.Info("reloaded suppline config", "path", cfg.RegsyncPath, "repositories_changed", len(changed))
-			requeueRepositories(ctx, store, scanEnqueuer, changed, logger)
+			queued, err := scanEnqueuer.RequeueRepositories(ctx, changed)
+			if err != nil {
+				logger.Error("config reload requeue failed", "repositories", len(changed), "queued", queued, "error", err)
+			}
+			if queued > 0 {
+				logger.Info("queued scans after config reload", "images", queued, "repositories", len(changed))
+			}
 		})
 	}()
 
@@ -406,7 +419,8 @@ func run() error {
 			mirrorLog.Info("starting in-process mirror")
 			if err := mirror.Run(ctx, regsyncCfg, logger, mirror.WithReady(func() {
 				healthChecker.UpdateComponentHealth("mirror", observability.StatusHealthy, "")
-			}), mirror.WithRunway(tagRunway)); err != nil && err != context.Canceled {
+			}), mirror.WithRunway(tagRunway),
+				mirror.WithReload(repositoryPolicies.Current, repositoryPolicies.Changed)); err != nil && err != context.Canceled {
 				mirrorLog.Error("mirror error", "error", err.Error())
 				healthChecker.UpdateComponentHealth("mirror", observability.StatusUnhealthy, err.Error())
 			}
@@ -489,39 +503,6 @@ func downloadVEXRepo(ctx context.Context, logger *slog.Logger) {
 			"stderr", stderr.String())
 	} else {
 		logger.Info("VEX repository downloaded successfully")
-	}
-}
-
-// requeueRepositories scans the current images of repositories whose policy or
-// VEX decision changed, so a config update shows up without a restart.
-func requeueRepositories(ctx context.Context, store statestore.StateStoreQuery, enqueuer *scanenqueue.Enqueuer, repositories []string, logger *slog.Logger) {
-	queued := 0
-	for _, repository := range repositories {
-		scans, err := store.ListScans(ctx, statestore.ScanFilter{Repository: repository, Limit: 1000})
-		if err != nil {
-			logger.Error("config reload list scans failed", "repository", repository, "error", err)
-			continue
-		}
-		seen := map[string]struct{}{}
-		for _, scan := range scans {
-			key := scan.Repository + "@" + scan.Digest
-			if _, ok := seen[key]; ok {
-				continue
-			}
-			seen[key] = struct{}{}
-			if _, err := enqueuer.EnqueueRescan(ctx, scanenqueue.Image{
-				Repository: scan.Repository,
-				Digest:     scan.Digest,
-				Tag:        scan.Tag,
-			}); err != nil {
-				logger.Error("config reload enqueue failed", "repository", scan.Repository, "digest", scan.Digest, "error", err)
-				continue
-			}
-			queued++
-		}
-	}
-	if queued > 0 {
-		logger.Info("queued scans after config reload", "images", queued, "repositories", len(repositories))
 	}
 }
 

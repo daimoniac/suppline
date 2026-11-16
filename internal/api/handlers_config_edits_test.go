@@ -11,8 +11,9 @@ import (
 	"testing"
 
 	"github.com/daimoniac/suppline/internal/config"
+	"github.com/daimoniac/suppline/internal/configedit"
 	"github.com/daimoniac/suppline/internal/observability"
-	"github.com/daimoniac/suppline/internal/triage"
+	"github.com/daimoniac/suppline/internal/policy/catalog"
 	"github.com/daimoniac/suppline/internal/types"
 	"gopkg.in/yaml.v3"
 )
@@ -69,11 +70,10 @@ sync:
 		},
 	}
 	server := tasksTestServer(t, &mockStateStore{}, regsync)
-	svc, err := triage.New(nil, path, nil, nil, nil, observability.NewLogger("error"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	server.SetTriage(svc)
+	server.SetConfigEditor(configedit.New(
+		configedit.Target{LocalPath: path, Retention: 10},
+		server.policyCatalog.(*catalog.ConfigCatalog), nil, observability.NewLogger("error"),
+	))
 
 	statusReq := httptest.NewRequest(http.MethodGet, "/api/v1/tasks/config-edits", nil)
 	statusRec := httptest.NewRecorder()
@@ -108,18 +108,18 @@ sync:
 	if semver.Updated != 1 || semver.Mode != "local" {
 		t.Fatalf("semver = %+v", semver)
 	}
-	if len(regsync.Sync[0].Tags.SemverRange) != 1 || regsync.Sync[0].Tags.SemverRange[0] != ">=1.27.0" {
-		t.Fatalf("memory ranges = %+v", regsync.Sync[0].Tags.SemverRange)
+	if running := server.runningConfig(); len(running.Sync[0].Tags.SemverRange) != 1 || running.Sync[0].Tags.SemverRange[0] != ">=1.27.0" {
+		t.Fatalf("memory ranges = %+v", running.Sync[0].Tags.SemverRange)
 	}
 
 	removed := apply("/api/v1/tasks/sync-removals", `{"targets":["registry.example.com/legacy"]}`)
-	if removed.Updated != 1 || len(regsync.Sync) != 1 || regsync.Sync[0].Target != "registry.example.com/nginx" {
-		t.Fatalf("removed %+v sync %+v", removed, regsync.Sync)
+	if running := server.runningConfig(); removed.Updated != 1 || len(running.Sync) != 1 || running.Sync[0].Target != "registry.example.com/nginx" {
+		t.Fatalf("removed %+v sync %+v", removed, running.Sync)
 	}
 
 	vex := apply("/api/v1/tasks/vex-removals", `{"ids":["CVE-OLD"]}`)
-	if vex.Updated != 1 || len(regsync.Defaults.VEX) != 0 {
-		t.Fatalf("vex %+v defaults %+v", vex, regsync.Defaults.VEX)
+	if running := server.runningConfig(); vex.Updated != 1 || len(running.Defaults.VEX) != 0 {
+		t.Fatalf("vex %+v defaults %+v", vex, running.Defaults.VEX)
 	}
 
 	body, err := os.ReadFile(path)

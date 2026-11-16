@@ -263,7 +263,7 @@ func TestNewAPIServer(t *testing.T) {
 		t.Error("Expected task queue to be set")
 	}
 
-	if server.regsyncConfig != regsyncConfig {
+	if server.runningConfig() != regsyncConfig {
 		t.Error("Expected regsync config to be set")
 	}
 

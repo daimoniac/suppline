@@ -7,7 +7,6 @@ import (
 
 	"github.com/daimoniac/suppline/internal/errors"
 	"github.com/daimoniac/suppline/internal/observability"
-	"github.com/daimoniac/suppline/internal/types"
 )
 
 // TaskQueue manages a queue of scan tasks for container images
@@ -47,19 +46,15 @@ const (
 
 // ScanTask represents a container image scanning task
 type ScanTask struct {
-	ID            string
-	Repository    string
-	Digest        string
-	Tag           string
-	EnqueuedAt    time.Time
-	Attempts      int
-	IsRescan      bool
-	IsFirstScan   bool // True when image has never been scanned before
-	Priority      TaskPriority
-	VEXStatements []types.VEXStatement // CycloneDX VEX statements from config
-	// UseVEXRepo, when true, passes --vex repo to Trivy during vulnerability scanning
-	// to apply the Aqua VEX Hub and suppress not_affected CVEs before policy evaluation.
-	UseVEXRepo bool
+	ID          string
+	Repository  string
+	Digest      string
+	Tag         string
+	EnqueuedAt  time.Time
+	Attempts    int
+	IsRescan    bool
+	IsFirstScan bool // True when image has never been scanned before
+	Priority    TaskPriority
 }
 
 // InMemoryQueue implements TaskQueue using priority queues

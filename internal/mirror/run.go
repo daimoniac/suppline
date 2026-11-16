@@ -40,6 +40,8 @@ func WithRunway(r Runway) Option {
 
 type runner struct {
 	cfg        *config.RegsyncConfig
+	current    config.Source
+	changed    func() <-chan struct{}
 	log        *slog.Logger
 	rc         *regclient.RegClient
 	throttle   *gate
@@ -50,8 +52,22 @@ type runner struct {
 	manifests  map[string]manifest.Manifest
 }
 
+// WithReload follows the running configuration. When a newly published
+// snapshot changes what the mirror copies (sync entries, credentials or
+// mirror defaults), the current schedule stops and a new one starts from the
+// snapshot, beginning with a pass over missing tags. Snapshots that only
+// change scan settings such as VEX or policy leave the schedule running.
+func WithReload(current config.Source, changed func() <-chan struct{}) Option {
+	return func(m *runner) {
+		m.current = current
+		m.changed = changed
+	}
+}
+
 // Run copies configured images until ctx is cancelled.
-// A failure to build the registry client is returned. Sync failures are logged.
+// A failure to build the registry client for the first schedule is returned;
+// later failures are logged and the mirror waits for the next configuration.
+// Sync failures are logged.
 func Run(ctx context.Context, cfg *config.RegsyncConfig, logger *slog.Logger, opts ...Option) error {
 	if cfg == nil {
 		return errors.New("mirror config is nil")
@@ -60,19 +76,88 @@ func Run(ctx context.Context, cfg *config.RegsyncConfig, logger *slog.Logger, op
 		logger = slog.Default()
 	}
 	logger = logger.With("module", "regsync")
-	parallel := cfg.Defaults.Parallel
-	if parallel < 1 {
-		parallel = 1
-	}
 	m := &runner{
-		cfg:       cfg,
 		log:       logger,
-		throttle:  newGate(parallel),
 		manifests: map[string]manifest.Manifest{},
 	}
 	for _, opt := range opts {
 		opt(m)
 	}
+
+	for generation := 0; ; generation++ {
+		var changed <-chan struct{}
+		if m.changed != nil {
+			changed = m.changed()
+			if next := m.current(); next != nil {
+				cfg = next
+			}
+		}
+		genCtx, cancel := context.WithCancel(ctx)
+		done := make(chan error, 1)
+		go func(cfg *config.RegsyncConfig) { done <- m.runSchedule(genCtx, cfg) }(cfg)
+
+		restarted, err := m.waitForChange(ctx, cfg, changed, done)
+		cancel()
+		if restarted {
+			err = <-done
+		}
+		if err != nil {
+			if generation == 0 {
+				return err
+			}
+			logger.Error("mirror schedule failed; waiting for the next configuration", "error", err.Error())
+			if !waitForNext(ctx, m.changed) {
+				return nil
+			}
+			continue
+		}
+		if ctx.Err() != nil {
+			return nil
+		}
+		logger.Info("mirror settings changed, restarting schedule")
+	}
+}
+
+// waitForChange blocks until the schedule ends or a published snapshot changes
+// mirror settings. restarted reports the latter; the schedule is still running.
+func (m *runner) waitForChange(ctx context.Context, cfg *config.RegsyncConfig, changed <-chan struct{}, done <-chan error) (bool, error) {
+	for {
+		select {
+		case err := <-done:
+			return false, err
+		case <-changed:
+			changed = m.changed()
+			if next := m.current(); next != nil && mirrorSettingsChanged(cfg, next) {
+				return true, nil
+			}
+		case <-ctx.Done():
+			return false, <-done
+		}
+	}
+}
+
+func waitForNext(ctx context.Context, changed func() <-chan struct{}) bool {
+	if changed == nil {
+		<-ctx.Done()
+		return false
+	}
+	select {
+	case <-changed():
+		return true
+	case <-ctx.Done():
+		return false
+	}
+}
+
+// runSchedule runs one mirror schedule over cfg until ctx is cancelled.
+func (m *runner) runSchedule(ctx context.Context, cfg *config.RegsyncConfig) error {
+	logger := m.log
+	parallel := cfg.Defaults.Parallel
+	if parallel < 1 {
+		parallel = 1
+	}
+	m.cfg = cfg
+	m.throttle = newGate(parallel)
 	rc, err := newClient(cfg, logger)
 	if err != nil {
 		return err
@@ -80,6 +165,7 @@ func Run(ctx context.Context, cfg *config.RegsyncConfig, logger *slog.Logger, op
 	m.rc = rc
 	if m.ready != nil {
 		m.ready()
+		m.ready = nil
 	}
 
 	var wg sync.WaitGroup

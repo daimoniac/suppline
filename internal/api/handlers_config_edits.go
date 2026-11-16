@@ -4,10 +4,10 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
-	"fmt"
 	"net/http"
 	"strings"
 
+	"github.com/daimoniac/suppline/internal/configedit"
 	"github.com/daimoniac/suppline/internal/gitops"
 	"github.com/daimoniac/suppline/internal/policy/catalog"
 	"github.com/daimoniac/suppline/internal/statestore"
@@ -66,17 +66,17 @@ func (s *APIServer) configEditStatus() ConfigEditStatus {
 	if s.config != nil && s.config.ReadOnly {
 		return ConfigEditStatus{Mode: "unavailable", Detail: "API is in read-only mode."}
 	}
-	if s.triageService == nil {
+	if s.configEditor == nil {
 		return ConfigEditStatus{Mode: "unavailable", Detail: "Config editing is unavailable."}
 	}
-	mode, err := s.triageService.ConfigWriteMode()
+	mode, err := s.configEditor.Mode()
 	if err != nil {
 		return ConfigEditStatus{Mode: "unavailable", Detail: err.Error()}
 	}
 	switch mode {
-	case "git":
+	case configedit.ModeGit:
 		return ConfigEditStatus{Available: true, Mode: mode, Detail: "Changes are committed to the configured config repository."}
-	case "local":
+	case configedit.ModeLocal:
 		return ConfigEditStatus{Available: true, Mode: mode, Detail: "Changes are written to the local suppline config file."}
 	default:
 		return ConfigEditStatus{Mode: "unavailable", Detail: "Config editing is unavailable."}
@@ -204,40 +204,37 @@ func (s *APIServer) applyConfigEdit(
 	applyMemory func(*catalog.ConfigCatalog) (int, error),
 	after func(),
 ) {
-	if s.triageService == nil {
-		s.respondError(w, http.StatusConflict, "Config editing is unavailable.")
-		return
-	}
-	mode, err := s.triageService.ConfigWriteMode()
-	if err != nil {
+	if _, err := s.configEditor.Mode(); err != nil {
 		s.respondError(w, http.StatusConflict, err.Error())
 		return
 	}
-	cat, ok := s.policyCatalog.(*catalog.ConfigCatalog)
-	if !ok || cat == nil {
-		s.respondError(w, http.StatusConflict, "Running configuration cannot be updated.")
+	updated := 0
+	result, err := s.configEditor.Apply(r.Context(), configedit.Change{
+		Message: message,
+		File: func(current []byte) ([]byte, error) {
+			next, n, editErr := mutate(current)
+			updated = n
+			return next, editErr
+		},
+		Running: func(running *catalog.ConfigCatalog) error {
+			_, err := applyMemory(running)
+			return err
+		},
+	})
+	var refresh *configedit.RefreshError
+	if errors.As(err, &refresh) {
+		s.respondError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
-	updated := 0
-	commit, err := s.triageService.CommitConfig(r.Context(), message, func(current []byte) ([]byte, error) {
-		next, n, editErr := mutate(current)
-		updated = n
-		return next, editErr
-	})
 	if err != nil {
 		s.respondError(w, editStatus(err), err.Error())
-		return
-	}
-	if _, err := applyMemory(cat); err != nil {
-		s.logger.Error("config was written but the running configuration was not refreshed", "error", err)
-		s.respondError(w, http.StatusInternalServerError, fmt.Sprintf("config was written but the running configuration could not be refreshed: %v", err))
 		return
 	}
 	if after != nil {
 		after()
 	}
-	s.logger.Info("applied config edit", "mode", mode, "updated", updated, "commit", commit)
-	s.respondJSON(w, http.StatusOK, ConfigEditResult{Mode: mode, Commit: commit, Updated: updated})
+	s.logger.Info("applied config edit", "mode", result.Mode, "updated", updated, "commit", result.Commit, "requeued", result.Requeued)
+	s.respondJSON(w, http.StatusOK, ConfigEditResult{Mode: result.Mode, Commit: result.Commit, Updated: updated})
 }
 
 func (s *APIServer) cleanupRemovedRepositories(ctx context.Context, repositories []string) {

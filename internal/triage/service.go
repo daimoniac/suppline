@@ -12,10 +12,10 @@ import (
 	"time"
 
 	"github.com/daimoniac/suppline/internal/config"
+	"github.com/daimoniac/suppline/internal/configedit"
 	"github.com/daimoniac/suppline/internal/gitops"
 	"github.com/daimoniac/suppline/internal/observability"
 	"github.com/daimoniac/suppline/internal/policy/catalog"
-	"github.com/daimoniac/suppline/internal/scanenqueue"
 	"github.com/daimoniac/suppline/internal/statestore"
 	"github.com/daimoniac/suppline/internal/triage/yamledit"
 	"github.com/daimoniac/suppline/internal/types"
@@ -33,7 +33,7 @@ type Service struct {
 	clusters clusterQuerier
 	images   imageLabeler
 	unpack   imageUnpacker
-	enqueuer *scanenqueue.Enqueuer
+	editor   *configedit.Editor
 	logger   *slog.Logger
 	llm      completer
 	git      *gitops.Manager
@@ -74,7 +74,9 @@ type imageAccess interface {
 }
 
 // New builds a triage service. A missing API key disables the feature.
-func New(cfg *config.TriageConfig, configPath string, cat *catalog.ConfigCatalog, store statestore.StateStoreQuery, enqueuer *scanenqueue.Enqueuer, logger *slog.Logger) (*Service, error) {
+// editor writes accepted statements; when nil, New builds one for the file or
+// config repository the settings name, without requeueing.
+func New(cfg *config.TriageConfig, configPath string, cat *catalog.ConfigCatalog, store statestore.StateStoreQuery, editor *configedit.Editor, logger *slog.Logger) (*Service, error) {
 	if logger == nil {
 		logger = slog.Default()
 	}
@@ -101,6 +103,13 @@ func New(cfg *config.TriageConfig, configPath string, cat *catalog.ConfigCatalog
 	if lookup, ok := store.(clusterRuntimeStore); ok {
 		clusters = runtimeTool{store: lookup}
 	}
+	if editor == nil {
+		editor = configedit.New(settings.ConfigTarget(), cat, nil, logger)
+	}
+	git := editor.GitManager()
+	if git == nil {
+		git = &gitops.Manager{Base: settings.CheckoutDir}
+	}
 	svc := &Service{
 		settings: settings,
 		catalog:  cat,
@@ -108,14 +117,14 @@ func New(cfg *config.TriageConfig, configPath string, cat *catalog.ConfigCatalog
 		scans:    store,
 		runtime:  runtime,
 		clusters: clusters,
-		enqueuer: enqueuer,
+		editor:   editor,
 		logger:   logger,
 		llm: &Client{
 			BaseURL: settings.BaseURL,
 			Model:   settings.Model,
 			APIKey:  settings.APIKey,
 		},
-		git:     &gitops.Manager{Base: settings.CheckoutDir},
+		git:     git,
 		kev:     &KEVCache{URL: settings.KEVFeedURL, TTL: settings.KEVCacheTTL},
 		now:     func() time.Time { return time.Now().UTC() },
 		jobs:    make(chan Job, 256),
@@ -135,11 +144,11 @@ func (s *Service) ValidateStartup() error {
 		return fmt.Errorf("triage context repositories: %w", err)
 	}
 	if s.settings.ConfigRepo != nil {
-		if _, err := s.settings.configSpec(); err != nil {
+		if _, err := s.editor.Mode(); err != nil {
 			return fmt.Errorf("triage config repository: %w", err)
 		}
 	} else if s.settings.Mode == config.TriageModeEnforce {
-		if err := Writable(s.settings.ConfigPath); err != nil {
+		if _, err := s.editor.Mode(); err != nil {
 			return fmt.Errorf("triage enforce mode writes suppline.yml locally: %w", err)
 		}
 	}
@@ -720,7 +729,14 @@ func (s *Service) executeSession(ctx context.Context, jobs []Job, checkouts []gi
 	jobRoots.Checkouts = append([]CheckoutRoot(nil), roots.Checkouts...)
 	jobRoots.Image = newImageFS(s.unpack, runnable[0].Repository, runnable[0].Digest)
 	pub := newPublicSource()
-	upstream := &publicCheckouts{base: s.settings.CheckoutDir, pub: pub}
+	tools := &toolbox{
+		roots:     &jobRoots,
+		runtime:   s.clusters,
+		pub:       pub,
+		upstream:  &publicCheckouts{base: s.settings.CheckoutDir, pub: pub},
+		images:    s.images,
+		manifests: ociManifests{},
+	}
 	existing := map[string]*types.VEXStatement{}
 	if s.catalog != nil {
 		for _, statement := range s.catalog.AutoVEX(runnable[0].Repository) {
@@ -733,7 +749,9 @@ func (s *Service) executeSession(ctx context.Context, jobs []Job, checkouts []gi
 			}
 		}
 	}
-	result := runSession(ctx, s.llm, &jobRoots, s.clusters, pub, upstream, s.images, ociManifests{}, allowedNames(s.settings), s.settings.Prompt, s.settings.MinConfidence, runnable, names, existing, s.settings.MaxSteps, func() bool {
+
+	// Run: one conversation gathers context, then asks for a verdict per CVE.
+	result := runSession(ctx, s.llm, tools, allowedNames(s.settings), s.settings.Prompt, s.settings.MinConfidence, runnable, names, existing, s.settings.MaxSteps, func() bool {
 		return !s.overBudget(ctx)
 	}, sessionHooks{
 		onContext: func() {},
@@ -748,14 +766,34 @@ func (s *Service) executeSession(ctx context.Context, jobs []Job, checkouts []gi
 		s.logger.Error("triage session failed", "repository", runnable[0].Repository, "error", result.Err)
 		return
 	}
-	shares := splitContextTokens(result.ContextTokens, result.Turns)
-	type pendingWrite struct {
-		turn     sessionTurn
-		decision verdictDecision
-		tokens   int
+
+	// Judge: every verdict passes the guard; rejected and failed turns are recorded here.
+	writing := s.judgeTurns(ctx, tools, result, existing, checkouts, sessionID, shas)
+
+	// Write: accepted statements become one config edit.
+	s.writeVerdicts(ctx, runnable[0].Repository, writing, sessionID, shas)
+}
+
+// pendingWrite is a verdict the guard accepted, waiting to be written.
+type pendingWrite struct {
+	turn     sessionTurn
+	decision verdictDecision
+	tokens   int
+}
+
+func (s *Service) guard() guard {
+	g := guard{settings: s.settings, now: s.now}
+	if s.kev != nil {
+		g.kev = s.kev
 	}
+	return g
+}
+
+// judgeTurns records failed and rejected turns and returns the accepted ones.
+func (s *Service) judgeTurns(ctx context.Context, tools *toolbox, result sessionResult, existing map[string]*types.VEXStatement, checkouts []gitops.Checkout, sessionID, shas string) []pendingWrite {
+	g := s.guard()
+	shares := splitContextTokens(result.ContextTokens, result.Turns)
 	var writing []pendingWrite
-	var rejected []pendingWrite
 	for i, turn := range result.Turns {
 		tokens := turn.Tokens + shares[i]
 		if turn.Err != nil {
@@ -763,26 +801,19 @@ func (s *Service) executeSession(ctx context.Context, jobs []Job, checkouts []gi
 			s.logger.Error("triage cve failed", "repository", turn.Job.Repository, "cve", turn.Job.CVEID, "error", turn.Err)
 			continue
 		}
-		evidenceErr := ""
-		if err := verifyEvidence(jobRoots, pub, turn.Job, &turn.Verdict); err != nil {
-			evidenceErr = err.Error()
-		}
-		var kevHit bool
-		var kevErr error
-		if s.settings.BlockKEV && s.kev != nil {
-			kevHit, kevErr = s.kev.Contains(ctx, turn.Job.CVEID)
-		}
-		decision := decide(s.settings, turn.Job, turn.Verdict, evidenceErr, kevHit, kevErr, existing[turn.Job.CVEID], checkouts, sessionID, s.now())
-		row := pendingWrite{turn: turn, decision: decision, tokens: tokens}
+		decision := g.judge(ctx, tools, turn.Job, &turn.Verdict, existing[turn.Job.CVEID], checkouts, sessionID)
 		if decision.Action == outcomeNotAffected || decision.Action == outcomeAffected {
-			writing = append(writing, row)
+			writing = append(writing, pendingWrite{turn: turn, decision: decision, tokens: tokens})
 			continue
 		}
-		rejected = append(rejected, row)
+		s.record(ctx, turn.Job, turn.Verdict, tokens, StatusRejected, sessionID, "", shas, decision.Reason)
 	}
-	for _, row := range rejected {
-		s.record(ctx, row.turn.Job, row.turn.Verdict, row.tokens, StatusRejected, sessionID, "", shas, row.decision.Reason)
-	}
+	return writing
+}
+
+// writeVerdicts records accepted verdicts as dry-run, or writes them as one
+// config edit and records the outcome.
+func (s *Service) writeVerdicts(ctx context.Context, repository string, writing []pendingWrite, sessionID, shas string) {
 	if len(writing) == 0 {
 		return
 	}
@@ -798,8 +829,7 @@ func (s *Service) executeSession(ctx context.Context, jobs []Job, checkouts []gi
 		statements = append(statements, row.decision.Statement)
 		lines = append(lines, fmt.Sprintf("%s %s", row.turn.Job.CVEID, row.decision.Statement.State))
 	}
-	message := autoCommitMessage(runnable[0].Repository, lines)
-	commit, err := s.apply(ctx, runnable[0].Repository, statements, message)
+	commit, err := s.apply(ctx, repository, statements, autoCommitMessage(repository, lines))
 	if err != nil {
 		status := StatusError
 		var pushErr *gitops.PushError
@@ -810,19 +840,9 @@ func (s *Service) executeSession(ctx context.Context, jobs []Job, checkouts []gi
 		for _, row := range writing {
 			s.record(ctx, row.turn.Job, row.turn.Verdict, row.tokens, status, sessionID, "", shas, err.Error())
 		}
-		s.logger.Error("triage apply failed", "repository", runnable[0].Repository, "error", err)
+		s.logger.Error("triage apply failed", "repository", repository, "error", err)
 		return
 	}
-	if s.catalog != nil {
-		next := s.catalog.AutoVEX(runnable[0].Repository)
-		for _, statement := range statements {
-			next = upsertStatement(next, statement)
-		}
-		if err := s.catalog.ReplaceAutoVEX(runnable[0].Repository, next); err != nil {
-			s.logger.Error("triage hot-swap failed", "repository", runnable[0].Repository, "error", err)
-		}
-	}
-	s.reevaluate(ctx, runnable[0].Repository)
 	status := StatusWritten
 	if s.settings.ConfigRepo != nil {
 		status = StatusCommitted
@@ -1007,28 +1027,31 @@ func (s *Service) applyStatements(ctx context.Context, repository string, statem
 	if len(statements) == 0 {
 		return "", nil
 	}
-	if s.settings.ConfigRepo != nil {
-		spec, err := s.settings.configSpec()
-		if err != nil {
-			return "", err
-		}
-		return s.git.CommitFile(ctx, spec, s.settings.ConfigRepo.Path, func(current []byte) ([]byte, error) {
+	result, err := s.editor.Apply(ctx, configedit.Change{
+		Message: message,
+		File: func(current []byte) ([]byte, error) {
 			return yamledit.UpsertMany(current, repository, statements)
-		}, message)
-	}
-	return "", writeLocalStatements(s.settings.ConfigPath, s.settings.BackupRetention, repository, statements)
+		},
+		Running: func(running *catalog.ConfigCatalog) error {
+			next := running.AutoVEX(repository)
+			for _, statement := range statements {
+				next = upsertStatement(next, statement)
+			}
+			return running.ReplaceAutoVEX(repository, next)
+		},
+	})
+	return result.Commit, s.writtenUnlessRefreshFailed(repository, err)
 }
 
-func writeLocalStatements(path string, retention int, repository string, statements []types.VEXStatement) error {
-	current, err := readFile(path)
-	if err != nil {
-		return err
+// writtenUnlessRefreshFailed keeps a written statement a success when only the
+// running configuration could not follow; the next reload applies it.
+func (s *Service) writtenUnlessRefreshFailed(repository string, err error) error {
+	var refresh *configedit.RefreshError
+	if errors.As(err, &refresh) {
+		s.logger.Error("triage hot-swap failed", "repository", repository, "error", refresh.Err)
+		return nil
 	}
-	updated, err := yamledit.UpsertMany(current, repository, statements)
-	if err != nil {
-		return err
-	}
-	return WriteLocal(path, retention, updated)
+	return err
 }
 
 // PromoteManual writes a hand-written x-vex statement and makes it effective
@@ -1052,123 +1075,16 @@ func (s *Service) PromoteManual(ctx context.Context, repository string, statemen
 		return "", err
 	}
 	message := fmt.Sprintf("chore(vex): accept %s for %s\n\nhuman override of triage", statement.ID, repository)
-	commit, err := s.writeStatement(ctx, repository, statement, message, yamledit.UpsertManual)
-	if err != nil {
-		return "", err
-	}
-	if s.catalog != nil {
-		if err := s.catalog.UpsertManualVEX(repository, statement); err != nil {
-			return commit, err
-		}
-	}
-	s.reevaluate(ctx, repository)
-	return commit, nil
-}
-
-// ConfigWriteMode reports where housekeeping edits are written.
-// "git" commits the configured config repository. "local" updates the file
-// suppline was started with.
-func (s *Service) ConfigWriteMode() (string, error) {
-	if s == nil {
-		return "", fmt.Errorf("config editing is unavailable")
-	}
-	if s.settings.ConfigRepo != nil {
-		return "git", nil
-	}
-	if strings.TrimSpace(s.settings.ConfigPath) == "" {
-		return "", fmt.Errorf("suppline config path is not set")
-	}
-	if err := Writable(s.settings.ConfigPath); err != nil {
-		return "", err
-	}
-	return "local", nil
-}
-
-// CommitConfig applies mutate to suppline.yaml and either pushes a commit or
-// writes the local file. An unchanged document is not written.
-func (s *Service) CommitConfig(ctx context.Context, message string, mutate func([]byte) ([]byte, error)) (string, error) {
-	if s == nil {
-		return "", fmt.Errorf("config editing is unavailable")
-	}
-	if strings.TrimSpace(message) == "" {
-		return "", fmt.Errorf("commit message is required")
-	}
-	if s.settings.ConfigRepo != nil {
-		spec, err := s.settings.configSpec()
-		if err != nil {
-			return "", err
-		}
-		return s.git.CommitFile(ctx, spec, s.settings.ConfigRepo.Path, mutate, message)
-	}
-	if strings.TrimSpace(s.settings.ConfigPath) == "" {
-		return "", fmt.Errorf("suppline config path is not set")
-	}
-	current, err := readFile(s.settings.ConfigPath)
-	if err != nil {
-		return "", err
-	}
-	updated, err := mutate(current)
-	if err != nil {
-		return "", err
-	}
-	if string(updated) == string(current) {
-		return "", nil
-	}
-	if err := WriteLocal(s.settings.ConfigPath, s.settings.BackupRetention, updated); err != nil {
-		return "", err
-	}
-	return "", nil
-}
-
-func (s *Service) writeStatement(ctx context.Context, repository string, statement types.VEXStatement, message string, edit func([]byte, string, types.VEXStatement) ([]byte, error)) (string, error) {
-	if s.settings.ConfigRepo != nil {
-		spec, err := s.settings.configSpec()
-		if err != nil {
-			return "", err
-		}
-		return s.git.CommitFile(ctx, spec, s.settings.ConfigRepo.Path, func(current []byte) ([]byte, error) {
-			return edit(current, repository, statement)
-		}, message)
-	}
-	return "", writeLocalStatement(s.settings.ConfigPath, s.settings.BackupRetention, repository, statement, edit)
-}
-
-func writeLocalStatement(path string, retention int, repository string, statement types.VEXStatement, edit func([]byte, string, types.VEXStatement) ([]byte, error)) error {
-	current, err := readFile(path)
-	if err != nil {
-		return err
-	}
-	updated, err := edit(current, repository, statement)
-	if err != nil {
-		return err
-	}
-	return WriteLocal(path, retention, updated)
-}
-
-func (s *Service) reevaluate(ctx context.Context, repository string) {
-	if s.enqueuer == nil || s.scans == nil {
-		return
-	}
-	scans, err := s.scans.ListScans(ctx, statestore.ScanFilter{Repository: repository, Limit: 1000})
-	if err != nil {
-		s.logger.Error("triage reevaluate list failed", "repository", repository, "error", err)
-		return
-	}
-	seen := make(map[string]struct{})
-	for _, scan := range scans {
-		key := scan.Repository + "@" + scan.Digest
-		if _, ok := seen[key]; ok {
-			continue
-		}
-		seen[key] = struct{}{}
-		if _, err := s.enqueuer.EnqueueRescan(ctx, scanenqueue.Image{
-			Repository: scan.Repository,
-			Digest:     scan.Digest,
-			Tag:        scan.Tag,
-		}); err != nil {
-			s.logger.Error("triage reevaluate enqueue failed", "repository", scan.Repository, "digest", scan.Digest, "error", err)
-		}
-	}
+	result, err := s.editor.Apply(ctx, configedit.Change{
+		Message: message,
+		File: func(current []byte) ([]byte, error) {
+			return yamledit.UpsertManual(current, repository, statement)
+		},
+		Running: func(running *catalog.ConfigCatalog) error {
+			return running.UpsertManualVEX(repository, statement)
+		},
+	})
+	return result.Commit, err
 }
 
 func (s *Service) repositoryInUse(ctx context.Context, repository string) (bool, error) {

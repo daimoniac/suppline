@@ -70,7 +70,7 @@ type ImageWorker struct {
 	config          Config
 	logger          *slog.Logger
 	wg              sync.WaitGroup
-	regsyncCfg      *config.RegsyncConfig
+	currentConfig   config.Source
 	policyCatalog   catalog.Catalog
 	scaiGenerator   *attestation.SCAIGenerator
 	pipeline        *Pipeline
@@ -111,9 +111,14 @@ func NewImageWorker(
 	logger *slog.Logger,
 	regsyncCfg *config.RegsyncConfig,
 ) *ImageWorker {
+	running := catalog.NewConfigCatalog(regsyncCfg)
+	currentConfig := running.Current
+	if regsyncCfg == nil {
+		currentConfig = nil
+	}
 	return NewImageWorkerWithCatalog(
 		queue, scanner, policy, attestor, registry, stateStore, config, logger,
-		regsyncCfg, catalog.NewConfigCatalog(regsyncCfg),
+		currentConfig, running,
 	)
 }
 
@@ -127,7 +132,7 @@ func NewImageWorkerWithCatalog(
 	stateStore statestore.StateStore,
 	config Config,
 	logger *slog.Logger,
-	regsyncCfg *config.RegsyncConfig,
+	currentConfig config.Source,
 	policyCatalog catalog.Catalog,
 ) *ImageWorker {
 	if logger == nil {
@@ -135,8 +140,8 @@ func NewImageWorkerWithCatalog(
 	}
 
 	var scaiGenerator *attestation.SCAIGenerator
-	if regsyncCfg != nil {
-		scaiGenerator = attestation.NewSCAIGeneratorWithCatalog(regsyncCfg, policyCatalog, logger)
+	if currentConfig != nil {
+		scaiGenerator = attestation.NewSCAIGeneratorWithCatalog(currentConfig, policyCatalog, logger)
 	}
 
 	worker := &ImageWorker{
@@ -148,7 +153,7 @@ func NewImageWorkerWithCatalog(
 		stateStore:    stateStore,
 		config:        config,
 		logger:        logger,
-		regsyncCfg:    regsyncCfg,
+		currentConfig: currentConfig,
 		policyCatalog: policyCatalog,
 		scaiGenerator: scaiGenerator,
 	}
@@ -370,4 +375,12 @@ func (w *ImageWorker) ProcessTask(ctx context.Context, task *queue.ScanTask) err
 
 	// All retries exhausted - return as permanent error
 	return errors.NewPermanentf("max retries exceeded: %w", lastErr)
+}
+
+// runningConfig returns the configuration snapshot for one decision, or nil.
+func (w *ImageWorker) runningConfig() *config.RegsyncConfig {
+	if w.currentConfig == nil {
+		return nil
+	}
+	return w.currentConfig()
 }

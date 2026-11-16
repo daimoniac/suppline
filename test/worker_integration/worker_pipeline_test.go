@@ -8,10 +8,13 @@ import (
 	"time"
 
 	"github.com/daimoniac/suppline/internal/attestation"
+	"github.com/daimoniac/suppline/internal/config"
 	supplineErrors "github.com/daimoniac/suppline/internal/errors"
 	"github.com/daimoniac/suppline/internal/policy"
+	"github.com/daimoniac/suppline/internal/policy/catalog"
 	"github.com/daimoniac/suppline/internal/queue"
 	"github.com/daimoniac/suppline/internal/registry"
+	"github.com/daimoniac/suppline/internal/scanenqueue"
 	"github.com/daimoniac/suppline/internal/scanner"
 	"github.com/daimoniac/suppline/internal/statestore"
 	"github.com/daimoniac/suppline/internal/types"
@@ -952,5 +955,81 @@ func TestPipeline_CleansDigestWhenNoLiveTagsRemain(t *testing.T) {
 	}
 	if task.Tag == "" {
 		t.Fatal("task tag must not be rewritten to empty string")
+	}
+}
+
+// recordingScanner and recordingPolicy capture the evidence a scan ran with.
+type recordingScanner struct {
+	mockScanner
+	useVEXRepo []bool
+}
+
+func (m *recordingScanner) ScanVulnerabilities(ctx context.Context, imageRef string, useVEXRepo bool) (*scanner.ScanResult, error) {
+	m.useVEXRepo = append(m.useVEXRepo, useVEXRepo)
+	return m.mockScanner.ScanVulnerabilities(ctx, imageRef, useVEXRepo)
+}
+
+type recordingPolicy struct {
+	statements [][]types.VEXStatement
+}
+
+func (m *recordingPolicy) Evaluate(ctx context.Context, imageRef string, scanResult *scanner.ScanResult, vexStatements []types.VEXStatement) (*policy.PolicyDecision, error) {
+	m.statements = append(m.statements, vexStatements)
+	return &policy.PolicyDecision{Passed: true, Reason: "recorded"}, nil
+}
+
+// A rescan requested while one is already pending is absorbed by the queue.
+// The pending task must still scan with the evidence in force when it runs,
+// or a triage decision waits for the next rescan interval.
+func TestPipeline_PendingTaskScansWithEvidenceAtRunTime(t *testing.T) {
+	ctx := context.Background()
+	taskQueue := queue.NewInMemoryQueue(10)
+	defer taskQueue.Close()
+
+	repo := "test/repo"
+	before := &config.RegsyncConfig{Sync: []config.SyncEntry{{Source: "src/repo", Target: repo, Type: "repository"}}}
+	policyCatalog := catalog.NewConfigCatalog(before)
+	enqueuer := scanenqueue.New(taskQueue, nil)
+	image := scanenqueue.Image{Repository: repo, Digest: "sha256:abc123", Tag: "latest"}
+
+	if _, err := enqueuer.EnqueueRescan(ctx, image); err != nil {
+		t.Fatalf("first EnqueueRescan() error = %v", err)
+	}
+
+	vexRepo := true
+	after := &config.RegsyncConfig{Sync: []config.SyncEntry{{
+		Source:  "src/repo",
+		Target:  repo,
+		Type:    "repository",
+		VEXRepo: &vexRepo,
+		VEX:     []types.VEXStatement{{ID: "CVE-2026-0001", State: types.VEXStateNotAffected, Justification: "code_not_reachable"}},
+	}}}
+	if changed := policyCatalog.Replace(after); len(changed) != 1 {
+		t.Fatalf("Replace() changed = %v, want [%s]", changed, repo)
+	}
+	if _, err := enqueuer.EnqueueRescan(ctx, image); err != nil {
+		t.Fatalf("second EnqueueRescan() error = %v", err)
+	}
+	if depth, _ := taskQueue.GetQueueDepth(ctx); depth != 1 {
+		t.Fatalf("queue depth = %d, want the second request absorbed into 1", depth)
+	}
+
+	scan := &recordingScanner{}
+	pol := &recordingPolicy{}
+	w := worker.NewImageWorkerWithCatalog(taskQueue, scan, pol, &mockAttestor{}, &mockRegistry{}, newMockStateStore(), worker.DefaultConfig(), slog.Default(), nil, policyCatalog)
+
+	task, err := taskQueue.Dequeue(ctx)
+	if err != nil {
+		t.Fatalf("Dequeue() error = %v", err)
+	}
+	if err := w.ProcessTask(ctx, task); err != nil {
+		t.Fatalf("ProcessTask() error = %v", err)
+	}
+
+	if len(pol.statements) != 1 || len(pol.statements[0]) != 1 || pol.statements[0][0].ID != "CVE-2026-0001" {
+		t.Errorf("policy evaluated with %+v, want the statement written after enqueue", pol.statements)
+	}
+	if len(scan.useVEXRepo) != 1 || !scan.useVEXRepo[0] {
+		t.Errorf("scanner useVEXRepo = %v, want [true]", scan.useVEXRepo)
 	}
 }

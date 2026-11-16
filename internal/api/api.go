@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/daimoniac/suppline/internal/config"
+	"github.com/daimoniac/suppline/internal/configedit"
 	"github.com/daimoniac/suppline/internal/policy/catalog"
 	"github.com/daimoniac/suppline/internal/queue"
 	"github.com/daimoniac/suppline/internal/scanenqueue"
@@ -52,9 +53,10 @@ type APIServer struct {
 	clusterInventory  statestore.ClusterInventoryStore
 	taskQueue         queue.TaskQueue
 	scanEnqueuer      *scanenqueue.Enqueuer
-	regsyncConfig     *config.RegsyncConfig
+	currentConfig     config.Source
 	policyCatalog     catalog.Catalog
 	triageService     *triage.Service
+	configEditor      *configedit.Editor
 	vexAudit          *vexaudit.Auditor
 	router            *http.ServeMux
 	server            *http.Server
@@ -68,7 +70,7 @@ func NewAPIServer(cfg *config.APIConfig, attestationCfg *config.AttestationConfi
 		attestationCfg,
 		store,
 		taskQueue,
-		scanenqueue.New(taskQueue, regsyncConfig),
+		scanenqueue.New(taskQueue, store),
 		regsyncConfig,
 		logger,
 	)
@@ -76,14 +78,15 @@ func NewAPIServer(cfg *config.APIConfig, attestationCfg *config.AttestationConfi
 
 // NewAPIServerWithEnqueuer creates an API server with a shared scan enqueuer.
 func NewAPIServerWithEnqueuer(cfg *config.APIConfig, attestationCfg *config.AttestationConfig, store statestore.StateStoreQuery, taskQueue queue.TaskQueue, scanEnqueuer *scanenqueue.Enqueuer, regsyncConfig *config.RegsyncConfig, logger *slog.Logger) *APIServer {
+	running := catalog.NewConfigCatalog(regsyncConfig)
 	return NewAPIServerWithCatalogAndEnqueuer(
 		cfg, attestationCfg, store, taskQueue, scanEnqueuer,
-		regsyncConfig, catalog.NewConfigCatalog(regsyncConfig), logger,
+		running.Current, running, logger,
 	)
 }
 
 // NewAPIServerWithCatalogAndEnqueuer creates an API server using shared seams.
-func NewAPIServerWithCatalogAndEnqueuer(cfg *config.APIConfig, attestationCfg *config.AttestationConfig, store statestore.StateStoreQuery, taskQueue queue.TaskQueue, scanEnqueuer *scanenqueue.Enqueuer, regsyncConfig *config.RegsyncConfig, policyCatalog catalog.Catalog, logger *slog.Logger) *APIServer {
+func NewAPIServerWithCatalogAndEnqueuer(cfg *config.APIConfig, attestationCfg *config.AttestationConfig, store statestore.StateStoreQuery, taskQueue queue.TaskQueue, scanEnqueuer *scanenqueue.Enqueuer, currentConfig config.Source, policyCatalog catalog.Catalog, logger *slog.Logger) *APIServer {
 	var clusterInventoryStore statestore.ClusterInventoryStore
 	if inventoryStore, ok := store.(statestore.ClusterInventoryStore); ok {
 		clusterInventoryStore = inventoryStore
@@ -96,7 +99,7 @@ func NewAPIServerWithCatalogAndEnqueuer(cfg *config.APIConfig, attestationCfg *c
 		clusterInventory:  clusterInventoryStore,
 		taskQueue:         taskQueue,
 		scanEnqueuer:      scanEnqueuer,
-		regsyncConfig:     regsyncConfig,
+		currentConfig:     currentConfig,
 		policyCatalog:     policyCatalog,
 		router:            http.NewServeMux(),
 		logger:            logger,
@@ -143,6 +146,14 @@ func (s *APIServer) SetTriage(svc *triage.Service) {
 		return
 	}
 	s.triageService = svc
+}
+
+// SetConfigEditor enables the task endpoints that edit suppline.yml.
+func (s *APIServer) SetConfigEditor(editor *configedit.Editor) {
+	if s == nil {
+		return
+	}
+	s.configEditor = editor
 }
 
 // SetVEXAudit connects the background audit of ineffective sync-entry VEX statements.
@@ -366,4 +377,12 @@ func (s *APIServer) handleRootRedirect(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	http.Redirect(w, r, "/swagger/", http.StatusMovedPermanently)
+}
+
+// runningConfig returns the configuration snapshot for one request, or nil.
+func (s *APIServer) runningConfig() *config.RegsyncConfig {
+	if s.currentConfig == nil {
+		return nil
+	}
+	return s.currentConfig()
 }

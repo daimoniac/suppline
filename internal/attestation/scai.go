@@ -15,24 +15,24 @@ import (
 
 // SCAIGenerator creates SCAI attestation predicates
 type SCAIGenerator struct {
-	config  *config.RegsyncConfig
+	config  config.Source
 	catalog catalog.Catalog
 	logger  *slog.Logger
 }
 
 // NewSCAIGenerator creates a new SCAI generator
-func NewSCAIGenerator(config *config.RegsyncConfig, logger *slog.Logger) *SCAIGenerator {
-	return NewSCAIGeneratorWithCatalog(config, catalog.NewConfigCatalog(config), logger)
+func NewSCAIGenerator(cfg *config.RegsyncConfig, logger *slog.Logger) *SCAIGenerator {
+	return NewSCAIGeneratorWithCatalog(config.Static(cfg), catalog.NewConfigCatalog(cfg), logger)
 }
 
 // NewSCAIGeneratorWithCatalog creates an SCAI generator with a shared policy catalog.
-func NewSCAIGeneratorWithCatalog(config *config.RegsyncConfig, policyCatalog catalog.Catalog, logger *slog.Logger) *SCAIGenerator {
+func NewSCAIGeneratorWithCatalog(currentConfig config.Source, policyCatalog catalog.Catalog, logger *slog.Logger) *SCAIGenerator {
 	if logger == nil {
 		logger = slog.Default()
 	}
 
 	return &SCAIGenerator{
-		config:  config,
+		config:  currentConfig,
 		catalog: policyCatalog,
 		logger:  logger,
 	}
@@ -58,7 +58,7 @@ func convertToPURL(imageRef string) (string, error) {
 // The validity extension provides a grace period beyond the next scheduled scan.
 // Falls back to 7d rescan interval + 1d extension if values cannot be determined.
 func (g *SCAIGenerator) calculateValidityWindow(scanTime time.Time, target string) time.Time {
-	interval, err := g.config.GetRescanInterval(target)
+	interval, err := g.config().GetRescanInterval(target)
 	if err != nil {
 		g.logger.Warn("failed to get rescan interval, using default 7d",
 			"target", target,
@@ -66,7 +66,7 @@ func (g *SCAIGenerator) calculateValidityWindow(scanTime time.Time, target strin
 		interval = 7 * 24 * time.Hour
 	}
 
-	extension, err := g.config.GetSCAIValidityExtension(target)
+	extension, err := g.config().GetSCAIValidityExtension(target)
 	if err != nil {
 		g.logger.Warn("failed to get SCAI validity extension, using default 1d",
 			"target", target,

@@ -13,16 +13,74 @@ import (
 	"github.com/daimoniac/suppline/internal/types"
 )
 
-// ConfigCatalog adapts parsed suppline YAML configuration to Catalog.
-// Auto-VEX hot-swap is safe for concurrent readers.
+// ConfigCatalog owns the running suppline configuration and adapts it to
+// Catalog. Every edit and reload publishes a new snapshot; a snapshot returned
+// by Current is never modified afterwards, so readers need no lock.
 type ConfigCatalog struct {
-	mu     sync.RWMutex
-	config *config.RegsyncConfig
+	mu      sync.RWMutex
+	config  *config.RegsyncConfig
+	changed chan struct{}
 }
 
 // NewConfigCatalog creates a production catalog over parsed configuration.
 func NewConfigCatalog(cfg *config.RegsyncConfig) *ConfigCatalog {
-	return &ConfigCatalog{config: cfg}
+	return &ConfigCatalog{config: cfg, changed: make(chan struct{})}
+}
+
+// Current returns the running configuration snapshot. Callers must treat it as
+// read-only and call Current again for each decision rather than holding it.
+func (c *ConfigCatalog) Current() *config.RegsyncConfig {
+	if c == nil {
+		return nil
+	}
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	return c.config
+}
+
+// Changed returns a channel that is closed when the next snapshot is published.
+func (c *ConfigCatalog) Changed() <-chan struct{} {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	return c.changed
+}
+
+func (c *ConfigCatalog) publishLocked(next *config.RegsyncConfig) {
+	c.config = next
+	if c.changed != nil {
+		close(c.changed)
+	}
+	c.changed = make(chan struct{})
+}
+
+// editLocked applies fn to a private copy of the running configuration and
+// publishes the copy only when fn succeeds.
+func (c *ConfigCatalog) editLocked(fn func(next *config.RegsyncConfig) error) error {
+	next := cloneForEdit(c.config)
+	if err := fn(next); err != nil {
+		return err
+	}
+	c.publishLocked(next)
+	return nil
+}
+
+// cloneForEdit copies everything a catalog edit may change: the sync list,
+// each entry's VEX lists and tag filter, and the default VEX list.
+func cloneForEdit(cfg *config.RegsyncConfig) *config.RegsyncConfig {
+	next := *cfg
+	next.Defaults.VEX = append([]types.VEXStatement(nil), cfg.Defaults.VEX...)
+	next.Sync = make([]config.SyncEntry, len(cfg.Sync))
+	for i, entry := range cfg.Sync {
+		entry.VEX = append([]types.VEXStatement(nil), entry.VEX...)
+		entry.VEXAuto = append([]types.VEXStatement(nil), entry.VEXAuto...)
+		if entry.Tags != nil {
+			tags := *entry.Tags
+			tags.SemverRange = append([]string(nil), tags.SemverRange...)
+			entry.Tags = &tags
+		}
+		next.Sync[i] = entry
+	}
+	return &next
 }
 
 // Replace swaps in a newly parsed configuration. It returns the repositories
@@ -35,20 +93,33 @@ func (c *ConfigCatalog) Replace(next *config.RegsyncConfig) []string {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	before := c.decisionFingerprintsLocked()
-	c.config = next
+	c.publishLocked(next)
 	return changedRepositories(before, c.decisionFingerprintsLocked())
 }
 
 func (c *ConfigCatalog) decisionFingerprintsLocked() map[string]string {
+	if c == nil {
+		return map[string]string{}
+	}
+	return decisionFingerprints(c.config)
+}
+
+func decisionFingerprints(cfg *config.RegsyncConfig) map[string]string {
 	out := map[string]string{}
-	if c == nil || c.config == nil {
+	if cfg == nil {
 		return out
 	}
-	for _, repository := range c.config.GetTargetRepositories() {
-		policy, evidence := c.effectiveLocked(repository)
+	for _, repository := range cfg.GetTargetRepositories() {
+		policy, evidence := effectiveIn(cfg, repository)
 		out[repository] = fingerprintDecision(policy, evidence)
 	}
 	return out
+}
+
+// DecisionChanges returns the repositories whose policy or VEX decision differs
+// between two configuration snapshots, including added and removed ones.
+func DecisionChanges(prev, next *config.RegsyncConfig) []string {
+	return changedRepositories(decisionFingerprints(prev), decisionFingerprints(next))
 }
 
 func fingerprintDecision(policy *config.PolicyConfig, evidence Evidence) string {
@@ -132,15 +203,20 @@ func (c *ConfigCatalog) effective(repository string) (*config.PolicyConfig, Evid
 }
 
 func (c *ConfigCatalog) effectiveLocked(repository string) (*config.PolicyConfig, Evidence) {
+	return effectiveIn(c.config, repository)
+}
 
-	configured := c.config.Defaults.Policy
+// effectiveIn merges defaults with the repository's sync entries in cfg.
+func effectiveIn(cfg *config.RegsyncConfig, repository string) (*config.PolicyConfig, Evidence) {
+
+	configured := cfg.Defaults.Policy
 	var evidence Evidence
-	if c.config.Defaults.VEXRepo != nil {
-		evidence.UseVEXRepo = *c.config.Defaults.VEXRepo
+	if cfg.Defaults.VEXRepo != nil {
+		evidence.UseVEXRepo = *cfg.Defaults.VEXRepo
 	}
 
 	seen := make(map[string]struct{})
-	for _, statement := range c.config.Defaults.VEX {
+	for _, statement := range cfg.Defaults.VEX {
 		if _, exists := seen[statement.ID]; exists {
 			continue
 		}
@@ -151,8 +227,8 @@ func (c *ConfigCatalog) effectiveLocked(repository string) (*config.PolicyConfig
 
 	policyOverridden := false
 	vexRepoOverridden := false
-	_ = c.config.ForEachActive(func(i int) error {
-		sync := c.config.Sync[i]
+	_ = cfg.ForEachActive(func(i int) error {
+		sync := cfg.Sync[i]
 		if targetRepository(sync) != repository {
 			return nil
 		}
@@ -202,19 +278,21 @@ func (c *ConfigCatalog) ReplaceAutoVEX(repository string, statements []types.VEX
 
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	matched := false
-	_ = c.config.ForEachActive(func(i int) error {
-		if targetRepository(c.config.Sync[i]) != repository {
+	return c.editLocked(func(next *config.RegsyncConfig) error {
+		matched := false
+		_ = next.ForEachActive(func(i int) error {
+			if targetRepository(next.Sync[i]) != repository {
+				return nil
+			}
+			matched = true
+			next.Sync[i].VEXAuto = append([]types.VEXStatement(nil), copied...)
 			return nil
+		})
+		if !matched {
+			return fmt.Errorf("no sync entry for repository %s", repository)
 		}
-		matched = true
-		c.config.Sync[i].VEXAuto = append([]types.VEXStatement(nil), copied...)
 		return nil
 	})
-	if !matched {
-		return fmt.Errorf("no sync entry for repository %s", repository)
-	}
-	return nil
 }
 
 // UpsertManualVEX inserts or replaces one hand-written x-vex statement on every
@@ -227,29 +305,31 @@ func (c *ConfigCatalog) UpsertManualVEX(repository string, statement types.VEXSt
 	statement.Source = types.VEXSourceManual
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	matched := false
-	_ = c.config.ForEachActive(func(i int) error {
-		if targetRepository(c.config.Sync[i]) != repository {
-			return nil
-		}
-		matched = true
-		replaced := false
-		for j := range c.config.Sync[i].VEX {
-			if c.config.Sync[i].VEX[j].ID == statement.ID {
-				c.config.Sync[i].VEX[j] = statement
-				replaced = true
-				break
+	return c.editLocked(func(next *config.RegsyncConfig) error {
+		matched := false
+		_ = next.ForEachActive(func(i int) error {
+			if targetRepository(next.Sync[i]) != repository {
+				return nil
 			}
-		}
-		if !replaced {
-			c.config.Sync[i].VEX = append(c.config.Sync[i].VEX, statement)
+			matched = true
+			replaced := false
+			for j := range next.Sync[i].VEX {
+				if next.Sync[i].VEX[j].ID == statement.ID {
+					next.Sync[i].VEX[j] = statement
+					replaced = true
+					break
+				}
+			}
+			if !replaced {
+				next.Sync[i].VEX = append(next.Sync[i].VEX, statement)
+			}
+			return nil
+		})
+		if !matched {
+			return fmt.Errorf("no sync entry for repository %s", repository)
 		}
 		return nil
 	})
-	if !matched {
-		return fmt.Errorf("no sync entry for repository %s", repository)
-	}
-	return nil
 }
 
 // AutoVEX returns the triage-owned statements stored for a repository.
@@ -419,17 +499,19 @@ func (c *ConfigCatalog) SetSemverRanges(target string, ranges []string) (int, er
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	updated := 0
-	err := c.config.ForEachActive(func(i int) error {
-		ok, err := config.SyncTargetMatches(c.config.Sync[i].Target, c.config.Sync[i].Type, target)
-		if err != nil {
-			return err
-		}
-		if !ok || c.config.Sync[i].Tags == nil {
+	err := c.editLocked(func(next *config.RegsyncConfig) error {
+		return next.ForEachActive(func(i int) error {
+			ok, err := config.SyncTargetMatches(next.Sync[i].Target, next.Sync[i].Type, target)
+			if err != nil {
+				return err
+			}
+			if !ok || next.Sync[i].Tags == nil {
+				return nil
+			}
+			next.Sync[i].Tags.SemverRange = append([]string(nil), copied...)
+			updated++
 			return nil
-		}
-		c.config.Sync[i].Tags.SemverRange = append([]string(nil), copied...)
-		updated++
-		return nil
+		})
 	})
 	if err != nil {
 		return 0, err
@@ -444,18 +526,27 @@ func (c *ConfigCatalog) RemoveSyncTargets(targets []string) (int, error) {
 	}
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	return c.config.KeepActive(func(entry config.SyncEntry) (bool, error) {
-		for _, target := range targets {
-			ok, err := config.SyncTargetMatches(entry.Target, entry.Type, target)
-			if err != nil {
-				return false, err
+	removed := 0
+	err := c.editLocked(func(next *config.RegsyncConfig) error {
+		n, err := next.KeepActive(func(entry config.SyncEntry) (bool, error) {
+			for _, target := range targets {
+				ok, err := config.SyncTargetMatches(entry.Target, entry.Type, target)
+				if err != nil {
+					return false, err
+				}
+				if ok {
+					return false, nil
+				}
 			}
-			if ok {
-				return false, nil
-			}
-		}
-		return true, nil
+			return true, nil
+		})
+		removed = n
+		return err
 	})
+	if err != nil {
+		return 0, err
+	}
+	return removed, nil
 }
 
 // RemoveVEXIDs drops hand-written and auto statements with these ids.
@@ -474,14 +565,16 @@ func (c *ConfigCatalog) RemoveVEXIDs(ids []string) (int, error) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	removed := 0
-	c.config.Defaults.VEX, removed = dropVEXIDs(c.config.Defaults.VEX, wanted, removed)
-	_ = c.config.ForEachActive(func(i int) error {
-		var n int
-		c.config.Sync[i].VEX, n = dropVEXIDs(c.config.Sync[i].VEX, wanted, 0)
-		removed += n
-		c.config.Sync[i].VEXAuto, n = dropVEXIDs(c.config.Sync[i].VEXAuto, wanted, 0)
-		removed += n
-		return nil
+	_ = c.editLocked(func(next *config.RegsyncConfig) error {
+		next.Defaults.VEX, removed = dropVEXIDs(next.Defaults.VEX, wanted, removed)
+		return next.ForEachActive(func(i int) error {
+			var n int
+			next.Sync[i].VEX, n = dropVEXIDs(next.Sync[i].VEX, wanted, 0)
+			removed += n
+			next.Sync[i].VEXAuto, n = dropVEXIDs(next.Sync[i].VEXAuto, wanted, 0)
+			removed += n
+			return nil
+		})
 	})
 	return removed, nil
 }
@@ -568,17 +661,19 @@ func (c *ConfigCatalog) RemoveEntryVEX(refs []EntryVEXRef) (int, error) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	removed := 0
-	_ = c.config.ForEachActive(func(i int) error {
-		byRepo, ok := wanted[targetRepository(c.config.Sync[i])]
-		if !ok {
+	_ = c.editLocked(func(next *config.RegsyncConfig) error {
+		return next.ForEachActive(func(i int) error {
+			byRepo, ok := wanted[targetRepository(next.Sync[i])]
+			if !ok {
+				return nil
+			}
+			var n int
+			next.Sync[i].VEX, n = dropVEXIDs(next.Sync[i].VEX, byRepo[types.VEXSourceManual], 0)
+			removed += n
+			next.Sync[i].VEXAuto, n = dropVEXIDs(next.Sync[i].VEXAuto, byRepo[types.VEXSourceAuto], 0)
+			removed += n
 			return nil
-		}
-		var n int
-		c.config.Sync[i].VEX, n = dropVEXIDs(c.config.Sync[i].VEX, byRepo[types.VEXSourceManual], 0)
-		removed += n
-		c.config.Sync[i].VEXAuto, n = dropVEXIDs(c.config.Sync[i].VEXAuto, byRepo[types.VEXSourceAuto], 0)
-		removed += n
-		return nil
+		})
 	})
 	return removed, nil
 }

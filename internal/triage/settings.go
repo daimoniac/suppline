@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/daimoniac/suppline/internal/config"
+	"github.com/daimoniac/suppline/internal/configedit"
 	"github.com/daimoniac/suppline/internal/gitops"
 	"github.com/daimoniac/suppline/internal/types"
 )
@@ -228,4 +229,29 @@ func resolveAuth(cfg config.GitAuthConfig) (gitops.Auth, error) {
 	default:
 		return gitops.Auth{}, fmt.Errorf("unsupported git auth type %q", cfg.Type)
 	}
+}
+
+// ConfigTarget says where config edits go: the config repository when one is
+// set, otherwise the local file suppline was started with.
+func (s Settings) ConfigTarget() configedit.Target {
+	target := configedit.Target{LocalPath: s.ConfigPath, Retention: s.BackupRetention}
+	if s.ConfigRepo != nil {
+		spec, err := s.configSpec()
+		target.Repo = &configedit.RepoTarget{
+			Spec:        spec,
+			Path:        s.ConfigRepo.Path,
+			CheckoutDir: s.CheckoutDir,
+			SpecErr:     err,
+		}
+	}
+	return target
+}
+
+// ConfigTarget resolves x-triage and returns where config edits go.
+func ConfigTarget(cfg *config.TriageConfig, configPath string) (configedit.Target, error) {
+	settings, err := Resolve(cfg, configPath)
+	if err != nil {
+		return configedit.Target{}, err
+	}
+	return settings.ConfigTarget(), nil
 }
