@@ -577,7 +577,7 @@ func TestShouldScanImage_NeverScanned(t *testing.T) {
 	logger := observability.NewLogger("error")
 	w := &watcherImpl{
 		registryClient: mockRegistry,
-		regsyncConfig:  regsyncCfg,
+		currentConfig:  config.Static(regsyncCfg),
 		stateStore:     mockStore,
 		taskQueue:      mockQueue,
 		logger:         logger,
@@ -634,7 +634,7 @@ func TestShouldScanImage_DigestChanged(t *testing.T) {
 	logger := observability.NewLogger("error")
 	w := &watcherImpl{
 		registryClient: mockRegistry,
-		regsyncConfig:  regsyncCfg,
+		currentConfig:  config.Static(regsyncCfg),
 		stateStore:     mockStore,
 		taskQueue:      mockQueue,
 		logger:         logger,
@@ -689,7 +689,7 @@ func TestShouldScanImage_IntervalElapsed(t *testing.T) {
 	logger := observability.NewLogger("error")
 	w := &watcherImpl{
 		registryClient: mockRegistry,
-		regsyncConfig:  regsyncCfg,
+		currentConfig:  config.Static(regsyncCfg),
 		stateStore:     mockStore,
 		taskQueue:      mockQueue,
 		logger:         logger,
@@ -744,7 +744,7 @@ func TestShouldScanImage_Skip(t *testing.T) {
 	logger := observability.NewLogger("error")
 	w := &watcherImpl{
 		registryClient: mockRegistry,
-		regsyncConfig:  regsyncCfg,
+		currentConfig:  config.Static(regsyncCfg),
 		stateStore:     mockStore,
 		taskQueue:      mockQueue,
 		logger:         logger,
@@ -791,7 +791,7 @@ func TestShouldScanImage_ErrorHandling(t *testing.T) {
 	logger := observability.NewLogger("error")
 	w := &watcherImpl{
 		registryClient: mockRegistry,
-		regsyncConfig:  regsyncCfg,
+		currentConfig:  config.Static(regsyncCfg),
 		stateStore:     mockStore,
 		taskQueue:      mockQueue,
 		logger:         logger,
@@ -850,7 +850,7 @@ func TestProcessTag_FailSafeBehavior(t *testing.T) {
 	logger := observability.NewLogger("error")
 	w := &watcherImpl{
 		registryClient: mockRegistry,
-		regsyncConfig:  regsyncCfg,
+		currentConfig:  config.Static(regsyncCfg),
 		stateStore:     mockStore,
 		taskQueue:      mockQueue,
 		scanEnqueuer:   scanenqueue.New(mockQueue, nil),

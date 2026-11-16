@@ -203,7 +203,7 @@ func run() error {
 	logger.Debug("policy engine initialized")
 
 	logger.Debug("initializing registry client")
-	registryClient, err := registry.NewClient(regsyncCfg)
+	registryClient, err := registry.NewClient(regsyncCfg, registry.WithConfigSource(repositoryPolicies.Current))
 	if err != nil {
 		return fmt.Errorf("failed to initialize registry client: %w", err)
 	}
@@ -219,7 +219,7 @@ func run() error {
 			Tagger:    registryClient,
 			Scheduler: scanEnqueuer,
 			RescanInterval: func(repository string) time.Duration {
-				interval, err := regsyncCfg.GetRescanInterval(repository)
+				interval, err := repositoryPolicies.Current().GetRescanInterval(repository)
 				if err != nil {
 					return 0
 				}
@@ -238,7 +238,7 @@ func run() error {
 	}
 	registryWatcher := watcher.NewWatcherWithCatalogAndEnqueuer(
 		registryClient,
-		regsyncCfg,
+		repositoryPolicies.Current,
 		store,
 		taskQueue,
 		scanEnqueuer,
@@ -283,7 +283,7 @@ func run() error {
 		store,
 		workerConfig,
 		logger,
-		regsyncCfg,
+		repositoryPolicies.Current,
 		repositoryPolicies,
 	)
 	triageService, err := triage.New(regsyncCfg.Triage, cfg.RegsyncPath, repositoryPolicies, store, scanEnqueuer, logger)
@@ -326,7 +326,7 @@ func run() error {
 			store,
 			taskQueue,
 			scanEnqueuer,
-			regsyncCfg,
+			repositoryPolicies.Current,
 			repositoryPolicies,
 			logger,
 		)
@@ -418,7 +418,8 @@ func run() error {
 			mirrorLog.Info("starting in-process mirror")
 			if err := mirror.Run(ctx, regsyncCfg, logger, mirror.WithReady(func() {
 				healthChecker.UpdateComponentHealth("mirror", observability.StatusHealthy, "")
-			}), mirror.WithRunway(tagRunway)); err != nil && err != context.Canceled {
+			}), mirror.WithRunway(tagRunway),
+				mirror.WithReload(repositoryPolicies.Current, repositoryPolicies.Changed)); err != nil && err != context.Canceled {
 				mirrorLog.Error("mirror error", "error", err.Error())
 				healthChecker.UpdateComponentHealth("mirror", observability.StatusUnhealthy, err.Error())
 			}

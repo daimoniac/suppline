@@ -28,7 +28,7 @@ type Watcher interface {
 // watcherImpl implements the Watcher interface
 type watcherImpl struct {
 	registryClient registry.Client
-	regsyncConfig  *config.RegsyncConfig
+	currentConfig  config.Source
 	policyCatalog  catalog.Catalog
 	stateStore     statestore.StateStore
 	taskQueue      queue.TaskQueue
@@ -75,19 +75,21 @@ func NewWatcherWithEnqueuer(
 	stateStore statestore.StateStore,
 	taskQueue queue.TaskQueue,
 	scanEnqueuer *scanenqueue.Enqueuer,
-	config Config,
+	watcherConfig Config,
 	logger *slog.Logger,
 ) Watcher {
+	running := catalog.NewConfigCatalog(regsyncConfig)
 	return NewWatcherWithCatalogAndEnqueuer(
-		registryClient, regsyncConfig, stateStore, taskQueue,
-		scanEnqueuer, catalog.NewConfigCatalog(regsyncConfig), config, logger,
+		registryClient, running.Current, stateStore, taskQueue,
+		scanEnqueuer, running, watcherConfig, logger,
 	)
 }
 
 // NewWatcherWithCatalogAndEnqueuer creates a watcher using shared seams.
+// currentConfig is read on every discovery decision, so reloads take effect.
 func NewWatcherWithCatalogAndEnqueuer(
 	registryClient registry.Client,
-	regsyncConfig *config.RegsyncConfig,
+	currentConfig config.Source,
 	stateStore statestore.StateStore,
 	taskQueue queue.TaskQueue,
 	scanEnqueuer *scanenqueue.Enqueuer,
@@ -97,7 +99,7 @@ func NewWatcherWithCatalogAndEnqueuer(
 ) Watcher {
 	return &watcherImpl{
 		registryClient: registryClient,
-		regsyncConfig:  regsyncConfig,
+		currentConfig:  currentConfig,
 		policyCatalog:  policyCatalog,
 		stateStore:     stateStore,
 		taskQueue:      taskQueue,
@@ -181,7 +183,7 @@ func (w *watcherImpl) processRepository(ctx context.Context, repo string) error 
 	w.checkExpiringVEXStatements(repo, evidence.VEXStatements)
 
 	// Check if this repository has specific tags defined (type=image entries)
-	specificTags := w.regsyncConfig.GetTagsForRepository(repo)
+	specificTags := w.currentConfig().GetTagsForRepository(repo)
 
 	var tags []string
 	var err error
@@ -385,7 +387,7 @@ func (w *watcherImpl) processTag(ctx context.Context, repo, tag string) (string,
 	}
 
 	// Get rescan interval from regsync config (with fallback)
-	rescanInterval, err := w.regsyncConfig.GetRescanInterval(repo)
+	rescanInterval, err := w.currentConfig().GetRescanInterval(repo)
 	if err != nil {
 		w.logger.Warn("failed to parse rescan interval, using default 7d",
 			"repo", repo,
@@ -495,7 +497,7 @@ func (w *watcherImpl) renewSupersededDigests(ctx context.Context, repo string, c
 		return
 	}
 
-	rescanInterval, err := w.regsyncConfig.GetRescanInterval(repo)
+	rescanInterval, err := w.currentConfig().GetRescanInterval(repo)
 	if err != nil {
 		w.logger.Warn("failed to parse rescan interval, using default 7d",
 			"repo", repo,
