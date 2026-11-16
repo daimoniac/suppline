@@ -1354,6 +1354,11 @@ func collectWorkloadImages(ctx context.Context, kubeClient kubernetes.Interface,
 			if excludedNS[rs.Namespace] {
 				continue
 			}
+			// Old rollout revisions are scaled to zero. Their images are not
+			// running; reporting them made old versions look in use.
+			if rs.Spec.Replicas != nil && *rs.Spec.Replicas == 0 {
+				continue
+			}
 			images = appendWorkloadPodSpecImages(images, rs.Namespace, rs.Spec.Template.Spec)
 		}
 	}
