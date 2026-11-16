@@ -130,7 +130,8 @@ func imageIdentityKey(img clusterImageInput) string {
 }
 
 // normalizeImagesPreferDigests removes digest-less duplicates for an
-// image identity (namespace, imageRef, tag) when digest-bearing entries exist.
+// image identity (namespace, imageRef, tag) when digest-bearing entries exist,
+// and drops entries without a namespace or image reference.
 // Distinct digests for the same identity are preserved.
 func normalizeImagesPreferDigests(images []clusterImageInput) []clusterImageInput {
 	if len(images) == 0 {
@@ -142,6 +143,12 @@ func normalizeImagesPreferDigests(images []clusterImageInput) []clusterImageInpu
 	hasDigest := make(map[string]bool)
 
 	for _, img := range images {
+		// suppline rejects a snapshot with an entry that lacks either field, so
+		// one malformed spec (e.g. image ":tag" in an old ReplicaSet) would
+		// block the whole cluster's inventory.
+		if strings.TrimSpace(img.Namespace) == "" || strings.TrimSpace(img.ImageRef) == "" {
+			continue
+		}
 		identity := imageIdentityKey(img)
 		if _, ok := groups[identity]; !ok {
 			order = append(order, identity)
