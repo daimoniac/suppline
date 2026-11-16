@@ -12,10 +12,10 @@ import (
 	"github.com/daimoniac/suppline/internal/types"
 )
 
-// Discovery only reads exemption evidence, so a repository whose
-// minimumReleaseAge cannot be parsed must still be discovered with its VEX
-// statements attached; the invalid duration surfaces during policy evaluation.
-func TestWatcher_Discover_InvalidMinimumReleaseAgeKeepsVEX(t *testing.T) {
+// Discovery does not resolve policy, so a repository whose minimumReleaseAge
+// cannot be parsed is still discovered; the invalid duration surfaces during
+// policy evaluation when the scan runs.
+func TestWatcher_Discover_InvalidMinimumReleaseAgeStillQueues(t *testing.T) {
 	ctx := context.Background()
 
 	mockRegistry := &mockRegistryClient{
@@ -56,7 +56,7 @@ func TestWatcher_Discover_InvalidMinimumReleaseAgeKeepsVEX(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Dequeue() error = %v", err)
 	}
-	if len(task.VEXStatements) != 1 || task.VEXStatements[0].ID != "CVE-2024-1234" {
-		t.Errorf("VEXStatements = %+v, want configured statement", task.VEXStatements)
+	if task.Repository != "myorg/app1" || task.Digest != "sha256:digest1" {
+		t.Errorf("task = %s@%s, want myorg/app1@sha256:digest1", task.Repository, task.Digest)
 	}
 }

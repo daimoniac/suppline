@@ -20,6 +20,7 @@ func buildScanRecord(
 	policyDecision *policy.PolicyDecision,
 	attestResult *attestationResult,
 	scannedAt time.Time,
+	vexStatements []types.VEXStatement,
 ) *statestore.ScanRecord {
 	// Count vulnerabilities by severity and convert to records
 	var criticalCount, highCount, mediumCount, lowCount int
@@ -62,7 +63,7 @@ func buildScanRecord(
 
 	// Filter and convert VEX statements
 	appliedVEX := types.FilterAppliedVEXStatements(
-		task.VEXStatements,
+		vexStatements,
 		exemptedSet,
 		scannedAtUnix,
 	)

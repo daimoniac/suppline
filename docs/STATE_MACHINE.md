@@ -47,9 +47,9 @@ stateDiagram-v2
     Mirrored : local registry holds the digest
     Watched : shouldScanImage gate
     Skipped : no task enqueued, alias tag may be bound
-    Queued : ScanTask with repo, digest, tag, VEX
+    Queued : ScanTask with repo, digest, tag; a duplicate request joins the pending task
     Scanning : Trivy produces SBOM and CVEs
-    Evaluating : VEX exemptions, then CEL expression
+    Evaluating : VEX resolved at scan time, then CEL expression
     Attesting : cosign SBOM, vuln, VEX, SCAI
     Persisted : SQLite scan record written
     Passed : deployable under verified-only admission

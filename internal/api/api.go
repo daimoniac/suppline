@@ -68,7 +68,7 @@ func NewAPIServer(cfg *config.APIConfig, attestationCfg *config.AttestationConfi
 		attestationCfg,
 		store,
 		taskQueue,
-		scanenqueue.New(taskQueue, regsyncConfig),
+		scanenqueue.New(taskQueue),
 		regsyncConfig,
 		logger,
 	)

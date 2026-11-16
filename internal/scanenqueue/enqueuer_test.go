@@ -6,10 +6,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/daimoniac/suppline/internal/config"
-	"github.com/daimoniac/suppline/internal/policy/catalog"
 	"github.com/daimoniac/suppline/internal/queue"
-	"github.com/daimoniac/suppline/internal/types"
 )
 
 // capturingQueue records tasks as they are submitted. The in-memory queue
@@ -39,41 +36,12 @@ func (q *capturingQueue) HasPendingTask(ctx context.Context, repository, digest 
 }
 func (q *capturingQueue) Close() error { return nil }
 
-func testConfig() *config.RegsyncConfig {
-	vexRepo := true
-	return &config.RegsyncConfig{
-		Defaults: config.Defaults{
-			VEX: []types.VEXStatement{{ID: "CVE-default"}},
-		},
-		Sync: []config.SyncEntry{{
-			Target:  "registry.example/team/app",
-			Type:    "repository",
-			VEX:     []types.VEXStatement{{ID: "CVE-repository"}},
-			VEXRepo: &vexRepo,
-		}},
-	}
-}
-
 func testImage() Image {
 	return Image{
 		Repository: "registry.example/team/app",
 		Digest:     "sha256:abc",
 		Tag:        "1.2.3",
 	}
-}
-
-func testCatalog() catalog.Catalog {
-	return catalog.NewMemoryCatalog(catalog.MemoryEntry{}, map[string]catalog.MemoryEntry{
-		"registry.example/team/app": {
-			Evidence: catalog.Evidence{
-				VEXStatements: []types.VEXStatement{
-					{ID: "CVE-default"},
-					{ID: "CVE-repository"},
-				},
-				UseVEXRepo: true,
-			},
-		},
-	})
 }
 
 // fixedClock makes the task ID and EnqueuedAt deterministic.
@@ -88,7 +56,7 @@ func fixedClock(e *Enqueuer, idTime, enqueuedAt time.Time) {
 
 func TestEnqueueDiscoveryConstructsTask(t *testing.T) {
 	taskQueue := &capturingQueue{}
-	enqueuer := NewWithCatalog(taskQueue, testCatalog())
+	enqueuer := New(taskQueue)
 	idTime := time.Unix(1234, 0)
 	enqueuedAt := time.Unix(1235, 42)
 	fixedClock(enqueuer, idTime, enqueuedAt)
@@ -109,12 +77,6 @@ func TestEnqueueDiscoveryConstructsTask(t *testing.T) {
 	}
 	if task.Attempts != 0 {
 		t.Errorf("Attempts = %d, want 0", task.Attempts)
-	}
-	if !task.UseVEXRepo {
-		t.Error("UseVEXRepo = false, want true")
-	}
-	if len(task.VEXStatements) != 2 || task.VEXStatements[0].ID != "CVE-default" || task.VEXStatements[1].ID != "CVE-repository" {
-		t.Errorf("VEXStatements = %+v, want default and repository statements", task.VEXStatements)
 	}
 	if len(taskQueue.submitted) != 1 {
 		t.Fatalf("submitted %d tasks, want 1", len(taskQueue.submitted))
@@ -175,7 +137,7 @@ func TestEnqueueScanMetadata(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			taskQueue := &capturingQueue{}
-			enqueuer := New(taskQueue, testConfig())
+			enqueuer := New(taskQueue)
 
 			if _, err := tt.enqueue(enqueuer); err != nil {
 				t.Fatalf("enqueue error = %v", err)
@@ -198,55 +160,9 @@ func TestEnqueueScanMetadata(t *testing.T) {
 	}
 }
 
-func TestEnqueueWithoutRegsyncConfig(t *testing.T) {
-	taskQueue := &capturingQueue{}
-	enqueuer := New(taskQueue, nil)
-
-	task, err := enqueuer.EnqueueRescan(context.Background(), testImage())
-	if err != nil {
-		t.Fatalf("EnqueueRescan() error = %v", err)
-	}
-	if len(task.VEXStatements) != 0 {
-		t.Errorf("VEXStatements = %+v, want none", task.VEXStatements)
-	}
-	if task.UseVEXRepo {
-		t.Error("UseVEXRepo = true, want false")
-	}
-}
-
-// Enqueueing reads exemption evidence only, so an unparseable
-// minimumReleaseAge must not stop a repository's scans from carrying VEX.
-func TestEnqueueWithInvalidMinimumReleaseAge(t *testing.T) {
-	taskQueue := &capturingQueue{}
-	vexRepo := true
-	enqueuer := New(taskQueue, &config.RegsyncConfig{
-		Sync: []config.SyncEntry{{
-			Target:  "registry.example/team/app",
-			Type:    "repository",
-			Policy:  &config.PolicyConfig{Expression: "criticalCount == 0", MinimumReleaseAge: "not-a-duration"},
-			VEX:     []types.VEXStatement{{ID: "CVE-repository"}},
-			VEXRepo: &vexRepo,
-		}},
-	})
-
-	task, err := enqueuer.EnqueueRescan(context.Background(), testImage())
-	if err != nil {
-		t.Fatalf("EnqueueRescan() error = %v", err)
-	}
-	if len(task.VEXStatements) != 1 || task.VEXStatements[0].ID != "CVE-repository" {
-		t.Errorf("VEXStatements = %+v, want configured statement", task.VEXStatements)
-	}
-	if !task.UseVEXRepo {
-		t.Error("UseVEXRepo = false, want true")
-	}
-	if len(taskQueue.submitted) != 1 {
-		t.Fatalf("submitted %d tasks, want 1", len(taskQueue.submitted))
-	}
-}
-
 func TestEnqueueRescanPreservesQueueDedupe(t *testing.T) {
 	taskQueue := queue.NewInMemoryQueue(4)
-	enqueuer := New(taskQueue, &config.RegsyncConfig{})
+	enqueuer := New(taskQueue)
 	image := Image{Repository: "repo", Digest: "sha256:same", Tag: "latest"}
 
 	if _, err := enqueuer.EnqueueRescan(context.Background(), image); err != nil {
@@ -274,7 +190,7 @@ func TestEnqueueRescanReturnsQueueError(t *testing.T) {
 	if err := taskQueue.Close(); err != nil {
 		t.Fatalf("Close() error = %v", err)
 	}
-	enqueuer := New(taskQueue, &config.RegsyncConfig{})
+	enqueuer := New(taskQueue)
 
 	task, err := enqueuer.EnqueueRescan(context.Background(), Image{Digest: "sha256:abc"})
 	if err == nil {
