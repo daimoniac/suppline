@@ -3,7 +3,7 @@ import { Link, NavLink, Outlet } from 'react-router';
 import { useAuth } from '../lib/auth';
 import {
   LayoutDashboard, Layers, ScanSearch, ShieldAlert, Bug,
-  Plug, LogOut, ClipboardList, Menu, X, Scale,
+  Plug, LogOut, ClipboardList, Menu, X, Scale, FolderSync,
 } from 'lucide-react';
 import { ImageUsageFilterProvider, useImageUsageFilter } from '../lib/imageUsageFilter';
 import { PageSizePreferenceProvider } from '../lib/pageSizePreference';
@@ -36,17 +36,18 @@ function LayoutContent() {
   const [isCompact, setIsCompact] = useState(() => window.matchMedia('(max-width: 1023px)').matches);
   const [menuOpen, setMenuOpen] = useState(false);
   const [version, setVersion] = useState<string | null>(null);
+  const [mirrorEnabled, setMirrorEnabled] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
     apiClient.getHealth()
       .then(h => {
-        if (!cancelled && h.version) {
-          setVersion(h.version);
-        }
+        if (cancelled) return;
+        if (h.version) setVersion(h.version);
+        setMirrorEnabled(h.mirrorEnabled === true);
       })
       .catch(() => {
-        /* version is optional chrome */
+        if (!cancelled) setMirrorEnabled(false);
       });
     return () => {
       cancelled = true;
@@ -144,7 +145,10 @@ function LayoutContent() {
 
         {/* Nav */}
         <nav className="flex-1 py-3 px-2 space-y-0.5 overflow-y-auto">
-          {navItems.map(item => (
+          {(mirrorEnabled
+            ? [navItems[0], { to: '/mirror', icon: FolderSync, label: 'Mirror' }, ...navItems.slice(1)]
+            : navItems
+          ).map(item => (
             <NavLink
               key={item.to}
               to={item.to}

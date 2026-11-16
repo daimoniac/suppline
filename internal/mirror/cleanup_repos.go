@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"strings"
+	"time"
 
 	"github.com/daimoniac/suppline/internal/config"
 	"github.com/regclient/regclient/types/ref"
@@ -166,10 +167,17 @@ func (m *runner) cleanupReposNamespace(ctx context.Context, hub hubRepoAPI, tn *
 			return err
 		}
 		full := tn.namespace + "/" + name
+		if tn.registry != "" {
+			full = tn.registry + "/" + full
+		}
 		m.log.Info("deleting repository", "repository", full)
 		if err := hub.deleteRepository(ctx, tn.namespace, name); err != nil {
 			m.log.Error("failed deleting repository", "repository", full, "error", err.Error())
 			errs = append(errs, fmt.Errorf("delete %s: %w", full, err))
+			continue
+		}
+		if m.journal != nil {
+			m.journal.RecordHubDeletion(ctx, full, time.Now())
 		}
 	}
 	return errors.Join(errs...)
