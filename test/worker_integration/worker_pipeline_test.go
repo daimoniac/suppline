@@ -1033,3 +1033,7 @@ func TestPipeline_PendingTaskScansWithEvidenceAtRunTime(t *testing.T) {
 		t.Errorf("scanner useVEXRepo = %v, want [true]", scan.useVEXRepo)
 	}
 }
+
+func (m *mockStateStore) GetLastRepositoryScanSummary(ctx context.Context, repository, digest string) (*statestore.ScanRecord, error) {
+	return m.GetLastRepositoryScan(ctx, repository, digest)
+}

@@ -257,7 +257,7 @@ type scanState struct {
 	bindings []string
 }
 
-func (s *scanState) GetLastRepositoryScan(context.Context, string, string) (*statestore.ScanRecord, error) {
+func (s *scanState) GetLastRepositoryScanSummary(context.Context, string, string) (*statestore.ScanRecord, error) {
 	if s.rec == nil {
 		return nil, statestore.ErrScanNotFound
 	}

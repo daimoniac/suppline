@@ -31,7 +31,7 @@ type fakeRegistry struct {
 	queued   []scanenqueue.DiscoveryKind
 }
 
-func (f *fakeRegistry) GetLastRepositoryScan(context.Context, string, string) (*statestore.ScanRecord, error) {
+func (f *fakeRegistry) GetLastRepositoryScanSummary(context.Context, string, string) (*statestore.ScanRecord, error) {
 	if f.storeErr != nil {
 		return nil, f.storeErr
 	}

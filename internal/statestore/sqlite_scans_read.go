@@ -13,7 +13,7 @@ import (
 )
 
 func (s *SQLiteStore) GetLastScan(ctx context.Context, digest string) (*ScanRecord, error) {
-	return s.getLastScan(ctx, digest, "")
+	return s.getLastScan(ctx, digest, "", true)
 }
 
 // GetLastRepositoryScan returns the newest scan of digest stored under repository.
@@ -24,10 +24,23 @@ func (s *SQLiteStore) GetLastRepositoryScan(ctx context.Context, repository, dig
 	if digest == "" {
 		return nil, errors.NewPermanentf("digest is required")
 	}
-	return s.getLastScan(ctx, digest, repository)
+	return s.getLastScan(ctx, digest, repository, true)
 }
 
-func (s *SQLiteStore) getLastScan(ctx context.Context, digest, repository string) (*ScanRecord, error) {
+// GetLastRepositoryScanSummary returns the same scan as GetLastRepositoryScan
+// without its findings. Vulnerabilities stays nil; counts, policy outcome,
+// attestation flags and applied VEX statements are set.
+func (s *SQLiteStore) GetLastRepositoryScanSummary(ctx context.Context, repository, digest string) (*ScanRecord, error) {
+	if repository == "" {
+		return nil, errors.NewPermanentf("repository is required")
+	}
+	if digest == "" {
+		return nil, errors.NewPermanentf("digest is required")
+	}
+	return s.getLastScan(ctx, digest, repository, false)
+}
+
+func (s *SQLiteStore) getLastScan(ctx context.Context, digest, repository string, withFindings bool) (*ScanRecord, error) {
 	var record ScanRecord
 	var vexJSON sql.NullString
 	var failureFindingsJSON sql.NullString
@@ -69,12 +82,13 @@ func (s *SQLiteStore) getLastScan(ctx context.Context, digest, repository string
 		return nil, errors.NewTransientf("failed to query scan record: %w", err)
 	}
 
-	// Load vulnerabilities for this scan
-	vulns, err := s.loadVulnerabilitiesByScan(ctx, record.ID)
-	if err != nil {
-		return nil, err
+	if withFindings {
+		vulns, err := s.loadVulnerabilitiesByScan(ctx, record.ID)
+		if err != nil {
+			return nil, err
+		}
+		record.Vulnerabilities = vulns
 	}
-	record.Vulnerabilities = vulns
 
 	if err := applyStoredExemptions(&record, vexJSON); err != nil {
 		return nil, err

@@ -48,7 +48,7 @@ func (s *SQLiteStore) ReconcileSupersededDigests(ctx context.Context, repository
 		if _, isCurrent := current[digest]; isCurrent {
 			continue
 		}
-		last, err := s.GetLastRepositoryScan(ctx, repository, digest)
+		last, err := s.GetLastRepositoryScanSummary(ctx, repository, digest)
 		if err != nil && !errors.Is(err, ErrScanNotFound) {
 			return nil, err
 		}
