@@ -11,6 +11,7 @@ While running, the agent:
 3. Skips pods and workloads in excluded namespaces (configurable, defaults to `kube-system`, `kube-public`, `kube-node-lease`).
 4. Extracts image reference, tag, and runtime digest from pod status for regular, init, and ephemeral containers (digests only available for running pods).
 5. Deduplicates entries by `(namespace, image_ref, digest)`.
+   Each entry lists the `workloads` running it as `Kind/name` (`StatefulSet/cache`, `Deployment/api`, `Pod/debug`), taken from each pod's controller. Suppline shows them next to policy-failing digests that need a rollout.
 6. POSTs periodic snapshots to `POST /api/v1/webhook/cluster-inventory` on the suppline API.
 
 This ensures suppline discovers images from scheduled jobs, pending deployments, and other workload definitions—even if no pods are currently running from those resources—while also capturing short-lived runtime workloads via pod and Event informers.

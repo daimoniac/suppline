@@ -3,6 +3,7 @@ package api
 import (
 	"encoding/json"
 	"errors"
+	"fmt"
 	"net/http"
 	"strings"
 	"time"
@@ -20,7 +21,12 @@ type clusterImageInput struct {
 	ImageRef  string `json:"image_ref"`
 	Tag       string `json:"tag,omitempty"`
 	Digest    string `json:"digest,omitempty"`
+	// Workloads names the pod owners running the image as "Kind/name".
+	Workloads []string `json:"workloads,omitempty"`
 }
+
+// maxWorkloadsPerImage bounds the owners one inventory entry may list.
+const maxWorkloadsPerImage = 200
 
 // handleClusterInventory ingests a full runtime image snapshot for a cluster.
 func (s *APIServer) handleClusterInventory(w http.ResponseWriter, r *http.Request) {
@@ -91,12 +97,23 @@ func (s *APIServer) handleClusterInventory(w http.ResponseWriter, r *http.Reques
 			s.respondError(w, http.StatusBadRequest, "image_ref must be 1024 characters or fewer")
 			return
 		}
+		if len(image.Workloads) > maxWorkloadsPerImage {
+			s.respondError(w, http.StatusBadRequest, fmt.Sprintf("workloads must list %d entries or fewer", maxWorkloadsPerImage))
+			return
+		}
+		for _, workload := range image.Workloads {
+			if len(workload) > 512 || strings.Contains(workload, ",") {
+				s.respondError(w, http.StatusBadRequest, "each workload must be a Kind/name of 512 characters or fewer without commas")
+				return
+			}
+		}
 
 		images = append(images, statestore.ClusterImageEntry{
 			Namespace: namespace,
 			ImageRef:  imageRef,
 			Tag:       strings.TrimSpace(image.Tag),
 			Digest:    strings.TrimSpace(image.Digest),
+			Workloads: image.Workloads,
 		})
 	}
 

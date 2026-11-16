@@ -28,6 +28,8 @@ type normalizedClusterImageGroup struct {
 	digests    []string
 	digestSeen map[string]struct{}
 	hasEmpty   bool
+	// workloads holds the merged owners per digest; "" is the digest-less entry.
+	workloads map[string][]string
 }
 
 // NewSQLiteStore creates a new SQLite state store
@@ -207,6 +209,7 @@ func (s *SQLiteStore) initSchema() error {
 		image_ref TEXT NOT NULL,
 		tag TEXT NOT NULL DEFAULT '',
 		digest TEXT NOT NULL DEFAULT '',
+		workloads TEXT NOT NULL DEFAULT '',
 		first_seen_at INTEGER NOT NULL,
 		last_seen_at INTEGER NOT NULL,
 		FOREIGN KEY (cluster_id) REFERENCES clusters(id) ON DELETE CASCADE,
@@ -306,6 +309,7 @@ func (s *SQLiteStore) ensureSchemaColumns() error {
 		{table: "artifacts", column: "superseded", definition: "INTEGER NOT NULL DEFAULT 0"},
 		{table: "triage_runs", column: "session_id", definition: "TEXT NOT NULL DEFAULT ''"},
 		{table: "scan_findings", column: "severity", definition: "TEXT"},
+		{table: "cluster_images_seen", column: "workloads", definition: "TEXT NOT NULL DEFAULT ''"},
 	}
 
 	for _, col := range columns {

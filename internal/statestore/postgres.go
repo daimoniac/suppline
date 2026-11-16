@@ -123,6 +123,7 @@ func (s *SQLiteStore) initPostgresSchema() error {
 			image_ref TEXT NOT NULL,
 			tag TEXT NOT NULL DEFAULT '',
 			digest TEXT NOT NULL DEFAULT '',
+			workloads TEXT NOT NULL DEFAULT '',
 			first_seen_at BIGINT NOT NULL,
 			last_seen_at BIGINT NOT NULL,
 			UNIQUE(cluster_id, namespace, image_ref, tag, digest)
@@ -222,6 +223,11 @@ func (s *SQLiteStore) initPostgresSchema() error {
 		ALTER TABLE scan_findings ADD COLUMN IF NOT EXISTS severity TEXT
 	`); err != nil {
 		return fmt.Errorf("add scan_findings.severity: %w", err)
+	}
+	if _, err := s.db.Exec(`
+		ALTER TABLE cluster_images_seen ADD COLUMN IF NOT EXISTS workloads TEXT NOT NULL DEFAULT ''
+	`); err != nil {
+		return fmt.Errorf("add cluster_images_seen.workloads: %w", err)
 	}
 
 	return nil

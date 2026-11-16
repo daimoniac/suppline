@@ -57,10 +57,10 @@ func (s *SQLiteStore) RecordClusterInventory(ctx context.Context, clusterName st
 	defer insertStmt.Close()
 
 	seenStmt, err := tx.PrepareContext(ctx, `
-		INSERT INTO cluster_images_seen (cluster_id, namespace, image_ref, tag, digest, first_seen_at, last_seen_at)
-		VALUES (?, ?, ?, ?, ?, ?, ?)
+		INSERT INTO cluster_images_seen (cluster_id, namespace, image_ref, tag, digest, workloads, first_seen_at, last_seen_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?)
 		ON CONFLICT(cluster_id, namespace, image_ref, tag, digest)
-		DO UPDATE SET last_seen_at = excluded.last_seen_at
+		DO UPDATE SET last_seen_at = excluded.last_seen_at, workloads = excluded.workloads
 	`)
 	if err != nil {
 		return errors.NewTransientf("failed to prepare cluster image seen upsert: %w", err)
@@ -80,6 +80,7 @@ func (s *SQLiteStore) RecordClusterInventory(ctx context.Context, clusterName st
 			imageRef,
 			tag,
 			digest,
+			joinWorkloadNames(image.Workloads),
 			reportedAtUnix,
 			reportedAtUnix,
 		); err != nil {
@@ -139,10 +140,13 @@ func normalizeClusterInventoryEntries(images []ClusterImageEntry) []ClusterImage
 				identity:   id,
 				digests:    make([]string, 0, 1),
 				digestSeen: make(map[string]struct{}),
+				workloads:  make(map[string][]string),
 			}
 			groups[id] = group
 			order = append(order, id)
 		}
+
+		group.workloads[digest] = mergeWorkloadNames(group.workloads[digest], image.Workloads)
 
 		if digest == "" {
 			group.hasEmpty = true
@@ -166,6 +170,7 @@ func normalizeClusterInventoryEntries(images []ClusterImageEntry) []ClusterImage
 					ImageRef:  id.imageRef,
 					Tag:       id.tag,
 					Digest:    digest,
+					Workloads: group.workloads[digest],
 				})
 			}
 			continue
@@ -177,6 +182,7 @@ func normalizeClusterInventoryEntries(images []ClusterImageEntry) []ClusterImage
 				ImageRef:  id.imageRef,
 				Tag:       id.tag,
 				Digest:    "",
+				Workloads: group.workloads[""],
 			})
 		}
 	}
@@ -778,7 +784,11 @@ func buildRuntimeUsage(locations []RuntimeLocation) RuntimeUsage {
 	}
 
 	runtime := make(RuntimeInventory)
-	entrySet := make(map[string]struct{}, len(locations))
+	type entryIndex struct {
+		cluster, namespace string
+		index              int
+	}
+	entrySet := make(map[string]entryIndex, len(locations))
 
 	for _, location := range locations {
 		cluster := strings.TrimSpace(location.Cluster)
@@ -788,10 +798,11 @@ func buildRuntimeUsage(locations []RuntimeLocation) RuntimeUsage {
 		}
 
 		key := strings.Join([]string{cluster, namespace, location.ImageRef, location.Tag, location.Digest}, "|")
-		if _, ok := entrySet[key]; ok {
+		if existing, ok := entrySet[key]; ok {
+			image := &runtime[existing.cluster][existing.namespace][existing.index]
+			image.Workloads = mergeWorkloadNames(image.Workloads, location.Workloads)
 			continue
 		}
-		entrySet[key] = struct{}{}
 
 		namespaces := runtime[cluster]
 		if namespaces == nil {
@@ -799,10 +810,12 @@ func buildRuntimeUsage(locations []RuntimeLocation) RuntimeUsage {
 			runtime[cluster] = namespaces
 		}
 
+		entrySet[key] = entryIndex{cluster: cluster, namespace: namespace, index: len(namespaces[namespace])}
 		namespaces[namespace] = append(namespaces[namespace], RuntimeImage{
-			ImageRef: location.ImageRef,
-			Tag:      location.Tag,
-			Digest:   location.Digest,
+			ImageRef:  location.ImageRef,
+			Tag:       location.Tag,
+			Digest:    location.Digest,
+			Workloads: mergeWorkloadNames(nil, location.Workloads),
 		})
 	}
 
@@ -928,7 +941,7 @@ func (s *SQLiteStore) annotateRunningDigests(ctx context.Context, records []*Sca
 	}
 
 	rows, err := s.db.QueryContext(ctx, `
-		SELECT ci.image_ref, COALESCE(ci.tag, ''), COALESCE(ci.digest, ''), c.name, ci.namespace
+		SELECT ci.image_ref, COALESCE(ci.tag, ''), COALESCE(ci.digest, ''), c.name, ci.namespace, COALESCE(ci.workloads, '')
 		FROM cluster_images_seen ci
 		JOIN clusters c ON c.id = ci.cluster_id
 		WHERE (
@@ -945,9 +958,11 @@ func (s *SQLiteStore) annotateRunningDigests(ctx context.Context, records []*Sca
 	byCurrentTag := make(map[string][]RuntimeLocation)
 	for rows.Next() {
 		var location RuntimeLocation
-		if err := rows.Scan(&location.ImageRef, &location.Tag, &location.Digest, &location.Cluster, &location.Namespace); err != nil {
+		var workloads string
+		if err := rows.Scan(&location.ImageRef, &location.Tag, &location.Digest, &location.Cluster, &location.Namespace, &workloads); err != nil {
 			return errors.NewTransientf("failed to scan runtime inventory row: %w", err)
 		}
+		location.Workloads = splitWorkloadNames(workloads)
 		location.Tag = strings.TrimSpace(location.Tag)
 		location.Digest = strings.TrimSpace(location.Digest)
 		repo := normalizeRepositoryRef(location.ImageRef)
@@ -1008,4 +1023,40 @@ func (s *SQLiteStore) storedDigestsByRepository(ctx context.Context) (map[string
 		return nil, errors.NewTransientf("error iterating stored digest rows: %w", err)
 	}
 	return out, nil
+}
+
+// Workload names are Kubernetes "Kind/name" pairs. Names cannot contain commas,
+// so cluster_images_seen.workloads stores them sorted and comma-separated.
+
+func mergeWorkloadNames(a, b []string) []string {
+	set := make(map[string]struct{}, len(a)+len(b))
+	for _, list := range [][]string{a, b} {
+		for _, name := range list {
+			name = strings.TrimSpace(name)
+			if name == "" || strings.Contains(name, ",") {
+				continue
+			}
+			set[name] = struct{}{}
+		}
+	}
+	if len(set) == 0 {
+		return nil
+	}
+	out := make([]string, 0, len(set))
+	for name := range set {
+		out = append(out, name)
+	}
+	sort.Strings(out)
+	return out
+}
+
+func joinWorkloadNames(names []string) string {
+	return strings.Join(mergeWorkloadNames(nil, names), ",")
+}
+
+func splitWorkloadNames(stored string) []string {
+	if strings.TrimSpace(stored) == "" {
+		return nil
+	}
+	return mergeWorkloadNames(nil, strings.Split(stored, ","))
 }

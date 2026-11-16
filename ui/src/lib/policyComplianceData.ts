@@ -99,16 +99,30 @@ export function supersededRunningLabel(scan: Pick<Scan, 'Tag'>): string {
   return `running an older digest of ${scan.Tag || 'its tag'}`;
 }
 
-/** "cluster/namespace" for each place a runtime inventory reports the image. */
-export function runtimeLocationLabels(runtime?: RuntimeInventory): string[] {
+export type RuntimeWorkloadLocation = {
+  /** "cluster/namespace" */
+  location: string;
+  /** Pod owners as "Kind/name", sorted; empty when the cluster agent does not report them. */
+  workloads: string[];
+};
+
+/** Each cluster/namespace a runtime inventory reports the image in, with the workloads running it there. */
+export function runtimeWorkloadLocations(runtime?: RuntimeInventory): RuntimeWorkloadLocation[] {
   if (!runtime) return [];
-  const labels: string[] = [];
+  const out: RuntimeWorkloadLocation[] = [];
   for (const [cluster, namespaces] of Object.entries(runtime)) {
-    for (const namespace of Object.keys(namespaces)) {
-      labels.push(namespace ? `${cluster}/${namespace}` : cluster);
+    for (const [namespace, images] of Object.entries(namespaces)) {
+      const workloads = new Set<string>();
+      for (const image of images) {
+        for (const workload of image.Workloads || []) workloads.add(workload);
+      }
+      out.push({
+        location: namespace ? `${cluster}/${namespace}` : cluster,
+        workloads: Array.from(workloads).sort(),
+      });
     }
   }
-  return labels.sort();
+  return out.sort((a, b) => a.location.localeCompare(b.location));
 }
 
 export async function fetchPolicyComplianceData(

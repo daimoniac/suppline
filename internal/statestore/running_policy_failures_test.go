@@ -52,8 +52,12 @@ func TestListRunningPolicyFailures_SupersededDigestStillRunning(t *testing.T) {
 	}
 
 	runningOld := []ClusterImageEntry{
-		{Namespace: namespace, ImageRef: imageRef, Tag: tag, Digest: failingA},
-		{Namespace: namespace, ImageRef: imageRef, Tag: tag, Digest: failingB},
+		{Namespace: namespace, ImageRef: imageRef, Tag: tag, Digest: failingA, Workloads: []string{"StatefulSet/cortex-memcached-frontend"}},
+		{Namespace: namespace, ImageRef: imageRef, Tag: tag, Digest: failingB, Workloads: []string{"StatefulSet/cortex-memcached-frontend", "StatefulSet/cortex-memcached-blocks"}},
+	}
+	wantWorkloads := map[string][]string{
+		failingA: {"StatefulSet/cortex-memcached-frontend"},
+		failingB: {"StatefulSet/cortex-memcached-blocks", "StatefulSet/cortex-memcached-frontend"},
 	}
 	recordScan(failingA, false)
 	// This report is older than the in-use window, so it counts only while it is
@@ -89,6 +93,9 @@ func TestListRunningPolicyFailures_SupersededDigestStillRunning(t *testing.T) {
 		images := record.Runtime[cluster][namespace]
 		if len(images) != 1 || images[0].Digest != record.Digest {
 			t.Fatalf("%s: runtime = %+v, want only its own digest in %s/%s", record.Digest, record.Runtime, cluster, namespace)
+		}
+		if got := images[0].Workloads; !equalStrings(got, wantWorkloads[record.Digest]) {
+			t.Fatalf("%s: workloads = %v, want %v", record.Digest, got, wantWorkloads[record.Digest])
 		}
 	}
 
