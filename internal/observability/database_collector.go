@@ -15,10 +15,19 @@ var (
 	dbCollectorInstance *DatabaseCollector
 )
 
+// vulnerabilityCountsTTL is how long one unique-CVE count serves scrapes. The
+// count scans every current finding, and Prometheus scrapes every few seconds.
+const vulnerabilityCountsTTL = time.Minute
+
 // DatabaseCollector collects metrics from the database on-demand when /metrics is scraped
 type DatabaseCollector struct {
 	store  statestore.StateStore
 	logger *slog.Logger
+	now    func() time.Time
+
+	vulnCountsMu sync.Mutex
+	vulnCounts   map[string]int
+	vulnCountsAt time.Time
 
 	// Metric descriptors
 	vulnerabilitiesFoundDesc *prometheus.Desc
@@ -32,6 +41,7 @@ func NewDatabaseCollector(store statestore.StateStore, logger *slog.Logger) *Dat
 	return &DatabaseCollector{
 		store:  store,
 		logger: logger,
+		now:    time.Now,
 		vulnerabilitiesFoundDesc: prometheus.NewDesc(
 			"suppline_vulnerabilities_found",
 			"Current number of vulnerabilities found by severity across all scanned artifacts",
@@ -177,7 +187,7 @@ func (c *DatabaseCollector) collectPolicyOutcomes(ctx context.Context, store sta
 }
 
 func (c *DatabaseCollector) collectVulnerabilities(ctx context.Context, store statestore.StateStoreQuery, ch chan<- prometheus.Metric) {
-	counts, err := store.GetUniqueVulnerabilityCounts(ctx)
+	counts, err := c.uniqueVulnerabilityCounts(ctx, store)
 	if err != nil {
 		if ctx.Err() != nil {
 			c.logger.Debug("vulnerabilities metric collection timed out", "error", err)
@@ -195,4 +205,23 @@ func (c *DatabaseCollector) collectVulnerabilities(ctx context.Context, store st
 			severity,
 		)
 	}
+}
+
+// uniqueVulnerabilityCounts returns the last count while it is younger than
+// vulnerabilityCountsTTL. A failed refresh is not cached.
+func (c *DatabaseCollector) uniqueVulnerabilityCounts(ctx context.Context, store statestore.StateStoreQuery) (map[string]int, error) {
+	c.vulnCountsMu.Lock()
+	defer c.vulnCountsMu.Unlock()
+
+	now := c.now()
+	if c.vulnCounts != nil && now.Sub(c.vulnCountsAt) < vulnerabilityCountsTTL {
+		return c.vulnCounts, nil
+	}
+	counts, err := store.GetUniqueVulnerabilityCounts(ctx)
+	if err != nil {
+		return nil, err
+	}
+	c.vulnCounts = counts
+	c.vulnCountsAt = now
+	return counts, nil
 }

@@ -45,6 +45,9 @@ type StateStore interface {
 	// across every repository that stores that digest.
 	GetLastScan(ctx context.Context, digest string) (*ScanRecord, error)
 
+	// GetLastScanSummary is GetLastScan without findings.
+	GetLastScanSummary(ctx context.Context, digest string) (*ScanRecord, error)
+
 	// GetLastRepositoryScan retrieves the most recent scan for a digest in one
 	// repository. A scan of the same digest in another repository does not count:
 	// attestations are published into the repository that was scanned.
