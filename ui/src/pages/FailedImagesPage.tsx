@@ -1,4 +1,4 @@
-import { useEffect, useState, useCallback } from 'react';
+import { useEffect, useMemo, useState, useCallback } from 'react';
 import { Link, useSearchParams } from 'react-router';
 import { useAuth } from '../lib/auth';
 import { useToast } from '../lib/toast';
@@ -10,6 +10,7 @@ import {
   POLICY_AGENT_PROMPT_HINT_FILTERED,
 } from '../lib/policyComplianceData';
 import { PolicyAgentPromptCard } from '../components/PolicyAgentPromptCard';
+import { SupersededRunningList } from '../components/PolicyCompliancePanel';
 import { LoadingState, ErrorState, PageHeader, StatusBadge, VulnCounts, SortHeader, Pagination, DigestLinkWithCopy, RuntimeUsageBadge, PageFiltersBar, FilterActionButton, PolicyStatusSelect } from '../components/ui';
 import type { Scan } from '../lib/api';
 import { AlertTriangle } from 'lucide-react';
@@ -29,6 +30,7 @@ export default function FailedImagesPage() {
 
   const [scans, setScans] = useState<Scan[]>([]);
   const [promptScans, setPromptScans] = useState<Scan[]>([]);
+  const [runningFailures, setRunningFailures] = useState<Scan[]>([]);
   const [totalScans, setTotalScans] = useState(0);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
@@ -143,6 +145,28 @@ export default function FailedImagesPage() {
     };
   }, [apiClient, inUseRequestParams, repository, policyFilter]);
 
+  useEffect(() => {
+    let cancelled = false;
+    apiClient.getRunningPolicyFailures()
+      .then(running => { if (!cancelled) setRunningFailures(running); })
+      .catch(() => { if (!cancelled) setRunningFailures([]); });
+    return () => { cancelled = true; };
+  }, [apiClient]);
+
+  // Digests a tag has moved off while a cluster still runs them: the current-binding
+  // table above cannot show them, and the fix is rolling the pods.
+  const supersededRunning = useMemo(() => {
+    if (inUseRequestParams?.in_use_mode === 'not_in_use' || policyFilter === 'pending' || policyFilter === 'passed') {
+      return [];
+    }
+    const repoFilter = repository.trim().toLowerCase();
+    return runningFailures.filter(scan =>
+      scan.Superseded &&
+      scan.PolicyStatus !== 'pending' &&
+      (!repoFilter || scan.Repository.toLowerCase().includes(repoFilter))
+    );
+  }, [runningFailures, inUseRequestParams, policyFilter, repository]);
+
   const handleSort = (col: string) => {
     const nextDir = col === sortCol ? (sortDir === 'asc' ? 'desc' : 'asc') : 'desc';
     toggleSort(col);
@@ -176,6 +200,12 @@ export default function FailedImagesPage() {
             </div>
           </div>
           <PolicyAgentPromptCard scans={promptScans} hint={POLICY_AGENT_PROMPT_HINT_FILTERED} />
+        </div>
+      )}
+
+      {supersededRunning.length > 0 && (
+        <div className="mb-4">
+          <SupersededRunningList scans={supersededRunning} />
         </div>
       )}
 

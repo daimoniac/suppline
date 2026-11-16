@@ -2,6 +2,8 @@ import { Link } from 'react-router';
 import { PolicyAgentPromptCard } from './PolicyAgentPromptCard';
 import { PolicyDescriptionText } from './ui';
 import type { PolicyInfo, Scan } from '../lib/api';
+import { runtimeLocationLabels, supersededRunningLabel } from '../lib/policyComplianceData';
+import { truncateDigest } from '../lib/utils';
 
 const TOP_POLICY_DISPLAY_COUNT = 5;
 
@@ -29,6 +31,9 @@ export function PolicyCompliancePanel({
   const totalPolicyRepos = Object.keys(policyByRepo).length;
   const hasMorePolicyRepos = totalPolicyRepos > TOP_POLICY_DISPLAY_COUNT;
   const hasVisibleFailures = failedScans.some(scan => scan.PolicyStatus !== 'pending');
+  const supersededRunning = failedScans.filter(scan => scan.Superseded);
+  // A superseded digest is fixed by rolling its pods, not by triaging its CVEs.
+  const triageScans = failedScans.filter(scan => !scan.Superseded);
   const heading = showCardHeading || defaultPolicy ? (
     <div className={hasVisibleFailures ? '' : 'mb-4'}>
       {showCardHeading && <h2 className="text-sm font-semibold">Policy Compliance Status</h2>}
@@ -62,8 +67,9 @@ export function PolicyCompliancePanel({
       <div className="lg:col-span-2 space-y-3 min-w-0">
         {heading}
         {repoSection}
+        <SupersededRunningList scans={supersededRunning} />
       </div>
-      <PolicyAgentPromptCard scans={failedScans} onTriageQueued={onTriageQueued} />
+      <PolicyAgentPromptCard scans={triageScans} onTriageQueued={onTriageQueued} />
     </div>
   ) : (
     <>
@@ -124,6 +130,34 @@ function PolicyRepoBarsList({
           </Link>
         </p>
       )}
+    </div>
+  );
+}
+
+export function SupersededRunningList({ scans }: { scans: Scan[] }) {
+  if (scans.length === 0) return null;
+  return (
+    <div className="rounded-lg border border-danger/30 bg-danger-bg/10 p-3 space-y-2">
+      <div>
+        <h3 className="text-xs font-semibold text-text-primary">Pods running a superseded digest</h3>
+        <p className="text-xs text-text-secondary">
+          These tags now point at a newer digest, but clusters still run the old, failing one. Roll the pods to pick up the current digest.
+        </p>
+      </div>
+      <ul className="space-y-1">
+        {scans.map(scan => (
+          <li key={`${scan.Repository}:${scan.Tag}:${scan.Digest}`} className="flex flex-wrap items-center gap-x-2 gap-y-0.5 text-xs">
+            <Link to={`/scans/${encodeURIComponent(scan.Digest)}`} className="text-accent hover:underline font-medium">
+              {scan.Repository}
+            </Link>
+            <span className="text-text-secondary">{supersededRunningLabel(scan)}</span>
+            <code className="text-text-muted" title={scan.Digest}>{truncateDigest(scan.Digest)}</code>
+            {runtimeLocationLabels(scan.Runtime).length > 0 && (
+              <span className="text-text-muted">on {runtimeLocationLabels(scan.Runtime).join(', ')}</span>
+            )}
+          </li>
+        ))}
+      </ul>
     </div>
   );
 }

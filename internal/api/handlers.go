@@ -553,6 +553,35 @@ func (s *APIServer) handleListFailedImages(w http.ResponseWriter, r *http.Reques
 	}
 }
 
+// handleListRunningPolicyFailures lists failed or pending images a cluster runs
+// @Summary List running policy failures
+// @Description List images whose latest scan failed or is pending policy and whose digest a cluster reports as running. Digests the tag has moved off are included with Superseded=true and the tag's CurrentDigest; those need their pods rolled. This is the set counted by suppline_policy_failed_current{source="runtime"} and suppline_policy_pending_current{source="runtime"}.
+// @Tags Scans
+// @Accept json
+// @Produce json
+// @Success 200 {array} statestore.ScanRecord
+// @Failure 401 {object} map[string]string "Unauthorized"
+// @Failure 500 {object} map[string]string "Internal server error"
+// @Security BearerAuth
+// @Router /images/running-failures [get]
+func (s *APIServer) handleListRunningPolicyFailures(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		s.respondError(w, http.StatusMethodNotAllowed, "Method not allowed")
+		return
+	}
+
+	records, err := s.stateStore.ListRunningPolicyFailures(r.Context())
+	if err != nil {
+		s.respondError(w, http.StatusInternalServerError, fmt.Sprintf("Failed to list running policy failures: %v", err))
+		return
+	}
+	if records == nil {
+		records = make([]*statestore.ScanRecord, 0)
+	}
+
+	s.respondJSON(w, http.StatusOK, records)
+}
+
 // TriggerScanRequest represents the request body for triggering a scan
 type TriggerScanRequest struct {
 	Digest     string `json:"digest,omitempty"`

@@ -907,3 +907,105 @@ func NormalizeRepositoryRef(imageRef string) string {
 func normalizeRepositoryRef(imageRef string) string {
 	return NormalizeRepositoryRef(imageRef)
 }
+
+// annotateRunningDigests sets RuntimeUsed and Runtime on records from the cluster
+// inventory, attributing each observation to exactly one digest:
+//   - an observation that reports a digest belongs to that digest;
+//   - an observation without a digest, or with a digest suppline never stored for
+//     that repository, belongs to the Current tag binding of its repository:tag.
+//
+// A Superseded record therefore counts as running only while a cluster reports its
+// digest. Pods rolled onto the tag's new digest stop counting it, and pods still on
+// the old digest do not count the new binding.
+func (s *SQLiteStore) annotateRunningDigests(ctx context.Context, records []*ScanRecord) error {
+	if len(records) == 0 {
+		return nil
+	}
+
+	knownDigests, err := s.storedDigestsByRepository(ctx)
+	if err != nil {
+		return err
+	}
+
+	rows, err := s.db.QueryContext(ctx, `
+		SELECT ci.image_ref, COALESCE(ci.tag, ''), COALESCE(ci.digest, ''), c.name, ci.namespace
+		FROM cluster_images_seen ci
+		JOIN clusters c ON c.id = ci.cluster_id
+		WHERE (
+			ci.last_seen_at >= ?
+			OR ci.last_seen_at >= COALESCE(c.last_reported_at, 0)
+		)
+	`, s.runtimeInUseCutoffUnix())
+	if err != nil {
+		return errors.NewTransientf("failed to query runtime inventory: %w", err)
+	}
+	defer rows.Close()
+
+	byDigest := make(map[string][]RuntimeLocation)
+	byCurrentTag := make(map[string][]RuntimeLocation)
+	for rows.Next() {
+		var location RuntimeLocation
+		if err := rows.Scan(&location.ImageRef, &location.Tag, &location.Digest, &location.Cluster, &location.Namespace); err != nil {
+			return errors.NewTransientf("failed to scan runtime inventory row: %w", err)
+		}
+		location.Tag = strings.TrimSpace(location.Tag)
+		location.Digest = strings.TrimSpace(location.Digest)
+		repo := normalizeRepositoryRef(location.ImageRef)
+		if location.Digest != "" {
+			byDigest[location.Digest] = append(byDigest[location.Digest], location)
+			if _, known := knownDigests[repo][location.Digest]; known {
+				continue
+			}
+		}
+		if repo != "" && location.Tag != "" {
+			key := repo + "|" + location.Tag
+			byCurrentTag[key] = append(byCurrentTag[key], location)
+		}
+	}
+	if err := rows.Err(); err != nil {
+		return errors.NewTransientf("error iterating runtime inventory rows: %w", err)
+	}
+
+	for _, record := range records {
+		locations := append([]RuntimeLocation(nil), byDigest[strings.TrimSpace(record.Digest)]...)
+		if !record.Superseded {
+			key := normalizeRepositoryRef(record.Repository) + "|" + strings.TrimSpace(record.Tag)
+			locations = append(locations, byCurrentTag[key]...)
+		}
+		usage := buildRuntimeUsage(locations)
+		record.RuntimeUsed = usage.RuntimeUsed
+		record.Runtime = usage.Runtime
+	}
+	return nil
+}
+
+// storedDigestsByRepository returns every stored digest keyed by normalized repository.
+func (s *SQLiteStore) storedDigestsByRepository(ctx context.Context) (map[string]map[string]struct{}, error) {
+	rows, err := s.db.QueryContext(ctx, `
+		SELECT DISTINCT r.name, a.digest
+		FROM artifacts a
+		JOIN repositories r ON r.id = a.repository_id
+		WHERE a.digest != ''
+	`)
+	if err != nil {
+		return nil, errors.NewTransientf("failed to query stored digests: %w", err)
+	}
+	defer rows.Close()
+
+	out := make(map[string]map[string]struct{})
+	for rows.Next() {
+		var repository, digest string
+		if err := rows.Scan(&repository, &digest); err != nil {
+			return nil, errors.NewTransientf("failed to scan stored digest row: %w", err)
+		}
+		repo := normalizeRepositoryRef(repository)
+		if out[repo] == nil {
+			out[repo] = make(map[string]struct{})
+		}
+		out[repo][digest] = struct{}{}
+	}
+	if err := rows.Err(); err != nil {
+		return nil, errors.NewTransientf("error iterating stored digest rows: %w", err)
+	}
+	return out, nil
+}

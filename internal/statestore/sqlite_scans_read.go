@@ -267,16 +267,60 @@ func (s *SQLiteStore) CountCurrentDigests(ctx context.Context) (total int, inUse
 
 // GetFailedArtifacts returns all artifacts whose most recent scan failed policy evaluation
 func (s *SQLiteStore) GetFailedArtifacts(ctx context.Context) ([]*ScanRecord, error) {
+	records, err := s.queryFailedArtifacts(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	if err := s.annotateScanRecordsWithRuntimeUsage(ctx, records); err != nil {
+		return nil, err
+	}
+
+	return records, nil
+}
+
+// ListRunningPolicyFailures returns the artifacts whose latest scan failed or is
+// pending policy and whose digest a cluster runs. A digest the tag has moved off
+// is included, marked Superseded with the tag's CurrentDigest. This is the set
+// behind the runtime policy outcome counts (suppline_policy_failed_current{source="runtime"}).
+func (s *SQLiteStore) ListRunningPolicyFailures(ctx context.Context) ([]*ScanRecord, error) {
+	records, err := s.queryFailedArtifacts(ctx)
+	if err != nil {
+		return nil, err
+	}
+	if err := s.annotateRunningDigests(ctx, records); err != nil {
+		return nil, err
+	}
+
+	running := make([]*ScanRecord, 0)
+	for _, record := range records {
+		if record.RuntimeUsed {
+			running = append(running, record)
+		}
+	}
+	return running, nil
+}
+
+func (s *SQLiteStore) queryFailedArtifacts(ctx context.Context) ([]*ScanRecord, error) {
 	query := `
 		SELECT sr.id, sr.artifact_id, sr.scan_duration_ms,
 			sr.critical_vuln_count, sr.high_vuln_count, sr.medium_vuln_count, sr.low_vuln_count,
 			sr.policy_passed, sr.policy_status, sr.policy_reason, sr.policy_failure_findings_json, sr.release_age_seconds, sr.minimum_release_age_seconds, sr.release_age_source,
 			sr.sbom_attested, sr.vuln_attested, sr.scai_attested, sr.error_message, sr.created_at,
 			COALESCE(a.image_created_at, 0) as image_created_at,
-			a.digest, a.tag, r.name
+			a.digest, a.tag, r.name,
+			COALESCE(current_binding.digest, '')
 		FROM scan_records sr
 		JOIN artifacts a ON sr.artifact_id = a.id
 		JOIN repositories r ON a.repository_id = r.id
+		LEFT JOIN (
+			SELECT a2.repository_id, a2.tag, MAX(a2.id) AS max_id
+			FROM artifacts a2
+			WHERE a2.superseded = 0
+			GROUP BY a2.repository_id, a2.tag
+		) latest ON a.repository_id = latest.repository_id
+			AND a.tag IS NOT DISTINCT FROM latest.tag
+		LEFT JOIN artifacts current_binding ON current_binding.id = latest.max_id
 		WHERE sr.id = a.last_scan_id
 			AND NOT sr.policy_passed
 		ORDER BY sr.created_at DESC
@@ -292,6 +336,7 @@ func (s *SQLiteStore) GetFailedArtifacts(ctx context.Context) ([]*ScanRecord, er
 	for rows.Next() {
 		var record ScanRecord
 		var failureFindingsJSON sql.NullString
+		var currentDigest string
 
 		err := rows.Scan(
 			&record.ID, &record.ArtifactID, &record.ScanDurationMs,
@@ -300,12 +345,17 @@ func (s *SQLiteStore) GetFailedArtifacts(ctx context.Context) ([]*ScanRecord, er
 			&record.SBOMAttested, &record.VulnAttested, &record.SCAIAttested, &record.ErrorMessage, &record.CreatedAt,
 			&record.ImageCreatedAt,
 			&record.Digest, &record.Tag, &record.Repository,
+			&currentDigest,
 		)
 		if err != nil {
 			return nil, errors.NewTransientf("failed to scan row: %w", err)
 		}
 		if err := applyStoredPolicyFailureFindings(&record, failureFindingsJSON); err != nil {
 			return nil, err
+		}
+		if currentDigest != "" && currentDigest != record.Digest {
+			record.Superseded = true
+			record.CurrentDigest = currentDigest
 		}
 
 		records = append(records, &record)
@@ -315,18 +365,19 @@ func (s *SQLiteStore) GetFailedArtifacts(ctx context.Context) ([]*ScanRecord, er
 		return nil, errors.NewTransientf("error iterating rows: %w", err)
 	}
 
-	if err := s.annotateScanRecordsWithRuntimeUsage(ctx, records); err != nil {
-		return nil, err
-	}
-
 	return records, nil
 }
 
 // GetPolicyOutcomeSummary returns current failed and pending policy outcomes grouped by
 // registry presence, runtime use, and runtime use plus cluster-wide newer semver tags.
+// Runtime use is the ListRunningPolicyFailures definition, so the runtime counts and
+// that list always agree.
 func (s *SQLiteStore) GetPolicyOutcomeSummary(ctx context.Context) (PolicyOutcomeSummary, error) {
-	records, err := s.GetFailedArtifacts(ctx)
+	records, err := s.queryFailedArtifacts(ctx)
 	if err != nil {
+		return PolicyOutcomeSummary{}, err
+	}
+	if err := s.annotateRunningDigests(ctx, records); err != nil {
 		return PolicyOutcomeSummary{}, err
 	}
 

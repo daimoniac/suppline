@@ -121,6 +121,10 @@ export class APIClient {
     const total = parseInt(response.headers.get('X-Total-Count') || '0', 10);
     return { scans: data, total: Number.isNaN(total) ? data.length : total };
   }
+  /** Failed or pending images a cluster runs, including digests a tag has moved off (Superseded). */
+  async getRunningPolicyFailures() {
+    return this.request<Scan[]>('/api/v1/images/running-failures');
+  }
   async getScanByDigest(digest: string) {
     return this.request<ScanDetail>(`/api/v1/scans/${encodeURIComponent(digest)}`);
   }
@@ -317,6 +321,10 @@ export interface Scan {
   RuntimeUsed?: boolean;
   Runtime?: RuntimeInventory;
   PolicyFailureFindings?: PolicyFailureFinding[];
+  /** True when the tag has moved off this digest while a cluster still runs it. */
+  Superseded?: boolean;
+  /** The tag's current digest when Superseded is true. */
+  CurrentDigest?: string;
 }
 
 export interface Vulnerability {

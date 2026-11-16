@@ -212,6 +212,10 @@ func (m *mockStateStore) GetRuntimeUsageForScan(ctx context.Context, digest, rep
 	return &statestore.RuntimeUsage{}, nil
 }
 
+func (m *mockStateStore) ListRunningPolicyFailures(ctx context.Context) ([]*statestore.ScanRecord, error) {
+	return nil, nil
+}
+
 func (m *mockStateStore) GetPolicyOutcomeSummary(ctx context.Context) (statestore.PolicyOutcomeSummary, error) {
 	return statestore.PolicyOutcomeSummary{}, nil
 }
