@@ -63,6 +63,8 @@ type inventoryBuffer struct {
 	// Pod and Event observers must not add them back; the 24h stale TTL would
 	// otherwise keep the image in the next snapshots.
 	blocked map[string]struct{}
+	// lastRefresh is when a full cluster listing last touched every live image.
+	lastRefresh time.Time
 }
 
 func newInventoryBuffer() *inventoryBuffer {
@@ -310,6 +312,37 @@ func (b *inventoryBuffer) TouchAll(images []clusterImageInput) bool {
 	return changed
 }
 
+// MarkRefreshed records that a full cluster listing touched every live image
+// at now.
+func (b *inventoryBuffer) MarkRefreshed(now time.Time) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	b.lastRefresh = now
+}
+
+// EvictStale removes entries not seen for ttl, but only while the last full
+// listing is younger than ttl. Every live image was touched by that listing,
+// so an entry older than ttl is no longer in the cluster. Without a recent
+// listing a long-running pod and a deleted one look alike, so nothing is
+// removed. Returns true if any entries were removed.
+func (b *inventoryBuffer) EvictStale(ttl time.Duration, now time.Time) bool {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+
+	if b.lastRefresh.IsZero() || now.Sub(b.lastRefresh) >= ttl {
+		return false
+	}
+	cutoff := now.Add(-ttl)
+	changed := false
+	for key, entry := range b.seen {
+		if entry.lastSeen.Before(cutoff) {
+			delete(b.seen, key)
+			changed = true
+		}
+	}
+	return changed
+}
+
 // Evict removes entries whose lastSeen timestamp is older than ttl. Returns
 // true if any entries were removed.
 func (b *inventoryBuffer) Evict(ttl time.Duration) bool {
@@ -398,6 +431,7 @@ func runWatch(
 	if staleTTL <= 0 {
 		return fmt.Errorf("IMAGE_STALE_AFTER must be > 0")
 	}
+	refreshInterval = effectiveRefreshInterval(refreshInterval, staleTTL, logger)
 
 	completedRetention := completedWorkloadRetention(logger)
 	if completedRetention <= 0 {
@@ -559,12 +593,20 @@ func runWatch(
 			pendingSend = false
 			pendingForceSend = false
 		case <-sweepTicker.C:
+			// Images from pods that are gone stop being reported once
+			// IMAGE_STALE_AFTER has passed, not only at the next full refresh.
+			evicted := buffer.EvictStale(staleTTL, time.Now().UTC())
+			if evicted {
+				logger.Info("evicted images not seen within stale TTL", "stale_ttl", staleTTL.String())
+			}
 			dropped, err := dropExpiredCompletedWorkloads(ctx, kubeClient, excludedNS, buffer, completedRetention, logger)
 			if err != nil {
 				logger.Warn("failed to drop expired completed workloads", "error", err)
-				continue
+				if !evicted {
+					continue
+				}
 			}
-			if !dropped {
+			if !dropped && !evicted {
 				continue
 			}
 
@@ -852,7 +894,10 @@ func refreshInventoryBuffer(
 		return false, err
 	}
 
+	// Taken before TouchAll, so every touched entry is at least this recent.
+	refreshedAt := time.Now().UTC()
 	changed := buffer.TouchAll(images)
+	buffer.MarkRefreshed(refreshedAt)
 	if buffer.ReconcileExpired(expired, images) {
 		changed = true
 	}
@@ -883,6 +928,27 @@ func dropExpiredCompletedWorkloads(
 		logger.Info("removed expired completed workload images", "remaining", len(buffer.Snapshot()))
 	}
 	return dropped, nil
+}
+
+// effectiveRefreshInterval keeps full refreshes at least twice per stale TTL.
+// Stale entries can only be evicted while the last refresh is younger than the
+// TTL (see EvictStale), so a longer interval would keep gone images alive.
+func effectiveRefreshInterval(refresh, staleTTL time.Duration, logger *slog.Logger) time.Duration {
+	limit := staleTTL / 2
+	if limit < time.Minute {
+		limit = time.Minute
+	}
+	if refresh <= limit {
+		return refresh
+	}
+	if logger != nil {
+		logger.Info("shortening refresh interval to half the stale TTL",
+			"configured", refresh.String(),
+			"effective", limit.String(),
+			"stale_ttl", staleTTL.String(),
+		)
+	}
+	return limit
 }
 
 func parseDurationEnv(key string, fallback time.Duration, logger *slog.Logger) time.Duration {
