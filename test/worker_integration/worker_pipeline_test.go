@@ -1037,3 +1037,7 @@ func TestPipeline_PendingTaskScansWithEvidenceAtRunTime(t *testing.T) {
 func (m *mockStateStore) GetLastRepositoryScanSummary(ctx context.Context, repository, digest string) (*statestore.ScanRecord, error) {
 	return m.GetLastRepositoryScan(ctx, repository, digest)
 }
+
+func (m *mockStateStore) GetLastScanSummary(ctx context.Context, digest string) (*statestore.ScanRecord, error) {
+	return m.GetLastScan(ctx, digest)
+}

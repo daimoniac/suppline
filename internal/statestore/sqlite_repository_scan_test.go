@@ -94,6 +94,14 @@ func TestGetLastRepositoryScanSummary_SkipsFindings(t *testing.T) {
 		t.Fatalf("summary = %+v, want same scan as %+v without findings", got, full)
 	}
 
+	crossRepo, err := store.GetLastScanSummary(ctx, digest)
+	if err != nil {
+		t.Fatalf("GetLastScanSummary: %v", err)
+	}
+	if crossRepo.Vulnerabilities != nil || crossRepo.ID != full.ID {
+		t.Fatalf("GetLastScanSummary = %+v, want scan %d without findings", crossRepo, full.ID)
+	}
+
 	_, err = store.GetLastRepositoryScanSummary(ctx, repo, "sha256:missing")
 	if !errors.Is(err, ErrScanNotFound) {
 		t.Fatalf("missing digest err = %v, want ErrScanNotFound", err)

@@ -20,6 +20,8 @@ type mockStateStore struct {
 	scans     []*statestore.ScanRecord
 	counts    map[string]int
 	summaries []statestore.ClusterSummary
+
+	countCalls int
 }
 
 func (m *mockStateStore) ListClusterSummaries(ctx context.Context) ([]statestore.ClusterSummary, error) {
@@ -53,6 +55,7 @@ func (m *mockStateStore) EnsureArtifactTagBinding(ctx context.Context, repositor
 }
 
 func (m *mockStateStore) GetUniqueVulnerabilityCounts(ctx context.Context) (map[string]int, error) {
+	m.countCalls++
 	return m.counts, nil
 }
 
@@ -155,5 +158,35 @@ func TestDatabaseCollector(t *testing.T) {
 
 	if err := testutil.GatherAndCompare(reg, strings.NewReader(expectedClusterSync), "suppline_cluster_last_sync_timestamp_seconds"); err != nil {
 		t.Errorf("Unexpected cluster sync metrics: %v", err)
+	}
+}
+
+func TestDatabaseCollector_ReusesVulnerabilityCountsWithinTTL(t *testing.T) {
+	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
+	store := &mockStateStore{counts: map[string]int{"CRITICAL": 1}}
+	collector := NewDatabaseCollector(store, logger)
+
+	now := time.Unix(1710000000, 0)
+	collector.now = func() time.Time { return now }
+
+	testutil.CollectAndCount(collector)
+	now = now.Add(vulnerabilityCountsTTL - time.Second)
+	testutil.CollectAndCount(collector)
+	if store.countCalls != 1 {
+		t.Fatalf("count queries within TTL = %d, want 1", store.countCalls)
+	}
+
+	store.counts = map[string]int{"CRITICAL": 2}
+	now = now.Add(2 * time.Second)
+	expected := `
+		# HELP suppline_vulnerabilities_found Current number of vulnerabilities found by severity across all scanned artifacts
+		# TYPE suppline_vulnerabilities_found gauge
+		suppline_vulnerabilities_found{severity="CRITICAL"} 2
+	`
+	if err := testutil.CollectAndCompare(collector, strings.NewReader(expected), "suppline_vulnerabilities_found"); err != nil {
+		t.Fatalf("after TTL: %v", err)
+	}
+	if store.countCalls != 2 {
+		t.Fatalf("count queries after TTL = %d, want 2", store.countCalls)
 	}
 }

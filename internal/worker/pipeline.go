@@ -440,7 +440,7 @@ func (p *Pipeline) checkPolicyFailures(ctx context.Context, task *queue.ScanTask
 
 	// Alert if rescan shows policy failure
 	if task.IsRescan && !policyDecision.Passed {
-		lastScan, err := p.worker.stateStore.GetLastScan(ctx, task.Digest)
+		lastScan, err := p.worker.stateStore.GetLastScanSummary(ctx, task.Digest)
 		if err == nil && lastScan != nil && lastScan.PolicyPassed {
 			p.logger.Error("ALERT: previously passing image now fails policy",
 				"digest", task.Digest,
@@ -565,9 +565,9 @@ func (p *Pipeline) performScanCleanup(ctx context.Context, digest string) error 
 	}
 
 	// Get the most recent scan to use as the keepScanID
-	lastScan, err := p.worker.stateStore.GetLastScan(ctx, digest)
+	lastScan, err := p.worker.stateStore.GetLastScanSummary(ctx, digest)
 	if err != nil {
-		// Classify GetLastScan error for proper retry behavior
+		// Classify GetLastScanSummary error for proper retry behavior
 		if errors.IsTransient(err) {
 			return fmt.Errorf("failed to get last scan for cleanup: %w", err)
 		}

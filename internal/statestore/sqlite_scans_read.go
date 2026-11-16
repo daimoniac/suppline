@@ -16,6 +16,11 @@ func (s *SQLiteStore) GetLastScan(ctx context.Context, digest string) (*ScanReco
 	return s.getLastScan(ctx, digest, "", true)
 }
 
+// GetLastScanSummary is GetLastScan without findings.
+func (s *SQLiteStore) GetLastScanSummary(ctx context.Context, digest string) (*ScanRecord, error) {
+	return s.getLastScan(ctx, digest, "", false)
+}
+
 // GetLastRepositoryScan returns the newest scan of digest stored under repository.
 func (s *SQLiteStore) GetLastRepositoryScan(ctx context.Context, repository, digest string) (*ScanRecord, error) {
 	if repository == "" {
