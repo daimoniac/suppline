@@ -447,8 +447,12 @@ function RuntimeUnusedRepositoryTask({
     setRemoving(true);
     try {
       const result = await apiClient.removeSyncTargets(targets);
-      toast(configEditMessage(result, result.updated === 1 ? 'sync entry' : 'sync entries'), result.updated > 0 ? 'success' : 'warning');
-      if (result.updated > 0) onChanged();
+      const cleaned = result.cleaned ?? 0;
+      const messages = [];
+      if (result.updated > 0 || cleaned === 0) messages.push(configEditMessage(result, result.updated === 1 ? 'sync entry' : 'sync entries'));
+      if (cleaned > 0) messages.push(`Removed ${cleaned} ${cleaned === 1 ? 'repository' : 'repositories'} no longer in the config`);
+      toast(messages.join('. '), result.updated > 0 || cleaned > 0 ? 'success' : 'warning');
+      if (result.updated > 0 || cleaned > 0) onChanged();
     } catch (e: unknown) {
       toast(e instanceof Error ? e.message : 'Failed to remove sync entries', 'error');
     } finally {

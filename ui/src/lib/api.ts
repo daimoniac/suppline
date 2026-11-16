@@ -655,6 +655,8 @@ export interface ConfigEditResult {
   mode: string;
   commit?: string;
   updated: number;
+  /** Repositories whose suppline state was removed although no sync entry named them any more. */
+  cleaned?: number;
 }
 
 export interface SemverUpdateEntry {

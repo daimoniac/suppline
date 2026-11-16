@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"strings"
 
+	"github.com/daimoniac/suppline/internal/config"
 	"github.com/daimoniac/suppline/internal/configedit"
 	"github.com/daimoniac/suppline/internal/gitops"
 	"github.com/daimoniac/suppline/internal/policy/catalog"
@@ -26,6 +27,9 @@ type ConfigEditResult struct {
 	Mode    string `json:"mode"`
 	Commit  string `json:"commit,omitempty"`
 	Updated int    `json:"updated"`
+	// Cleaned counts repositories whose suppline state was removed although no
+	// sync entry named them any more, e.g. after an edit made directly in git.
+	Cleaned int `json:"cleaned,omitempty"`
 }
 
 type semverApplyRequest struct {
@@ -156,13 +160,60 @@ func (s *APIServer) handleRemoveSyncTargets(w http.ResponseWriter, r *http.Reque
 		return
 	}
 	targets := trimStrings(req.Targets)
+	configured, gone, err := s.partitionSyncTargets(targets)
+	if err != nil {
+		s.respondError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	// A repository can outlive its sync entry: the entry was removed in git, or
+	// a watcher on an older configuration rediscovered it after its state was
+	// cleaned. Editing the file would fail with no match, so only its state is
+	// removed.
+	if len(configured) == 0 && len(gone) > 0 {
+		s.cleanupRemovedRepositories(r.Context(), gone)
+		mode, _ := s.configEditor.Mode()
+		s.logger.Info("removed state of repositories without a sync entry", "repositories", gone)
+		s.respondJSON(w, http.StatusOK, ConfigEditResult{Mode: mode, Cleaned: len(gone)})
+		return
+	}
 	s.applyConfigEdit(w, r, "chore(config): remove unused sync repositories [skip ci]", func(current []byte) ([]byte, int, error) {
-		return yamledit.RemoveSyncTargets(current, targets)
+		return yamledit.RemoveSyncTargets(current, configured)
 	}, func(cat *catalog.ConfigCatalog) (int, error) {
-		return cat.RemoveSyncTargets(targets)
-	}, func() {
-		s.cleanupRemovedRepositories(r.Context(), targets)
+		return cat.RemoveSyncTargets(configured)
+	}, func() int {
+		s.cleanupRemovedRepositories(r.Context(), append(append([]string(nil), configured...), gone...))
+		return len(gone)
 	})
+}
+
+// partitionSyncTargets splits targets into those a sync entry of the running
+// configuration still names (ignored entries included, they are in the file)
+// and those no entry names. Without a running configuration every target
+// counts as configured.
+func (s *APIServer) partitionSyncTargets(targets []string) (configured, gone []string, err error) {
+	running := s.runningConfig()
+	if running == nil {
+		return targets, nil, nil
+	}
+	for _, target := range targets {
+		named := false
+		for _, entry := range running.Sync {
+			ok, matchErr := config.SyncTargetMatches(entry.Target, entry.Type, target)
+			if matchErr != nil {
+				return nil, nil, matchErr
+			}
+			if ok {
+				named = true
+				break
+			}
+		}
+		if named {
+			configured = append(configured, target)
+		} else {
+			gone = append(gone, target)
+		}
+	}
+	return configured, gone, nil
 }
 
 // handleRemoveVEXStatements deletes unused VEX statements from suppline.yaml.
@@ -202,7 +253,7 @@ func (s *APIServer) applyConfigEdit(
 	message string,
 	mutate func([]byte) ([]byte, int, error),
 	applyMemory func(*catalog.ConfigCatalog) (int, error),
-	after func(),
+	after func() int,
 ) {
 	if _, err := s.configEditor.Mode(); err != nil {
 		s.respondError(w, http.StatusConflict, err.Error())
@@ -230,11 +281,12 @@ func (s *APIServer) applyConfigEdit(
 		s.respondError(w, editStatus(err), err.Error())
 		return
 	}
+	cleaned := 0
 	if after != nil {
-		after()
+		cleaned = after()
 	}
-	s.logger.Info("applied config edit", "mode", result.Mode, "updated", updated, "commit", result.Commit, "requeued", result.Requeued)
-	s.respondJSON(w, http.StatusOK, ConfigEditResult{Mode: result.Mode, Commit: result.Commit, Updated: updated})
+	s.logger.Info("applied config edit", "mode", result.Mode, "updated", updated, "commit", result.Commit, "requeued", result.Requeued, "cleaned", cleaned)
+	s.respondJSON(w, http.StatusOK, ConfigEditResult{Mode: result.Mode, Commit: result.Commit, Updated: updated, Cleaned: cleaned})
 }
 
 func (s *APIServer) cleanupRemovedRepositories(ctx context.Context, repositories []string) {

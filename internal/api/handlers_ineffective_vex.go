@@ -132,12 +132,13 @@ func (s *APIServer) handleRemoveIneffectiveVEX(w http.ResponseWriter, r *http.Re
 		return yamledit.RemoveSyncVEXStatements(current, yamlRefs)
 	}, func(cat *catalog.ConfigCatalog) (int, error) {
 		return cat.RemoveEntryVEX(catRefs)
-	}, func() {
+	}, func() int {
 		if s.vexAudit == nil {
-			return
+			return 0
 		}
 		for _, ref := range refs {
 			s.vexAudit.Forget(ref.Repository, ref.CVEID, ref.Source)
 		}
+		return 0
 	})
 }
