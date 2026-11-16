@@ -294,3 +294,31 @@ func headFile(t *testing.T, bare, name string) string {
 	}
 	return body
 }
+
+// Removing a sync entry leaves nothing of it to rescan.
+func TestEditorSyncRemovalDoesNotRequeueRemovedRepository(t *testing.T) {
+	editor, path, running, requeue := localEditor(t)
+
+	if _, err := editor.Apply(context.Background(), Change{
+		Message: "chore(config): remove unused sync repositories",
+		File: func(current []byte) ([]byte, error) {
+			next, _, err := yamledit.RemoveSyncTargets(current, []string{"registry.local/other"})
+			return next, err
+		},
+		Running: func(running *catalog.ConfigCatalog) error {
+			_, err := running.RemoveSyncTargets([]string{"registry.local/other"})
+			return err
+		},
+	}); err != nil {
+		t.Fatalf("Apply() error = %v", err)
+	}
+	if body, _ := os.ReadFile(path); strings.Contains(string(body), "registry.local/other") {
+		t.Fatalf("entry not removed:\n%s", body)
+	}
+	if got := len(running.Current().Sync); got != 1 {
+		t.Fatalf("running sync entries = %d, want 1", got)
+	}
+	if len(requeue.calls) != 0 {
+		t.Errorf("requeued %v, want nothing", requeue.calls)
+	}
+}

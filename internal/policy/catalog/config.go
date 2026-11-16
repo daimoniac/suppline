@@ -85,7 +85,8 @@ func cloneForEdit(cfg *config.RegsyncConfig) *config.RegsyncConfig {
 
 // Replace swaps in a newly parsed configuration. It returns the repositories
 // whose policy or VEX decision changed, so the caller can rescan those images.
-// A repository that was added or removed is included. Identical decisions are not.
+// An added repository is included. A removed one is not: it has nothing left
+// to rescan. Identical decisions are not.
 func (c *ConfigCatalog) Replace(next *config.RegsyncConfig) []string {
 	if c == nil || next == nil {
 		return nil
@@ -116,8 +117,10 @@ func decisionFingerprints(cfg *config.RegsyncConfig) map[string]string {
 	return out
 }
 
-// DecisionChanges returns the repositories whose policy or VEX decision differs
-// between two configuration snapshots, including added and removed ones.
+// DecisionChanges returns the repositories of next whose policy or VEX decision
+// differs from prev, including added ones. Removed repositories are left out:
+// callers rescan the result, and rescanning a removed repository only fills
+// the queue and recreates state its removal just cleaned up.
 func DecisionChanges(prev, next *config.RegsyncConfig) []string {
 	return changedRepositories(decisionFingerprints(prev), decisionFingerprints(next))
 }
@@ -139,16 +142,9 @@ func fingerprintDecision(policy *config.PolicyConfig, evidence Evidence) string 
 }
 
 func changedRepositories(before, after map[string]string) []string {
-	seen := map[string]struct{}{}
-	for repository := range before {
-		seen[repository] = struct{}{}
-	}
-	for repository := range after {
-		seen[repository] = struct{}{}
-	}
 	changed := make([]string, 0)
-	for repository := range seen {
-		if before[repository] != after[repository] {
+	for repository, fingerprint := range after {
+		if previous, ok := before[repository]; !ok || previous != fingerprint {
 			changed = append(changed, repository)
 		}
 	}
