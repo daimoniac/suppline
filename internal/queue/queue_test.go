@@ -5,7 +5,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/daimoniac/suppline/internal/types"
 )
 
 func TestNewInMemoryQueue(t *testing.T) {
@@ -408,57 +407,6 @@ func TestEnqueueEmptyDigest(t *testing.T) {
 	err := q.Enqueue(ctx, task)
 	if err == nil {
 		t.Error("expected error when enqueuing task with empty digest")
-	}
-}
-
-func TestVEXStatements(t *testing.T) {
-	q := NewInMemoryQueue(10)
-	defer q.Close()
-
-	ctx := context.Background()
-	expiresAt := time.Now().Add(24 * time.Hour).Unix()
-
-	task := &ScanTask{
-		ID:         "task-1",
-		Repository: "test/repo",
-		Digest:     "sha256:test",
-		Tag:        "v1.0.0",
-		EnqueuedAt: time.Now(),
-		VEXStatements: []types.VEXStatement{
-			{
-				ID:        "CVE-2024-12345",
-				State:     types.VEXStateNotAffected,
-				Detail:    "Accepted risk",
-				ExpiresAt: &expiresAt,
-			},
-			{
-				ID:     "CVE-2024-67890",
-				State:  types.VEXStateNotAffected,
-				Detail: "No fix available",
-			},
-		},
-	}
-
-	err := q.Enqueue(ctx, task)
-	if err != nil {
-		t.Fatalf("failed to enqueue task with VEX statements: %v", err)
-	}
-
-	dequeued, err := q.Dequeue(ctx)
-	if err != nil {
-		t.Fatalf("failed to dequeue task: %v", err)
-	}
-
-	if len(dequeued.VEXStatements) != 2 {
-		t.Errorf("expected 2 VEX statements, got %d", len(dequeued.VEXStatements))
-	}
-
-	if dequeued.VEXStatements[0].ID != "CVE-2024-12345" {
-		t.Errorf("expected CVE-2024-12345, got %s", dequeued.VEXStatements[0].ID)
-	}
-
-	if dequeued.VEXStatements[1].ExpiresAt != nil {
-		t.Error("expected nil expiry for second VEX statement")
 	}
 }
 

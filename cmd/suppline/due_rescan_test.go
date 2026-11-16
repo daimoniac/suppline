@@ -56,7 +56,7 @@ func TestEnqueueDueArtifacts_InUseBeforeNotInUse(t *testing.T) {
 	}}
 
 	taskQueue := queue.NewInMemoryQueue(100)
-	enqueuer := scanenqueue.New(taskQueue, nil)
+	enqueuer := scanenqueue.New(taskQueue)
 
 	if err := enqueueDueArtifacts(context.Background(), store, enqueuer, time.Hour, discardLogger()); err != nil {
 		t.Fatalf("enqueueDueArtifacts: %v", err)
@@ -75,7 +75,7 @@ func TestEnqueueDueArtifacts_InUseBeforeNotInUse(t *testing.T) {
 // backlog, even though seeding enqueues far more tasks.
 func TestStartupEnqueueOrder_FailedInUseBeforeDue(t *testing.T) {
 	taskQueue := queue.NewInMemoryQueue(100)
-	enqueuer := scanenqueue.New(taskQueue, nil)
+	enqueuer := scanenqueue.New(taskQueue)
 	ctx := context.Background()
 
 	if _, err := enqueuer.EnqueueUrgentRescan(ctx, scanenqueue.Image{
@@ -103,7 +103,7 @@ func TestStartupEnqueueOrder_FailedInUseBeforeDue(t *testing.T) {
 
 func TestEnqueueDueArtifacts_NoneDue(t *testing.T) {
 	taskQueue := queue.NewInMemoryQueue(100)
-	enqueuer := scanenqueue.New(taskQueue, nil)
+	enqueuer := scanenqueue.New(taskQueue)
 
 	if err := enqueueDueArtifacts(context.Background(), &stubDueArtifactLister{}, enqueuer, time.Hour, discardLogger()); err != nil {
 		t.Fatalf("enqueueDueArtifacts: %v", err)

@@ -6,15 +6,17 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/daimoniac/suppline/internal/config"
-	"github.com/daimoniac/suppline/internal/policy/catalog"
 	"github.com/daimoniac/suppline/internal/queue"
 )
 
 // Enqueuer constructs and submits scan tasks.
+//
+// A task names the image and why it is scanned, nothing more. The pipeline
+// reads policy and evidence when it runs the task, so a pending task that
+// absorbs a duplicate request still scans with the configuration in force
+// at scan time.
 type Enqueuer struct {
 	taskQueue queue.TaskQueue
-	catalog   catalog.Catalog
 	now       func() time.Time
 }
 
@@ -39,15 +41,9 @@ const (
 )
 
 // New creates an Enqueuer backed by taskQueue.
-func New(taskQueue queue.TaskQueue, regsyncConfig *config.RegsyncConfig) *Enqueuer {
-	return NewWithCatalog(taskQueue, catalog.NewConfigCatalog(regsyncConfig))
-}
-
-// NewWithCatalog creates an Enqueuer using the repository-policy catalog.
-func NewWithCatalog(taskQueue queue.TaskQueue, policyCatalog catalog.Catalog) *Enqueuer {
+func New(taskQueue queue.TaskQueue) *Enqueuer {
 	return &Enqueuer{
 		taskQueue: taskQueue,
-		catalog:   policyCatalog,
 		now:       time.Now,
 	}
 }
@@ -80,23 +76,16 @@ func (e *Enqueuer) enqueue(ctx context.Context, image Image, isRescan, isFirstSc
 	idTime := e.now()
 	enqueuedAt := e.now()
 
-	var evidence catalog.Evidence
-	if e.catalog != nil {
-		evidence = e.catalog.ResolveEvidence(image.Repository)
-	}
-
 	task := &queue.ScanTask{
-		ID:            fmt.Sprintf("%s-%d", image.Digest, idTime.Unix()),
-		Repository:    image.Repository,
-		Digest:        image.Digest,
-		Tag:           image.Tag,
-		EnqueuedAt:    enqueuedAt,
-		Attempts:      0,
-		IsRescan:      isRescan,
-		IsFirstScan:   isFirstScan,
-		Priority:      priority,
-		VEXStatements: evidence.VEXStatements,
-		UseVEXRepo:    evidence.UseVEXRepo,
+		ID:          fmt.Sprintf("%s-%d", image.Digest, idTime.Unix()),
+		Repository:  image.Repository,
+		Digest:      image.Digest,
+		Tag:         image.Tag,
+		EnqueuedAt:  enqueuedAt,
+		Attempts:    0,
+		IsRescan:    isRescan,
+		IsFirstScan: isFirstScan,
+		Priority:    priority,
 	}
 
 	if err := e.taskQueue.Enqueue(ctx, task); err != nil {

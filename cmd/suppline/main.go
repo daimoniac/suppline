@@ -148,7 +148,7 @@ func run() error {
 	logger.Debug("initializing task queue",
 		"buffer_size", cfg.Queue.BufferSize)
 	taskQueue := queue.NewInMemoryQueue(cfg.Queue.BufferSize)
-	scanEnqueuer := scanenqueue.NewWithCatalog(taskQueue, repositoryPolicies)
+	scanEnqueuer := scanenqueue.New(taskQueue)
 	healthChecker.UpdateComponentHealth("queue", observability.StatusHealthy, "")
 	logger.Debug("task queue initialized")
 

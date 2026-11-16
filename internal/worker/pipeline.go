@@ -10,6 +10,7 @@ import (
 	"github.com/daimoniac/suppline/internal/errors"
 	"github.com/daimoniac/suppline/internal/observability"
 	"github.com/daimoniac/suppline/internal/policy"
+	"github.com/daimoniac/suppline/internal/policy/catalog"
 	"github.com/daimoniac/suppline/internal/queue"
 	"github.com/daimoniac/suppline/internal/registry"
 	"github.com/daimoniac/suppline/internal/scanner"
@@ -46,8 +47,12 @@ func (p *Pipeline) Execute(ctx context.Context, task *queue.ScanTask) error {
 		return err
 	}
 
+	// Evidence is read when the task runs, never when it was queued, so a
+	// triage decision reaches every scan that starts after it is written.
+	evidence := p.resolveEvidence(task.Repository)
+
 	// Phase 1: Scan (SBOM + Vulnerabilities)
-	sbom, scanResult, scanDurations, err := p.scanPhase(ctx, task, imageRef)
+	sbom, scanResult, scanDurations, err := p.scanPhase(ctx, task, imageRef, evidence)
 	if err != nil {
 		// Check if this is a MANIFEST_UNKNOWN error that requires cleanup
 		if errors.IsManifestNotFound(err) {
@@ -75,19 +80,19 @@ func (p *Pipeline) Execute(ctx context.Context, task *queue.ScanTask) error {
 	}
 
 	// Phase 2: Policy Evaluation
-	policyDecision, err := p.policyPhase(ctx, task, imageRef, scanResult)
+	policyDecision, err := p.policyPhase(ctx, task, imageRef, scanResult, evidence)
 	if err != nil {
 		return err
 	}
 
 	// Phase 3: Attestations (SBOM, Vulnerabilities, VEX, SCAI)
-	attestDurations, attestResult, err := p.attestationPhase(ctx, task, imageRef, sbom, scanResult, policyDecision)
+	attestDurations, attestResult, err := p.attestationPhase(ctx, task, imageRef, sbom, scanResult, policyDecision, evidence)
 	if err != nil {
 		return err
 	}
 
 	// Phase 4: Persistence
-	if err := p.persistencePhase(ctx, task, scanResult, policyDecision, attestResult, startTime); err != nil {
+	if err := p.persistencePhase(ctx, task, scanResult, policyDecision, attestResult, startTime, evidence); err != nil {
 		// Check if persistence or cleanup failed with transient error
 		if errors.IsTransient(err) {
 			// Return transient errors to allow retry
@@ -125,7 +130,7 @@ func (p *Pipeline) validateDependencies() error {
 }
 
 // scanPhase performs SBOM generation and vulnerability scanning
-func (p *Pipeline) scanPhase(ctx context.Context, task *queue.ScanTask, imageRef string) (*scanner.SBOM, *scanner.ScanResult, map[string]time.Duration, error) {
+func (p *Pipeline) scanPhase(ctx context.Context, task *queue.ScanTask, imageRef string, evidence catalog.Evidence) (*scanner.SBOM, *scanner.ScanResult, map[string]time.Duration, error) {
 	durations := make(map[string]time.Duration)
 	metrics := observability.GetMetrics()
 
@@ -161,7 +166,7 @@ func (p *Pipeline) scanPhase(ctx context.Context, task *queue.ScanTask, imageRef
 	// Scan vulnerabilities
 	vulnStart := time.Now()
 	p.logger.Debug("scanning vulnerabilities", "image_ref", imageRef)
-	scanResult, err := p.worker.scanner.ScanVulnerabilities(ctx, imageRef, task.UseVEXRepo)
+	scanResult, err := p.worker.scanner.ScanVulnerabilities(ctx, imageRef, evidence.UseVEXRepo)
 	if err != nil {
 		// Classify scanner errors to detect MANIFEST_UNKNOWN
 		classifiedErr := errors.ClassifyRegistryError(err)
@@ -190,7 +195,7 @@ func (p *Pipeline) scanPhase(ctx context.Context, task *queue.ScanTask, imageRef
 }
 
 // policyPhase evaluates policy with VEX statements
-func (p *Pipeline) policyPhase(ctx context.Context, task *queue.ScanTask, imageRef string, scanResult *scanner.ScanResult) (*policy.PolicyDecision, error) {
+func (p *Pipeline) policyPhase(ctx context.Context, task *queue.ScanTask, imageRef string, scanResult *scanner.ScanResult, evidence catalog.Evidence) (*policy.PolicyDecision, error) {
 	// Get policy engine for this repository
 	policyEngine, err := p.getPolicyEngineForRepository(task.Repository)
 	if err != nil {
@@ -198,8 +203,8 @@ func (p *Pipeline) policyPhase(ctx context.Context, task *queue.ScanTask, imageR
 	}
 
 	// Evaluate policy
-	p.logger.Debug("evaluating policy", "image_ref", imageRef, "vex_statements", len(task.VEXStatements))
-	policyDecision, err := policyEngine.Evaluate(ctx, imageRef, scanResult, task.VEXStatements)
+	p.logger.Debug("evaluating policy", "image_ref", imageRef, "vex_statements", len(evidence.VEXStatements))
+	policyDecision, err := policyEngine.Evaluate(ctx, imageRef, scanResult, evidence.VEXStatements)
 	if err != nil {
 		return nil, errors.NewPermanentf("failed to evaluate policy: %w", err)
 	}
@@ -243,7 +248,7 @@ type attestationResult struct {
 }
 
 // attestationPhase creates all attestations (SBOM, vulnerabilities, VEX, SCAI)
-func (p *Pipeline) attestationPhase(ctx context.Context, task *queue.ScanTask, imageRef string, sbom *scanner.SBOM, scanResult *scanner.ScanResult, policyDecision *policy.PolicyDecision) (map[string]time.Duration, *attestationResult, error) {
+func (p *Pipeline) attestationPhase(ctx context.Context, task *queue.ScanTask, imageRef string, sbom *scanner.SBOM, scanResult *scanner.ScanResult, policyDecision *policy.PolicyDecision, evidence catalog.Evidence) (map[string]time.Duration, *attestationResult, error) {
 	durations := make(map[string]time.Duration)
 	metrics := observability.GetMetrics()
 	result := &attestationResult{}
@@ -304,7 +309,7 @@ func (p *Pipeline) attestationPhase(ctx context.Context, task *queue.ScanTask, i
 		// Build applied VEX statements for attestation
 		var appliedStatements []types.AppliedVEXStatement
 		for _, cve := range policyDecision.ExemptedCVEs {
-			for _, stmt := range task.VEXStatements {
+			for _, stmt := range evidence.VEXStatements {
 				if stmt.ID == cve {
 					appliedStatements = append(appliedStatements, types.AppliedVEXStatement{
 						CVEID:         cve,
@@ -358,9 +363,9 @@ func (p *Pipeline) attestationPhase(ctx context.Context, task *queue.ScanTask, i
 }
 
 // persistencePhase records scan results to state store
-func (p *Pipeline) persistencePhase(ctx context.Context, task *queue.ScanTask, scanResult *scanner.ScanResult, policyDecision *policy.PolicyDecision, attestResult *attestationResult, scannedAt time.Time) error {
+func (p *Pipeline) persistencePhase(ctx context.Context, task *queue.ScanTask, scanResult *scanner.ScanResult, policyDecision *policy.PolicyDecision, attestResult *attestationResult, scannedAt time.Time, evidence catalog.Evidence) error {
 	// Build scan record from workflow results
-	scanRecord := buildScanRecord(task, scanResult, policyDecision, attestResult, scannedAt)
+	scanRecord := buildScanRecord(task, scanResult, policyDecision, attestResult, scannedAt, evidence.VEXStatements)
 
 	// Calculate and update scan duration
 	scanDuration := time.Since(scannedAt)
@@ -831,6 +836,14 @@ func pickReplacementTag(validStoredTags map[string]struct{}) string {
 		}
 	}
 	return replacement
+}
+
+// resolveEvidence returns the repository's exemption evidence as configured now.
+func (p *Pipeline) resolveEvidence(repository string) catalog.Evidence {
+	if p.worker.policyCatalog == nil {
+		return catalog.Evidence{}
+	}
+	return p.worker.policyCatalog.ResolveEvidence(repository)
 }
 
 // getPolicyEngineForRepository returns a policy engine for the given repository
