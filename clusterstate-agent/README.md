@@ -75,7 +75,7 @@ The agent loads configuration from a `.env` file (if present) before checking en
 | `suppline.apiKey` | `""` | Optional API key; creates a Secret when set |
 | `excludedNamespaces` | `"kube-system,kube-public,kube-node-lease"` | Namespaces to skip |
 | `logLevel` | `"info"` | Container log level |
-| `image.repository` | `ghcr.io/daimoniac/clusterstate-agent` | Image repository |
+| `image.repository` | `ghcr.io/daimoniac/suppline-clusterstate-agent` | Image repository |
 | `image.tag` | `"latest"` | Image tag |
 | `image.pullPolicy` | `Always` | Container image pull policy |
 | `rbac.create` | `true` | Create ClusterRole + ClusterRoleBinding |
@@ -126,7 +126,7 @@ From repo root, you can use Docker Compose release/deploy helpers:
 
 ```bash
 # Build + push image
-CLUSTERSTATE_AGENT_IMAGE=daimon666/suppline-clusterstate-agent:latest \
+CLUSTERSTATE_AGENT_IMAGE=ghcr.io/daimoniac/suppline-clusterstate-agent:latest \
   docker compose --profile release build --push clusterstate-agent-image
 
 # Helm upgrade/install using the compose deploy helper

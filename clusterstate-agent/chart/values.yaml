@@ -32,7 +32,7 @@ excludedNamespaces: "kube-system,kube-public,kube-node-lease"
 logLevel: "info"
 
 image:
-  repository: ghcr.io/daimoniac/clusterstate-agent
+  repository: ghcr.io/daimoniac/suppline-clusterstate-agent
   tag: "latest"
   pullPolicy: Always
 
