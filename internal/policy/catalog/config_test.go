@@ -330,3 +330,25 @@ func TestReplaceReportsRepositoriesWhoseDecisionChanged(t *testing.T) {
 		t.Fatalf("unchanged replace reported %v", again)
 	}
 }
+
+// internal-1, 2026-11-16: removing the gitlab-agent_agentk sync entry requeued
+// all 122 of its images. They delayed every other rescan by about 20 minutes
+// and recreated state the removal had just cleaned up.
+func TestDecisionChangesLeavesOutRemovedRepositories(t *testing.T) {
+	prev := &config.RegsyncConfig{Sync: []config.SyncEntry{
+		{Target: "registry.example/app", Type: "repository"},
+		{Target: "registry.example/agentk", Type: "repository"},
+	}}
+	next := &config.RegsyncConfig{Sync: []config.SyncEntry{
+		{Target: "registry.example/app", Type: "repository"},
+		{Target: "registry.example/added", Type: "repository"},
+	}}
+	if got := DecisionChanges(prev, next); len(got) != 1 || got[0] != "registry.example/added" {
+		t.Fatalf("DecisionChanges = %v, want only the added repository", got)
+	}
+
+	cat := NewConfigCatalog(prev)
+	if got := cat.Replace(next); len(got) != 1 || got[0] != "registry.example/added" {
+		t.Fatalf("Replace = %v, want only the added repository", got)
+	}
+}
