@@ -990,3 +990,7 @@ func TestHandleListRepositories_StatusSorting(t *testing.T) {
 		t.Errorf("Expected status 200 for status_desc, got %d", w.Code)
 	}
 }
+
+func (m *mockStateStore) GetLastRepositoryScanSummary(ctx context.Context, repository, digest string) (*statestore.ScanRecord, error) {
+	return m.GetLastRepositoryScan(ctx, repository, digest)
+}

@@ -50,6 +50,10 @@ type StateStore interface {
 	// attestations are published into the repository that was scanned.
 	GetLastRepositoryScan(ctx context.Context, repository, digest string) (*ScanRecord, error)
 
+	// GetLastRepositoryScanSummary is GetLastRepositoryScan without findings,
+	// for callers that only need when and how the digest was last scanned.
+	GetLastRepositoryScanSummary(ctx context.Context, repository, digest string) (*ScanRecord, error)
+
 	// ListDueForRescan returns digests that need rescanning (where next_scan_at < now)
 	ListDueForRescan(ctx context.Context, interval time.Duration) ([]string, error)
 

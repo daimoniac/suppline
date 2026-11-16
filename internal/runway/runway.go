@@ -37,7 +37,7 @@ type Candidate struct {
 
 // Store is the scan state the runway reads and the binding it writes.
 type Store interface {
-	GetLastRepositoryScan(ctx context.Context, repository, digest string) (*statestore.ScanRecord, error)
+	GetLastRepositoryScanSummary(ctx context.Context, repository, digest string) (*statestore.ScanRecord, error)
 	EnsureArtifactTagBinding(ctx context.Context, repository, digest, tag string) (bool, error)
 }
 
@@ -171,7 +171,7 @@ func (r *Runway) publish(ctx context.Context, c Candidate, reason string) error 
 }
 
 func (r *Runway) lastScan(ctx context.Context, c Candidate) (*statestore.ScanRecord, error) {
-	rec, err := r.cfg.Store.GetLastRepositoryScan(ctx, c.Repository, c.Digest)
+	rec, err := r.cfg.Store.GetLastRepositoryScanSummary(ctx, c.Repository, c.Digest)
 	if errors.Is(err, statestore.ErrScanNotFound) {
 		return nil, nil
 	}

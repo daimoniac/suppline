@@ -1281,3 +1281,7 @@ func TestWatcher_Discover_RenewsSupersededDigest(t *testing.T) {
 		t.Fatalf("retained renewal = %+v", retained)
 	}
 }
+
+func (m *mockStateStore) GetLastRepositoryScanSummary(ctx context.Context, repository, digest string) (*statestore.ScanRecord, error) {
+	return m.GetLastRepositoryScan(ctx, repository, digest)
+}
