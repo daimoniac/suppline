@@ -1,4 +1,4 @@
-package triage
+package configedit
 
 import (
 	"os"

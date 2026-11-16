@@ -11,8 +11,9 @@ import (
 	"testing"
 
 	"github.com/daimoniac/suppline/internal/config"
+	"github.com/daimoniac/suppline/internal/configedit"
 	"github.com/daimoniac/suppline/internal/observability"
-	"github.com/daimoniac/suppline/internal/triage"
+	"github.com/daimoniac/suppline/internal/policy/catalog"
 	"github.com/daimoniac/suppline/internal/types"
 	"gopkg.in/yaml.v3"
 )
@@ -69,11 +70,10 @@ sync:
 		},
 	}
 	server := tasksTestServer(t, &mockStateStore{}, regsync)
-	svc, err := triage.New(nil, path, nil, nil, nil, observability.NewLogger("error"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	server.SetTriage(svc)
+	server.SetConfigEditor(configedit.New(
+		configedit.Target{LocalPath: path, Retention: 10},
+		server.policyCatalog.(*catalog.ConfigCatalog), nil, observability.NewLogger("error"),
+	))
 
 	statusReq := httptest.NewRequest(http.MethodGet, "/api/v1/tasks/config-edits", nil)
 	statusRec := httptest.NewRecorder()
