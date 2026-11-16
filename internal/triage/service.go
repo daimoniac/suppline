@@ -1040,7 +1040,30 @@ func (s *Service) applyStatements(ctx context.Context, repository string, statem
 			return running.ReplaceAutoVEX(repository, next)
 		},
 	})
+	if err == nil {
+		s.logWrite("wrote x-vex-auto statements", repository, statementIDs(statements), result)
+	}
 	return result.Commit, s.writtenUnlessRefreshFailed(repository, err)
+}
+
+// logWrite records a config write and the rescans it queued. A statement only
+// takes effect once a scan applies it, so the requeue count shows when that is
+// on its way; queued scans can wait behind other work in the scan queue.
+func (s *Service) logWrite(msg, repository string, ids []string, result configedit.Result) {
+	s.logger.Info(msg,
+		"repository", repository,
+		"ids", ids,
+		"mode", result.Mode,
+		"commit", result.Commit,
+		"requeued", result.Requeued)
+}
+
+func statementIDs(statements []types.VEXStatement) []string {
+	ids := make([]string, 0, len(statements))
+	for _, statement := range statements {
+		ids = append(ids, statement.ID)
+	}
+	return ids
 }
 
 // writtenUnlessRefreshFailed keeps a written statement a success when only the
@@ -1084,6 +1107,9 @@ func (s *Service) PromoteManual(ctx context.Context, repository string, statemen
 			return running.UpsertManualVEX(repository, statement)
 		},
 	})
+	if err == nil {
+		s.logWrite("wrote x-vex statement", repository, []string{statement.ID}, result)
+	}
 	return result.Commit, err
 }
 
