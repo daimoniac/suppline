@@ -2,7 +2,7 @@ import { Link } from 'react-router';
 import { PolicyAgentPromptCard } from './PolicyAgentPromptCard';
 import { PolicyDescriptionText } from './ui';
 import type { PolicyInfo, Scan } from '../lib/api';
-import { runtimeLocationLabels, supersededRunningLabel } from '../lib/policyComplianceData';
+import { runtimeWorkloadLocations, supersededRunningLabel } from '../lib/policyComplianceData';
 import { truncateDigest } from '../lib/utils';
 
 const TOP_POLICY_DISPLAY_COUNT = 5;
@@ -141,7 +141,10 @@ export function SupersededRunningList({ scans }: { scans: Scan[] }) {
       <div>
         <h3 className="text-xs font-semibold text-text-primary">Pods running a superseded digest</h3>
         <p className="text-xs text-text-secondary">
-          These tags now point at a newer digest, but clusters still run the old, failing one. Roll the pods to pick up the current digest.
+          These tags now point at a newer digest, but clusters still run the old, failing one. Restart the workloads below so their pods pull the current digest.
+        </p>
+        <p className="text-xs text-text-secondary mt-1">
+          A restart alone is not enough with <code>imagePullPolicy: IfNotPresent</code>: a node that cached the old digest starts the new pod from it again. Set <code>imagePullPolicy: Always</code> or pin the image by digest first.
         </p>
       </div>
       <ul className="space-y-1">
@@ -152,9 +155,14 @@ export function SupersededRunningList({ scans }: { scans: Scan[] }) {
             </Link>
             <span className="text-text-secondary">{supersededRunningLabel(scan)}</span>
             <code className="text-text-muted" title={scan.Digest}>{truncateDigest(scan.Digest)}</code>
-            {runtimeLocationLabels(scan.Runtime).length > 0 && (
-              <span className="text-text-muted">on {runtimeLocationLabels(scan.Runtime).join(', ')}</span>
-            )}
+            {runtimeWorkloadLocations(scan.Runtime).map(({ location, workloads }) => (
+              <span key={location} className="text-text-muted">
+                on {location}
+                {workloads.length > 0 && (
+                  <>: {workloads.map(workload => <code key={workload} className="ml-1 text-text-primary">{workload}</code>)}</>
+                )}
+              </span>
+            ))}
           </li>
         ))}
       </ul>

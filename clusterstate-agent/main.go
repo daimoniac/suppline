@@ -10,6 +10,8 @@ import (
 	"os"
 	"os/signal"
 	"regexp"
+	"slices"
+	"sort"
 	"strings"
 	"sync"
 	"syscall"
@@ -33,6 +35,9 @@ type clusterImageInput struct {
 	ImageRef  string `json:"image_ref"`
 	Tag       string `json:"tag,omitempty"`
 	Digest    string `json:"digest,omitempty"`
+	// Workloads names the pod owners running this image as "Kind/name", e.g.
+	// "StatefulSet/cortex-memcached-blocks" or "Deployment/api". Sorted, unique.
+	Workloads []string `json:"workloads,omitempty"`
 }
 
 type clusterInventoryRequest struct {
@@ -71,6 +76,55 @@ func imageKey(img clusterImageInput) string {
 	return img.Namespace + "|" + img.ImageRef + "|" + img.Tag + "|" + img.Digest
 }
 
+// mergeWorkloads returns the sorted union of two workload lists.
+func mergeWorkloads(a, b []string) []string {
+	if len(a) == 0 && len(b) == 0 {
+		return nil
+	}
+	set := make(map[string]struct{}, len(a)+len(b))
+	for _, w := range a {
+		if w = strings.TrimSpace(w); w != "" {
+			set[w] = struct{}{}
+		}
+	}
+	for _, w := range b {
+		if w = strings.TrimSpace(w); w != "" {
+			set[w] = struct{}{}
+		}
+	}
+	if len(set) == 0 {
+		return nil
+	}
+	out := make([]string, 0, len(set))
+	for w := range set {
+		out = append(out, w)
+	}
+	sort.Strings(out)
+	return out
+}
+
+// podWorkload names the controller that owns a pod as "Kind/name". A pod from a
+// Deployment's ReplicaSet is reported as the Deployment, using the
+// pod-template-hash suffix of the ReplicaSet name. A pod without a controller
+// is reported as "Pod/name".
+func podWorkload(pod *corev1.Pod) string {
+	if pod == nil {
+		return ""
+	}
+	for _, ref := range pod.OwnerReferences {
+		if ref.Controller == nil || !*ref.Controller {
+			continue
+		}
+		if ref.Kind == "ReplicaSet" {
+			if hash := pod.Labels["pod-template-hash"]; hash != "" && strings.HasSuffix(ref.Name, "-"+hash) {
+				return "Deployment/" + strings.TrimSuffix(ref.Name, "-"+hash)
+			}
+		}
+		return ref.Kind + "/" + ref.Name
+	}
+	return "Pod/" + pod.Name
+}
+
 func imageIdentityKey(img clusterImageInput) string {
 	return img.Namespace + "|" + img.ImageRef + "|" + img.Tag
 }
@@ -102,7 +156,7 @@ func normalizeImagesPreferDigests(images []clusterImageInput) []clusterImageInpu
 	}
 
 	result := make([]clusterImageInput, 0, len(images))
-	seenFull := make(map[string]struct{})
+	indexByKey := make(map[string]int)
 	for _, identity := range order {
 		for _, img := range groups[identity] {
 			if hasDigest[identity] && strings.TrimSpace(img.Digest) == "" {
@@ -110,10 +164,12 @@ func normalizeImagesPreferDigests(images []clusterImageInput) []clusterImageInpu
 			}
 
 			key := imageKey(img)
-			if _, exists := seenFull[key]; exists {
+			if i, exists := indexByKey[key]; exists {
+				result[i].Workloads = mergeWorkloads(result[i].Workloads, img.Workloads)
 				continue
 			}
-			seenFull[key] = struct{}{}
+			indexByKey[key] = len(result)
+			img.Workloads = mergeWorkloads(nil, img.Workloads)
 			result = append(result, img)
 		}
 	}
@@ -145,13 +201,17 @@ func (b *inventoryBuffer) addLocked(img clusterImageInput) bool {
 	key := imageKey(img)
 	if existing, ok := b.seen[key]; ok {
 		updated := existing.img
-		tagEnriched := false
+		enriched := false
 		if existing.img.Tag == "" && img.Tag != "" {
 			updated.Tag = img.Tag
-			tagEnriched = true
+			enriched = true
+		}
+		if workloads := mergeWorkloads(existing.img.Workloads, img.Workloads); len(workloads) != len(existing.img.Workloads) {
+			updated.Workloads = workloads
+			enriched = true
 		}
 		b.seen[key] = seenEntry{img: updated, lastSeen: time.Now().UTC()}
-		return tagEnriched
+		return enriched
 	}
 
 	b.seen[key] = seenEntry{img: img, lastSeen: time.Now().UTC()}
@@ -226,6 +286,12 @@ func (b *inventoryBuffer) TouchAll(images []clusterImageInput) bool {
 			updated := existing.img
 			if existing.img.Tag == "" && img.Tag != "" {
 				updated.Tag = img.Tag
+				changed = true
+			}
+			// A full listing names every current owner, so it replaces the
+			// owners pod watch events accumulated, dropping deleted workloads.
+			if len(img.Workloads) > 0 && !slices.Equal(updated.Workloads, img.Workloads) {
+				updated.Workloads = img.Workloads
 				changed = true
 			}
 			b.seen[key] = seenEntry{img: updated, lastSeen: now}
@@ -565,18 +631,19 @@ func collectPodObservation(pod *corev1.Pod, excludedNS map[string]bool, buffer *
 	}
 
 	imageIDs := buildImageIDMap(pod)
+	workloads := []string{podWorkload(pod)}
 	changed := false
 
-	if addObservedContainers(buffer, pod.Namespace, pod.Spec.InitContainers, imageIDs) {
+	if addObservedContainers(buffer, pod.Namespace, workloads, pod.Spec.InitContainers, imageIDs) {
 		changed = true
 	}
-	if addObservedContainers(buffer, pod.Namespace, pod.Spec.Containers, imageIDs) {
+	if addObservedContainers(buffer, pod.Namespace, workloads, pod.Spec.Containers, imageIDs) {
 		changed = true
 	}
 
 	for _, c := range pod.Spec.EphemeralContainers {
 		imageRef, tag, digest := parseImageRef(c.Image, imageIDs[c.Name])
-		if buffer.Observe(clusterImageInput{Namespace: pod.Namespace, ImageRef: imageRef, Tag: tag, Digest: digest}) {
+		if buffer.Observe(clusterImageInput{Namespace: pod.Namespace, ImageRef: imageRef, Tag: tag, Digest: digest, Workloads: workloads}) {
 			changed = true
 		}
 	}
@@ -720,11 +787,11 @@ func isLikelyImageRef(v string) bool {
 	return strings.Contains(v, "/") || strings.Contains(v, ":") || strings.Contains(v, "@sha256:")
 }
 
-func addObservedContainers(buffer *inventoryBuffer, namespace string, containers []corev1.Container, imageIDByContainer map[string]string) bool {
+func addObservedContainers(buffer *inventoryBuffer, namespace string, workloads []string, containers []corev1.Container, imageIDByContainer map[string]string) bool {
 	changed := false
 	for _, c := range containers {
 		imageRef, tag, digest := parseImageRef(c.Image, imageIDByContainer[c.Name])
-		if buffer.Observe(clusterImageInput{Namespace: namespace, ImageRef: imageRef, Tag: tag, Digest: digest}) {
+		if buffer.Observe(clusterImageInput{Namespace: namespace, ImageRef: imageRef, Tag: tag, Digest: digest, Workloads: workloads}) {
 			changed = true
 		}
 	}
@@ -900,8 +967,8 @@ func buildKubeClient() (*kubernetes.Clientset, error) {
 // older ones are returned in expired so the inventory buffer can drop them.
 func collectImages(pods []corev1.Pod, excludedNS map[string]bool, retention time.Duration, logger *slog.Logger) (images, expired []clusterImageInput) {
 	now := time.Now().UTC()
-	seen := make(map[string]struct{})
-	expiredSeen := make(map[string]struct{})
+	seen := make(map[string]int)
+	expiredSeen := make(map[string]int)
 
 	for i := range pods {
 		pod := &pods[i]
@@ -928,52 +995,33 @@ func collectImages(pods []corev1.Pod, excludedNS map[string]bool, retention time
 	return images, expired
 }
 
-func appendPodImages(images []clusterImageInput, seen map[string]struct{}, pod *corev1.Pod) []clusterImageInput {
+// appendPodImages adds each container image of pod once per image key; seen maps
+// a key to its index in images so later pods add their workload to it.
+func appendPodImages(images []clusterImageInput, seen map[string]int, pod *corev1.Pod) []clusterImageInput {
 	imageIDs := buildImageIDMap(pod)
-	images = appendUniquePodContainerImages(images, seen, pod.Namespace, pod.Spec.InitContainers, imageIDs)
-	images = appendUniquePodContainerImages(images, seen, pod.Namespace, pod.Spec.Containers, imageIDs)
-	images = appendUniquePodEphemeralContainerImages(images, seen, pod.Namespace, pod.Spec.EphemeralContainers, imageIDs)
-	return images
-}
-
-func appendUniquePodContainerImages(
-	images []clusterImageInput,
-	seen map[string]struct{},
-	namespace string,
-	containers []corev1.Container,
-	imageIDByContainer map[string]string,
-) []clusterImageInput {
-	for _, c := range containers {
-		imageRef, tag, digest := parseImageRef(c.Image, imageIDByContainer[c.Name])
-		img := clusterImageInput{Namespace: namespace, ImageRef: imageRef, Tag: tag, Digest: digest}
-		key := imageKey(img)
-		if _, exists := seen[key]; exists {
-			continue
-		}
-		seen[key] = struct{}{}
-		images = append(images, img)
+	workload := podWorkload(pod)
+	for _, c := range pod.Spec.InitContainers {
+		images = appendPodImage(images, seen, pod.Namespace, workload, c.Image, imageIDs[c.Name])
+	}
+	for _, c := range pod.Spec.Containers {
+		images = appendPodImage(images, seen, pod.Namespace, workload, c.Image, imageIDs[c.Name])
+	}
+	for _, c := range pod.Spec.EphemeralContainers {
+		images = appendPodImage(images, seen, pod.Namespace, workload, c.Image, imageIDs[c.Name])
 	}
 	return images
 }
 
-func appendUniquePodEphemeralContainerImages(
-	images []clusterImageInput,
-	seen map[string]struct{},
-	namespace string,
-	containers []corev1.EphemeralContainer,
-	imageIDByContainer map[string]string,
-) []clusterImageInput {
-	for _, c := range containers {
-		imageRef, tag, digest := parseImageRef(c.Image, imageIDByContainer[c.Name])
-		img := clusterImageInput{Namespace: namespace, ImageRef: imageRef, Tag: tag, Digest: digest}
-		key := imageKey(img)
-		if _, exists := seen[key]; exists {
-			continue
-		}
-		seen[key] = struct{}{}
-		images = append(images, img)
+func appendPodImage(images []clusterImageInput, seen map[string]int, namespace, workload, image, imageID string) []clusterImageInput {
+	imageRef, tag, digest := parseImageRef(image, imageID)
+	img := clusterImageInput{Namespace: namespace, ImageRef: imageRef, Tag: tag, Digest: digest, Workloads: []string{workload}}
+	key := imageKey(img)
+	if i, exists := seen[key]; exists {
+		images[i].Workloads = mergeWorkloads(images[i].Workloads, img.Workloads)
+		return images
 	}
-	return images
+	seen[key] = len(images)
+	return append(images, img)
 }
 
 // parseImageRef extracts the normalised imageRef, tag, and digest.
@@ -1303,27 +1351,9 @@ func appendWorkloadPodSpecImages(images []clusterImageInput, namespace string, s
 // mergeImages deduplicates and merges two image lists by
 // (namespace, imageRef, tag, digest), then normalizes digest preference.
 func mergeImages(list1, list2 []clusterImageInput) []clusterImageInput {
-	seen := make(map[string]struct{})
-	var merged []clusterImageInput
-
-	for _, img := range list1 {
-		key := imageKey(img)
-		if _, exists := seen[key]; exists {
-			continue
-		}
-		seen[key] = struct{}{}
-		merged = append(merged, img)
-	}
-
-	for _, img := range list2 {
-		key := imageKey(img)
-		if _, exists := seen[key]; exists {
-			continue
-		}
-		seen[key] = struct{}{}
-		merged = append(merged, img)
-	}
-
+	merged := make([]clusterImageInput, 0, len(list1)+len(list2))
+	merged = append(merged, list1...)
+	merged = append(merged, list2...)
 	return normalizeImagesPreferDigests(merged)
 }
 

@@ -81,6 +81,8 @@ type ClusterImageEntry struct {
 	ImageRef  string
 	Tag       string
 	Digest    string
+	// Workloads names the pod owners running the image as "Kind/name".
+	Workloads []string
 }
 
 // ClusterSummary represents one cluster inventory snapshot summary.
@@ -114,6 +116,7 @@ type RuntimeLocation struct {
 	ImageRef  string
 	Tag       string
 	Digest    string
+	Workloads []string
 }
 
 // RuntimeImage contains the stored runtime image details for one runtime match.
@@ -121,6 +124,9 @@ type RuntimeImage struct {
 	ImageRef string
 	Tag      string
 	Digest   string
+	// Workloads names the pod owners running this image as "Kind/name", when the
+	// cluster agent reports them. Filled for running policy failures.
+	Workloads []string `json:",omitempty"`
 }
 
 // RuntimeInventory groups runtime matches by cluster then namespace.

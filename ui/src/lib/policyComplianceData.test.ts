@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
 import type { Scan } from './api';
-import { fetchPolicyComplianceData, supersededRunningLabel } from './policyComplianceData';
+import { fetchPolicyComplianceData, runtimeWorkloadLocations, supersededRunningLabel } from './policyComplianceData';
 
 const repo = 'hostingmaloonde/memcached';
 const tag = '1.6.45';
@@ -85,5 +85,24 @@ describe('fetchPolicyComplianceData', () => {
 describe('supersededRunningLabel', () => {
   it('names the tag the digest used to be', () => {
     expect(supersededRunningLabel({ Tag: tag })).toBe('running an older digest of 1.6.45');
+  });
+});
+
+describe('runtimeWorkloadLocations', () => {
+  it('lists the workloads running the image per cluster/namespace', () => {
+    const locations = runtimeWorkloadLocations({
+      'hetzner-1': {
+        monitoring: [
+          { ImageRef: 'memcached', Tag: '1.6.45', Digest: 'sha256:a', Workloads: ['StatefulSet/b', 'StatefulSet/a'] },
+          { ImageRef: 'docker.io/memcached', Tag: '1.6.45', Digest: 'sha256:a', Workloads: ['StatefulSet/a'] },
+        ],
+      },
+      'internal-1': { cache: [{ ImageRef: 'memcached', Tag: '1.6.45', Digest: 'sha256:a' }] },
+    });
+
+    expect(locations).toEqual([
+      { location: 'hetzner-1/monitoring', workloads: ['StatefulSet/a', 'StatefulSet/b'] },
+      { location: 'internal-1/cache', workloads: [] },
+    ]);
   });
 });

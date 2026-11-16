@@ -291,6 +291,8 @@ export interface RuntimeImage {
   ImageRef: string;
   Tag: string;
   Digest: string;
+  /** Pod owners running this image, as "Kind/name". Reported by newer cluster agents. */
+  Workloads?: string[];
 }
 
 export interface PolicyFailureFinding {

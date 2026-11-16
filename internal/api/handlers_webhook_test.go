@@ -275,3 +275,33 @@ func TestHandleClusterInventory_PassesReportedAtToStore(t *testing.T) {
 		t.Fatalf("reportedAt value %d not in expected range [%d, %d]", got, before, after)
 	}
 }
+
+func TestHandleClusterInventory_Workloads(t *testing.T) {
+	post := func(t *testing.T, store *mockClusterInventoryStore, body string) int {
+		t.Helper()
+		req := httptest.NewRequest(http.MethodPost, "/api/v1/webhook/cluster-inventory", strings.NewReader(body))
+		req.Header.Set("Content-Type", "application/json")
+		w := httptest.NewRecorder()
+		webhookTestServer(t, store).router.ServeHTTP(w, req)
+		return w.Code
+	}
+
+	t.Run("passes workloads to the store", func(t *testing.T) {
+		store := &mockClusterInventoryStore{mockStateStore: &mockStateStore{}}
+		code := post(t, store, `{"cluster":"hetzner-1","images":[{"namespace":"monitoring","image_ref":"docker.io/hostingmaloonde/memcached","tag":"1.6.45","digest":"sha256:af55","workloads":["StatefulSet/cortex-memcached-blocks"]}]}`)
+		if code != http.StatusOK {
+			t.Fatalf("status = %d, want 200", code)
+		}
+		if got := store.images[0].Workloads; len(got) != 1 || got[0] != "StatefulSet/cortex-memcached-blocks" {
+			t.Fatalf("workloads = %v", got)
+		}
+	})
+
+	t.Run("rejects a workload containing a comma", func(t *testing.T) {
+		store := &mockClusterInventoryStore{mockStateStore: &mockStateStore{}}
+		code := post(t, store, `{"cluster":"hetzner-1","images":[{"namespace":"monitoring","image_ref":"memcached:1.6.45","workloads":["StatefulSet/a,b"]}]}`)
+		if code != http.StatusBadRequest || store.called {
+			t.Fatalf("status = %d called = %v, want 400 without storing", code, store.called)
+		}
+	})
+}
