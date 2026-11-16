@@ -9,7 +9,7 @@ While running, the agent:
 1. Lists all pods across all namespaces using in-cluster RBAC (read-only `pods` permission).
 2. Collects image references from Deployments, StatefulSets, DaemonSets, Jobs, and CronJobs. Active Jobs are always included. Completed and failed Jobs, and terminal Pods they own, stay only until completion time plus `COMPLETED_WORKLOAD_RETENTION` (default `60m`). CronJob templates are always included.
 3. Skips pods and workloads in excluded namespaces (configurable, defaults to `kube-system`, `kube-public`, `kube-node-lease`).
-4. Extracts image reference, tag, and runtime digest from pod status for regular, init, and ephemeral containers (digests only available for running pods).
+4. Extracts image reference, tag, and runtime digest from pod status for regular, init, and ephemeral containers. Docker Hub shorthand (`org/app`, `nginx`) and the runtime's canonical name (`docker.io/org/app`) count as the same repository. When the spec pins a different `@sha256:` digest than the runtime reports, both are sent. A runtime digest from a redirected repository (a registry mirror) is dropped; the spec digest is kept. An inline `@sha256:` digest in a workload template is reported too, so a pinned CronJob stays visible between runs.
 5. Deduplicates entries by `(namespace, image_ref, digest)`.
    Each entry lists the `workloads` running it as `Kind/name` (`StatefulSet/cache`, `Deployment/api`, `Pod/debug`), taken from each pod's controller. Suppline shows them next to policy-failing digests that need a rollout.
 6. POSTs periodic snapshots to `POST /api/v1/webhook/cluster-inventory` on the suppline API.

@@ -787,9 +787,10 @@ func collectPodObservation(pod *corev1.Pod, excludedNS map[string]bool, buffer *
 	}
 
 	for _, c := range pod.Spec.EphemeralContainers {
-		imageRef, tag, digest := parseImageRef(c.Image, imageIDs[c.Name])
-		if buffer.Observe(clusterImageInput{Namespace: pod.Namespace, ImageRef: imageRef, Tag: tag, Digest: digest, Workloads: workloads}) {
-			changed = true
+		for _, img := range containerImages(pod.Namespace, c.Image, imageIDs[c.Name], workloads) {
+			if buffer.Observe(img) {
+				changed = true
+			}
 		}
 	}
 
@@ -941,9 +942,10 @@ func isLikelyImageRef(v string) bool {
 func addObservedContainers(buffer *inventoryBuffer, namespace string, workloads []string, containers []corev1.Container, imageIDByContainer map[string]string) bool {
 	changed := false
 	for _, c := range containers {
-		imageRef, tag, digest := parseImageRef(c.Image, imageIDByContainer[c.Name])
-		if buffer.Observe(clusterImageInput{Namespace: namespace, ImageRef: imageRef, Tag: tag, Digest: digest, Workloads: workloads}) {
-			changed = true
+		for _, img := range containerImages(namespace, c.Image, imageIDByContainer[c.Name], workloads) {
+			if buffer.Observe(img) {
+				changed = true
+			}
 		}
 	}
 	return changed
@@ -1193,15 +1195,16 @@ func appendPodImages(images []clusterImageInput, seen map[string]int, pod *corev
 }
 
 func appendPodImage(images []clusterImageInput, seen map[string]int, namespace, workload, image, imageID string) []clusterImageInput {
-	imageRef, tag, digest := parseImageRef(image, imageID)
-	img := clusterImageInput{Namespace: namespace, ImageRef: imageRef, Tag: tag, Digest: digest, Workloads: []string{workload}}
-	key := imageKey(img)
-	if i, exists := seen[key]; exists {
-		images[i].Workloads = mergeWorkloads(images[i].Workloads, img.Workloads)
-		return images
+	for _, img := range containerImages(namespace, image, imageID, []string{workload}) {
+		key := imageKey(img)
+		if i, exists := seen[key]; exists {
+			images[i].Workloads = mergeWorkloads(images[i].Workloads, img.Workloads)
+			continue
+		}
+		seen[key] = len(images)
+		images = append(images, img)
 	}
-	seen[key] = len(images)
-	return append(images, img)
+	return images
 }
 
 // parseImageRef extracts the normalised imageRef, tag, and digest.
@@ -1218,20 +1221,52 @@ func appendPodImage(images []clusterImageInput, seen map[string]int, namespace, 
 // (e.g. containerd mirror redirect), the digest is discarded because it
 // belongs to the redirected image, not the spec image.
 func parseImageRef(image, imageID string) (imageRef, tag, digest string) {
-	imageRef = image
-
-	// Resolve digest from runtime imageID.
-	if imageID != "" {
-		digest = extractDigestFromImageID(imageID)
+	imageRef, tag, digests := parseImageRefDigests(image, imageID)
+	if len(digests) > 0 {
+		digest = digests[0]
 	}
+	return imageRef, tag, digest
+}
+
+// parseImageRefDigests is parseImageRef keeping every digest the container is known by:
+// the runtime imageID digest first, then the spec's inline digest when it differs.
+// Admission verifies the digest the spec names, so it is never discarded. A runtime
+// digest from a redirected repository is.
+func parseImageRefDigests(image, imageID string) (imageRef, tag string, digests []string) {
+	imageRef, tag, specDigest := splitImageRef(image)
+
+	runtimeDigest := ""
+	if imageID != "" {
+		runtimeDigest = extractDigestFromImageID(imageID)
+		// If the imageID references a different repository than the spec image,
+		// the digest belongs to a redirected/mirrored image and should not be
+		// associated with the spec imageRef (avoids duplicate entries when
+		// containerd transparently resolves a mirror to the upstream registry).
+		// Docker Hub shorthand is expanded first: a spec "org/app" and an
+		// imageID "docker.io/org/app@sha256:..." name the same repository.
+		if repo := imageIDRepo(imageID); repo != "" && canonicalRepository(repo) != canonicalRepository(imageRef) {
+			runtimeDigest = ""
+		}
+	}
+
+	if runtimeDigest != "" {
+		digests = append(digests, runtimeDigest)
+	}
+	if specDigest != "" && specDigest != runtimeDigest {
+		digests = append(digests, specDigest)
+	}
+	return imageRef, tag, digests
+}
+
+// splitImageRef separates the repository, tag, and inline digest of an image string.
+func splitImageRef(image string) (imageRef, tag, digest string) {
+	imageRef = image
 
 	// Strip inline digest from image reference (e.g. nginx:1.25@sha256:...).
 	if idx := strings.LastIndex(image, "@"); idx != -1 {
-		if digest == "" {
-			candidate := image[idx+1:]
-			if strings.Contains(candidate, ":") {
-				digest = candidate
-			}
+		candidate := image[idx+1:]
+		if strings.Contains(candidate, ":") {
+			digest = candidate
 		}
 		imageRef = image[:idx]
 		image = imageRef // parse tag from the part before the digest
@@ -1247,17 +1282,40 @@ func parseImageRef(image, imageID string) (imageRef, tag, digest string) {
 		}
 	}
 
-	// If the imageID references a different repository than the spec image,
-	// the digest belongs to a redirected/mirrored image and should not be
-	// associated with the spec imageRef (avoids duplicate entries when
-	// containerd transparently resolves a mirror to the upstream registry).
-	if digest != "" && imageID != "" {
-		if repo := imageIDRepo(imageID); repo != "" && repo != imageRef {
-			digest = ""
+	return
+}
+
+// canonicalRepository expands Docker Hub shorthand so nginx, library/nginx, and
+// docker.io/library/nginx compare equal.
+func canonicalRepository(repo string) string {
+	repo = strings.ToLower(strings.TrimSpace(repo))
+	parts := strings.SplitN(repo, "/", 2)
+	if len(parts) == 1 || !(strings.ContainsAny(parts[0], ".:") || parts[0] == "localhost") {
+		repo = "docker.io/" + repo
+	}
+	for _, alias := range []string{"index.docker.io/", "registry-1.docker.io/"} {
+		if strings.HasPrefix(repo, alias) {
+			repo = "docker.io/" + strings.TrimPrefix(repo, alias)
 		}
 	}
+	if path := strings.TrimPrefix(repo, "docker.io/"); path != repo && !strings.Contains(path, "/") {
+		repo = "docker.io/library/" + path
+	}
+	return repo
+}
 
-	return
+// containerImages returns one inventory entry per digest a container is known by,
+// or a single digest-less entry. workloads, when set, names the pod's owner.
+func containerImages(namespace, image, imageID string, workloads []string) []clusterImageInput {
+	imageRef, tag, digests := parseImageRefDigests(image, imageID)
+	if len(digests) == 0 {
+		return []clusterImageInput{{Namespace: namespace, ImageRef: imageRef, Tag: tag, Workloads: workloads}}
+	}
+	out := make([]clusterImageInput, 0, len(digests))
+	for _, digest := range digests {
+		out = append(out, clusterImageInput{Namespace: namespace, ImageRef: imageRef, Tag: tag, Digest: digest, Workloads: workloads})
+	}
+	return out
 }
 
 // imageIDRepo extracts the repository portion from a runtime imageID,
@@ -1521,14 +1579,18 @@ func expiredTerminalJobPod(pod *corev1.Pod, now time.Time, retention time.Durati
 	return !includePodReports(pod, now, retention)
 }
 
+// appendWorkloadPodSpecImages adds a template's images. An inline @sha256: digest is
+// kept: it is what admission verifies when the controller creates the next pod, even
+// while no pod of the template is running (e.g. a pinned CronJob between runs).
 func appendWorkloadPodSpecImages(images []clusterImageInput, namespace string, spec corev1.PodSpec) []clusterImageInput {
 	for _, c := range spec.InitContainers {
-		imageRef, tag, _ := parseImageRef(c.Image, "")
-		images = append(images, clusterImageInput{Namespace: namespace, ImageRef: imageRef, Tag: tag})
+		images = append(images, containerImages(namespace, c.Image, "", nil)...)
 	}
 	for _, c := range spec.Containers {
-		imageRef, tag, _ := parseImageRef(c.Image, "")
-		images = append(images, clusterImageInput{Namespace: namespace, ImageRef: imageRef, Tag: tag})
+		images = append(images, containerImages(namespace, c.Image, "", nil)...)
+	}
+	for _, c := range spec.EphemeralContainers {
+		images = append(images, containerImages(namespace, c.Image, "", nil)...)
 	}
 	return images
 }
