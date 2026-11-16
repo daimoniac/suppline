@@ -336,6 +336,12 @@ func (m *runner) processRef(ctx context.Context, s config.SyncEntry, src, tgt re
 			previous = manifest.GetDigest(mTgt).String()
 		}
 		published, err := m.offerDigest(ctx, src, tgt, repository, previous, mSrc, rcOpts)
+		// The tag is wanted whether the runway moved it now or holds the new
+		// digest until it is attested. A held tag still names its previous
+		// digest, so it must stay in the journal, or the run would prune it.
+		if published || tgtExists {
+			m.observeRef(ctx, tgt)
+		}
 		if err != nil || !published {
 			return err
 		}
