@@ -144,7 +144,8 @@ type Defaults struct {
 	UserAgent            string           `yaml:"userAgent,omitempty"`
 
 	RescanInterval string `yaml:"x-rescanInterval,omitempty"`
-	// Deprecated: ignored. Runtime usage follows each cluster's latest report.
+	// Ignored: runtime usage follows each cluster's latest inventory report.
+	// Kept so existing configs still parse; loading one logs a warning.
 	RuntimeInUseWindow    string `yaml:"x-runtimeInUseWindow,omitempty"`
 	WorkerPollInterval    string `yaml:"x-worker-poll-interval,omitempty"`
 	WorkerConcurrency     int    `yaml:"x-worker-concurrency,omitempty"`
