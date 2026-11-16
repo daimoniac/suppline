@@ -97,3 +97,23 @@ func TestInventoryBufferWorkloads(t *testing.T) {
 		t.Fatalf("workloads after refresh = %v", got)
 	}
 }
+
+// production-2 kept a scaled-down ReplicaSet whose image was ":sha-fd8089b5".
+// Its empty image reference must not reach the snapshot, or suppline rejects
+// the whole inventory with 400.
+func TestSnapshotDropsEntriesWithoutImageRef(t *testing.T) {
+	buffer := newInventoryBuffer()
+	images := appendWorkloadPodSpecImages(nil, "ai", corev1.PodSpec{Containers: []corev1.Container{
+		{Name: "broken", Image: ":sha-fd8089b5"},
+		{Name: "api", Image: "registry.gitlab.com/cmd/model-api:sha-fd8089b5"},
+	}})
+	buffer.TouchAll(images)
+
+	snapshot := buffer.Snapshot()
+	if len(snapshot) != 1 || snapshot[0].ImageRef != "registry.gitlab.com/cmd/model-api" {
+		t.Fatalf("snapshot = %+v, want only the image with a reference", snapshot)
+	}
+	if merged := mergeImages(images, nil); len(merged) != 1 {
+		t.Fatalf("mergeImages = %+v, want the empty reference dropped", merged)
+	}
+}
