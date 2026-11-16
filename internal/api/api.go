@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/daimoniac/suppline/internal/config"
+	"github.com/daimoniac/suppline/internal/configedit"
 	"github.com/daimoniac/suppline/internal/policy/catalog"
 	"github.com/daimoniac/suppline/internal/queue"
 	"github.com/daimoniac/suppline/internal/scanenqueue"
@@ -55,6 +56,7 @@ type APIServer struct {
 	currentConfig     config.Source
 	policyCatalog     catalog.Catalog
 	triageService     *triage.Service
+	configEditor      *configedit.Editor
 	vexAudit          *vexaudit.Auditor
 	router            *http.ServeMux
 	server            *http.Server
@@ -144,6 +146,14 @@ func (s *APIServer) SetTriage(svc *triage.Service) {
 		return
 	}
 	s.triageService = svc
+}
+
+// SetConfigEditor enables the task endpoints that edit suppline.yml.
+func (s *APIServer) SetConfigEditor(editor *configedit.Editor) {
+	if s == nil {
+		return
+	}
+	s.configEditor = editor
 }
 
 // SetVEXAudit connects the background audit of ineffective sync-entry VEX statements.

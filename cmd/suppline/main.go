@@ -16,6 +16,7 @@ import (
 	"github.com/daimoniac/suppline/internal/api"
 	"github.com/daimoniac/suppline/internal/attestation"
 	"github.com/daimoniac/suppline/internal/config"
+	"github.com/daimoniac/suppline/internal/configedit"
 	"github.com/daimoniac/suppline/internal/configreload"
 	"github.com/daimoniac/suppline/internal/mirror"
 	"github.com/daimoniac/suppline/internal/observability"
@@ -286,7 +287,12 @@ func run() error {
 		repositoryPolicies.Current,
 		repositoryPolicies,
 	)
-	triageService, err := triage.New(regsyncCfg.Triage, cfg.RegsyncPath, repositoryPolicies, store, scanEnqueuer, logger)
+	editTarget, err := triage.ConfigTarget(regsyncCfg.Triage, cfg.RegsyncPath)
+	if err != nil {
+		return fmt.Errorf("failed to resolve config edit target: %w", err)
+	}
+	configEditor := configedit.New(editTarget, repositoryPolicies, scanEnqueuer, logger.With("module", "configedit"))
+	triageService, err := triage.New(regsyncCfg.Triage, cfg.RegsyncPath, repositoryPolicies, store, configEditor, logger)
 	if err != nil {
 		return fmt.Errorf("failed to initialize triage: %w", err)
 	}
@@ -331,6 +337,7 @@ func run() error {
 			logger,
 		)
 		apiServer.SetTriage(triageService)
+		apiServer.SetConfigEditor(configEditor)
 		apiServer.SetVEXAudit(vexAudit)
 		logger.Debug("API server initialized")
 	}

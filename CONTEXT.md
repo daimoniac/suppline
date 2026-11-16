@@ -35,3 +35,11 @@ _Avoid_: VEX row, triage line
 **Open triage**:
 A triage run that still needs an exemption written: the verdict is uncertain, or the run was rejected or failed, and a later run has not replaced it.
 _Avoid_: dry run, auto filter
+
+**Running configuration**:
+The suppline.yml content in force right now: the startup file plus every reload and config edit since. Readers take a fresh snapshot per decision; a snapshot never changes after it is handed out.
+_Avoid_: startup config, regsync config (for the live state), cached config
+
+**Config edit**:
+One change to suppline.yml made by suppline itself (a triage statement, a manual override, a task fix): written to the config repository or local file, applied to the Running configuration, and followed by a rescan of every repository whose Repository policy changed.
+_Avoid_: commit config, hot-swap, applyMemory

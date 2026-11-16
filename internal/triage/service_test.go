@@ -562,38 +562,3 @@ func TestResolveKeepsConfigRepoWhenDisabled(t *testing.T) {
 		t.Fatalf("settings = %+v", settings)
 	}
 }
-
-func TestCommitConfigWritesLocalFile(t *testing.T) {
-	dir := t.TempDir()
-	path := filepath.Join(dir, "suppline.yml")
-	if err := os.WriteFile(path, []byte("version: 1\n"), 0o644); err != nil {
-		t.Fatal(err)
-	}
-	svc, err := New(nil, path, nil, nil, nil, slog.Default())
-	if err != nil {
-		t.Fatal(err)
-	}
-	mode, err := svc.ConfigWriteMode()
-	if err != nil || mode != "local" {
-		t.Fatalf("mode %q err %v", mode, err)
-	}
-	commit, err := svc.CommitConfig(context.Background(), "chore(config): test [skip ci]", func(current []byte) ([]byte, error) {
-		return append(current, []byte("sync: []\n")...), nil
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if commit != "" {
-		t.Fatalf("local write returned commit %q", commit)
-	}
-	body, err := os.ReadFile(path)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if !strings.Contains(string(body), "sync: []") {
-		t.Fatalf("file = %s", body)
-	}
-	if _, err := os.Stat(path + ".bak.1"); err != nil {
-		t.Fatal(err)
-	}
-}

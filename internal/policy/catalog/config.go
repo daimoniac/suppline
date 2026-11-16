@@ -98,15 +98,28 @@ func (c *ConfigCatalog) Replace(next *config.RegsyncConfig) []string {
 }
 
 func (c *ConfigCatalog) decisionFingerprintsLocked() map[string]string {
+	if c == nil {
+		return map[string]string{}
+	}
+	return decisionFingerprints(c.config)
+}
+
+func decisionFingerprints(cfg *config.RegsyncConfig) map[string]string {
 	out := map[string]string{}
-	if c == nil || c.config == nil {
+	if cfg == nil {
 		return out
 	}
-	for _, repository := range c.config.GetTargetRepositories() {
-		policy, evidence := c.effectiveLocked(repository)
+	for _, repository := range cfg.GetTargetRepositories() {
+		policy, evidence := effectiveIn(cfg, repository)
 		out[repository] = fingerprintDecision(policy, evidence)
 	}
 	return out
+}
+
+// DecisionChanges returns the repositories whose policy or VEX decision differs
+// between two configuration snapshots, including added and removed ones.
+func DecisionChanges(prev, next *config.RegsyncConfig) []string {
+	return changedRepositories(decisionFingerprints(prev), decisionFingerprints(next))
 }
 
 func fingerprintDecision(policy *config.PolicyConfig, evidence Evidence) string {
@@ -190,15 +203,20 @@ func (c *ConfigCatalog) effective(repository string) (*config.PolicyConfig, Evid
 }
 
 func (c *ConfigCatalog) effectiveLocked(repository string) (*config.PolicyConfig, Evidence) {
+	return effectiveIn(c.config, repository)
+}
 
-	configured := c.config.Defaults.Policy
+// effectiveIn merges defaults with the repository's sync entries in cfg.
+func effectiveIn(cfg *config.RegsyncConfig, repository string) (*config.PolicyConfig, Evidence) {
+
+	configured := cfg.Defaults.Policy
 	var evidence Evidence
-	if c.config.Defaults.VEXRepo != nil {
-		evidence.UseVEXRepo = *c.config.Defaults.VEXRepo
+	if cfg.Defaults.VEXRepo != nil {
+		evidence.UseVEXRepo = *cfg.Defaults.VEXRepo
 	}
 
 	seen := make(map[string]struct{})
-	for _, statement := range c.config.Defaults.VEX {
+	for _, statement := range cfg.Defaults.VEX {
 		if _, exists := seen[statement.ID]; exists {
 			continue
 		}
@@ -209,8 +227,8 @@ func (c *ConfigCatalog) effectiveLocked(repository string) (*config.PolicyConfig
 
 	policyOverridden := false
 	vexRepoOverridden := false
-	_ = c.config.ForEachActive(func(i int) error {
-		sync := c.config.Sync[i]
+	_ = cfg.ForEachActive(func(i int) error {
+		sync := cfg.Sync[i]
 		if targetRepository(sync) != repository {
 			return nil
 		}
