@@ -14,6 +14,11 @@ While running, the agent:
    Each entry lists the `workloads` running it as `Kind/name` (`StatefulSet/cache`, `Deployment/api`, `Pod/debug`), taken from each pod's controller. Suppline shows them next to policy-failing digests that need a rollout.
 6. POSTs periodic snapshots to `POST /api/v1/webhook/cluster-inventory` on the suppline API.
 
+Each snapshot is the cluster's complete current state; suppline treats an image as in use exactly while the cluster's latest snapshot contains it.
+
+- **Pods of long-running controllers** (Deployments, StatefulSets, DaemonSets, operators) are reported straight from the pod watch cache. When such a pod is deleted, evicted, or restarts on a new digest, the next snapshot drops the old image right away, unless another pod still runs it.
+- **Bare pods, Job pods, and pull events** are kept for `IMAGE_STALE_AFTER` after they were last seen (finished Jobs for `COMPLETED_WORKLOAD_RETENTION`), so short-lived runs stay visible between snapshots. After a restart the agent replays pull events from the last `IMAGE_STALE_AFTER`.
+
 This ensures suppline discovers images from scheduled jobs, pending deployments, and other workload definitions—even if no pods are currently running from those resources—while also capturing short-lived runtime workloads via pod and Event informers.
 
 When a completed or failed Job passes its retention window, its images are removed from the inventory buffer and a new snapshot is sent, even if a pod update or the 24-hour stale window still has a recent observation. The same image stays when a Deployment, CronJob, or other live workload still references it.
@@ -56,7 +61,7 @@ The agent loads configuration from a `.env` file (if present) before checking en
 | `WATCH_RETRY_INTERVAL` | no | `30s` | Interval for retrying failed inventory uploads |
 | `WATCH_HEARTBEAT_INTERVAL` | no | `60m` | Maximum interval between inventory uploads, even when no observations changed |
 | `WATCH_REFRESH_INTERVAL` | no | `24h` | Interval for full inventory refresh from pods/workloads. Capped at half of `IMAGE_STALE_AFTER` |
-| `IMAGE_STALE_AFTER` | no | `24h` | Stop reporting an image this long after it was last seen, e.g. after its pods moved to a new digest. Checked every minute |
+| `IMAGE_STALE_AFTER` | no | `24h` | How long images of bare pods, Job pods, and pull events stay in snapshots after they were last seen. Checked every minute. Images of controller-managed pods leave with their pods |
 | `COMPLETED_WORKLOAD_RETENTION` | no | `60m` | How long to keep completed and failed Jobs, and terminal Pods they own, after completion. CronJob templates are always reported. |
 | `EXCLUDED_NAMESPACES` | no | `kube-system,kube-public,kube-node-lease` | Comma-separated namespaces to skip |
 | `LOG_LEVEL` | no | `info` | `debug` / `info` / `warn` / `error` |

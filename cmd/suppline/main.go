@@ -125,17 +125,11 @@ func run() error {
 			healthChecker.UpdateComponentHealth("database", observability.StatusUnhealthy, err.Error())
 			return fmt.Errorf("failed to initialize sqlite store: %w", err)
 		}
-		if sqliteStore, ok := store.(*statestore.SQLiteStore); ok {
-			sqliteStore.SetRuntimeInUseWindow(cfg.StateStore.RuntimeInUseWindow)
-		}
 	case "postgres":
 		store, err = statestore.NewPostgresStore(cfg.StateStore.PostgresURL)
 		if err != nil {
 			healthChecker.UpdateComponentHealth("database", observability.StatusUnhealthy, err.Error())
 			return fmt.Errorf("failed to initialize postgres store: %w", err)
-		}
-		if sqliteStore, ok := store.(*statestore.SQLiteStore); ok {
-			sqliteStore.SetRuntimeInUseWindow(cfg.StateStore.RuntimeInUseWindow)
 		}
 	case "memory":
 		return fmt.Errorf("memory state store not yet implemented")

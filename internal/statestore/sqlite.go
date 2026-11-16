@@ -10,12 +10,13 @@ import (
 )
 
 // SQLiteStore implements StateStore using SQLite or PostgreSQL.
+//
+// Runtime usage follows each cluster's latest inventory report: an image is in
+// use while the cluster's most recent report contains it. The cluster agent
+// decides how long short-lived pods stay in its reports.
 type SQLiteStore struct {
-	db                 *DB
-	runtimeInUseWindow time.Duration
+	db *DB
 }
-
-const defaultRuntimeInUseWindow = 60 * time.Minute
 
 type clusterImageIdentity struct {
 	namespace string
@@ -63,7 +64,7 @@ func NewSQLiteStore(dbPath string) (*SQLiteStore, error) {
 		return nil, errors.NewTransientf("foreign keys are not enabled (got %d, expected 1)", fkEnabled)
 	}
 
-	store := &SQLiteStore{db: wrapDB(db, dialectSQLite), runtimeInUseWindow: defaultRuntimeInUseWindow}
+	store := &SQLiteStore{db: wrapDB(db, dialectSQLite)}
 
 	// Initialize schema
 	if err := store.initSchema(); err != nil {
@@ -77,16 +78,6 @@ func NewSQLiteStore(dbPath string) (*SQLiteStore, error) {
 // Close closes the database connection
 func (s *SQLiteStore) Close() error {
 	return s.db.Close()
-}
-
-// SetRuntimeInUseWindow configures the time window used to treat runtime images as in use.
-func (s *SQLiteStore) SetRuntimeInUseWindow(window time.Duration) {
-	if window <= 0 {
-		s.runtimeInUseWindow = defaultRuntimeInUseWindow
-		return
-	}
-
-	s.runtimeInUseWindow = window
 }
 
 // initSchema creates the database schema with all tables and indexes

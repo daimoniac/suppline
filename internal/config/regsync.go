@@ -379,16 +379,6 @@ func (c *RegsyncConfig) GetRescanInterval(target string) (time.Duration, error) 
 	return 7 * 24 * time.Hour, nil
 }
 
-// GetRuntimeInUseWindow returns the in-use runtime observation window.
-// Reads defaults.x-runtimeInUseWindow and falls back to 60m.
-func (c *RegsyncConfig) GetRuntimeInUseWindow() (time.Duration, error) {
-	if c.Defaults.RuntimeInUseWindow != "" {
-		return parseInterval(c.Defaults.RuntimeInUseWindow)
-	}
-
-	return 60 * time.Minute, nil
-}
-
 // GetSCAIValidityExtension returns the SCAI validity extension for a specific target repository
 // This is the additional time beyond the next scheduled scan that the SCAI attestation remains valid
 // Returns the sync entry's extension if specified, otherwise the default, otherwise 1d

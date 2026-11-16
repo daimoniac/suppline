@@ -25,7 +25,7 @@ func NewPostgresStore(url string) (*SQLiteStore, error) {
 		return nil, errors.NewTransientf("failed to ping postgres: %w", err)
 	}
 
-	store := &SQLiteStore{db: wrapDB(db, dialectPostgres), runtimeInUseWindow: defaultRuntimeInUseWindow}
+	store := &SQLiteStore{db: wrapDB(db, dialectPostgres)}
 	if err := store.initSchema(); err != nil {
 		db.Close()
 		return nil, errors.NewPermanentf("failed to initialize schema: %w", err)

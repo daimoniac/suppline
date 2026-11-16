@@ -29,7 +29,6 @@ defaults:
     - ".*\\.sig$"
     - ".*\\.att$"
   x-rescanInterval: 7d
-  x-runtimeInUseWindow: 60m
   x-worker-poll-interval: 5m
   x-worker-concurrency: 3
   x-worker-retry-attempts: 3

@@ -47,9 +47,6 @@ sync:
 	if cfg.Queue.BufferSize != 1000 {
 		t.Errorf("Expected buffer size 1000, got %d", cfg.Queue.BufferSize)
 	}
-	if cfg.StateStore.RuntimeInUseWindow != 60*time.Minute {
-		t.Errorf("Expected runtime in-use window 60m, got %v", cfg.StateStore.RuntimeInUseWindow)
-	}
 
 	if cfg.Worker.RetryAttempts != 3 {
 		t.Errorf("Expected 3 retry attempts, got %d", cfg.Worker.RetryAttempts)
@@ -116,9 +113,6 @@ func TestLoadWithCustomValues(t *testing.T) {
 
 	if cfg.Queue.BufferSize != 2000 {
 		t.Errorf("Expected buffer size 2000, got %d", cfg.Queue.BufferSize)
-	}
-	if cfg.StateStore.RuntimeInUseWindow != 14*24*time.Hour {
-		t.Errorf("Expected runtime in-use window 14d, got %v", cfg.StateStore.RuntimeInUseWindow)
 	}
 
 	if cfg.Worker.RetryAttempts != 5 {

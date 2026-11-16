@@ -60,9 +60,8 @@ func TestListRunningPolicyFailures_SupersededDigestStillRunning(t *testing.T) {
 		failingB: {"StatefulSet/cortex-memcached-blocks", "StatefulSet/cortex-memcached-frontend"},
 	}
 	recordScan(failingA, false)
-	// This report is older than the in-use window, so it counts only while it is
-	// the cluster's latest report.
-	recordInventory(time.Now().UTC().Add(-2*defaultRuntimeInUseWindow), runningOld...)
+	// An image is in use while the cluster's latest report contains it.
+	recordInventory(time.Now().UTC().Add(-10*time.Minute), runningOld...)
 	recordScan(failingB, false)
 	recordScan(passingC, true)
 

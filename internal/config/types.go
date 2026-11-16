@@ -60,11 +60,10 @@ type AttestationConfig struct {
 
 // StateStoreConfig configures the state store
 type StateStoreConfig struct {
-	Type               string
-	PostgresURL        string
-	SQLitePath         string
-	RescanInterval     time.Duration
-	RuntimeInUseWindow time.Duration
+	Type           string
+	PostgresURL    string
+	SQLitePath     string
+	RescanInterval time.Duration
 }
 
 // APIConfig configures the HTTP API server
@@ -144,7 +143,8 @@ type Defaults struct {
 	SkipDockerConf       bool             `yaml:"skipDockerConfig,omitempty"`
 	UserAgent            string           `yaml:"userAgent,omitempty"`
 
-	RescanInterval        string `yaml:"x-rescanInterval,omitempty"`
+	RescanInterval string `yaml:"x-rescanInterval,omitempty"`
+	// Deprecated: ignored. Runtime usage follows each cluster's latest report.
 	RuntimeInUseWindow    string `yaml:"x-runtimeInUseWindow,omitempty"`
 	WorkerPollInterval    string `yaml:"x-worker-poll-interval,omitempty"`
 	WorkerConcurrency     int    `yaml:"x-worker-concurrency,omitempty"`

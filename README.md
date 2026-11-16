@@ -109,7 +109,6 @@ creds:
 defaults:
   parallel: 2
   x-rescanInterval: 7d              # rescan unchanged digests this often
-  x-runtimeInUseWindow: 60m         # how recently seen counts as "running"
   x-policy:
     expression: "criticalCount == 0"
     failureMessage: "critical vulnerabilities found"
