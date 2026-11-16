@@ -1,4 +1,4 @@
-import type { APIClient, PolicyFailureFinding, Scan, TriageRun } from './api';
+import type { APIClient, PolicyFailureFinding, RuntimeInventory, Scan, TriageRun } from './api';
 
 const POLICY_COMPLIANCE_SCAN_PAGE_SIZE = 100;
 
@@ -15,6 +15,7 @@ export type PolicyExceptionScanFilters = {
 };
 
 export type PolicyComplianceSnapshot = {
+  /** Failed scans, including running digests their tag has moved off (Superseded). */
   failedScans: Scan[];
   policyByRepo: Record<string, { failed: number; pending: number }>;
   failedCount: number;
@@ -46,7 +47,7 @@ export function buildPolicyExceptionScanFilters(filters: PolicyExceptionScanFilt
 }
 
 export async function loadAllPolicyExceptionScans(
-  apiClient: APIClient,
+  apiClient: Pick<APIClient, 'getScansPage'>,
   filters: PolicyExceptionScanFilters
 ): Promise<Scan[]> {
   const baseFilters = buildPolicyExceptionScanFilters(filters);
@@ -71,11 +72,57 @@ export function buildPolicyFixPromptFromScans(
   return buildPolicyFixPrompt(buildPolicyFixPromptRows(celFailedScans));
 }
 
+type PolicyComplianceAPI = Pick<APIClient, 'getScansPage' | 'getRunningPolicyFailures'>;
+
+function scanKey(scan: Pick<Scan, 'Repository' | 'Tag' | 'Digest'>): string {
+  return `${scan.Repository}\n${scan.Tag}\n${scan.Digest}`;
+}
+
+/**
+ * Adds running policy failures that the current-binding scan list does not hold:
+ * digests a tag has moved off while a cluster still runs them.
+ */
+export function mergeRunningPolicyFailures(scans: Scan[], running: Scan[]): Scan[] {
+  const seen = new Set(scans.map(scanKey));
+  const merged = [...scans];
+  for (const scan of running) {
+    const key = scanKey(scan);
+    if (seen.has(key)) continue;
+    seen.add(key);
+    merged.push(scan);
+  }
+  return merged;
+}
+
+/** "running an older digest of 1.6.45" for a superseded running digest. */
+export function supersededRunningLabel(scan: Pick<Scan, 'Tag'>): string {
+  return `running an older digest of ${scan.Tag || 'its tag'}`;
+}
+
+/** "cluster/namespace" for each place a runtime inventory reports the image. */
+export function runtimeLocationLabels(runtime?: RuntimeInventory): string[] {
+  if (!runtime) return [];
+  const labels: string[] = [];
+  for (const [cluster, namespaces] of Object.entries(runtime)) {
+    for (const namespace of Object.keys(namespaces)) {
+      labels.push(namespace ? `${cluster}/${namespace}` : cluster);
+    }
+  }
+  return labels.sort();
+}
+
 export async function fetchPolicyComplianceData(
-  apiClient: APIClient,
+  apiClient: PolicyComplianceAPI,
   inUseRequestParams: Record<string, string> | undefined
 ): Promise<PolicyComplianceSnapshot> {
-  const nonPassedScans = await loadAllPolicyExceptionScans(apiClient, { inUseRequestParams });
+  // Running failures come from the same backend query as the runtime policy metric,
+  // so the in-use count here matches suppline_policy_failed_current{source="runtime"}.
+  const includeRunning = inUseRequestParams?.in_use_mode !== 'not_in_use';
+  const [currentScans, runningScans] = await Promise.all([
+    loadAllPolicyExceptionScans(apiClient, { inUseRequestParams }),
+    includeRunning ? apiClient.getRunningPolicyFailures() : Promise.resolve([] as Scan[]),
+  ]);
+  const nonPassedScans = mergeRunningPolicyFailures(currentScans, runningScans);
 
   const failedScans = nonPassedScans.filter(s => s.PolicyStatus !== 'pending');
   const pendingScans = nonPassedScans.filter(s => s.PolicyStatus === 'pending');
@@ -92,7 +139,7 @@ export async function fetchPolicyComplianceData(
     policyByRepo,
     failedCount: failedScans.length,
     pendingCount: pendingScans.length,
-    failedInUseCount: failedScans.filter(s => !!s.RuntimeUsed).length,
+    failedInUseCount: runningScans.filter(s => s.PolicyStatus !== 'pending').length,
   };
 }
 

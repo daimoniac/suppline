@@ -23,6 +23,7 @@
 npm run dev       # Vite dev server with HMR + proxy to localhost:8080
 npm run build     # tsc -b && vite build  (type-check then bundle → dist/)
 npm run lint      # ESLint across all .ts/.tsx
+npm test          # Vitest unit tests (src/**/*.test.ts(x))
 npm run preview   # Serve production build locally
 
 # Docker
@@ -271,7 +272,7 @@ Add it to the `APIClient` class in `src/lib/api.ts`. Add the corresponding TypeS
 ## Common pitfalls
 
 - **No `tailwind.config.js`** — Tailwind 4 is configured entirely through `src/index.css`. Adding a config file will conflict.
-- **No test script** — there is no `npm test`. The `test.js` in the repo root references the older plain-JS codebase. If adding tests, use Vitest (compatible with Vite) and add a `test` script to `package.json`.
+- **Tests use Vitest** — `npm test` runs `vitest run` over `src/**/*.test.ts(x)` in Node. Render components with `renderToStaticMarkup` inside a `MemoryRouter`, and `vi.mock` components that need `useAuth`/`useToast`. The `test.js` in the repo root references the older plain-JS codebase.
 - **Backend JSON is PascalCase** — `response.Digest`, not `response.digest`. Check Go struct JSON tags before writing a new type.
 - **Severity helpers are the single source of truth** — never hardcode colour strings for severity inside a page or component; always go through `severityColor()` / `severityTextColor()` in `utils.ts`.
 - **No global API client** — always get `apiClient` from `useAuth()`. Do not import and instantiate `APIClient` directly in a component.

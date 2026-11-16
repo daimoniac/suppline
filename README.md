@@ -243,7 +243,7 @@ Prometheus metrics on `:9090/metrics`, JSON logs on stdout, component health on 
 
 | Metric | Tells you |
 |--------|-----------|
-| `suppline_policy_failed_current{source="registry\|runtime"}` | Failing images, split by mirrored vs actually running |
+| `suppline_policy_failed_current{source="registry\|runtime"}` | Failing images, split by mirrored vs actually running. `runtime` includes digests a tag has moved off while pods still run them; `GET /api/v1/images/running-failures` lists that same set |
 | `suppline_vulnerabilities_total` | Vulnerabilities by severity |
 | `suppline_scans_total` | Scans by status |
 | `suppline_queue_depth` | Backlog — if this climbs, add workers or slow the watcher |

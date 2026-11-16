@@ -353,6 +353,11 @@ type StateStoreQuery interface {
 	// registry presence, runtime use, and runtime use plus cluster-wide newer semver tags.
 	GetPolicyOutcomeSummary(ctx context.Context) (PolicyOutcomeSummary, error)
 
+	// ListRunningPolicyFailures returns failed or pending artifacts whose digest a
+	// cluster runs, including digests the tag has moved off (Superseded). It is the
+	// set GetPolicyOutcomeSummary counts as Runtime.
+	ListRunningPolicyFailures(ctx context.Context) ([]*ScanRecord, error)
+
 	// ListRuntimeUnusedRepositoryWhitelist returns repositories excluded from
 	// runtime-unused housekeeping tasks.
 	ListRuntimeUnusedRepositoryWhitelist(ctx context.Context) ([]RuntimeUnusedRepositoryWhitelistEntry, error)
@@ -431,6 +436,11 @@ type ScanRecord struct {
 	VEXAttested           bool
 	RuntimeUsed           bool
 	Runtime               RuntimeInventory
+	// Superseded is true when the tag has moved off this digest: the digest is no
+	// longer the tag's Current tag binding. Set by ListRunningPolicyFailures.
+	Superseded bool
+	// CurrentDigest is the tag's Current tag binding when Superseded is true.
+	CurrentDigest string
 	// RetainSuperseded tells RecordScan to keep this digest behind the tag's
 	// current binding. It is a write instruction, not a stored scan column.
 	// The worker sets it when the registry tag does not name this digest: a

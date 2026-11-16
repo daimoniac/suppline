@@ -56,6 +56,10 @@ func (m *mockStateStore) GetUniqueVulnerabilityCounts(ctx context.Context) (map[
 	return m.counts, nil
 }
 
+func (m *mockStateStore) ListRunningPolicyFailures(ctx context.Context) ([]*statestore.ScanRecord, error) {
+	return nil, nil
+}
+
 func (m *mockStateStore) GetPolicyOutcomeSummary(ctx context.Context) (statestore.PolicyOutcomeSummary, error) {
 	return statestore.PolicyOutcomeSummary{
 		Failed:  statestore.PolicyOutcomeCounts{All: 3, Runtime: 1, RuntimeAndNewer: 2},
