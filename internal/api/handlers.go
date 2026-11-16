@@ -1314,7 +1314,7 @@ func (s *APIServer) handleRescanTag(w http.ResponseWriter, r *http.Request) {
 // enrichScanRecord updates a scan record with current config values.
 // If AppliedVEXStatements is populated, leave it as is.
 func (s *APIServer) enrichScanRecord(record *statestore.ScanRecord) {
-	if record == nil || s.regsyncConfig == nil {
+	if record == nil || s.runningConfig() == nil {
 		return
 	}
 
@@ -1693,8 +1693,8 @@ func (s *APIServer) handleGetCoverage(w http.ResponseWriter, r *http.Request) {
 
 	staleAfter := defaultClusterStaleAfter
 	rescanInterval := defaultRescanInterval
-	if s.regsyncConfig != nil {
-		if interval, err := s.regsyncConfig.GetRescanInterval(""); err == nil && interval > 0 {
+	if cfg := s.runningConfig(); cfg != nil {
+		if interval, err := cfg.GetRescanInterval(""); err == nil && interval > 0 {
 			rescanInterval = interval
 		}
 	}

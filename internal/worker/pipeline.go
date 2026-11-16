@@ -261,7 +261,7 @@ func (p *Pipeline) attestationPhase(ctx context.Context, task *queue.ScanTask, i
 		return durations, result, nil
 	}
 
-	if p.worker.regsyncCfg != nil && !p.worker.regsyncCfg.CreateSBOMAttestation() {
+	if cfg := p.worker.runningConfig(); cfg != nil && !cfg.CreateSBOMAttestation() {
 		p.logger.Info("skipping SBOM attestation", "image_ref", imageRef)
 		if cleaner, ok := p.worker.attestor.(referrerCleaner); ok {
 			if err := cleaner.DeleteReferrers(ctx, imageRef, attestation.PredicateBOM); err != nil {
@@ -281,7 +281,7 @@ func (p *Pipeline) attestationPhase(ctx context.Context, task *queue.ScanTask, i
 		p.logger.Info("SBOM attestation created", "image_ref", imageRef, "duration", durations["sbom_attest"])
 	}
 
-	if p.worker.regsyncCfg != nil && !p.worker.regsyncCfg.CreateVulnerabilityAttestation() {
+	if cfg := p.worker.runningConfig(); cfg != nil && !cfg.CreateVulnerabilityAttestation() {
 		p.logger.Info("skipping vulnerability attestation", "image_ref", imageRef)
 		if cleaner, ok := p.worker.attestor.(referrerCleaner); ok {
 			if err := cleaner.DeleteReferrers(ctx, imageRef, attestation.PredicateVuln); err != nil {

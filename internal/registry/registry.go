@@ -77,15 +77,27 @@ type LayerDescriptor struct {
 
 // clientImpl implements the Client interface using go-containerregistry
 type clientImpl struct {
-	regsyncConfig      *config.RegsyncConfig
+	targets            func() []string
 	authConfig         map[string]authn.Authenticator
 	insecureRegistries map[string]bool
 	remoteOpts         []remote.Option
 	logger             *slog.Logger
 }
 
+// ClientOption adjusts a registry client.
+type ClientOption func(*clientImpl)
+
+// WithConfigSource makes ListRepositories read target repositories from the
+// running configuration instead of the one passed to NewClient. Credentials
+// and TLS settings are still read once, when the client is built.
+func WithConfigSource(current config.Source) ClientOption {
+	return func(c *clientImpl) {
+		c.targets = func() []string { return current().GetTargetRepositories() }
+	}
+}
+
 // NewClient creates a new registry client configured with credentials from regsync config
-func NewClient(regsyncConfig *config.RegsyncConfig) (Client, error) {
+func NewClient(regsyncConfig *config.RegsyncConfig, opts ...ClientOption) (Client, error) {
 	if regsyncConfig == nil {
 		return nil, errors.NewPermanentf("regsync config is required")
 	}
@@ -110,7 +122,7 @@ func NewClient(regsyncConfig *config.RegsyncConfig) (Client, error) {
 	}
 
 	client := &clientImpl{
-		regsyncConfig:      regsyncConfig,
+		targets:            regsyncConfig.GetTargetRepositories,
 		authConfig:         make(map[string]authn.Authenticator),
 		insecureRegistries: make(map[string]bool),
 		remoteOpts:         transportOpts,
@@ -130,6 +142,10 @@ func NewClient(regsyncConfig *config.RegsyncConfig) (Client, error) {
 			client.markInsecure(cred.Registry)
 			client.logger.Debug("registered insecure registry", "registry", cred.Registry, "tls", tlsMode)
 		}
+	}
+
+	for _, opt := range opts {
+		opt(client)
 	}
 
 	return client, nil
@@ -208,7 +224,7 @@ func parseImageRef(repo string) (registry, repository string, err error) {
 
 // ListRepositories returns all repositories in the registry
 func (c *clientImpl) ListRepositories(ctx context.Context) ([]string, error) {
-	targets := c.regsyncConfig.GetTargetRepositories()
+	targets := c.targets()
 	if len(targets) == 0 {
 		return nil, errors.NewPermanentf("no target repositories configured in regsync")
 	}

@@ -52,7 +52,7 @@ type APIServer struct {
 	clusterInventory  statestore.ClusterInventoryStore
 	taskQueue         queue.TaskQueue
 	scanEnqueuer      *scanenqueue.Enqueuer
-	regsyncConfig     *config.RegsyncConfig
+	currentConfig     config.Source
 	policyCatalog     catalog.Catalog
 	triageService     *triage.Service
 	vexAudit          *vexaudit.Auditor
@@ -76,14 +76,15 @@ func NewAPIServer(cfg *config.APIConfig, attestationCfg *config.AttestationConfi
 
 // NewAPIServerWithEnqueuer creates an API server with a shared scan enqueuer.
 func NewAPIServerWithEnqueuer(cfg *config.APIConfig, attestationCfg *config.AttestationConfig, store statestore.StateStoreQuery, taskQueue queue.TaskQueue, scanEnqueuer *scanenqueue.Enqueuer, regsyncConfig *config.RegsyncConfig, logger *slog.Logger) *APIServer {
+	running := catalog.NewConfigCatalog(regsyncConfig)
 	return NewAPIServerWithCatalogAndEnqueuer(
 		cfg, attestationCfg, store, taskQueue, scanEnqueuer,
-		regsyncConfig, catalog.NewConfigCatalog(regsyncConfig), logger,
+		running.Current, running, logger,
 	)
 }
 
 // NewAPIServerWithCatalogAndEnqueuer creates an API server using shared seams.
-func NewAPIServerWithCatalogAndEnqueuer(cfg *config.APIConfig, attestationCfg *config.AttestationConfig, store statestore.StateStoreQuery, taskQueue queue.TaskQueue, scanEnqueuer *scanenqueue.Enqueuer, regsyncConfig *config.RegsyncConfig, policyCatalog catalog.Catalog, logger *slog.Logger) *APIServer {
+func NewAPIServerWithCatalogAndEnqueuer(cfg *config.APIConfig, attestationCfg *config.AttestationConfig, store statestore.StateStoreQuery, taskQueue queue.TaskQueue, scanEnqueuer *scanenqueue.Enqueuer, currentConfig config.Source, policyCatalog catalog.Catalog, logger *slog.Logger) *APIServer {
 	var clusterInventoryStore statestore.ClusterInventoryStore
 	if inventoryStore, ok := store.(statestore.ClusterInventoryStore); ok {
 		clusterInventoryStore = inventoryStore
@@ -96,7 +97,7 @@ func NewAPIServerWithCatalogAndEnqueuer(cfg *config.APIConfig, attestationCfg *c
 		clusterInventory:  clusterInventoryStore,
 		taskQueue:         taskQueue,
 		scanEnqueuer:      scanEnqueuer,
-		regsyncConfig:     regsyncConfig,
+		currentConfig:     currentConfig,
 		policyCatalog:     policyCatalog,
 		router:            http.NewServeMux(),
 		logger:            logger,
@@ -365,4 +366,12 @@ func (s *APIServer) handleRootRedirect(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	http.Redirect(w, r, "/swagger/", http.StatusMovedPermanently)
+}
+
+// runningConfig returns the configuration snapshot for one request, or nil.
+func (s *APIServer) runningConfig() *config.RegsyncConfig {
+	if s.currentConfig == nil {
+		return nil
+	}
+	return s.currentConfig()
 }
