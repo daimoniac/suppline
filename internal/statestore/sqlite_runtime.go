@@ -107,15 +107,6 @@ func (s *SQLiteStore) RecordClusterInventory(ctx context.Context, clusterName st
 	return nil
 }
 
-func (s *SQLiteStore) runtimeInUseCutoffUnix() int64 {
-	window := s.runtimeInUseWindow
-	if window <= 0 {
-		window = defaultRuntimeInUseWindow
-	}
-
-	return time.Now().UTC().Add(-window).Unix()
-}
-
 // normalizeClusterInventoryEntries keeps distinct digest variants, but removes
 // digest-less duplicates when any digest was observed for the same
 // namespace/image_ref/tag tuple.
@@ -440,7 +431,6 @@ func (s *SQLiteStore) queryRuntimeUsageByRepoTags(ctx context.Context, pairs []r
 		return result, nil
 	}
 
-	cutoffUnix := s.runtimeInUseCutoffUnix()
 	locationsByKey := make(map[string][]RuntimeLocation)
 
 	for start := 0; start < len(tags); start += sqliteMaxVariableNumber {
@@ -455,14 +445,10 @@ func (s *SQLiteStore) queryRuntimeUsageByRepoTags(ctx context.Context, pairs []r
 			SELECT ci.image_ref, COALESCE(ci.tag, ''), COALESCE(ci.digest, ''), c.name, ci.namespace
 			FROM cluster_images_seen ci
 			JOIN clusters c ON c.id = ci.cluster_id
-			WHERE (
-				ci.last_seen_at >= ?
-				OR ci.last_seen_at >= COALESCE(c.last_reported_at, 0)
-			)
+			WHERE ci.last_seen_at >= COALESCE(c.last_reported_at, 0)
 			  AND COALESCE(ci.tag, '') IN (` + placeholders + `)
 		`
 		args := make([]interface{}, 0, len(tagChunk)+1)
-		args = append(args, cutoffUnix)
 		for _, tag := range tagChunk {
 			args = append(args, tag)
 		}
@@ -608,22 +594,16 @@ func (s *SQLiteStore) queryRuntimeUsageByDigests(ctx context.Context, digests []
 		return result, nil
 	}
 
-	cutoffUnix := s.runtimeInUseCutoffUnix()
-
 	placeholders := strings.TrimSuffix(strings.Repeat("?,", len(digests)), ",")
 	query := `
 		SELECT ci.digest, ci.image_ref, COALESCE(ci.tag, ''), c.name, ci.namespace
 		FROM cluster_images_seen ci
 		JOIN clusters c ON c.id = ci.cluster_id
-		WHERE (
-			ci.last_seen_at >= ?
-			OR ci.last_seen_at >= COALESCE(c.last_reported_at, 0)
-		)
+		WHERE ci.last_seen_at >= COALESCE(c.last_reported_at, 0)
 		  AND ci.digest IN (` + placeholders + `)
 	`
 
 	args := make([]interface{}, 0, len(digests)+1)
-	args = append(args, cutoffUnix)
 	for _, digest := range digests {
 		args = append(args, digest)
 	}
@@ -667,18 +647,13 @@ func (s *SQLiteStore) queryRuntimeUsageByRepoTag(ctx context.Context, repository
 		return RuntimeUsage{}, nil
 	}
 
-	cutoffUnix := s.runtimeInUseCutoffUnix()
-
 	rows, err := s.db.QueryContext(ctx, `
 		SELECT ci.image_ref, COALESCE(ci.tag, ''), COALESCE(ci.digest, ''), c.name, ci.namespace
 		FROM cluster_images_seen ci
 		JOIN clusters c ON c.id = ci.cluster_id
-		WHERE (
-			ci.last_seen_at >= ?
-			OR ci.last_seen_at >= COALESCE(c.last_reported_at, 0)
-		)
+		WHERE ci.last_seen_at >= COALESCE(c.last_reported_at, 0)
 		  AND COALESCE(ci.tag, '') = ?
-	`, cutoffUnix, tag)
+	`, tag)
 	if err != nil {
 		return RuntimeUsage{}, errors.NewTransientf("failed to query runtime fallback usage: %w", err)
 	}
@@ -720,17 +695,12 @@ func (s *SQLiteStore) queryRuntimeUsageByRepository(ctx context.Context, reposit
 		return RuntimeUsage{}, nil
 	}
 
-	cutoffUnix := s.runtimeInUseCutoffUnix()
-
 	rows, err := s.db.QueryContext(ctx, `
 		SELECT ci.image_ref, COALESCE(ci.tag, ''), COALESCE(ci.digest, ''), c.name, ci.namespace
 		FROM cluster_images_seen ci
 		JOIN clusters c ON c.id = ci.cluster_id
-		WHERE (
-			ci.last_seen_at >= ?
-			OR ci.last_seen_at >= COALESCE(c.last_reported_at, 0)
-		)
-	`, cutoffUnix)
+		WHERE ci.last_seen_at >= COALESCE(c.last_reported_at, 0)
+	`)
 	if err != nil {
 		return RuntimeUsage{}, errors.NewTransientf("failed to query runtime repository usage: %w", err)
 	}
@@ -944,11 +914,8 @@ func (s *SQLiteStore) annotateRunningDigests(ctx context.Context, records []*Sca
 		SELECT ci.image_ref, COALESCE(ci.tag, ''), COALESCE(ci.digest, ''), c.name, ci.namespace, COALESCE(ci.workloads, '')
 		FROM cluster_images_seen ci
 		JOIN clusters c ON c.id = ci.cluster_id
-		WHERE (
-			ci.last_seen_at >= ?
-			OR ci.last_seen_at >= COALESCE(c.last_reported_at, 0)
-		)
-	`, s.runtimeInUseCutoffUnix())
+		WHERE ci.last_seen_at >= COALESCE(c.last_reported_at, 0)
+	`)
 	if err != nil {
 		return errors.NewTransientf("failed to query runtime inventory: %w", err)
 	}

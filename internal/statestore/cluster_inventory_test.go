@@ -936,7 +936,7 @@ func TestListRepositories_RuntimeUsageFallbackRepositoryTag(t *testing.T) {
 	}
 }
 
-func TestGetRuntimeUsageForScan_RespectsRuntimeInUseWindowAndLatestSync(t *testing.T) {
+func TestGetRuntimeUsageForScan_FollowsLatestSync(t *testing.T) {
 	dbPath := "test_cluster_runtime_window_" + t.Name() + ".db"
 	_ = os.Remove(dbPath)
 	defer os.Remove(dbPath)
@@ -946,7 +946,6 @@ func TestGetRuntimeUsageForScan_RespectsRuntimeInUseWindowAndLatestSync(t *testi
 		t.Fatalf("Failed to create SQLite store: %v", err)
 	}
 	defer store.Close()
-	store.SetRuntimeInUseWindow(60 * time.Minute)
 
 	ctx := context.Background()
 	record := &ScanRecord{
@@ -982,6 +981,16 @@ func TestGetRuntimeUsageForScan_RespectsRuntimeInUseWindowAndLatestSync(t *testi
 		t.Fatalf("expected image to be in use when it was present in the most recent cluster sync")
 	}
 
+	// Seen five minutes ago, then omitted: the latest report decides, however
+	// recent the earlier sighting was.
+	if err := store.RecordClusterInventory(ctx, "cluster-a", []ClusterImageEntry{{
+		Namespace: "default",
+		ImageRef:  "docker.io/library/nginx",
+		Tag:       "1.25",
+		Digest:    "sha256:window-digest",
+	}}, time.Now().UTC().Add(-5*time.Minute)); err != nil {
+		t.Fatalf("RecordClusterInventory(recent sync) failed: %v", err)
+	}
 	if err := store.RecordClusterInventory(ctx, "cluster-a", []ClusterImageEntry{}, time.Now().UTC()); err != nil {
 		t.Fatalf("RecordClusterInventory(fresh sync without image) failed: %v", err)
 	}
@@ -991,7 +1000,7 @@ func TestGetRuntimeUsageForScan_RespectsRuntimeInUseWindowAndLatestSync(t *testi
 		t.Fatalf("GetRuntimeUsageForScan(after image omitted) failed: %v", err)
 	}
 	if usage.RuntimeUsed {
-		t.Fatalf("expected image to be not in use after latest sync omitted it and it is older than the runtime window")
+		t.Fatalf("expected image to be not in use after the latest sync omitted it")
 	}
 }
 
@@ -1005,7 +1014,6 @@ func TestListRepositories_RuntimeUsedWhenRepositorySeenWithDifferentTag(t *testi
 		t.Fatalf("Failed to create SQLite store: %v", err)
 	}
 	defer store.Close()
-	store.SetRuntimeInUseWindow(7 * 24 * time.Hour)
 
 	ctx := context.Background()
 	if err := store.RecordScan(ctx, &ScanRecord{

@@ -63,6 +63,8 @@ type inventoryBuffer struct {
 	// Pod and Event observers must not add them back; the 24h stale TTL would
 	// otherwise keep the image in the next snapshots.
 	blocked map[string]struct{}
+	// lastRefresh is when a full cluster listing last touched every live image.
+	lastRefresh time.Time
 }
 
 func newInventoryBuffer() *inventoryBuffer {
@@ -125,6 +127,52 @@ func podWorkload(pod *corev1.Pod) string {
 	return "Pod/" + pod.Name
 }
 
+// isManagedPod reports whether a long-running controller (Deployment via
+// ReplicaSet, StatefulSet, DaemonSet, an operator, ...) owns the pod. Such pods
+// are replaced, not finished, so their images are reported straight from the
+// pod watch cache and disappear with the pod. Bare pods and Job pods are
+// buffered instead, so short-lived runs stay visible for their retention.
+func isManagedPod(pod *corev1.Pod) bool {
+	if pod == nil || isJobOwnedPod(pod) {
+		return false
+	}
+	for _, ref := range pod.OwnerReferences {
+		if ref.Controller != nil && *ref.Controller {
+			return true
+		}
+	}
+	return false
+}
+
+// managedPodImages returns the images of managed pods that are not finished,
+// one entry per image key with every workload running it. Evicted or failed
+// pods are left out: they no longer run their image.
+func managedPodImages(pods []*corev1.Pod, excludedNS map[string]bool) []clusterImageInput {
+	images := make([]clusterImageInput, 0)
+	seen := make(map[string]int)
+	for _, pod := range pods {
+		if pod == nil || excludedNS[pod.Namespace] || !isManagedPod(pod) || isTerminalPodPhase(pod.Status.Phase) {
+			continue
+		}
+		images = appendPodImages(images, seen, pod)
+	}
+	return images
+}
+
+// podImageSignature identifies what a managed pod contributes to the snapshot,
+// so watch updates that change nothing (most status updates) send nothing.
+func podImageSignature(pod *corev1.Pod) string {
+	if pod == nil || !isManagedPod(pod) || isTerminalPodPhase(pod.Status.Phase) {
+		return ""
+	}
+	keys := make([]string, 0)
+	for _, img := range appendPodImages(nil, map[string]int{}, pod) {
+		keys = append(keys, imageKey(img))
+	}
+	sort.Strings(keys)
+	return strings.Join(keys, "\n")
+}
+
 func imageIdentityKey(img clusterImageInput) string {
 	return img.Namespace + "|" + img.ImageRef + "|" + img.Tag
 }
@@ -185,13 +233,20 @@ func normalizeImagesPreferDigests(images []clusterImageInput) []clusterImageInpu
 }
 
 func (b *inventoryBuffer) Add(img clusterImageInput) bool {
+	return b.AddAt(img, time.Now().UTC())
+}
+
+// AddAt records an image observed at a past time, e.g. from a Kubernetes
+// event. The entry ages from that time, so replaying old events on startup
+// does not extend how long their images are reported.
+func (b *inventoryBuffer) AddAt(img clusterImageInput, at time.Time) bool {
 	b.mu.Lock()
 	defer b.mu.Unlock()
 
 	if _, blocked := b.blocked[imageIdentityKey(img)]; blocked {
 		return false
 	}
-	return b.addLocked(img)
+	return b.addLocked(img, at)
 }
 
 // Observe records an image from a live pod. A current pod is authoritative, so
@@ -201,10 +256,10 @@ func (b *inventoryBuffer) Observe(img clusterImageInput) bool {
 	defer b.mu.Unlock()
 
 	delete(b.blocked, imageIdentityKey(img))
-	return b.addLocked(img)
+	return b.addLocked(img, time.Now().UTC())
 }
 
-func (b *inventoryBuffer) addLocked(img clusterImageInput) bool {
+func (b *inventoryBuffer) addLocked(img clusterImageInput, at time.Time) bool {
 	key := imageKey(img)
 	if existing, ok := b.seen[key]; ok {
 		updated := existing.img
@@ -217,11 +272,15 @@ func (b *inventoryBuffer) addLocked(img clusterImageInput) bool {
 			updated.Workloads = workloads
 			enriched = true
 		}
-		b.seen[key] = seenEntry{img: updated, lastSeen: time.Now().UTC()}
+		lastSeen := existing.lastSeen
+		if at.After(lastSeen) {
+			lastSeen = at
+		}
+		b.seen[key] = seenEntry{img: updated, lastSeen: lastSeen}
 		return enriched
 	}
 
-	b.seen[key] = seenEntry{img: img, lastSeen: time.Now().UTC()}
+	b.seen[key] = seenEntry{img: img, lastSeen: at}
 	return true
 }
 
@@ -304,6 +363,37 @@ func (b *inventoryBuffer) TouchAll(images []clusterImageInput) bool {
 			b.seen[key] = seenEntry{img: updated, lastSeen: now}
 		} else {
 			b.seen[key] = seenEntry{img: img, lastSeen: now}
+			changed = true
+		}
+	}
+	return changed
+}
+
+// MarkRefreshed records that a full cluster listing touched every live image
+// at now.
+func (b *inventoryBuffer) MarkRefreshed(now time.Time) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	b.lastRefresh = now
+}
+
+// EvictStale removes entries not seen for ttl, but only while the last full
+// listing is younger than ttl. Every live image was touched by that listing,
+// so an entry older than ttl is no longer in the cluster. Without a recent
+// listing a long-running pod and a deleted one look alike, so nothing is
+// removed. Returns true if any entries were removed.
+func (b *inventoryBuffer) EvictStale(ttl time.Duration, now time.Time) bool {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+
+	if b.lastRefresh.IsZero() || now.Sub(b.lastRefresh) >= ttl {
+		return false
+	}
+	cutoff := now.Add(-ttl)
+	changed := false
+	for key, entry := range b.seen {
+		if entry.lastSeen.Before(cutoff) {
+			delete(b.seen, key)
 			changed = true
 		}
 	}
@@ -398,6 +488,7 @@ func runWatch(
 	if staleTTL <= 0 {
 		return fmt.Errorf("IMAGE_STALE_AFTER must be > 0")
 	}
+	refreshInterval = effectiveRefreshInterval(refreshInterval, staleTTL, logger)
 
 	completedRetention := completedWorkloadRetention(logger)
 	if completedRetention <= 0 {
@@ -412,7 +503,6 @@ func runWatch(
 	if _, err := refreshInventoryBuffer(ctx, kubeClient, excludedNS, buffer, staleTTL, completedRetention, logger); err != nil {
 		return fmt.Errorf("initial inventory refresh: %w", err)
 	}
-	watchStartedAt := time.Now().UTC()
 
 	factory := informers.NewSharedInformerFactory(kubeClient, 0)
 	podInformer := factory.Core().V1().Pods().Informer()
@@ -435,13 +525,39 @@ func runWatch(
 			if collectPodObservation(pod, excludedNS, buffer, completedRetention) {
 				signalSend()
 			}
+			if !excludedNS[pod.Namespace] && podImageSignature(pod) != "" {
+				signalSend()
+			}
 		},
-		UpdateFunc: func(_, newObj interface{}) {
+		UpdateFunc: func(oldObj, newObj interface{}) {
 			pod, ok := newObj.(*corev1.Pod)
 			if !ok {
 				return
 			}
 			if collectPodObservation(pod, excludedNS, buffer, completedRetention) {
+				signalSend()
+			}
+			// A managed pod that started on a new digest, or finished or was
+			// evicted, changes the snapshot read from the watch cache.
+			oldPod, _ := oldObj.(*corev1.Pod)
+			if !excludedNS[pod.Namespace] && podImageSignature(oldPod) != podImageSignature(pod) {
+				signalSend()
+			}
+		},
+		DeleteFunc: func(obj interface{}) {
+			// The pod is already gone from the watch cache, so the next
+			// snapshot drops its images unless another pod still runs them.
+			pod, ok := obj.(*corev1.Pod)
+			if !ok {
+				tombstone, isTombstone := obj.(cache.DeletedFinalStateUnknown)
+				if !isTombstone {
+					return
+				}
+				if pod, ok = tombstone.Obj.(*corev1.Pod); !ok {
+					return
+				}
+			}
+			if !excludedNS[pod.Namespace] && isManagedPod(pod) {
 				signalSend()
 			}
 		},
@@ -453,7 +569,7 @@ func runWatch(
 			if !ok {
 				return
 			}
-			if collectEventObservation(event, excludedNS, buffer, watchStartedAt, logger) {
+			if collectEventObservation(event, excludedNS, buffer, time.Now().UTC().Add(-staleTTL), logger) {
 				signalSend()
 			}
 		},
@@ -462,7 +578,7 @@ func runWatch(
 			if !ok {
 				return
 			}
-			if collectEventObservation(event, excludedNS, buffer, watchStartedAt, logger) {
+			if collectEventObservation(event, excludedNS, buffer, time.Now().UTC().Add(-staleTTL), logger) {
 				signalSend()
 			}
 		},
@@ -476,8 +592,20 @@ func runWatch(
 		return fmt.Errorf("failed to sync informer caches")
 	}
 
+	// snapshot joins the images of live managed pods, read from the watch cache,
+	// with the buffered images of bare pods, Job pods, events and workload specs.
+	snapshot := func() []clusterImageInput {
+		pods := make([]*corev1.Pod, 0)
+		for _, obj := range podInformer.GetStore().List() {
+			if pod, ok := obj.(*corev1.Pod); ok {
+				pods = append(pods, pod)
+			}
+		}
+		return normalizeImagesPreferDigests(append(managedPodImages(pods, excludedNS), buffer.Snapshot()...))
+	}
+
 	attemptSend := func(force bool) error {
-		images := buffer.Snapshot()
+		images := snapshot()
 		if images == nil {
 			images = []clusterImageInput{}
 		}
@@ -559,17 +687,25 @@ func runWatch(
 			pendingSend = false
 			pendingForceSend = false
 		case <-sweepTicker.C:
+			// Images from pods that are gone stop being reported once
+			// IMAGE_STALE_AFTER has passed, not only at the next full refresh.
+			evicted := buffer.EvictStale(staleTTL, time.Now().UTC())
+			if evicted {
+				logger.Info("evicted images not seen within stale TTL", "stale_ttl", staleTTL.String())
+			}
 			dropped, err := dropExpiredCompletedWorkloads(ctx, kubeClient, excludedNS, buffer, completedRetention, logger)
 			if err != nil {
 				logger.Warn("failed to drop expired completed workloads", "error", err)
-				continue
+				if !evicted {
+					continue
+				}
 			}
-			if !dropped {
+			if !dropped && !evicted {
 				continue
 			}
 
 			pendingSend = true
-			pendingForceSend = len(buffer.Snapshot()) == 0
+			pendingForceSend = len(snapshot()) == 0
 			if err := attemptSend(pendingForceSend); err != nil {
 				logger.Warn("failed to send inventory snapshot after completed workload expiry; will retry", "error", err)
 				continue
@@ -590,7 +726,7 @@ func runWatch(
 			}
 
 			pendingSend = true
-			pendingForceSend = len(buffer.Snapshot()) == 0
+			pendingForceSend = len(snapshot()) == 0
 			if err := attemptSend(pendingForceSend); err != nil {
 				logger.Warn("failed to send refreshed inventory snapshot; will retry", "error", err)
 				continue
@@ -629,8 +765,10 @@ func buildImageIDMap(pod *corev1.Pod) map[string]string {
 	return m
 }
 
+// collectPodObservation buffers the images of bare and Job pods. Managed pods
+// are not buffered; snapshots read them from the pod watch cache.
 func collectPodObservation(pod *corev1.Pod, excludedNS map[string]bool, buffer *inventoryBuffer, retention time.Duration) bool {
-	if pod == nil || excludedNS[pod.Namespace] {
+	if pod == nil || excludedNS[pod.Namespace] || isManagedPod(pod) {
 		return false
 	}
 	if !includePodReports(pod, time.Now().UTC(), retention) {
@@ -658,6 +796,8 @@ func collectPodObservation(pod *corev1.Pod, excludedNS map[string]bool, buffer *
 	return changed
 }
 
+// collectEventObservation buffers the image named by a pull event observed at
+// or after minObservedAt. The entry ages from the event's own time.
 func collectEventObservation(event *corev1.Event, excludedNS map[string]bool, buffer *inventoryBuffer, minObservedAt time.Time, logger *slog.Logger) bool {
 	if event == nil || excludedNS[event.Namespace] {
 		return false
@@ -685,7 +825,11 @@ func collectEventObservation(event *corev1.Event, excludedNS map[string]bool, bu
 	}
 
 	imageRef, tag, digest := parseImageRef(image, "")
-	return buffer.Add(clusterImageInput{Namespace: event.Namespace, ImageRef: imageRef, Tag: tag, Digest: digest})
+	observedAt := eventObservationTime(event)
+	if observedAt.IsZero() || observedAt.After(time.Now().UTC()) {
+		observedAt = time.Now().UTC()
+	}
+	return buffer.AddAt(clusterImageInput{Namespace: event.Namespace, ImageRef: imageRef, Tag: tag, Digest: digest}, observedAt)
 }
 
 func eventObservedAtOrAfter(event *corev1.Event, minObservedAt time.Time) bool {
@@ -811,17 +955,17 @@ func collectClusterInventory(
 	excludedNS map[string]bool,
 	retention time.Duration,
 	logger *slog.Logger,
-) (images, expired []clusterImageInput, err error) {
+) (images, managed, expired []clusterImageInput, err error) {
 	// --- List all pods across all namespaces ---
 	podList, err := kubeClient.CoreV1().Pods("").List(ctx, metav1.ListOptions{})
 	if err != nil {
-		return nil, nil, fmt.Errorf("list pods: %w", err)
+		return nil, nil, nil, fmt.Errorf("list pods: %w", err)
 	}
 	logger.Debug("listed pods", "total", len(podList.Items))
 
 	// --- Collect images from pods and workload definitions ---
-	podImages, expiredPods := collectImages(podList.Items, excludedNS, retention, logger)
-	logger.Debug("collected images from pods", "count", len(podImages), "expired", len(expiredPods))
+	podImages, managed, expiredPods := collectImages(podList.Items, excludedNS, retention, logger)
+	logger.Debug("collected images from pods", "count", len(podImages), "managed", len(managed), "expired", len(expiredPods))
 
 	// --- Collect images from Deployments, StatefulSets, DaemonSets, Jobs, CronJobs ---
 	workloadImages, expiredWorkloads, err := collectWorkloadImages(ctx, kubeClient, excludedNS, retention, logger)
@@ -835,7 +979,7 @@ func collectClusterInventory(
 	images = mergeImages(podImages, workloadImages)
 	expired = mergeImages(expiredPods, expiredWorkloads)
 	logger.Debug("collected unique images total", "count", len(images), "expired", len(expired))
-	return images, expired, nil
+	return images, managed, expired, nil
 }
 
 func refreshInventoryBuffer(
@@ -847,13 +991,16 @@ func refreshInventoryBuffer(
 	retention time.Duration,
 	logger *slog.Logger,
 ) (bool, error) {
-	images, expired, err := collectClusterInventory(ctx, kubeClient, excludedNS, retention, logger)
+	images, managed, expired, err := collectClusterInventory(ctx, kubeClient, excludedNS, retention, logger)
 	if err != nil {
 		return false, err
 	}
 
+	// Taken before TouchAll, so every touched entry is at least this recent.
+	refreshedAt := time.Now().UTC()
 	changed := buffer.TouchAll(images)
-	if buffer.ReconcileExpired(expired, images) {
+	buffer.MarkRefreshed(refreshedAt)
+	if buffer.ReconcileExpired(expired, append(images, managed...)) {
 		changed = true
 	}
 	if buffer.Evict(staleTTL) {
@@ -874,15 +1021,36 @@ func dropExpiredCompletedWorkloads(
 	retention time.Duration,
 	logger *slog.Logger,
 ) (bool, error) {
-	images, expired, err := collectClusterInventory(ctx, kubeClient, excludedNS, retention, logger)
+	images, managed, expired, err := collectClusterInventory(ctx, kubeClient, excludedNS, retention, logger)
 	if err != nil {
 		return false, err
 	}
-	dropped := buffer.ReconcileExpired(expired, images)
+	dropped := buffer.ReconcileExpired(expired, append(images, managed...))
 	if dropped {
 		logger.Info("removed expired completed workload images", "remaining", len(buffer.Snapshot()))
 	}
 	return dropped, nil
+}
+
+// effectiveRefreshInterval keeps full refreshes at least twice per stale TTL.
+// Stale entries can only be evicted while the last refresh is younger than the
+// TTL (see EvictStale), so a longer interval would keep gone images alive.
+func effectiveRefreshInterval(refresh, staleTTL time.Duration, logger *slog.Logger) time.Duration {
+	limit := staleTTL / 2
+	if limit < time.Minute {
+		limit = time.Minute
+	}
+	if refresh <= limit {
+		return refresh
+	}
+	if logger != nil {
+		logger.Info("shortening refresh interval to half the stale TTL",
+			"configured", refresh.String(),
+			"effective", limit.String(),
+			"stale_ttl", staleTTL.String(),
+		)
+	}
+	return limit
 }
 
 func parseDurationEnv(key string, fallback time.Duration, logger *slog.Logger) time.Duration {
@@ -972,10 +1140,11 @@ func buildKubeClient() (*kubernetes.Clientset, error) {
 // collectImages iterates pods, builds image entries and deduplicates them.
 // Terminal Job-owned Pods are included only until completion plus retention;
 // older ones are returned in expired so the inventory buffer can drop them.
-func collectImages(pods []corev1.Pod, excludedNS map[string]bool, retention time.Duration, logger *slog.Logger) (images, expired []clusterImageInput) {
+func collectImages(pods []corev1.Pod, excludedNS map[string]bool, retention time.Duration, logger *slog.Logger) (images, managed, expired []clusterImageInput) {
 	now := time.Now().UTC()
 	seen := make(map[string]int)
 	expiredSeen := make(map[string]int)
+	managedPods := make([]*corev1.Pod, 0)
 
 	for i := range pods {
 		pod := &pods[i]
@@ -995,11 +1164,15 @@ func collectImages(pods []corev1.Pod, excludedNS map[string]bool, retention time
 			expired = appendPodImages(expired, expiredSeen, pod)
 			continue
 		}
+		if isManagedPod(pod) {
+			managedPods = append(managedPods, pod)
+			continue
+		}
 
 		images = appendPodImages(images, seen, pod)
 	}
 
-	return images, expired
+	return images, managedPodImages(managedPods, excludedNS), expired
 }
 
 // appendPodImages adds each container image of pod once per image key; seen maps

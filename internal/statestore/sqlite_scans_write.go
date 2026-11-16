@@ -305,12 +305,9 @@ func (s *SQLiteStore) digestInUseTx(ctx context.Context, tx *Tx, digest string) 
 		FROM cluster_images_seen ci
 		JOIN clusters c ON c.id = ci.cluster_id
 		WHERE ci.digest = ?
-		  AND (
-			ci.last_seen_at >= ?
-			OR ci.last_seen_at >= COALESCE(c.last_reported_at, 0)
-		  )
+		  AND ci.last_seen_at >= COALESCE(c.last_reported_at, 0)
 		LIMIT 1
-	`, digest, s.runtimeInUseCutoffUnix()).Scan(&one)
+	`, digest).Scan(&one)
 	if err == sql.ErrNoRows {
 		return false, nil
 	}

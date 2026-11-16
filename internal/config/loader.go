@@ -2,6 +2,7 @@ package config
 
 import (
 	"fmt"
+	"log/slog"
 	"os"
 	"strings"
 	"time"
@@ -20,7 +21,6 @@ func Load() (*Config, error) {
 	var workerRetryAttempts int
 	var workerRetryBackoff time.Duration
 	var queueBufferSize int
-	var runtimeInUseWindow time.Duration
 
 	// Try to load regsync config for defaults
 	if regsyncCfg, err := ParseRegsync(regsyncPath); err == nil {
@@ -36,8 +36,9 @@ func Load() (*Config, error) {
 			workerRetryBackoff = backoff
 		}
 		queueBufferSize = regsyncCfg.GetQueueBufferSize()
-		if window, err := regsyncCfg.GetRuntimeInUseWindow(); err == nil {
-			runtimeInUseWindow = window
+		if regsyncCfg.Defaults.RuntimeInUseWindow != "" {
+			slog.Warn("x-runtimeInUseWindow is ignored: an image is in use while its cluster's latest inventory report contains it; set IMAGE_STALE_AFTER on the cluster agent to keep short-lived pods longer",
+				"value", regsyncCfg.Defaults.RuntimeInUseWindow)
 		}
 	}
 
@@ -59,9 +60,6 @@ func Load() (*Config, error) {
 	}
 	if queueBufferSize == 0 {
 		queueBufferSize = 1000
-	}
-	if runtimeInUseWindow == 0 {
-		runtimeInUseWindow = 60 * time.Minute
 	}
 
 	cfg := &Config{
@@ -98,11 +96,10 @@ func Load() (*Config, error) {
 			OIDCClientID: getEnv("OIDC_CLIENT_ID", ""),
 		},
 		StateStore: StateStoreConfig{
-			Type:               getEnv("STATE_STORE_TYPE", "sqlite"),
-			PostgresURL:        getEnv("POSTGRES_URL", ""),
-			SQLitePath:         getEnv("SQLITE_PATH", "suppline.db"),
-			RescanInterval:     rescanInterval,
-			RuntimeInUseWindow: runtimeInUseWindow,
+			Type:           getEnv("STATE_STORE_TYPE", "sqlite"),
+			PostgresURL:    getEnv("POSTGRES_URL", ""),
+			SQLitePath:     getEnv("SQLITE_PATH", "suppline.db"),
+			RescanInterval: rescanInterval,
 		},
 		API: APIConfig{
 			Enabled:     getEnvBool("API_ENABLED", true),

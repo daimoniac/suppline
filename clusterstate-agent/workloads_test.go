@@ -58,7 +58,11 @@ func TestCollectImagesReportsWorkloadsPerDigest(t *testing.T) {
 		ownedPod("frontend-1", "StatefulSet", "cortex-memcached-frontend", nil, "sha256:new"),
 	}
 
-	images, _ := collectImages(pods, nil, 0, testLogger())
+	images, managed, _ := collectImages(pods, nil, 0, testLogger())
+	if len(images) != 0 {
+		t.Fatalf("managed pods must not be buffered, got %+v", images)
+	}
+	images = managed
 
 	got := map[string][]string{}
 	for _, img := range images {
