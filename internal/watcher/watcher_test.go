@@ -853,7 +853,7 @@ func TestProcessTag_FailSafeBehavior(t *testing.T) {
 		regsyncConfig:  regsyncCfg,
 		stateStore:     mockStore,
 		taskQueue:      mockQueue,
-		scanEnqueuer:   scanenqueue.New(mockQueue),
+		scanEnqueuer:   scanenqueue.New(mockQueue, nil),
 		logger:         logger,
 	}
 

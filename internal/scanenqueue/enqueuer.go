@@ -17,6 +17,8 @@ import (
 // at scan time.
 type Enqueuer struct {
 	taskQueue queue.TaskQueue
+	scans     ScanLister
+	pageSize  int // 0 means requeuePageSize
 	now       func() time.Time
 }
 
@@ -40,10 +42,12 @@ const (
 	DiscoveryRescan
 )
 
-// New creates an Enqueuer backed by taskQueue.
-func New(taskQueue queue.TaskQueue) *Enqueuer {
+// New creates an Enqueuer backed by taskQueue. scans is needed only by the
+// requeue methods and may be nil for callers that submit single images.
+func New(taskQueue queue.TaskQueue, scans ScanLister) *Enqueuer {
 	return &Enqueuer{
 		taskQueue: taskQueue,
+		scans:     scans,
 		now:       time.Now,
 	}
 }
