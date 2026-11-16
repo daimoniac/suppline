@@ -32,21 +32,19 @@ type modelEvidence struct {
 	GrepID  string `json:"grep_id,omitempty"`
 }
 
-func runAgent(ctx context.Context, llm completer, roots *Roots, runtime clusterQuerier, pub *publicSource, upstream *publicCheckouts, images imageLabeler, manifests manifestSource, allowed []string, policy string, minConfidence float64, job Job, placements string, repoNames []string, existing *types.VEXStatement, maxSteps int) (modelVerdict, int, error) {
+func runAgent(ctx context.Context, llm completer, tools *toolbox, allowed []string, policy string, minConfidence float64, job Job, placements string, repoNames []string, existing *types.VEXStatement, maxSteps int) (modelVerdict, int, error) {
 	if maxSteps < 1 {
 		maxSteps = 1
 	}
-	if pub == nil {
-		pub = newPublicSource()
-	}
+	tools = tools.ready()
 	messages := []chatMessage{
-		{Role: "system", Content: systemPrompt(allowed, runtime != nil, policy, minConfidence)},
+		{Role: "system", Content: systemPrompt(allowed, tools.runtime != nil, policy, minConfidence)},
 		{Role: "user", Content: userPrompt(job, placements, repoNames, existing)},
 	}
-	tools := toolDefinitions(runtime != nil)
+	defs := toolDefinitions(tools.runtime != nil)
 	tokens := 0
 	for step := 0; step < maxSteps; step++ {
-		stepTools := tools
+		stepTools := defs
 		if step == maxSteps-1 {
 			messages = append(messages, chatMessage{
 				Role:    "user",
@@ -65,7 +63,7 @@ func runAgent(ctx context.Context, llm completer, roots *Roots, runtime clusterQ
 		}
 		messages = append(messages, chatMessage{Role: "assistant", Content: result.Content, ToolCalls: result.ToolCalls})
 		for _, call := range result.ToolCalls {
-			output := dispatchTool(ctx, roots, runtime, pub, upstream, images, manifests, job, call)
+			output := tools.dispatch(ctx, job, call)
 			messages = append(messages, chatMessage{Role: "tool", ToolCallID: call.ID, Content: untrusted("tool "+call.Function.Name, output)})
 		}
 	}
@@ -74,7 +72,7 @@ func runAgent(ctx context.Context, llm completer, roots *Roots, runtime clusterQ
 
 // runPhase continues one conversation. On the last step, tools are dropped and
 // conclude is appended. An earlier reply with no tool calls ends the phase.
-func runPhase(ctx context.Context, llm completer, roots *Roots, runtime clusterQuerier, pub *publicSource, upstream *publicCheckouts, images imageLabeler, manifests manifestSource, messages *[]chatMessage, tools []toolDef, job Job, maxSteps int, conclude string) (string, int, error) {
+func runPhase(ctx context.Context, llm completer, tools *toolbox, messages *[]chatMessage, defs []toolDef, job Job, maxSteps int, conclude string) (string, int, error) {
 	if messages == nil {
 		return "", 0, fmt.Errorf("triage phase has no conversation")
 	}
@@ -83,7 +81,7 @@ func runPhase(ctx context.Context, llm completer, roots *Roots, runtime clusterQ
 	}
 	tokens := 0
 	for step := 0; step < maxSteps; step++ {
-		stepTools := tools
+		stepTools := defs
 		if step == maxSteps-1 {
 			if strings.TrimSpace(conclude) != "" {
 				*messages = append(*messages, chatMessage{Role: "user", Content: conclude})
@@ -101,7 +99,7 @@ func runPhase(ctx context.Context, llm completer, roots *Roots, runtime clusterQ
 		}
 		*messages = append(*messages, chatMessage{Role: "assistant", Content: result.Content, ToolCalls: result.ToolCalls})
 		for _, call := range result.ToolCalls {
-			output := dispatchTool(ctx, roots, runtime, pub, upstream, images, manifests, job, call)
+			output := tools.dispatch(ctx, job, call)
 			*messages = append(*messages, chatMessage{Role: "tool", ToolCallID: call.ID, Content: untrusted("tool "+call.Function.Name, output)})
 		}
 	}
@@ -112,7 +110,36 @@ type clusterQuerier interface {
 	Query(ctx context.Context, cluster, namespace, image string) (string, error)
 }
 
-func dispatchTool(ctx context.Context, roots *Roots, runtime clusterQuerier, pub *publicSource, upstream *publicCheckouts, images imageLabeler, manifests manifestSource, job Job, call toolCall) string {
+// toolbox is everything one triage conversation can read through tools, and
+// the ledger of what it read. The guard checks citations against the same
+// ledger, so a verdict can only cite what a tool actually returned.
+type toolbox struct {
+	roots     *Roots
+	runtime   clusterQuerier
+	pub       *publicSource
+	upstream  *publicCheckouts
+	images    imageLabeler
+	manifests manifestSource
+}
+
+// ready returns a toolbox with an empty ledger and checkout set filled in.
+func (t *toolbox) ready() *toolbox {
+	next := toolbox{}
+	if t != nil {
+		next = *t
+	}
+	if next.roots == nil {
+		next.roots = &Roots{}
+	}
+	if next.pub == nil {
+		next.pub = newPublicSource()
+	}
+	return &next
+}
+
+// dispatch runs one tool call for job and returns what the model sees.
+func (t *toolbox) dispatch(ctx context.Context, job Job, call toolCall) string {
+	roots, runtime, pub, upstream, images, manifests := t.roots, t.runtime, t.pub, t.upstream, t.images, t.manifests
 	var args struct {
 		Repo      string `json:"repo"`
 		Path      string `json:"path"`

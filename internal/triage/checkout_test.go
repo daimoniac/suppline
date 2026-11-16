@@ -19,7 +19,7 @@ func TestDispatchGrepGoesThroughCheckouts(t *testing.T) {
 	imageCall := toolCall{}
 	imageCall.Function.Name = "grep"
 	imageCall.Function.Arguments = `{"repo":"image","pattern":"Proxy","path":"."}`
-	out := dispatchTool(context.Background(), roots, nil, pub, nil, nil, nil, job, imageCall)
+	out := (&toolbox{roots: roots, pub: pub}).dispatch(context.Background(), job, imageCall)
 	if !strings.Contains(out, "citable: absence") || strings.Contains(out, "error:") {
 		t.Fatalf("image grep via dispatch: %s", out)
 	}
@@ -32,7 +32,7 @@ func TestDispatchGrepGoesThroughCheckouts(t *testing.T) {
 	gitopsCall := toolCall{}
 	gitopsCall.Function.Name = "grep"
 	gitopsCall.Function.Arguments = `{"repo":"infra","pattern":"example/app","path":"."}`
-	gitopsOut := dispatchTool(context.Background(), gitops, nil, pub, nil, nil, nil, job, gitopsCall)
+	gitopsOut := (&toolbox{roots: gitops, pub: pub}).dispatch(context.Background(), job, gitopsCall)
 	if strings.Contains(gitopsOut, "grep_id:") || !strings.Contains(gitopsOut, "image: example/app") {
 		t.Fatalf("gitops grep: %s", gitopsOut)
 	}

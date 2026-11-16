@@ -729,7 +729,14 @@ func (s *Service) executeSession(ctx context.Context, jobs []Job, checkouts []gi
 	jobRoots.Checkouts = append([]CheckoutRoot(nil), roots.Checkouts...)
 	jobRoots.Image = newImageFS(s.unpack, runnable[0].Repository, runnable[0].Digest)
 	pub := newPublicSource()
-	upstream := &publicCheckouts{base: s.settings.CheckoutDir, pub: pub}
+	tools := &toolbox{
+		roots:     &jobRoots,
+		runtime:   s.clusters,
+		pub:       pub,
+		upstream:  &publicCheckouts{base: s.settings.CheckoutDir, pub: pub},
+		images:    s.images,
+		manifests: ociManifests{},
+	}
 	existing := map[string]*types.VEXStatement{}
 	if s.catalog != nil {
 		for _, statement := range s.catalog.AutoVEX(runnable[0].Repository) {
@@ -742,7 +749,9 @@ func (s *Service) executeSession(ctx context.Context, jobs []Job, checkouts []gi
 			}
 		}
 	}
-	result := runSession(ctx, s.llm, &jobRoots, s.clusters, pub, upstream, s.images, ociManifests{}, allowedNames(s.settings), s.settings.Prompt, s.settings.MinConfidence, runnable, names, existing, s.settings.MaxSteps, func() bool {
+
+	// Run: one conversation gathers context, then asks for a verdict per CVE.
+	result := runSession(ctx, s.llm, tools, allowedNames(s.settings), s.settings.Prompt, s.settings.MinConfidence, runnable, names, existing, s.settings.MaxSteps, func() bool {
 		return !s.overBudget(ctx)
 	}, sessionHooks{
 		onContext: func() {},
@@ -757,14 +766,34 @@ func (s *Service) executeSession(ctx context.Context, jobs []Job, checkouts []gi
 		s.logger.Error("triage session failed", "repository", runnable[0].Repository, "error", result.Err)
 		return
 	}
-	shares := splitContextTokens(result.ContextTokens, result.Turns)
-	type pendingWrite struct {
-		turn     sessionTurn
-		decision verdictDecision
-		tokens   int
+
+	// Judge: every verdict passes the guard; rejected and failed turns are recorded here.
+	writing := s.judgeTurns(ctx, tools, result, existing, checkouts, sessionID, shas)
+
+	// Write: accepted statements become one config edit.
+	s.writeVerdicts(ctx, runnable[0].Repository, writing, sessionID, shas)
+}
+
+// pendingWrite is a verdict the guard accepted, waiting to be written.
+type pendingWrite struct {
+	turn     sessionTurn
+	decision verdictDecision
+	tokens   int
+}
+
+func (s *Service) guard() guard {
+	g := guard{settings: s.settings, now: s.now}
+	if s.kev != nil {
+		g.kev = s.kev
 	}
+	return g
+}
+
+// judgeTurns records failed and rejected turns and returns the accepted ones.
+func (s *Service) judgeTurns(ctx context.Context, tools *toolbox, result sessionResult, existing map[string]*types.VEXStatement, checkouts []gitops.Checkout, sessionID, shas string) []pendingWrite {
+	g := s.guard()
+	shares := splitContextTokens(result.ContextTokens, result.Turns)
 	var writing []pendingWrite
-	var rejected []pendingWrite
 	for i, turn := range result.Turns {
 		tokens := turn.Tokens + shares[i]
 		if turn.Err != nil {
@@ -772,26 +801,19 @@ func (s *Service) executeSession(ctx context.Context, jobs []Job, checkouts []gi
 			s.logger.Error("triage cve failed", "repository", turn.Job.Repository, "cve", turn.Job.CVEID, "error", turn.Err)
 			continue
 		}
-		evidenceErr := ""
-		if err := verifyEvidence(jobRoots, pub, turn.Job, &turn.Verdict); err != nil {
-			evidenceErr = err.Error()
-		}
-		var kevHit bool
-		var kevErr error
-		if s.settings.BlockKEV && s.kev != nil {
-			kevHit, kevErr = s.kev.Contains(ctx, turn.Job.CVEID)
-		}
-		decision := decide(s.settings, turn.Job, turn.Verdict, evidenceErr, kevHit, kevErr, existing[turn.Job.CVEID], checkouts, sessionID, s.now())
-		row := pendingWrite{turn: turn, decision: decision, tokens: tokens}
+		decision := g.judge(ctx, tools, turn.Job, &turn.Verdict, existing[turn.Job.CVEID], checkouts, sessionID)
 		if decision.Action == outcomeNotAffected || decision.Action == outcomeAffected {
-			writing = append(writing, row)
+			writing = append(writing, pendingWrite{turn: turn, decision: decision, tokens: tokens})
 			continue
 		}
-		rejected = append(rejected, row)
+		s.record(ctx, turn.Job, turn.Verdict, tokens, StatusRejected, sessionID, "", shas, decision.Reason)
 	}
-	for _, row := range rejected {
-		s.record(ctx, row.turn.Job, row.turn.Verdict, row.tokens, StatusRejected, sessionID, "", shas, row.decision.Reason)
-	}
+	return writing
+}
+
+// writeVerdicts records accepted verdicts as dry-run, or writes them as one
+// config edit and records the outcome.
+func (s *Service) writeVerdicts(ctx context.Context, repository string, writing []pendingWrite, sessionID, shas string) {
 	if len(writing) == 0 {
 		return
 	}
@@ -807,8 +829,7 @@ func (s *Service) executeSession(ctx context.Context, jobs []Job, checkouts []gi
 		statements = append(statements, row.decision.Statement)
 		lines = append(lines, fmt.Sprintf("%s %s", row.turn.Job.CVEID, row.decision.Statement.State))
 	}
-	message := autoCommitMessage(runnable[0].Repository, lines)
-	commit, err := s.apply(ctx, runnable[0].Repository, statements, message)
+	commit, err := s.apply(ctx, repository, statements, autoCommitMessage(repository, lines))
 	if err != nil {
 		status := StatusError
 		var pushErr *gitops.PushError
@@ -819,7 +840,7 @@ func (s *Service) executeSession(ctx context.Context, jobs []Job, checkouts []gi
 		for _, row := range writing {
 			s.record(ctx, row.turn.Job, row.turn.Verdict, row.tokens, status, sessionID, "", shas, err.Error())
 		}
-		s.logger.Error("triage apply failed", "repository", runnable[0].Repository, "error", err)
+		s.logger.Error("triage apply failed", "repository", repository, "error", err)
 		return
 	}
 	status := StatusWritten
