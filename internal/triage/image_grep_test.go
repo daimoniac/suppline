@@ -57,7 +57,7 @@ func TestImageGrepAbsence(t *testing.T) {
 	}
 
 	kernel, err := imageGrep(context.Background(), roots, pub, Job{PackageName: "linux-libc-dev", Digest: "sha256:abc111"}, "copy_from_user", ".")
-	if err != nil || !strings.Contains(kernel, "citable: no") || !strings.Contains(kernel, "workload rule") {
+	if err != nil || !strings.Contains(kernel, "citable: no") || !strings.Contains(kernel, "does not apply") {
 		t.Fatalf("kernel: %s %v", kernel, err)
 	}
 }

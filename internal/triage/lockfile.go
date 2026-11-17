@@ -316,12 +316,3 @@ func npmRepository(raw any) (repoURL, directory string) {
 		return "", ""
 	}
 }
-
-func kernelPackage(name string) bool {
-	switch strings.ToLower(strings.TrimSpace(name)) {
-	case "linux", "linux-libc-dev", "linux-headers", "kernel":
-		return true
-	default:
-		return false
-	}
-}

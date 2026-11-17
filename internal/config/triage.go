@@ -87,8 +87,8 @@ type GitAuthor struct {
 
 // DefaultTriageJustifications are the justifications an automatic decision may use.
 // Deployment justifications come from a gitops line or a public checkout line.
-// code_not_reachable comes from an upstream line, an empty grep of that checkout,
-// or a userspace kernel workload.
+// code_not_reachable comes from an upstream line or an empty grep of that checkout.
+// Header-only kernel findings are decided as code_not_present without the model.
 func DefaultTriageJustifications() []string {
 	return []string{
 		string(types.VEXJustRequiresConfiguration),

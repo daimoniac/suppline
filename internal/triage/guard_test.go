@@ -187,7 +187,7 @@ func TestCodeNotReachableNeedsUpstreamLine(t *testing.T) {
 	}
 }
 
-func TestEmptyGrepAndKernelWorkload(t *testing.T) {
+func TestEmptyGrepAndKernelGitopsLine(t *testing.T) {
 	dir := t.TempDir()
 	body := "image: hostingmaloonde/supabase_postgres:15\ncontainerPort: 5432\n"
 	if err := os.WriteFile(filepath.Join(dir, "values.yaml"), []byte(body), 0o644); err != nil {
@@ -248,14 +248,8 @@ func TestEmptyGrepAndKernelWorkload(t *testing.T) {
 		Verdict: "not_affected", Justification: "code_not_reachable", Confidence: 0.9, Reasoning: "userspace",
 		Evidence: []modelEvidence{{Repo: "infra", Path: "values.yaml", Line: 1, Quote: "image: hostingmaloonde/supabase_postgres:15"}},
 	}
-	if err := verifyEvidence(roots, pub, Job{Repository: "hostingmaloonde/supabase_postgres", PackageName: "linux-libc-dev"}, &kernel); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.WriteFile(filepath.Join(dir, "values.yaml"), []byte(body+"privileged: true\n"), 0o644); err != nil {
-		t.Fatal(err)
-	}
-	if err := verifyEvidence(roots, pub, Job{Repository: "hostingmaloonde/supabase_postgres", PackageName: "linux"}, &kernel); err == nil || !strings.Contains(err.Error(), "privileged") {
-		t.Fatalf("privileged workload: %v", err)
+	if err := verifyEvidence(roots, pub, Job{Repository: "hostingmaloonde/supabase_postgres", PackageName: "linux"}, &kernel); err == nil || !strings.Contains(err.Error(), "code_not_reachable requires") {
+		t.Fatalf("kernel workload line was accepted: %v", err)
 	}
 }
 
