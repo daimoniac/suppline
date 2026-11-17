@@ -227,4 +227,3 @@ func verifyEvidence(roots Roots, pub *publicSource, job Job, verdict *modelVerdi
 	}
 	return nil
 }
-
