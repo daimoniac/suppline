@@ -302,7 +302,7 @@ func (s *APIServer) cleanupRemovedRepositories(ctx context.Context, repositories
 }
 
 func editStatus(err error) int {
-	if errors.Is(err, yamledit.ErrNoMatch) {
+	if errors.Is(err, yamledit.ErrNoMatch) || errors.Is(err, yamledit.ErrInvalidRange) {
 		return http.StatusBadRequest
 	}
 	var push *gitops.PushError

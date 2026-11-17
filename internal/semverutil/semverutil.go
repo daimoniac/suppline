@@ -26,6 +26,13 @@ func versionText(tag string) string {
 	return tag
 }
 
+// VersionText returns the part of tag that ParseVersion reads as the version,
+// without a distribution prefix: "alpine-v19.5.3" gives "v19.5.3". A range
+// bound must use this text, since a prefixed tag is not a valid constraint.
+func VersionText(tag string) string {
+	return versionText(tag)
+}
+
 // bitnamiRevisionSuffix matches Bitnami-style image revisions (...-rN).
 // SemVer treats "r16" as an alphanumeric prerelease identifier and compares
 // lexicographically ("r16" < "r9"), which disagrees with Bitnami's numeric
