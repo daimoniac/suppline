@@ -11,6 +11,7 @@ import (
 	"net/url"
 	"os"
 	"slices"
+	"strings"
 	"testing"
 	"time"
 
@@ -185,6 +186,10 @@ func TestProcessImage_RunwayHoldsExistingTagUntilAttested(t *testing.T) {
 	if !slices.Contains(listTags(t, rc, dst), "fresh") {
 		t.Fatal("new tag was not published")
 	}
+	if len(scans.queued) != 1 || !strings.HasPrefix(scans.queued[0], dst+":fresh@") {
+		t.Fatalf("queued scans = %v, want the new tag's first scan", scans.queued)
+	}
+	scans.queued = nil
 
 	mirrorTag("app")
 	if got := tagDigest(t, rc, dst+":app"); got != oldDigest {

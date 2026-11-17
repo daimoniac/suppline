@@ -29,6 +29,9 @@ type fakeRegistry struct {
 	storeErr error
 	bindings []string
 	queued   []scanenqueue.DiscoveryKind
+	images   []scanenqueue.Image
+	// enqueueErr fails EnqueueDiscovery.
+	enqueueErr error
 }
 
 func (f *fakeRegistry) GetLastRepositoryScanSummary(context.Context, string, string) (*statestore.ScanRecord, error) {
@@ -51,8 +54,12 @@ func (f *fakeRegistry) MoveTag(_ context.Context, _, tag, digest string) error {
 	return nil
 }
 
-func (f *fakeRegistry) EnqueueDiscovery(_ context.Context, _ scanenqueue.Image, kind scanenqueue.DiscoveryKind) (*queue.ScanTask, error) {
+func (f *fakeRegistry) EnqueueDiscovery(_ context.Context, image scanenqueue.Image, kind scanenqueue.DiscoveryKind) (*queue.ScanTask, error) {
+	if f.enqueueErr != nil {
+		return nil, f.enqueueErr
+	}
 	f.queued = append(f.queued, kind)
+	f.images = append(f.images, image)
 	return &queue.ScanTask{}, nil
 }
 
@@ -162,7 +169,7 @@ func TestOffer_ExistingTag(t *testing.T) {
 	}
 }
 
-func TestOffer_NewTagPublishesWithoutScan(t *testing.T) {
+func TestOffer_NewTagPublishesAndQueuesFirstScan(t *testing.T) {
 	f := &fakeRegistry{tags: map[string]string{}}
 	published, err := newRunway(f, time.Now()).Offer(context.Background(), Candidate{
 		Repository: repo, Tag: tag, Digest: newDig,
@@ -173,8 +180,47 @@ func TestOffer_NewTagPublishesWithoutScan(t *testing.T) {
 	if !published || f.tags[tag] != newDig {
 		t.Fatalf("new tag not published: published=%t tags=%v", published, f.tags)
 	}
-	if len(f.queued) != 0 || len(f.bindings) != 0 {
-		t.Fatalf("new tag queued=%v bindings=%v, want neither", f.queued, f.bindings)
+	if len(f.queued) != 1 || f.queued[0] != scanenqueue.DiscoveryFirstScan {
+		t.Fatalf("queued=%v, want one first scan", f.queued)
+	}
+	want := scanenqueue.Image{Repository: repo, Tag: tag, Digest: newDig}
+	if f.images[0] != want {
+		t.Fatalf("queued image=%+v, want %+v", f.images[0], want)
+	}
+	if len(f.bindings) != 0 {
+		t.Fatalf("bindings=%v, want none before the scan", f.bindings)
+	}
+}
+
+func TestOffer_NewTagOnScannedDigestQueuesNothing(t *testing.T) {
+	f := &fakeRegistry{
+		tags: map[string]string{},
+		rec:  &statestore.ScanRecord{Digest: newDig, PolicyStatus: policy.PolicyStatusPassed},
+	}
+	published, err := newRunway(f, time.Now()).Offer(context.Background(), Candidate{
+		Repository: repo, Tag: tag, Digest: newDig,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !published || f.tags[tag] != newDig {
+		t.Fatalf("new tag not published: published=%t tags=%v", published, f.tags)
+	}
+	if len(f.queued) != 0 {
+		t.Fatalf("queued=%v, want none for an already scanned digest", f.queued)
+	}
+}
+
+func TestOffer_NewTagPublishesWhenFirstScanCannotQueue(t *testing.T) {
+	f := &fakeRegistry{tags: map[string]string{}, enqueueErr: errors.New("queue is closed")}
+	published, err := newRunway(f, time.Now()).Offer(context.Background(), Candidate{
+		Repository: repo, Tag: tag, Digest: newDig,
+	})
+	if err != nil {
+		t.Fatalf("Offer error = %v; the watcher still finds the tag", err)
+	}
+	if !published || f.tags[tag] != newDig {
+		t.Fatalf("new tag not published: published=%t tags=%v", published, f.tags)
 	}
 }
 
