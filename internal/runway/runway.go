@@ -160,7 +160,9 @@ func (r *Runway) publish(ctx context.Context, c Candidate, reason string) error 
 		"repository", c.Repository, "tag", c.Tag, "digest", c.Digest,
 		"previous", c.Previous, "reason", reason)
 	if c.Previous == "" {
-		// A new tag has no scan yet; the watcher's first scan records the binding.
+		// The first scan records the binding. Queue it now: the watcher would
+		// only reach the tag on its next full pass over every repository.
+		r.queueFirstScan(ctx, c)
 		return nil
 	}
 	if _, err := r.cfg.Store.EnsureArtifactTagBinding(ctx, c.Repository, c.Digest, c.Tag); err != nil {
@@ -168,6 +170,33 @@ func (r *Runway) publish(ctx context.Context, c Candidate, reason string) error 
 			"repository", c.Repository, "tag", c.Tag, "digest", c.Digest, "error", err)
 	}
 	return nil
+}
+
+// queueFirstScan requests the first scan of a newly published tag's digest.
+// The tag is already published, so a failure only delays the scan until the
+// watcher finds the tag.
+func (r *Runway) queueFirstScan(ctx context.Context, c Candidate) {
+	rec, err := r.lastScan(ctx, c)
+	if err != nil {
+		r.cfg.Log.Warn("cannot read scan of new tag; watcher queues its first scan",
+			"repository", c.Repository, "tag", c.Tag, "digest", c.Digest, "error", err)
+		return
+	}
+	if rec != nil {
+		// The watcher binds an alias tag to a digest that is already scanned.
+		return
+	}
+	if _, err := r.cfg.Scheduler.EnqueueDiscovery(ctx, scanenqueue.Image{
+		Repository: c.Repository,
+		Tag:        c.Tag,
+		Digest:     c.Digest,
+	}, scanenqueue.DiscoveryFirstScan); err != nil {
+		r.cfg.Log.Warn("cannot queue first scan of new tag; watcher queues it",
+			"repository", c.Repository, "tag", c.Tag, "digest", c.Digest, "error", err)
+		return
+	}
+	r.cfg.Log.Info("queued first scan of new tag",
+		"repository", c.Repository, "tag", c.Tag, "digest", c.Digest)
 }
 
 func (r *Runway) lastScan(ctx context.Context, c Candidate) (*statestore.ScanRecord, error) {
