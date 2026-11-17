@@ -210,7 +210,7 @@ func (a *Auditor) auditRepository(ctx context.Context, repository string, record
 			continue
 		}
 		without := withoutStatement(evidence, candidate.ID)
-		if changesOutcome(ctx, a.logger, engine, scans, baseline, without, candidate.ID) {
+		if changesOutcome(ctx, a.logger, engine, scans, baseline, evidence, without, candidate.ID) {
 			continue
 		}
 		findings = append(findings, Finding{
@@ -362,7 +362,12 @@ func completedScans(records []*statestore.ScanRecord) []*statestore.ScanRecord {
 // changesOutcome reports whether removing evidence changes the pass/fail result
 // of any scan. An evaluation error counts as a change, so nothing is offered
 // for removal when the answer is unknown.
-func changesOutcome(ctx context.Context, logger *slog.Logger, engine policy.PolicyEngine, scans []*statestore.ScanRecord, baseline []bool, without []types.VEXStatement, cveID string) bool {
+//
+// A scan that already fails for another CVE hides the statement's effect, so
+// each scan is also evaluated with every other CVE exempted. The statement is
+// kept when either comparison changes the result.
+func changesOutcome(ctx context.Context, logger *slog.Logger, engine policy.PolicyEngine, scans []*statestore.ScanRecord, baseline []bool, evidence, without []types.VEXStatement, cveID string) bool {
+	now := time.Now()
 	for i, scan := range scans {
 		if !scanHasCVE(scan, cveID) {
 			continue
@@ -375,8 +380,44 @@ func changesOutcome(ctx context.Context, logger *slog.Logger, engine policy.Poli
 		if passed != baseline[i] {
 			return true
 		}
+		others := exemptOthers(scan, evidence, cveID, now)
+		isolatedWith, err := evaluate(ctx, engine, scan, append(append([]types.VEXStatement(nil), evidence...), others...))
+		if err != nil {
+			logger.Warn("vex audit evaluation failed", "digest", scan.Digest, "error", err)
+			return true
+		}
+		isolatedWithout, err := evaluate(ctx, engine, scan, append(append([]types.VEXStatement(nil), without...), others...))
+		if err != nil {
+			logger.Warn("vex audit evaluation failed", "digest", scan.Digest, "error", err)
+			return true
+		}
+		if isolatedWith != isolatedWithout {
+			return true
+		}
 	}
 	return false
+}
+
+// exemptOthers returns a not_affected statement for every CVE on the scan
+// except cveID that evidence does not already exempt. With them applied, only
+// cveID can still decide the policy outcome.
+func exemptOthers(scan *statestore.ScanRecord, evidence []types.VEXStatement, cveID string, now time.Time) []types.VEXStatement {
+	exempted := make(map[string]struct{}, len(evidence))
+	for _, statement := range candidateStatements(evidence, now) {
+		exempted[statement.ID] = struct{}{}
+	}
+	var out []types.VEXStatement
+	for _, vuln := range scan.Vulnerabilities {
+		if vuln.CVEID == cveID {
+			continue
+		}
+		if _, ok := exempted[vuln.CVEID]; ok {
+			continue
+		}
+		exempted[vuln.CVEID] = struct{}{}
+		out = append(out, types.VEXStatement{ID: vuln.CVEID, State: types.VEXStateNotAffected})
+	}
+	return out
 }
 
 func scanHasCVE(scan *statestore.ScanRecord, cveID string) bool {
