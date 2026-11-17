@@ -184,7 +184,7 @@ func TestReconcileSupersededDigests_RenewsStalePinAndDropsUnused(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Reconcile due: %v", err)
 	}
-	if len(due) != 1 || due[0].Digest != oldDigest || due[0].Tag != tag || due[0].Repository != repo {
+	if len(due) != 1 || due[0].Digest != oldDigest || due[0].Tag != tag || due[0].Repository != repo || !due[0].StoredTag {
 		t.Fatalf("due renewals = %+v", due)
 	}
 
@@ -262,4 +262,28 @@ func artifactSuperseded(t *testing.T, store *SQLiteStore, repo, digest, tag stri
 		t.Fatalf("superseded flag for %s: %v", digest, err)
 	}
 	return superseded
+}
+
+func TestReconcileSupersededDigests_MarksClusterOnlyTag(t *testing.T) {
+	store, cleanup := createTestStore(t)
+	defer cleanup()
+
+	sqliteStore := store.(*SQLiteStore)
+	ctx := context.Background()
+	repo := "hostingmaloonde/minio_minio"
+	gone := "sha256:34c8e2f52a5984492555427fee07254c80036bdb7079bb91679232abd7a4fa20"
+
+	if err := sqliteStore.RecordClusterInventory(ctx, "internal1", []ClusterImageEntry{
+		{Namespace: "minio", ImageRef: "docker.io/hostingmaloonde/minio_minio", Tag: "RELEASE.2024-12-18T13-15-44Z", Digest: gone},
+	}, time.Now().UTC()); err != nil {
+		t.Fatalf("RecordClusterInventory: %v", err)
+	}
+
+	due, err := sqliteStore.ReconcileSupersededDigests(ctx, repo, nil, 7*24*time.Hour)
+	if err != nil {
+		t.Fatalf("Reconcile: %v", err)
+	}
+	if len(due) != 1 || due[0].Digest != gone || due[0].Tag != "RELEASE.2024-12-18T13-15-44Z" || due[0].StoredTag {
+		t.Fatalf("renewals = %+v, want the cluster tag marked as not stored", due)
+	}
 }
