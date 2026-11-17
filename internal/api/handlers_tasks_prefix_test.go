@@ -10,7 +10,6 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/daimoniac/suppline/internal/config"
 	"github.com/daimoniac/suppline/internal/configedit"
 	"github.com/daimoniac/suppline/internal/observability"
 	"github.com/daimoniac/suppline/internal/policy/catalog"
@@ -102,7 +101,7 @@ sync:
 	if got, _ := os.ReadFile(path); !bytes.Equal(got, original) {
 		t.Fatalf("config changed:\n%s", got)
 	}
-	var cfg *config.RegsyncConfig = server.runningConfig()
+	cfg := server.runningConfig()
 	if r := cfg.Sync[0].Tags.SemverRange; len(r) != 1 || r[0] != ">=18.9.0" {
 		t.Fatalf("running ranges = %v", r)
 	}
