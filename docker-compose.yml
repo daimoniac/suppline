@@ -3,7 +3,7 @@
 # Docs: docs/EVAL.md
 services:
   registry:
-    image: registry:3.1.1
+    image: registry:3.1.2
     container_name: suppline-registry
     environment:
       - REGISTRY_STORAGE_DELETE_ENABLED=true
@@ -132,7 +132,7 @@ services:
       start_period: 5s
 
   trivy:
-    image: aquasec/trivy:0.76.1
+    image: aquasec/trivy:0.76.2
     container_name: trivy-server
     entrypoint: ["/bin/sh", "/trivy-json-logs.sh"]
     command: ["server", "--listen", "0.0.0.0:4954"]
@@ -223,7 +223,7 @@ services:
   #   docker compose --profile deploy run --rm clusterstate-agent-helm
   clusterstate-agent-helm:
     profiles: ["deploy"]
-    image: alpine/helm:4.2.4
+    image: alpine/helm:4.3.2
     working_dir: /workspace
     env_file:
       - path: .env

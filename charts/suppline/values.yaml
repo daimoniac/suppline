@@ -103,7 +103,7 @@ backend:
 trivy:
   image:
     repository: aquasec/trivy
-    tag: "0.76.1"
+    tag: "0.76.2"
     pullPolicy: IfNotPresent
 
   resources:
@@ -306,7 +306,7 @@ registry:
   # Image configuration
   image:
     repository: registry
-    tag: 3.1.1
+    tag: 3.1.2
     pullPolicy: IfNotPresent
 
   # Service configuration

@@ -516,7 +516,7 @@ func runWatch(
 		}
 	}
 
-	podInformer.AddEventHandler(cache.ResourceEventHandlerFuncs{
+	if _, err := podInformer.AddEventHandler(cache.ResourceEventHandlerFuncs{
 		AddFunc: func(obj interface{}) {
 			pod, ok := obj.(*corev1.Pod)
 			if !ok {
@@ -561,9 +561,11 @@ func runWatch(
 				signalSend()
 			}
 		},
-	})
+	}); err != nil {
+		return fmt.Errorf("register pod informer handler: %w", err)
+	}
 
-	eventInformer.AddEventHandler(cache.ResourceEventHandlerFuncs{
+	if _, err := eventInformer.AddEventHandler(cache.ResourceEventHandlerFuncs{
 		AddFunc: func(obj interface{}) {
 			event, ok := obj.(*corev1.Event)
 			if !ok {
@@ -582,7 +584,9 @@ func runWatch(
 				signalSend()
 			}
 		},
-	})
+	}); err != nil {
+		return fmt.Errorf("register event informer handler: %w", err)
+	}
 
 	stopCh := make(chan struct{})
 	defer close(stopCh)
@@ -777,11 +781,7 @@ func collectPodObservation(pod *corev1.Pod, excludedNS map[string]bool, buffer *
 
 	imageIDs := buildImageIDMap(pod)
 	workloads := []string{podWorkload(pod)}
-	changed := false
-
-	if addObservedContainers(buffer, pod.Namespace, workloads, pod.Spec.InitContainers, imageIDs) {
-		changed = true
-	}
+	changed := addObservedContainers(buffer, pod.Namespace, workloads, pod.Spec.InitContainers, imageIDs)
 	if addObservedContainers(buffer, pod.Namespace, workloads, pod.Spec.Containers, imageIDs) {
 		changed = true
 	}
@@ -852,19 +852,19 @@ func eventObservationTime(event *corev1.Event) time.Time {
 	}
 
 	if !event.EventTime.IsZero() {
-		return event.EventTime.Time.UTC()
+		return event.EventTime.UTC()
 	}
 	if event.Series != nil && !event.Series.LastObservedTime.IsZero() {
-		return event.Series.LastObservedTime.Time.UTC()
+		return event.Series.LastObservedTime.UTC()
 	}
 	if !event.LastTimestamp.IsZero() {
-		return event.LastTimestamp.Time.UTC()
+		return event.LastTimestamp.UTC()
 	}
 	if !event.FirstTimestamp.IsZero() {
-		return event.FirstTimestamp.Time.UTC()
+		return event.FirstTimestamp.UTC()
 	}
 	if !event.CreationTimestamp.IsZero() {
-		return event.CreationTimestamp.Time.UTC()
+		return event.CreationTimestamp.UTC()
 	}
 
 	return time.Time{}
@@ -1290,7 +1290,7 @@ func splitImageRef(image string) (imageRef, tag, digest string) {
 func canonicalRepository(repo string) string {
 	repo = strings.ToLower(strings.TrimSpace(repo))
 	parts := strings.SplitN(repo, "/", 2)
-	if len(parts) == 1 || !(strings.ContainsAny(parts[0], ".:") || parts[0] == "localhost") {
+	if len(parts) == 1 || (!strings.ContainsAny(parts[0], ".:") && parts[0] != "localhost") {
 		repo = "docker.io/" + repo
 	}
 	for _, alias := range []string{"index.docker.io/", "registry-1.docker.io/"} {
@@ -1480,16 +1480,16 @@ func jobCompletion(job *batchv1.Job) (finished bool, completedAt time.Time) {
 		switch cond.Type {
 		case batchv1.JobComplete:
 			if job.Status.CompletionTime != nil && !job.Status.CompletionTime.IsZero() {
-				return true, job.Status.CompletionTime.Time.UTC()
+				return true, job.Status.CompletionTime.UTC()
 			}
 			if !cond.LastTransitionTime.IsZero() {
-				return true, cond.LastTransitionTime.Time.UTC()
+				return true, cond.LastTransitionTime.UTC()
 			}
 			return true, time.Time{}
 		case batchv1.JobFailed:
 			failed = true
 			if !cond.LastTransitionTime.IsZero() {
-				failedAt = cond.LastTransitionTime.Time.UTC()
+				failedAt = cond.LastTransitionTime.UTC()
 			}
 		}
 	}
@@ -1535,7 +1535,7 @@ func podCompletionTime(pod *corev1.Pod) (time.Time, bool) {
 		if state.Terminated == nil || state.Terminated.FinishedAt.IsZero() {
 			return
 		}
-		finished := state.Terminated.FinishedAt.Time.UTC()
+		finished := state.Terminated.FinishedAt.UTC()
 		if finished.After(latest) {
 			latest = finished
 		}

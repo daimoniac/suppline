@@ -2,13 +2,13 @@ module github.com/daimoniac/suppline/clusterstate-agent
 
 go 1.27.0
 
-toolchain go1.27.1
+toolchain go1.27.4
 
 require (
 	github.com/joho/godotenv v1.5.1
-	k8s.io/api v0.37.1
-	k8s.io/apimachinery v0.37.1
-	k8s.io/client-go v0.37.1
+	k8s.io/api v0.37.2
+	k8s.io/apimachinery v0.37.2
+	k8s.io/client-go v0.37.2
 )
 
 require (
