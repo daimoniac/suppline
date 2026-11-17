@@ -217,7 +217,7 @@ func imageAbsence(packageName string, matches, native []string, oversized bool) 
 		return false, ""
 	}
 	if kernelPackage(packageName) {
-		return false, "kernel package; use the workload rule"
+		return false, "kernel package; image grep does not apply"
 	}
 	if oversized {
 		return false, "a native file was too large to search"

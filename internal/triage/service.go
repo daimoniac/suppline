@@ -709,6 +709,7 @@ func (s *Service) executeSession(ctx context.Context, jobs []Job, checkouts []gi
 		}
 		runnable = append(runnable, job)
 	}
+	runnable = s.triageHeaders(ctx, runnable, checkouts, shas)
 	if len(runnable) == 0 {
 		return
 	}
