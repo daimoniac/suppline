@@ -55,7 +55,8 @@ func (s *SQLiteStore) ReconcileSupersededDigests(ctx context.Context, repository
 		if err == nil && last.CreatedAt >= cutoff {
 			continue
 		}
-		if stored := s.storedTagForDigest(ctx, repository, digest); stored != "" {
+		stored := s.storedTagForDigest(ctx, repository, digest)
+		if stored != "" {
 			tag = stored
 		}
 		if tag == "" {
@@ -65,6 +66,7 @@ func (s *SQLiteStore) ReconcileSupersededDigests(ctx context.Context, repository
 			Repository: repository,
 			Digest:     digest,
 			Tag:        tag,
+			StoredTag:  stored != "",
 		})
 	}
 	sort.Slice(renewals, func(i, j int) bool {

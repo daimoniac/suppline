@@ -368,7 +368,7 @@ func (e *Engine) Evaluate(ctx context.Context, imageRef string, result *scanner.
 			"expression", e.config.Expression)
 
 		for _, vuln := range failingVulns {
-			e.logger.Warn("vulnerability details",
+			e.logger.Debug("vulnerability details",
 				"cve_id", vuln.ID,
 				"severity", vuln.Severity,
 				"description", vuln.Description,

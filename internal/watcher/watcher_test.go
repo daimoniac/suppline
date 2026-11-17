@@ -1289,3 +1289,54 @@ func (m *mockStateStore) GetLastRepositoryScanSummary(ctx context.Context, repos
 func (m *mockStateStore) GetLastScanSummary(ctx context.Context, digest string) (*statestore.ScanRecord, error) {
 	return m.GetLastScan(ctx, digest)
 }
+
+func TestWatcher_Discover_SkipsRenewalWhoseClusterTagIsGone(t *testing.T) {
+	ctx := context.Background()
+	repo := "hostingmaloonde/minio_minio"
+	current := "sha256:cc20cc81b4ba0000000000000000000000000000000000000000000000000000"
+	gone := "sha256:34c8e2f52a5984492555427fee07254c80036bdb7079bb91679232abd7a4fa20"
+	stored := "sha256:5fccb92755610000000000000000000000000000000000000000000000000000"
+
+	mockRegistry := &mockRegistryClient{
+		repositories: []string{repo},
+		tags:         map[string][]string{repo: {"RELEASE.2025-04-03T14-56-28Z"}},
+		digests:      map[string]string{repo + ":RELEASE.2025-04-03T14-56-28Z": current},
+	}
+	store := &renewalStore{
+		mockStateStore: &mockStateStore{scans: map[string]*statestore.ScanRecord{}},
+		renewals: []statestore.DigestRenewal{
+			// Only the cluster knows this tag, and the registry no longer has it.
+			{Repository: repo, Digest: gone, Tag: "RELEASE.2024-12-18T13-15-44Z"},
+			// A stored binding still lets the scan record the digest.
+			{Repository: repo, Digest: stored, Tag: "RELEASE.2025-01-18T00-31-37Z", StoredTag: true},
+		},
+	}
+	mockQueue := queue.NewInMemoryQueue(100)
+	logger := observability.NewLogger("error")
+	w := NewWatcher(mockRegistry, &config.RegsyncConfig{
+		Sync: []config.SyncEntry{{Target: repo}},
+	}, store, mockQueue, Config{PollInterval: time.Second, RescanInterval: 24 * time.Hour}, logger)
+
+	if err := w.Discover(ctx); err != nil {
+		t.Fatalf("Discover failed: %v", err)
+	}
+
+	depth, err := mockQueue.GetQueueDepth(ctx)
+	if err != nil {
+		t.Fatalf("GetQueueDepth: %v", err)
+	}
+	seen := map[string]bool{}
+	for i := 0; i < depth; i++ {
+		task, err := mockQueue.Dequeue(ctx)
+		if err != nil {
+			t.Fatalf("Dequeue: %v", err)
+		}
+		seen[task.Digest] = true
+	}
+	if seen[gone] {
+		t.Fatal("renewed a digest whose only tag is gone from the registry")
+	}
+	if !seen[stored] || !seen[current] {
+		t.Fatalf("queued digests = %v, want current tag scan and stored-tag renewal", seen)
+	}
+}

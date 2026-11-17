@@ -227,7 +227,7 @@ func (w *watcherImpl) processRepository(ctx context.Context, repo string) error 
 		}
 	}
 
-	w.renewSupersededDigests(ctx, repo, currentDigests)
+	w.renewSupersededDigests(ctx, repo, tags, currentDigests)
 	w.reconcileStoredTags(ctx, repo, tags)
 
 	return nil
@@ -491,7 +491,11 @@ type supersededDigestRenewer interface {
 
 // renewSupersededDigests enqueues a scan for each in-use digest that is not the
 // tag's current resolution and whose attestation window needs extending.
-func (w *watcherImpl) renewSupersededDigests(ctx context.Context, repo string, currentDigests []string) {
+//
+// A digest suppline has no stored binding for is renewed only while the tag the
+// cluster reports is among tags. Once that tag is gone from the registry the
+// scan cannot record the digest, and would drop it again every cycle.
+func (w *watcherImpl) renewSupersededDigests(ctx context.Context, repo string, tags, currentDigests []string) {
 	renewer, ok := w.stateStore.(supersededDigestRenewer)
 	if !ok {
 		return
@@ -516,7 +520,19 @@ func (w *watcherImpl) renewSupersededDigests(ctx context.Context, repo string, c
 		return
 	}
 
+	liveTags := make(map[string]struct{}, len(tags))
+	for _, tag := range tags {
+		liveTags[tag] = struct{}{}
+	}
+
 	for _, renewal := range renewals {
+		if _, live := liveTags[renewal.Tag]; !renewal.StoredTag && !live {
+			w.logger.Debug("skipping renewal of in-use digest whose tag is gone from the registry",
+				"repo", renewal.Repository,
+				"tag", renewal.Tag,
+				"digest", renewal.Digest)
+			continue
+		}
 		if _, err := w.scanEnqueuer.EnqueueRescan(ctx, scanenqueue.Image{
 			Repository: renewal.Repository,
 			Digest:     renewal.Digest,

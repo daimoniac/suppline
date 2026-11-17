@@ -468,6 +468,10 @@ type DigestRenewal struct {
 	Repository string
 	Digest     string
 	Tag        string
+	// StoredTag is true when Tag comes from a stored artifact binding. When
+	// false, Tag is what the cluster reports, and a scan can only record the
+	// digest while that tag still exists in the registry.
+	StoredTag bool
 }
 
 // VulnFilter defines criteria for querying vulnerabilities
