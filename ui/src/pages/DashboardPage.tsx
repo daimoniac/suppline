@@ -18,6 +18,7 @@ interface DashboardData {
   pendingCount: number;
   activeVEXStatements: number;
   inactiveVEXStatements: number;
+  ineffectiveVEXStatements: number;
   coverage: CoverageResponse;
   staleClusters: CoverageResponse['Clusters'];
   outOfBoundsTaskCount: number;
@@ -70,7 +71,7 @@ export default function DashboardPage() {
     setLoading(true);
     setError('');
     try {
-      const [recentScans, policySnap, allVEXStatements, inactiveVEXStatements, coverage, semverTasksResult, runtimeUnusedReposResult, runtimeUnusedWhitelistResult, vexExpiryTasksResult, policies] = await Promise.all([
+      const [recentScans, policySnap, allVEXStatements, inactiveVEXStatements, coverage, semverTasksResult, runtimeUnusedReposResult, runtimeUnusedWhitelistResult, vexExpiryTasksResult, policies, ineffectiveVEX] = await Promise.all([
         apiClient.getScans({ limit: 20, ...(inUseRequestParams && inUseRequestParams) }),
         fetchPolicyComplianceData(apiClient, inUseRequestParams),
         apiClient.getVEXStatements({}),
@@ -82,6 +83,7 @@ export default function DashboardPage() {
         apiClient.getRuntimeUnusedWhitelist().catch(() => ({ repositories: [] })),
         apiClient.getVEXExpiryTasks().catch(() => null as VEXExpiryTasksResponse | null),
         apiClient.getPolicies().catch(() => ({}) as PoliciesResponse),
+        apiClient.getIneffectiveVEX().catch(() => ({ statements: [], computed_at: 0 })),
       ]);
 
       const runtimeUnusedTaskCount = runtimeUnusedReposResult
@@ -98,6 +100,10 @@ export default function DashboardPage() {
       const outOfBoundsTaskCount = semverTasksResult?.entries?.filter(entry => entry.status === 'out_of_bounds').length ?? 0;
       const tightenTaskCount = semverTasksResult?.entries?.filter(entry => entry.status === 'tighten').length ?? 0;
       const vexExpiredTaskCount = vexExpiryTasksResult?.entries?.filter(entry => entry.status === 'expired').length ?? 0;
+      // Same count as the VEX Review task: statements of an unused CVE are
+      // already covered by the inactive notice.
+      const inactiveCVEs = new Set(inactiveVEXStatements.map(entry => entry.CVEID));
+      const ineffectiveVEXStatements = ineffectiveVEX.statements.filter(entry => !inactiveCVEs.has(entry.cve_id)).length;
       const vexExpiringSoonTaskCount = vexExpiryTasksResult?.entries?.filter(entry => entry.status === 'expiring_soon').length ?? 0;
 
       setData({
@@ -108,6 +114,7 @@ export default function DashboardPage() {
         pendingCount: policySnap.pendingCount,
         activeVEXStatements: allVEXStatements.length,
         inactiveVEXStatements: inactiveVEXStatements.length,
+        ineffectiveVEXStatements,
         coverage,
         staleClusters,
         outOfBoundsTaskCount,
@@ -154,7 +161,7 @@ export default function DashboardPage() {
         <SummaryCard icon={<ShieldCheck className="w-5 h-5" />} value={data.activeVEXStatements} label="Active VEX Statements" variant="info" to="/triage" />
       </div>
 
-      {(data.outOfBoundsTaskCount > 0 || data.tightenTaskCount > 0 || data.runtimeUnusedTaskCount > 0 || data.vexExpiredTaskCount > 0 || data.vexExpiringSoonTaskCount > 0 || data.inactiveVEXStatements > 0) && (
+      {(data.outOfBoundsTaskCount > 0 || data.tightenTaskCount > 0 || data.runtimeUnusedTaskCount > 0 || data.vexExpiredTaskCount > 0 || data.vexExpiringSoonTaskCount > 0 || data.inactiveVEXStatements > 0 || data.ineffectiveVEXStatements > 0) && (
         <div className="bg-bg-primary border border-border rounded-xl p-4 space-y-3">
           <div className="flex items-center gap-2">
             <ClipboardList className="w-4 h-4 text-accent" />
@@ -168,6 +175,17 @@ export default function DashboardPage() {
               >
                 <span>
                   {data.inactiveVEXStatements} VEX {data.inactiveVEXStatements === 1 ? 'statement is' : 'statements are'} inactive and should be reviewed.
+                </span>
+                <TriangleAlert className="w-4 h-4 flex-shrink-0" />
+              </Link>
+            )}
+            {data.ineffectiveVEXStatements > 0 && (
+              <Link
+                to="/tasks#vex-review"
+                className="flex items-center justify-between gap-3 rounded-lg border border-warning/30 bg-warning-bg px-3 py-2 text-sm text-warning hover:brightness-95 transition"
+              >
+                <span>
+                  {data.ineffectiveVEXStatements} VEX {data.ineffectiveVEXStatements === 1 ? 'statement has' : 'statements have'} no effect on policy results and can be removed.
                 </span>
                 <TriangleAlert className="w-4 h-4 flex-shrink-0" />
               </Link>

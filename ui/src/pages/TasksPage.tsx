@@ -947,7 +947,7 @@ export default function TasksPage() {
     <div className="space-y-6">
       <div className="flex items-start justify-between">
         <PageHeader
-          title="Tasks"
+          title="Housekeeping"
           subtitle="Action items requiring human review"
           showImageUsage
         />

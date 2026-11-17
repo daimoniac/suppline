@@ -11,12 +11,12 @@ import supplineIcon from '../assets/suppline-icon.svg';
 
 const navItems = [
   { to: '/', icon: LayoutDashboard, label: 'Dashboard', end: true },
-  { to: '/tasks', icon: ClipboardList, label: 'Tasks' },
+  { to: '/tasks', icon: ClipboardList, label: 'Housekeeping' },
+  { to: '/triage', icon: Scale, label: 'Triage' },
   { to: '/repositories', icon: Layers, label: 'Repositories' },
   { to: '/scans', icon: ScanSearch, label: 'Scans' },
   { to: '/failed', icon: ShieldAlert, label: 'Policy Exceptions' },
   { to: '/vulnerabilities?severity=critical', icon: Bug, label: 'Vulnerabilities' },
-  { to: '/triage', icon: Scale, label: 'Triage' },
   { to: '/integrations', icon: Plug, label: 'Integrations' },
 ];
 
@@ -146,7 +146,8 @@ function LayoutContent() {
         {/* Nav */}
         <nav className="flex-1 py-3 px-2 space-y-0.5 overflow-y-auto">
           {(mirrorEnabled
-            ? [navItems[0], { to: '/mirror', icon: FolderSync, label: 'Mirror' }, ...navItems.slice(1)]
+            // Mirror sits at the bottom, just above Integrations.
+            ? [...navItems.slice(0, -1), { to: '/mirror', icon: FolderSync, label: 'Mirror' }, ...navItems.slice(-1)]
             : navItems
           ).map(item => (
             <NavLink
