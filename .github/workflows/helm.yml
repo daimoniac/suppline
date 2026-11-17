@@ -25,12 +25,12 @@ jobs:
 
       - uses: azure/setup-helm@v5
         with:
-          version: 'v4.2.4'
+          version: 'v4.3.2'
 
       - name: Lint Helm chart
         run: helm lint charts/suppline
 
-      - uses: helm/chart-testing-action@v2.8.0
+      - uses: helm/chart-testing-action@v2.9.0
 
       - name: chart-testing lint
         run: ct lint --target-branch ${{ github.event.repository.default_branch }} --charts charts/suppline

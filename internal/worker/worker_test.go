@@ -166,8 +166,9 @@ func TestWorkerStart_ProcessesTask(t *testing.T) {
 
 	// Wait for context timeout or completion
 	select {
-	case <-errChan:
-		// Worker stopped
+	case err := <-errChan:
+		// Worker stopped; its error is irrelevant, this test only checks dequeueing.
+		_ = err
 	case <-ctx.Done():
 		// Timeout - this is expected since we're testing processing
 	}
