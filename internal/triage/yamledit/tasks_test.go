@@ -1,6 +1,7 @@
 package yamledit
 
 import (
+	"errors"
 	"os"
 	"strings"
 	"testing"
@@ -205,4 +206,19 @@ func parseConfig(t *testing.T, document []byte) config.RegsyncConfig {
 		t.Fatal("parsed sync is nil")
 	}
 	return raw
+}
+
+func TestSetSemverRangesRejectsUnparseableRange(t *testing.T) {
+	for _, bad := range []string{">=alpine-v19.5.3", ">=alpine3.21-x86_64-v19.5.3", "not a range"} {
+		_, _, err := SetSemverRanges([]byte(sampleConfig), []SemverRangeUpdate{{
+			Target: "registry.local/keep",
+			Ranges: []string{">=2.0.0", bad},
+		}})
+		if !errors.Is(err, ErrInvalidRange) {
+			t.Fatalf("%q: err = %v, want ErrInvalidRange", bad, err)
+		}
+		if !strings.Contains(err.Error(), bad) {
+			t.Fatalf("%q: error %q does not name the range", bad, err)
+		}
+	}
 }

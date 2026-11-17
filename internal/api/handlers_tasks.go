@@ -439,12 +439,17 @@ func suggestedLowerBound(minVer *semver.Version, originalTag string, currentRang
 		return fmt.Sprintf("%d.%d.%d-0", minVer.Major(), minVer.Minor(), minVer.Patch())
 	}
 
-	// Prefer the original tag so Bitnami-style "-rN" revisions are preserved
-	// (ParseVersion canonicalizes them to ".N" for comparison only).
+	// Prefer the tag's own version text so Bitnami-style "-rN" revisions are
+	// preserved (ParseVersion canonicalizes them to ".N" for comparison only).
+	// A distribution prefix such as "alpine-" is dropped: ">=alpine-v19.5.3"
+	// is not a valid constraint.
 	if originalTag != "" {
-		return stripLeadingV(originalTag)
+		lower := stripLeadingV(semverutil.VersionText(originalTag))
+		if _, err := semverutil.NewConstraint(">=" + lower); err == nil {
+			return lower
+		}
 	}
-	return minVer.String()
+	return fmt.Sprintf("%d.%d.%d", minVer.Major(), minVer.Minor(), minVer.Patch())
 }
 
 func stripLeadingV(tag string) string {

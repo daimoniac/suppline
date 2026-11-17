@@ -7,11 +7,16 @@ import (
 	"strings"
 
 	"github.com/daimoniac/suppline/internal/config"
+	"github.com/daimoniac/suppline/internal/semverutil"
 	"gopkg.in/yaml.v3"
 )
 
 // ErrNoMatch means the edit did not touch any sync entry or VEX statement.
 var ErrNoMatch = errors.New("no matching config entries")
+
+// ErrInvalidRange means a semver range would not parse, so the mirror could
+// not filter tags with it.
+var ErrInvalidRange = errors.New("invalid semver range")
 
 // SemverRangeUpdate replaces tags.semverRange on sync entries for one target.
 type SemverRangeUpdate struct {
@@ -38,6 +43,9 @@ func SetSemverRanges(document []byte, updates []SemverRangeUpdate) ([]byte, int,
 		for _, rang := range update.Ranges {
 			if strings.TrimSpace(rang) == "" {
 				return nil, 0, fmt.Errorf("semver range must not be empty")
+			}
+			if _, err := semverutil.NewConstraint(rang); err != nil {
+				return nil, 0, fmt.Errorf("%w %q for %s: %w", ErrInvalidRange, rang, update.Target, err)
 			}
 		}
 	}
