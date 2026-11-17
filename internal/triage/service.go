@@ -1061,16 +1061,16 @@ func (s *Service) applyStatements(ctx context.Context, repository string, statem
 	return result.Commit, s.writtenUnlessRefreshFailed(repository, err)
 }
 
-// logWrite records a config write and the rescans it queued. A statement only
-// takes effect once a scan applies it, so the requeue count shows when that is
-// on its way; queued scans can wait behind other work in the scan queue.
+// logWrite records a config write and the repositories it rescans. A
+// statement only takes effect once a scan applies it. The rescans are queued
+// in the background and can wait behind other work in the scan queue.
 func (s *Service) logWrite(msg, repository string, ids []string, result configedit.Result) {
 	s.logger.Info(msg,
 		"repository", repository,
 		"ids", ids,
 		"mode", result.Mode,
 		"commit", result.Commit,
-		"requeued", result.Requeued)
+		"requeue", result.Requeue)
 }
 
 func statementIDs(statements []types.VEXStatement) []string {

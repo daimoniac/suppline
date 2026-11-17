@@ -59,8 +59,10 @@ type Change struct {
 type Result struct {
 	Mode   string
 	Commit string // empty for a local write
-	// Requeued counts images queued because their decision changed.
-	Requeued int
+	// Requeue lists the repositories whose decision changed. Their rescans
+	// are queued in the background, so a full scan queue does not hold up
+	// the edit.
+	Requeue []string
 }
 
 // RefreshError means the file was written but the running configuration was
@@ -93,6 +95,8 @@ type Editor struct {
 	requeue Requeuer
 	log     *slog.Logger
 	mu      sync.Mutex
+	// requeues tracks background requeues, so tests can wait for them.
+	requeues sync.WaitGroup
 }
 
 // New creates an Editor. requeue may be nil, for example in tests.
@@ -168,12 +172,29 @@ func (e *Editor) Apply(ctx context.Context, change Change) (Result, error) {
 	if len(changed) == 0 || e.requeue == nil {
 		return result, nil
 	}
-	queued, err := e.requeue.RequeueRepositories(ctx, changed)
-	result.Requeued = queued
-	if err != nil {
-		e.log.Error("config edit requeue incomplete", "repositories", changed, "queued", queued, "error", err)
-	}
+	result.Requeue = changed
+	// Enqueue blocks while the scan queue is full. The edit is already
+	// written, so the caller (often an HTTP request) must not wait for it,
+	// and the request ending must not cancel it.
+	requeueCtx := context.WithoutCancel(ctx)
+	e.requeues.Add(1)
+	go func() {
+		defer e.requeues.Done()
+		queued, err := e.requeue.RequeueRepositories(requeueCtx, changed)
+		if err != nil {
+			e.log.Error("config edit requeue incomplete", "repositories", changed, "queued", queued, "error", err)
+			return
+		}
+		e.log.Info("config edit requeued images", "repositories", changed, "queued", queued)
+	}()
 	return result, nil
+}
+
+// WaitRequeues blocks until background requeues started by Apply finish.
+func (e *Editor) WaitRequeues() {
+	if e != nil {
+		e.requeues.Wait()
+	}
 }
 
 // writeLocal applies mutate to the local file. An unchanged document is not written.

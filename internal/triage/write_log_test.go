@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
 
 	"github.com/daimoniac/suppline/internal/config"
@@ -16,9 +17,15 @@ import (
 	"github.com/daimoniac/suppline/internal/types"
 )
 
-type countingRequeuer struct{ repositories []string }
+// countingRequeuer is called from the editor's background requeues.
+type countingRequeuer struct {
+	mu           sync.Mutex
+	repositories []string
+}
 
 func (c *countingRequeuer) RequeueRepositories(_ context.Context, repositories []string) (int, error) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
 	c.repositories = append(c.repositories, repositories...)
 	return 2 * len(repositories), nil
 }
@@ -74,10 +81,12 @@ sync:
 		t.Fatal(err)
 	}
 
+	editor.WaitRequeues()
 	out := logs.String()
 	for _, want := range []string{
-		`msg="wrote x-vex-auto statements" repository=registry.local/app ids=[CVE-2026-2] mode=local commit="" requeued=2`,
-		`msg="wrote x-vex statement" repository=registry.local/app ids=[CVE-2026-3] mode=local commit="" requeued=2`,
+		`msg="wrote x-vex-auto statements" repository=registry.local/app ids=[CVE-2026-2] mode=local commit="" requeue=[registry.local/app]`,
+		`msg="wrote x-vex statement" repository=registry.local/app ids=[CVE-2026-3] mode=local commit="" requeue=[registry.local/app]`,
+		`msg="config edit requeued images" repositories=[registry.local/app] queued=2`,
 	} {
 		if !strings.Contains(out, want) {
 			t.Errorf("log lacks %q\n%s", want, out)
