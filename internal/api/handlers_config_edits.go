@@ -285,7 +285,7 @@ func (s *APIServer) applyConfigEdit(
 	if after != nil {
 		cleaned = after()
 	}
-	s.logger.Info("applied config edit", "mode", result.Mode, "updated", updated, "commit", result.Commit, "requeued", result.Requeued, "cleaned", cleaned)
+	s.logger.Info("applied config edit", "mode", result.Mode, "updated", updated, "commit", result.Commit, "requeue", result.Requeue, "cleaned", cleaned)
 	s.respondJSON(w, http.StatusOK, ConfigEditResult{Mode: result.Mode, Commit: result.Commit, Updated: updated, Cleaned: cleaned})
 }
 

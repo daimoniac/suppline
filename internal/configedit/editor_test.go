@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/go-git/go-git/v5"
 	"github.com/go-git/go-git/v5/plumbing/object"
@@ -40,6 +41,17 @@ type recordingRequeuer struct {
 
 func (r *recordingRequeuer) RequeueRepositories(_ context.Context, repositories []string) (int, error) {
 	r.calls = append(r.calls, append([]string(nil), repositories...))
+	return len(repositories), nil
+}
+
+type blockingRequeuer struct {
+	release chan struct{}
+	ctxErr  error
+}
+
+func (r *blockingRequeuer) RequeueRepositories(ctx context.Context, repositories []string) (int, error) {
+	<-r.release
+	r.ctxErr = ctx.Err()
 	return len(repositories), nil
 }
 
@@ -108,11 +120,12 @@ func TestEditorLocalEditWritesRefreshesAndRequeues(t *testing.T) {
 		t.Errorf("running evidence = %+v, want none", got)
 	}
 	// Removing an effective statement changes app's decision, and only app's.
+	editor.WaitRequeues()
 	if len(requeue.calls) != 1 || strings.Join(requeue.calls[0], ",") != "registry.local/app" {
 		t.Errorf("requeued %v, want [[registry.local/app]]", requeue.calls)
 	}
-	if result.Requeued != 1 {
-		t.Errorf("Requeued = %d, want 1", result.Requeued)
+	if strings.Join(result.Requeue, ",") != "registry.local/app" {
+		t.Errorf("Requeue = %v, want [registry.local/app]", result.Requeue)
 	}
 }
 
@@ -131,6 +144,7 @@ func TestEditorEditWithoutDecisionChangeDoesNotRequeue(t *testing.T) {
 	if got := running.Current().Sync[0].Tags.SemverRange; len(got) != 1 || got[0] != ">=2.0.0" {
 		t.Errorf("running semverRange = %v", got)
 	}
+	editor.WaitRequeues()
 	if len(requeue.calls) != 0 {
 		t.Errorf("requeued %v, want nothing", requeue.calls)
 	}
@@ -153,6 +167,7 @@ func TestEditorFailedWriteLeavesRunningConfig(t *testing.T) {
 	if body, _ := os.ReadFile(path); string(body) != editorYAML {
 		t.Errorf("file changed after a failed write:\n%s", body)
 	}
+	editor.WaitRequeues()
 	if len(requeue.calls) != 0 {
 		t.Errorf("requeued %v after a failed write", requeue.calls)
 	}
@@ -171,6 +186,7 @@ func TestEditorRefreshFailureReportsWrittenEdit(t *testing.T) {
 	if body, _ := os.ReadFile(path); strings.Contains(string(body), "CVE-2026-1") {
 		t.Error("file was not written before the refresh failed")
 	}
+	editor.WaitRequeues()
 	if len(requeue.calls) != 0 {
 		t.Errorf("requeued %v after a failed refresh", requeue.calls)
 	}
@@ -226,6 +242,7 @@ func TestEditorGitEditCommitsAndRefreshes(t *testing.T) {
 	if !strings.Contains(headFile(t, bare, "suppline.yml"), "CVE-2026-2") {
 		t.Error("commit does not contain the statement")
 	}
+	editor.WaitRequeues()
 	if len(requeue.calls) != 1 || requeue.calls[0][0] != "registry.local/other" {
 		t.Errorf("requeued %v, want [[registry.local/other]]", requeue.calls)
 	}
@@ -318,7 +335,37 @@ func TestEditorSyncRemovalDoesNotRequeueRemovedRepository(t *testing.T) {
 	if got := len(running.Current().Sync); got != 1 {
 		t.Fatalf("running sync entries = %d, want 1", got)
 	}
+	editor.WaitRequeues()
 	if len(requeue.calls) != 0 {
 		t.Errorf("requeued %v, want nothing", requeue.calls)
+	}
+}
+
+// A full scan queue blocks the requeue. The edit must still return, and the
+// caller's context ending must not cancel the requeue.
+func TestEditorApplyDoesNotWaitForRequeue(t *testing.T) {
+	editor, _, _, _ := localEditor(t)
+	blocking := &blockingRequeuer{release: make(chan struct{})}
+	editor.requeue = blocking
+
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan error, 1)
+	go func() {
+		_, err := editor.Apply(ctx, removeVEX("CVE-2026-1"))
+		done <- err
+	}()
+	select {
+	case err := <-done:
+		if err != nil {
+			t.Fatalf("Apply() error = %v", err)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("Apply() waited for the requeue")
+	}
+	cancel()
+	close(blocking.release)
+	editor.WaitRequeues()
+	if blocking.ctxErr != nil {
+		t.Errorf("requeue context = %v, want not canceled", blocking.ctxErr)
 	}
 }
