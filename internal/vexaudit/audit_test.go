@@ -261,3 +261,35 @@ func TestForgetDropsRemovedStatement(t *testing.T) {
 		t.Fatalf("computedAt = %v, want zero before any refresh", computedAt)
 	}
 }
+
+// An image that already fails for another CVE hides the effect of a statement:
+// removing it leaves the result at failed. The statement still decides the
+// outcome once the other CVE is fixed or exempted, so it must stay.
+func TestAuditKeepsStatementMaskedByAnotherBlockingCVE(t *testing.T) {
+	statements := []types.VEXStatement{
+		{ID: "CVE-MASKED", State: types.VEXStateNotAffected, Source: types.VEXSourceAuto},
+		{ID: "CVE-UNFIXED", State: types.VEXStateNotAffected, Source: types.VEXSourceManual},
+	}
+	expression := `vulnerabilities.filter(v, v.severity == "CRITICAL" && v.fixedVersion != "" && !v.exempted).size() == 0`
+	auditor := New(slog.New(slog.NewTextHandler(io.Discard, nil)),
+		fakeCatalog{statements: statements, policy: policy.PolicyConfig{Expression: expression}},
+		fakeScans{
+			records: []*statestore.ScanRecord{{
+				ID: 9, Repository: testRepository, Digest: "sha256:alpine", Tag: "v1-alpine", CreatedAt: time.Now().Unix(), PolicyStatus: "failed",
+			}},
+			vulns: map[int64][]types.VulnerabilityRecord{9: {
+				{CVEID: "CVE-MASKED", Severity: "CRITICAL", PackageName: "apache2", InstalledVersion: "1", FixedVersion: "2"},
+				{CVEID: "CVE-BLOCKER", Severity: "CRITICAL", PackageName: "brotli-libs", InstalledVersion: "1", FixedVersion: "2"},
+				{CVEID: "CVE-UNFIXED", Severity: "CRITICAL", PackageName: "zlib", InstalledVersion: "1"},
+			}},
+		},
+		engineFor,
+	)
+	findings, err := auditor.Audit(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(findings) != 1 || findings[0].CVEID != "CVE-UNFIXED" {
+		t.Fatalf("findings = %+v, want only CVE-UNFIXED", findings)
+	}
+}
