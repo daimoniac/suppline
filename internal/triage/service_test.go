@@ -290,6 +290,31 @@ func TestRetryQueuesAndMarksRunning(t *testing.T) {
 	}
 }
 
+func TestRecordFinishesJobBeforeBatchEnds(t *testing.T) {
+	svc := &Service{
+		settings: Settings{Enabled: true},
+		logger:   slog.Default(),
+		jobs:     make(chan Job, 2),
+		pending:  map[string]ActiveJob{},
+	}
+	if svc.Retry(context.Background(), "app", "CVE-1") != 1 {
+		t.Fatal("retry")
+	}
+	first := <-svc.jobs
+	svc.beginSession([]Job{first}, "s1", "app:1")
+	svc.record(context.Background(), first, modelVerdict{}, 0, StatusRejected, "s1", "", "", "uncertain")
+	if len(svc.Sessions()) != 0 || svc.Pending() != 0 {
+		t.Fatalf("decided job still pending: sessions = %+v", svc.Sessions())
+	}
+	if svc.Retry(context.Background(), "app", "CVE-1") != 1 {
+		t.Fatal("second retry")
+	}
+	svc.finish(first)
+	if len(svc.Queued()) != 1 {
+		t.Fatal("batch-end finish of the old job removed the newer pending entry")
+	}
+}
+
 type stubRuntime struct {
 	used bool
 }

@@ -43,6 +43,9 @@ type Service struct {
 	jobs      chan Job
 	pending   map[string]ActiveJob
 	pendingMu sync.Mutex
+	// lastTicket numbers accepted jobs, so a late finish of an older job
+	// does not remove a newer pending entry for the same key.
+	lastTicket uint64
 
 	skips  map[string]Skip
 	skipMu sync.Mutex
@@ -208,6 +211,7 @@ type ActiveJob struct {
 	SessionID  string
 	Phase      string
 	Current    bool
+	ticket     uint64
 }
 
 // SessionStatus is one repository session in flight.
@@ -418,7 +422,9 @@ func (s *Service) enqueue(job Job) bool {
 		s.pendingMu.Unlock()
 		return false
 	}
-	s.pending[job.key()] = ActiveJob{Repository: job.Repository, CVEID: job.CVEID, Image: job.ImageRef}
+	s.lastTicket++
+	job.ticket = s.lastTicket
+	s.pending[job.key()] = ActiveJob{Repository: job.Repository, CVEID: job.CVEID, Image: job.ImageRef, ticket: job.ticket}
 	s.pendingMu.Unlock()
 	s.clearSkip(job.Repository, job.CVEID)
 	select {
@@ -431,9 +437,13 @@ func (s *Service) enqueue(job Job) bool {
 	}
 }
 
+// finish removes the job from pending. It is called again at batch end, so
+// it only removes the entry the job itself added.
 func (s *Service) finish(job Job) {
 	s.pendingMu.Lock()
-	delete(s.pending, job.key())
+	if current, ok := s.pending[job.key()]; ok && current.ticket == job.ticket {
+		delete(s.pending, job.key())
+	}
 	s.pendingMu.Unlock()
 }
 
@@ -626,6 +636,7 @@ func (s *Service) resolveJobs(ctx context.Context, jobs []Job) ([]Job, error) {
 		src := flags[resolved[i].CVEID]
 		resolved[i].Force = src.Force
 		resolved[i].Renewal = src.Renewal
+		resolved[i].ticket = src.ticket
 	}
 	return resolved, nil
 }
@@ -867,6 +878,9 @@ func (s *Service) record(ctx context.Context, job Job, verdict modelVerdict, tok
 	}
 	observability.GetMetrics().TriageRuns.WithLabelValues(status).Inc()
 	s.clearSkip(job.Repository, job.CVEID)
+	// The run is decided, so the job leaves its session now, not when the
+	// whole batch ends. Otherwise it keeps showing as waiting in the UI.
+	defer s.finish(job)
 	if s.runs == nil {
 		return
 	}

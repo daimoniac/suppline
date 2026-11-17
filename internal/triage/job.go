@@ -66,6 +66,8 @@ type Job struct {
 	Renewal  bool
 	// Force runs again even when a cached decision exists. Manual "Triage now" sets it.
 	Force bool
+	// ticket matches the pending entry enqueue created for this job.
+	ticket uint64
 }
 
 func (j Job) key() string { return j.Repository + "\x00" + j.CVEID }
