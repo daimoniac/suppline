@@ -60,7 +60,19 @@ sync:
 
 ### Malicious Packages
 
-Each scan matches the image's language packages (npm, PyPI, RubyGems, NuGet, crates.io, Go, Maven, Packagist) against [ossf/malicious-packages](https://github.com/ossf/malicious-packages). A match is not a vulnerability: it has no severity, is not counted in `criticalCount` and friends, is not in `vulnerabilities`, and **cannot be exempted with VEX**. Malicious findings are never sent to triage.
+Each scan matches the image's language packages (npm, PyPI, RubyGems, NuGet, crates.io, Go, Maven, Packagist) against [ossf/malicious-packages](https://github.com/ossf/malicious-packages). A match is not a vulnerability: it has no severity, is not counted in `criticalCount` and friends, is not in `vulnerabilities`, and is never sent to triage.
+
+A false positive — the image contains a *different* package with the same name and version, typically an internal workspace package that someone squatted on the public registry — is exempted with a hand-written `x-vex` statement in state `false_positive`:
+
+```yaml
+x-vex:
+  - id: MAL-2025-9145
+    state: false_positive
+    detail: "@opensearch/datemath 5.0.3 is OpenSearch Dashboards' own workspace package, not the squatted npm publish"
+    expires_at: 2027-05-01T00:00:00Z
+```
+
+No other state exempts a MAL id (`not_affected` with a MAL id is rejected when the config loads), and `x-vex-auto` may never name one. An exempted finding stays in the `malicious` list with `exempted: true`, is not counted in `maliciousCount`, does not trigger the gate, and is recorded in the VEX and SCAI attestations.
 
 With `x-malicious-packages.block: true` (the default), any malicious finding fails the image regardless of the expression. The reason starts with `malicious packages found:` and each finding is recorded as a policy-failure finding with `Kind: "malicious"`. You don't need to add `maliciousCount == 0` to your expression. With `block: false` only the expression decides, and you can write rules such as:
 
@@ -68,7 +80,7 @@ With `x-malicious-packages.block: true` (the default), any malicious finding fai
 expression: 'criticalCount == 0 && malicious.filter(m, m.ecosystem == "npm").size() == 0'
 ```
 
-Each item in the `malicious` list has `id` (MAL id), `ecosystem`, `packageName`, `version`, `purl`, `summary`, and `url`. See [CONFIGURATION.md](CONFIGURATION.md#malicious-packages-x-malicious-packages).
+Each item in the `malicious` list has `id` (MAL id), `ecosystem`, `packageName`, `version`, `purl`, `summary`, `url`, and `exempted` (covered by a `false_positive` statement). See [CONFIGURATION.md](CONFIGURATION.md#malicious-packages-x-malicious-packages).
 
 ## Vulnerability Object Fields
 

@@ -227,3 +227,21 @@ func TestRematchFullConfirmsImageWithoutPackages(t *testing.T) {
 		t.Fatalf("nothing to rescan, got %v", got)
 	}
 }
+
+// Confirming a stale check keeps the exemption the scan's policy decided.
+func TestRematchConfirmKeepsExemptions(t *testing.T) {
+	f := newRematchFixture(t)
+	stale := &types.MaliciousCheck{Status: types.MaliciousCheckStale, Findings: []types.MaliciousFinding{{ID: "MAL-EVIL", PackageName: "evil", Exempted: true}}}
+	f.scan(digestEvil, stale, npm("evil", "1.0.0"))
+	f.service.Sync(context.Background())
+	if err := f.r.Process(context.Background(), Update{Full: true}); err != nil {
+		t.Fatal(err)
+	}
+	if got := f.queue.take(); len(got) != 0 {
+		t.Fatalf("a known finding is not rescanned, got %v", got)
+	}
+	c := f.check(digestEvil)
+	if c.Status != types.MaliciousCheckOK || len(c.Findings) != 1 || !c.Findings[0].Exempted {
+		t.Fatalf("expected an ok check that keeps the exemption, got %+v", c)
+	}
+}

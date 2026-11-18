@@ -102,7 +102,7 @@ func buildScanRecord(
 		Vulnerabilities:          vulnerabilityRecords,
 		AppliedVEXStatements:     appliedVEX,
 		PolicyFailureFindings:    policyDecision.PolicyFailureFindings,
-		Malicious:                scanResult.Malicious,
+		Malicious:                policy.MarkExemptedMalicious(scanResult.Malicious, policyDecision.ExemptedCVEs),
 		ErrorMessage:             "",
 	}
 }

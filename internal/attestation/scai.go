@@ -165,7 +165,15 @@ func (g *SCAIGenerator) GenerateSCAI(
 		scanStatus = "passed-with-exceptions"
 	}
 
-	if check := maliciousCheckAttribute(scanResult.Malicious); check != nil {
+	var exemptedIDs []string
+	if policyDecision != nil {
+		exemptedIDs = policyDecision.ExemptedCVEs
+	}
+	maliciousCheck := policy.MarkExemptedMalicious(scanResult.Malicious, exemptedIDs)
+	if policyDecision != nil && policyDecision.Passed && scanStatus == "passed" && hasExemptedMalicious(maliciousCheck) {
+		scanStatus = "passed-with-exceptions"
+	}
+	if check := maliciousCheckAttribute(maliciousCheck); check != nil {
 		attributes = append(attributes, *check)
 	}
 
@@ -216,7 +224,20 @@ func maliciousCheckAttribute(check *types.MaliciousCheck) *SCAIAttributeItem {
 			Version:     finding.Version,
 			PURL:        finding.PURL,
 			URL:         finding.URL,
+			Exempted:    finding.Exempted,
 		})
 	}
 	return &SCAIAttributeItem{Attribute: SCAIAttributeMaliciousPackageCheck, Evidence: evidence}
+}
+
+func hasExemptedMalicious(check *types.MaliciousCheck) bool {
+	if check == nil {
+		return false
+	}
+	for _, finding := range check.Findings {
+		if finding.Exempted {
+			return true
+		}
+	}
+	return false
 }

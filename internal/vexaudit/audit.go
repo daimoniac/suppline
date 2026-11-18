@@ -159,6 +159,58 @@ func (a *Auditor) Audit(ctx context.Context) ([]Finding, error) {
 }
 
 func (a *Auditor) auditRepository(ctx context.Context, repository string, records []*statestore.ScanRecord, now time.Time) ([]Finding, error) {
+	malicious := unusedMaliciousStatements(repository, a.catalog.SyncVEX(repository), completedScans(records), now)
+	findings, err := a.auditCVEStatements(ctx, repository, records, now)
+	if err != nil {
+		return nil, err
+	}
+	return append(findings, malicious...), nil
+}
+
+// unusedMaliciousStatements reports false_positive statements for
+// malicious-package advisories that no current scan of the repository still
+// matches. They are judged on presence, not by replaying policy: an active
+// malicious finding fails the image, so a statement covering one always
+// matters. Without a scan that ran the check there is no evidence either way.
+func unusedMaliciousStatements(repository string, statements []types.VEXStatement, scans []*statestore.ScanRecord, now time.Time) []Finding {
+	present := make(map[string]bool)
+	checked := false
+	for _, scan := range scans {
+		if scan.Malicious == nil || scan.Malicious.Status == types.MaliciousCheckUnavailable {
+			continue
+		}
+		checked = true
+		for _, finding := range scan.Malicious.Findings {
+			present[finding.ID] = true
+		}
+	}
+	if !checked {
+		return nil
+	}
+	var out []Finding
+	for _, statement := range statements {
+		if !types.IsMaliciousID(statement.ID) || statement.State != types.VEXStateFalsePositive {
+			continue
+		}
+		if statement.ExpiresAt != nil && *statement.ExpiresAt <= now.Unix() {
+			continue
+		}
+		if present[statement.ID] {
+			continue
+		}
+		out = append(out, Finding{
+			Repository: repository,
+			CVEID:      statement.ID,
+			Source:     statement.Source,
+			State:      string(statement.State),
+			Detail:     statement.Detail,
+			ExpiresAt:  statement.ExpiresAt,
+		})
+	}
+	return out
+}
+
+func (a *Auditor) auditCVEStatements(ctx context.Context, repository string, records []*statestore.ScanRecord, now time.Time) ([]Finding, error) {
 	candidates := candidateStatements(a.catalog.SyncVEX(repository), now)
 	if len(candidates) == 0 {
 		return nil, nil
@@ -439,9 +491,10 @@ func evaluate(ctx context.Context, engine policy.PolicyEngine, scan *statestore.
 }
 
 // scanResult rebuilds what the policy saw. Malicious-package findings are left
-// out on purpose: the audit asks whether a VEX statement changes the outcome,
+// out on purpose: the audit asks whether a CVE statement changes the outcome,
 // and a malicious package fails the image whatever the CVE statements say, so
 // including it would make every statement on such an image look unused.
+// Statements about malicious advisories are judged separately, on presence.
 func scanResult(scan *statestore.ScanRecord) scanner.ScanResult {
 	result := scanner.ScanResult{
 		ImageRef:        scan.Digest,

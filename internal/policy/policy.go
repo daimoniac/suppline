@@ -321,8 +321,10 @@ func (e *Engine) Evaluate(ctx context.Context, imageRef string, result *scanner.
 	decision.ExemptedVulnCount = exemptedCount
 	decision.UnfixedVulnCount = unfixedCriticalCount
 
-	maliciousFindings := maliciousFindingsOf(result)
-	maliciousInput := maliciousCELInput(maliciousFindings)
+	allMalicious := maliciousFindingsOf(result)
+	maliciousFindings, exemptedMaliciousIDs := splitMalicious(allMalicious, vexStatements, nowUnix)
+	decision.ExemptedCVEs = append(decision.ExemptedCVEs, exemptedMaliciousIDs...)
+	maliciousInput := maliciousCELInput(allMalicious, exemptedMaliciousIDs)
 
 	celInput := map[string]interface{}{
 		"vulnerabilities": enrichedVulns,
@@ -333,7 +335,7 @@ func (e *Engine) Evaluate(ctx context.Context, imageRef string, result *scanner.
 		"lowCount":        lowCount,
 		"exemptedCount":   exemptedCount,
 		"malicious":       maliciousInput,
-		"maliciousCount":  len(maliciousInput),
+		"maliciousCount":  len(maliciousFindings),
 	}
 
 	out, _, err := e.celProgram.Eval(celInput)
@@ -612,7 +614,7 @@ func (e *Engine) evaluateSubset(imageRef string, enrichedVulns []map[string]inte
 		"lowCount":        lowCount,
 		"exemptedCount":   exemptedCount,
 		"malicious":       malicious,
-		"maliciousCount":  len(malicious),
+		"maliciousCount":  activeMaliciousCount(malicious),
 	}
 
 	out, _, err := e.celProgram.Eval(celInput)

@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/daimoniac/suppline/internal/statestore"
+	"github.com/daimoniac/suppline/internal/types"
 	"github.com/prometheus/client_golang/prometheus"
 )
 
@@ -267,6 +268,9 @@ func (c *DatabaseCollector) collectMaliciousImages(ctx context.Context, store ma
 		} else {
 			counts := make(map[maliciousImageKey]int)
 			for _, image := range images {
+				if !hasActiveMaliciousFinding(image.Check.Findings) {
+					continue
+				}
 				counts[maliciousImageKey{repository: image.Repository, inUse: image.RuntimeUsed}]++
 			}
 			c.maliciousCounts = counts
@@ -280,4 +284,13 @@ func (c *DatabaseCollector) collectMaliciousImages(ctx context.Context, store ma
 		}
 		ch <- prometheus.MustNewConstMetric(c.maliciousImagesDesc, prometheus.GaugeValue, float64(count), key.repository, inUse)
 	}
+}
+
+func hasActiveMaliciousFinding(findings []types.MaliciousFinding) bool {
+	for _, finding := range findings {
+		if !finding.Exempted {
+			return true
+		}
+	}
+	return false
 }

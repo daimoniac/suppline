@@ -502,18 +502,18 @@ func (c *RegsyncConfig) GetQueueBufferSize() int {
 // Returns the first validation error encountered.
 func (c *RegsyncConfig) ValidateVEXStatements() error {
 	for i, stmt := range c.Defaults.VEX {
-		if err := types.ValidateVEXStatement(stmt); err != nil {
+		if err := validateStatement(stmt, false); err != nil {
 			return fmt.Errorf("defaults.x-vex[%d]: %w", i, err)
 		}
 	}
 	for _, sync := range c.Active() {
 		for i, stmt := range sync.VEX {
-			if err := types.ValidateVEXStatement(stmt); err != nil {
+			if err := validateStatement(stmt, false); err != nil {
 				return fmt.Errorf("sync[%s].x-vex[%d]: %w", sync.Target, i, err)
 			}
 		}
 		for i, stmt := range sync.VEXAuto {
-			if err := types.ValidateVEXStatement(stmt); err != nil {
+			if err := validateStatement(stmt, true); err != nil {
 				return fmt.Errorf("sync[%s].x-vex-auto[%d]: %w", sync.Target, i, err)
 			}
 		}
@@ -525,4 +525,11 @@ func (c *RegsyncConfig) ValidateVEXStatements() error {
 		return err
 	}
 	return nil
+}
+
+func validateStatement(stmt types.VEXStatement, automated bool) error {
+	if err := types.ValidateVEXStatement(stmt); err != nil {
+		return err
+	}
+	return types.ValidateMaliciousVEXStatement(stmt, automated)
 }

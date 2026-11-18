@@ -274,7 +274,7 @@ func (r *Rematcher) reconcile(ctx context.Context, digest string, check *types.M
 			continue
 		}
 		if confirm && scan.Malicious != nil && scan.Malicious.Status != types.MaliciousCheckOK && check.Status == types.MaliciousCheckOK {
-			if err := r.store.UpdateMaliciousCheck(ctx, scan.ScanID, check); err != nil {
+			if err := r.store.UpdateMaliciousCheck(ctx, scan.ScanID, keepExemptions(check, scan.Malicious)); err != nil {
 				return rescanned, confirmed, fmt.Errorf("update check of scan %d: %w", scan.ScanID, err)
 			}
 			confirmed++
@@ -311,4 +311,25 @@ func findingIDs(check *types.MaliciousCheck) []string {
 		ids = append(ids, finding.ID)
 	}
 	return ids
+}
+
+// keepExemptions copies the Exempted flags the scan recorded onto a fresh
+// check; exemptions are decided by policy, which a re-match does not run.
+func keepExemptions(check, recorded *types.MaliciousCheck) *types.MaliciousCheck {
+	exempted := make(map[string]bool)
+	for _, finding := range recorded.Findings {
+		if finding.Exempted {
+			exempted[finding.ID] = true
+		}
+	}
+	if len(exempted) == 0 {
+		return check
+	}
+	out := *check
+	out.Findings = make([]types.MaliciousFinding, len(check.Findings))
+	for i, finding := range check.Findings {
+		finding.Exempted = exempted[finding.ID]
+		out.Findings[i] = finding
+	}
+	return &out
 }

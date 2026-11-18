@@ -11,6 +11,13 @@ export interface MaliciousPackageGroup {
   url: string;
   images: MaliciousImage[];
   inUse: boolean;
+  /** Every occurrence is covered by a false_positive VEX statement. */
+  exempted: boolean;
+}
+
+/** An image's findings that are not exempted by a false_positive statement. */
+export function activeFindings(image: Pick<MaliciousImage, 'Findings'>) {
+  return image.Findings.filter(finding => !finding.Exempted);
 }
 
 /** Groups affected images by package version; in-use packages first, then by name. */
@@ -32,10 +39,12 @@ export function groupMaliciousByPackage(images: MaliciousImage[]): MaliciousPack
           url: finding.URL,
           images: [],
           inUse: false,
+          exempted: true,
         };
         groups.set(key, group);
       }
       if (!group.ids.includes(finding.ID)) group.ids.push(finding.ID);
+      group.exempted &&= finding.Exempted === true;
       if (!seenInImage.has(key)) {
         seenInImage.add(key);
         group.images.push(image);
@@ -46,7 +55,8 @@ export function groupMaliciousByPackage(images: MaliciousImage[]): MaliciousPack
   return Array.from(groups.values())
     .map(group => ({ ...group, ids: [...group.ids].sort() }))
     .sort((a, b) =>
-      Number(b.inUse) - Number(a.inUse)
+      Number(a.exempted) - Number(b.exempted)
+      || Number(b.inUse) - Number(a.inUse)
       || a.packageName.localeCompare(b.packageName)
       || a.version.localeCompare(b.version));
 }

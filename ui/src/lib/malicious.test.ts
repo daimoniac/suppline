@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { MaliciousFeed, MaliciousImage } from './api';
-import { feedCommitURL, formatSeconds, groupMaliciousByPackage, maliciousFeedWarning } from './malicious';
+import { activeFindings, feedCommitURL, formatSeconds, groupMaliciousByPackage, maliciousFeedWarning } from './malicious';
 import { buildPolicyFixPromptRows } from './policyComplianceData';
 import { sidebarItems } from './navigation';
 
@@ -41,6 +41,17 @@ describe('groupMaliciousByPackage', () => {
     expect(groups[0].inUse).toBe(true);
     expect(groups[1].ids).toEqual(['MAL-1', 'MAL-2']);
     expect(groups[1].images.map(i => i.Digest)).toEqual(['sha256:a', 'sha256:b']);
+  });
+});
+
+describe('false positives', () => {
+  it('sorts fully exempted packages last and leaves them out of active findings', () => {
+    const exempted = { ...evil, PackageName: 'aaa-workspace', ID: 'MAL-3', Exempted: true };
+    const images = [image({ Digest: 'sha256:x', RuntimeUsed: true, Findings: [exempted] }), image({ Digest: 'sha256:y', Findings: [evil] })];
+    const groups = groupMaliciousByPackage(images);
+    expect(groups.map(g => [g.packageName, g.exempted])).toEqual([['evil', false], ['aaa-workspace', true]]);
+    expect(activeFindings(images[0])).toEqual([]);
+    expect(activeFindings(images[1])).toHaveLength(1);
   });
 });
 

@@ -165,6 +165,8 @@ type SCAIMaliciousFinding struct {
 	Version     string `json:"version"`
 	PURL        string `json:"purl,omitempty"`
 	URL         string `json:"url,omitempty"`
+	// Exempted is true when a false_positive VEX statement covers the finding.
+	Exempted bool `json:"exempted,omitempty"`
 }
 
 // SCAIExemptedVulnEvidence contains details about a VEX-exempted vulnerability

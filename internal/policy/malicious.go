@@ -15,9 +15,69 @@ func maliciousFindingsOf(result *scanner.ScanResult) []types.MaliciousFinding {
 	return result.Malicious.Findings
 }
 
-// maliciousCELInput exposes malicious findings to CEL. They are never
-// VEX-exempted: a published malicious package is not a vulnerability to triage.
-func maliciousCELInput(findings []types.MaliciousFinding) []map[string]interface{} {
+// splitMalicious separates findings covered by an active false_positive VEX
+// statement from the rest. Only false_positive exempts a malicious finding:
+// the image does not contain the malicious package, only one with the same
+// name and version. It returns the active findings and the exempted ids.
+func splitMalicious(findings []types.MaliciousFinding, statements []types.VEXStatement, nowUnix int64) ([]types.MaliciousFinding, []string) {
+	if len(findings) == 0 {
+		return nil, nil
+	}
+	falsePositive := make(map[string]bool)
+	for _, stmt := range statements {
+		if stmt.State != types.VEXStateFalsePositive || !types.IsMaliciousID(stmt.ID) {
+			continue
+		}
+		if stmt.ExpiresAt != nil && *stmt.ExpiresAt < nowUnix {
+			continue
+		}
+		falsePositive[stmt.ID] = true
+	}
+	var active []types.MaliciousFinding
+	var exempted []string
+	seen := make(map[string]bool)
+	for _, finding := range findings {
+		if !falsePositive[finding.ID] {
+			active = append(active, finding)
+			continue
+		}
+		if !seen[finding.ID] {
+			seen[finding.ID] = true
+			exempted = append(exempted, finding.ID)
+		}
+	}
+	return active, exempted
+}
+
+// MarkExemptedMalicious returns a copy of check whose findings named in
+// exemptedIDs are flagged Exempted. It is nil-safe.
+func MarkExemptedMalicious(check *types.MaliciousCheck, exemptedIDs []string) *types.MaliciousCheck {
+	if check == nil {
+		return nil
+	}
+	exempted := make(map[string]bool, len(exemptedIDs))
+	for _, id := range exemptedIDs {
+		exempted[id] = true
+	}
+	out := *check
+	out.Findings = make([]types.MaliciousFinding, len(check.Findings))
+	for i, finding := range check.Findings {
+		finding.Exempted = exempted[finding.ID]
+		out.Findings[i] = finding
+	}
+	if check.Findings == nil {
+		out.Findings = nil
+	}
+	return &out
+}
+
+// maliciousCELInput exposes malicious findings to CEL, exempted ones included
+// with exempted set, like the vulnerabilities list.
+func maliciousCELInput(findings []types.MaliciousFinding, exemptedIDs []string) []map[string]interface{} {
+	exempted := make(map[string]bool, len(exemptedIDs))
+	for _, id := range exemptedIDs {
+		exempted[id] = true
+	}
 	input := make([]map[string]interface{}, 0, len(findings))
 	for _, finding := range findings {
 		input = append(input, map[string]interface{}{
@@ -28,9 +88,20 @@ func maliciousCELInput(findings []types.MaliciousFinding) []map[string]interface
 			"purl":        finding.PURL,
 			"summary":     finding.Summary,
 			"url":         finding.URL,
+			"exempted":    exempted[finding.ID],
 		})
 	}
 	return input
+}
+
+func activeMaliciousCount(input []map[string]interface{}) int {
+	count := 0
+	for _, item := range input {
+		if exempted, _ := item["exempted"].(bool); !exempted {
+			count++
+		}
+	}
+	return count
 }
 
 func maliciousFailureFindings(findings []types.MaliciousFinding) []types.PolicyFailureFinding {
@@ -52,13 +123,24 @@ func maliciousFailureFindings(findings []types.MaliciousFinding) []types.PolicyF
 }
 
 // passesWithoutMalicious reports whether the expression would pass if the
-// image had no malicious findings, i.e. whether they caused the failure.
+// image had no active malicious findings, i.e. whether they caused the failure.
 func (e *Engine) passesWithoutMalicious(celInput map[string]interface{}) bool {
 	counterfactual := make(map[string]interface{}, len(celInput))
 	for key, value := range celInput {
 		counterfactual[key] = value
 	}
-	counterfactual["malicious"] = []map[string]interface{}{}
+	var exemptedOnly []map[string]interface{}
+	if items, ok := celInput["malicious"].([]map[string]interface{}); ok {
+		for _, item := range items {
+			if exempted, _ := item["exempted"].(bool); exempted {
+				exemptedOnly = append(exemptedOnly, item)
+			}
+		}
+	}
+	if exemptedOnly == nil {
+		exemptedOnly = []map[string]interface{}{}
+	}
+	counterfactual["malicious"] = exemptedOnly
 	counterfactual["maliciousCount"] = 0
 	out, _, err := e.celProgram.Eval(counterfactual)
 	if err != nil {

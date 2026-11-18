@@ -602,6 +602,7 @@ How it behaves:
 - **The SCAI attestation** always carries a `malicious-package-check` attribute with the status, the feed commit and time it matched against, and any findings.
 - **Health** reports `malicious_packages` as healthy in every state, with the status in the message. `/health` has no degraded state and backs the liveness probe, so a stale feed must not restart the pod. Alert on the metrics instead.
 - **Disk:** the bare clone is under 100 MB. With the bundled PostgreSQL in the Helm chart, `/data` is an emptyDir, so the feed is cloned again after each restart.
+- **False positives:** exempt them per repository with a hand-written `x-vex` statement in state `false_positive` (see [POLICY.md](POLICY.md#malicious-packages)). `not_affected` and `x-vex-auto` are rejected for MAL ids. The VEX audit in the Tasks view lists such a statement as unused once no current, checked scan of the repository matches the advisory.
 - **UI:** the **Malicious Packages** view shows the feed's sync state, how many current images were checked on current data, and every affected image grouped by package or by image, with images running in a cluster first. `GET /api/v1/malicious` returns the same data.
 
 The eval stack (`suppline.demo.yml`) sets `enabled: false` so it boots quickly.

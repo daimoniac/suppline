@@ -377,6 +377,8 @@ export interface MaliciousFinding {
   PURL: string;
   Summary: string;
   URL: string;
+  /** True when a false_positive VEX statement covers the finding; it does not fail policy. */
+  Exempted?: boolean;
 }
 
 /** Outcome of one scan's malicious-package check. */

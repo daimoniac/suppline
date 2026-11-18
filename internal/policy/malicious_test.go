@@ -5,6 +5,7 @@ import (
 	"log/slog"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/daimoniac/suppline/internal/scanner"
 	"github.com/daimoniac/suppline/internal/types"
@@ -140,5 +141,58 @@ func TestCELReadsMaliciousList(t *testing.T) {
 	}
 	if !decision.Passed {
 		t.Fatalf("no check means no findings, got %+v", decision)
+	}
+}
+
+func falsePositive(id string, expiresAt *int64) types.VEXStatement {
+	return types.VEXStatement{ID: id, State: types.VEXStateFalsePositive, Detail: "workspace package", ExpiresAt: expiresAt}
+}
+
+func TestMaliciousFalsePositiveExempts(t *testing.T) {
+	engine := newMaliciousTestEngine(t, "criticalCount == 0 && maliciousCount == 0")
+	result := maliciousResult()
+	decision, err := engine.Evaluate(context.Background(), "img", result, []types.VEXStatement{falsePositive("MAL-2025-1", nil)})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !decision.Passed || len(decision.PolicyFailureFindings) != 0 {
+		t.Fatalf("a false_positive statement should exempt the finding, got %+v", decision)
+	}
+	if len(decision.ExemptedCVEs) != 1 || decision.ExemptedCVEs[0] != "MAL-2025-1" {
+		t.Fatalf("exempted id should be reported for the VEX attestation, got %v", decision.ExemptedCVEs)
+	}
+	if result.Malicious.Findings[0].Exempted {
+		t.Fatal("Evaluate must not mutate the scan result")
+	}
+	marked := MarkExemptedMalicious(result.Malicious, decision.ExemptedCVEs)
+	if !marked.Findings[0].Exempted || !marked.Findings[1].Exempted {
+		t.Fatalf("marked copy should flag the findings, got %+v", marked.Findings)
+	}
+
+	// CEL still sees the exempted finding, flagged.
+	listing := newMaliciousTestEngine(t, `malicious.exists(m, m.exempted) && maliciousCount == 0`)
+	decision, err = listing.Evaluate(context.Background(), "img", maliciousResult(), []types.VEXStatement{falsePositive("MAL-2025-1", nil)})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !decision.Passed {
+		t.Fatalf("expected the exempted finding in the malicious list, got %+v", decision)
+	}
+}
+
+func TestMaliciousFalsePositiveExpiredOrOtherIDDoesNotExempt(t *testing.T) {
+	engine := newMaliciousTestEngine(t, "criticalCount == 0")
+	expired := time.Now().Add(-time.Hour).Unix()
+	for name, statements := range map[string][]types.VEXStatement{
+		"expired":  {falsePositive("MAL-2025-1", &expired)},
+		"other id": {falsePositive("MAL-2025-2", nil)},
+	} {
+		decision, err := engine.Evaluate(context.Background(), "img", maliciousResult(), statements)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if decision.Passed {
+			t.Fatalf("%s: statement must not exempt, got %+v", name, decision)
+		}
 	}
 }

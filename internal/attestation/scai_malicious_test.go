@@ -59,3 +59,25 @@ func TestSCAIOmitsCheckWhenDisabled(t *testing.T) {
 		t.Fatalf("expected no attributes, got %+v", scai.Attributes)
 	}
 }
+
+func TestSCAIMarksExemptedMalicious(t *testing.T) {
+	generator := NewSCAIGenerator(&config.RegsyncConfig{}, slog.Default())
+	result := &scanner.ScanResult{
+		ScannedAt: time.Now(),
+		Malicious: &types.MaliciousCheck{Status: types.MaliciousCheckOK, Findings: []types.MaliciousFinding{{ID: "MAL-1", Ecosystem: "npm", PackageName: "@scope/pkg", Version: "5.0.3"}}},
+	}
+	scai, err := generator.GenerateSCAI(context.Background(), "repo/app@sha256:abc", result, "repo/app", &policy.PolicyDecision{Passed: true, ExemptedCVEs: []string{"MAL-1"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if scai.Evidence.ScanStatus != "passed-with-exceptions" {
+		t.Fatalf("an exempted malicious finding is an exception, got %q", scai.Evidence.ScanStatus)
+	}
+	data, _ := json.Marshal(scai)
+	if !strings.Contains(string(data), `"version":"5.0.3","exempted":true`) {
+		t.Fatalf("SCAI should mark the finding exempted: %s", data)
+	}
+	if result.Malicious.Findings[0].Exempted {
+		t.Fatal("GenerateSCAI must not mutate the scan result")
+	}
+}

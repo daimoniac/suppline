@@ -6,7 +6,7 @@ import { cn, formatRelativeTime } from '../lib/utils';
 import { scheduleEffectLoad } from '../lib/scheduleEffectLoad';
 import { runtimeWorkloadLocations } from '../lib/policyComplianceData';
 import {
-  feedCommitURL, formatSeconds, groupMaliciousByPackage, maliciousFeedWarning,
+  activeFindings, feedCommitURL, formatSeconds, groupMaliciousByPackage, maliciousFeedWarning,
 } from '../lib/malicious';
 import type { MaliciousCoverage, MaliciousFeed, MaliciousImage, MaliciousOverview } from '../lib/api';
 import {
@@ -49,7 +49,10 @@ export default function MaliciousPage() {
 
   const feed = overview.Feed;
   const warning = maliciousFeedWarning(feed);
-  const inUseCount = images.filter(image => image.RuntimeUsed).length;
+  const affected = images.filter(image => activeFindings(image).length > 0);
+  const inUseCount = affected.filter(image => image.RuntimeUsed).length;
+  const activePackages = packages.filter(group => !group.exempted).length;
+  const exemptedCount = images.length - affected.length;
 
   const setView = (next: View) => {
     const params = new URLSearchParams(searchParams);
@@ -76,7 +79,7 @@ export default function MaliciousPage() {
       )}
 
       <div className="grid gap-4 lg:grid-cols-3">
-        <AffectedSummary images={images.length} packages={packages.length} inUse={inUseCount} block={feed?.Block ?? true} />
+        <AffectedSummary images={affected.length} packages={activePackages} inUse={inUseCount} exempted={exemptedCount} block={feed?.Block ?? true} />
         {feed && <FeedCard feed={feed} />}
         <CoverageCard coverage={overview.Coverage} />
       </div>
@@ -112,12 +115,14 @@ export default function MaliciousPage() {
         ) : view === 'packages' ? (
           <div className="divide-y divide-border">
             {packages.map(group => (
-              <div key={group.key} className="px-5 py-4">
+              <div key={group.key} className={cn('px-5 py-4', group.exempted && 'opacity-60')}>
                 <div className="flex flex-wrap items-center gap-2">
                   <span className="text-sm font-mono font-medium text-text-primary">{group.packageName}@{group.version}</span>
                   <span className="px-1.5 py-0.5 rounded text-[10px] font-medium bg-bg-tertiary text-text-secondary">{group.ecosystem}</span>
                   {group.ids.map(id => <AdvisoryLink key={id} id={id} />)}
-                  {group.inUse && <span className="px-1.5 py-0.5 rounded text-[10px] font-semibold bg-danger-bg text-danger">Running</span>}
+                  {group.exempted
+                    ? <FalsePositiveBadge />
+                    : group.inUse && <span className="px-1.5 py-0.5 rounded text-[10px] font-semibold bg-danger-bg text-danger">Running</span>}
                 </div>
                 {group.summary && <p className="text-xs text-text-muted mt-1">{group.summary}</p>}
                 <ul className="mt-3 space-y-2">
@@ -129,7 +134,7 @@ export default function MaliciousPage() {
         ) : (
           <div className="divide-y divide-border">
             {images.map(image => (
-              <div key={`${image.Repository}@${image.Digest}`} className="px-5 py-4">
+              <div key={`${image.Repository}@${image.Digest}`} className={cn('px-5 py-4', activeFindings(image).length === 0 && 'opacity-60')}>
                 <ImageLine image={image} />
                 <ul className="mt-2 ml-1 space-y-1">
                   {image.Findings.map((finding, i) => (
@@ -137,6 +142,7 @@ export default function MaliciousPage() {
                       <AdvisoryLink id={finding.ID} />
                       <span className="font-mono text-text-primary">{finding.PackageName}@{finding.Version}</span>
                       <span className="text-text-muted">{finding.Ecosystem}</span>
+                      {finding.Exempted && <FalsePositiveBadge />}
                     </li>
                   ))}
                 </ul>
@@ -149,7 +155,7 @@ export default function MaliciousPage() {
   );
 }
 
-function AffectedSummary({ images, packages, inUse, block }: { images: number; packages: number; inUse: number; block: boolean }) {
+function AffectedSummary({ images, packages, inUse, exempted, block }: { images: number; packages: number; inUse: number; exempted: number; block: boolean }) {
   return (
     <section className="bg-bg-primary border border-border rounded-xl p-5">
       <div className="flex items-center gap-2 text-sm font-semibold">
@@ -161,10 +167,16 @@ function AffectedSummary({ images, packages, inUse, block }: { images: number; p
         <Stat value={inUse} label="running" danger={inUse > 0} />
         <Stat value={packages} label="packages" danger={packages > 0} />
       </div>
+      {exempted > 0 && (
+        <p className="text-xs text-text-muted mt-3">
+          {exempted} more image{exempted === 1 ? '' : 's'} only match advisories marked false_positive in x-vex.
+        </p>
+      )}
       <p className="text-xs text-text-muted mt-3">
         {block
           ? 'Blocking: any malicious package fails the policy, whatever the policy expression says.'
           : 'Not blocking: x-malicious-packages.block is off, so only the policy expression decides.'}
+        {' '}A confirmed false positive is exempted with a hand-written x-vex statement in state false_positive.
       </p>
     </section>
   );
@@ -306,5 +318,16 @@ function Row({ label, value }: { label: string; value: React.ReactNode }) {
       <dt className="text-text-muted flex-shrink-0">{label}</dt>
       <dd className="text-text-secondary text-right min-w-0">{value}</dd>
     </div>
+  );
+}
+
+function FalsePositiveBadge() {
+  return (
+    <span
+      className="px-1.5 py-0.5 rounded text-[10px] font-semibold bg-bg-tertiary text-text-secondary"
+      title="Exempted by a false_positive x-vex statement"
+    >
+      False positive
+    </span>
   );
 }

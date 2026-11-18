@@ -102,3 +102,34 @@ func TestMaliciousPackagesValidate(t *testing.T) {
 		})
 	}
 }
+
+func TestMaliciousVEXStatementsValidated(t *testing.T) {
+	base := "version: 1\ndefaults:\n  interval: 60m\nsync:\n  - source: docker.io/library/app\n    target: registry/app\n    type: repository\n"
+	tests := []struct {
+		name  string
+		extra string
+		want  string
+	}{
+		{"false_positive ok", "    x-vex:\n      - id: MAL-2025-1\n        state: false_positive\n        detail: workspace package\n", ""},
+		{"not_affected rejected", "    x-vex:\n      - id: MAL-2025-1\n        state: not_affected\n        justification: code_not_reachable\n", "must be \"false_positive\""},
+		{"auto rejected", "    x-vex-auto:\n      - id: MAL-2025-1\n        state: false_positive\n", "only hand-written x-vex"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			path := filepath.Join(t.TempDir(), "suppline.yml")
+			if err := os.WriteFile(path, []byte(base+tt.extra), 0o600); err != nil {
+				t.Fatal(err)
+			}
+			_, err := ParseRegsync(path)
+			if tt.want == "" {
+				if err != nil {
+					t.Fatalf("unexpected error %v", err)
+				}
+				return
+			}
+			if err == nil || !strings.Contains(err.Error(), tt.want) {
+				t.Fatalf("want error containing %q, got %v", tt.want, err)
+			}
+		})
+	}
+}
