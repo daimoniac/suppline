@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState, useCallback } from 'react';
 import { Link, useSearchParams } from 'react-router';
 import { useAuth } from '../lib/auth';
 import { useToast } from '../lib/toast';
-import { formatRelativeTime, formatDate, daysUntilReleaseAge, formatRemainingDays } from '../lib/utils';
+import { formatRelativeTime, formatDate } from '../lib/utils';
 import { useImageUsageFilter } from '../lib/imageUsageFilter';
 import {
   buildPolicyExceptionScanFilters,
@@ -69,6 +69,10 @@ export default function FailedImagesPage() {
     setSearchParams,
   });
 
+  // A held scan waits for its cooldown; it is no policy exception. "All"
+  // here means every failure.
+  const exceptionStatus = policyFilter === 'all' ? 'failed' : policyFilter;
+
   const load = useCallback(async () => {
     setLoading(true);
     setError('');
@@ -77,7 +81,7 @@ export default function FailedImagesPage() {
         ...buildPolicyExceptionScanFilters({
           inUseRequestParams,
           repository,
-          policyFilter,
+          policyFilter: exceptionStatus,
         }),
         sort_by: `${sortCol}_${sortDir}`,
         limit: pageSize,
@@ -92,7 +96,7 @@ export default function FailedImagesPage() {
     } finally {
       setLoading(false);
     }
-  }, [apiClient, inUseRequestParams, offset, pageSize, policyFilter, repository, sortCol, sortDir]);
+  }, [apiClient, inUseRequestParams, offset, pageSize, exceptionStatus, repository, sortCol, sortDir]);
 
   useEffect(() => { scheduleEffectLoad(load); }, [load]);
 
@@ -127,7 +131,7 @@ export default function FailedImagesPage() {
     loadAllPolicyExceptionScans(apiClient, {
       inUseRequestParams,
       repository,
-      policyFilter,
+      policyFilter: exceptionStatus,
     })
       .then(loaded => {
         if (!cancelled) {
@@ -143,7 +147,7 @@ export default function FailedImagesPage() {
     return () => {
       cancelled = true;
     };
-  }, [apiClient, inUseRequestParams, repository, policyFilter]);
+  }, [apiClient, inUseRequestParams, repository, exceptionStatus]);
 
   useEffect(() => {
     let cancelled = false;
@@ -175,12 +179,9 @@ export default function FailedImagesPage() {
 
   if (error) return <ErrorState message={error} onRetry={load} />;
 
-  const pendingCount = promptScans.filter(s => s.PolicyStatus === 'pending').length;
-  const failedCount = promptScans.length - pendingCount;
-
   return (
     <div>
-      <PageHeader title="Policy Exceptions" subtitle="Images that are policy-failed or pending release maturity" />
+      <PageHeader title="Policy Exceptions" subtitle="Images that fail policy" />
 
       {totalScans > 0 && (
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 mb-4 items-start">
@@ -191,10 +192,7 @@ export default function FailedImagesPage() {
               <div className="text-xs text-text-secondary flex items-center gap-3 flex-wrap">
                 <span>{totalScans} image{totalScans !== 1 ? 's' : ''} require attention.</span>
                 {promptScans.length > 0 && (
-                  <>
-                    <span className="px-1.5 py-0.5 rounded text-[10px] font-semibold bg-danger-bg text-danger">{failedCount} Failed</span>
-                    <span className="px-1.5 py-0.5 rounded text-[10px] font-semibold bg-warning-bg text-warning">{pendingCount} Pending Maturity</span>
-                  </>
+                  <span className="px-1.5 py-0.5 rounded text-[10px] font-semibold bg-danger-bg text-danger">{promptScans.length} Failed</span>
                 )}
               </div>
             </div>
@@ -249,18 +247,13 @@ export default function FailedImagesPage() {
                 <td className="px-4 py-3 text-sm text-text-secondary" title={formatDate(s.ScannedAt ?? s.CreatedAt)}>{formatRelativeTime(s.ScannedAt ?? s.CreatedAt)}</td>
                 <td className="px-4 py-3">
                   <div className="flex items-center gap-2 flex-wrap">
-                    <StatusBadge passed={s.PolicyPassed} status={s.PolicyStatus} label={s.PolicyStatus === 'pending' ? 'Pending Maturity' : undefined} />
+                    <StatusBadge passed={s.PolicyPassed} status={s.PolicyStatus} />
                     <RuntimeUsageBadge inUse={!!s.RuntimeUsed} runtime={s.Runtime} />
                   </div>
                 </td>
                 <td className="px-4 py-3"><VulnCounts critical={s.CriticalVulnCount} high={s.HighVulnCount} medium={s.MediumVulnCount} low={s.LowVulnCount} /></td>
                 <td className="px-4 py-3">
                   <div className="flex flex-wrap gap-1">
-                    {s.PolicyStatus === 'pending' && (
-                      <span className="px-1.5 py-0.5 rounded text-[10px] font-semibold bg-warning-bg text-warning">
-                        {formatRemainingDays(daysUntilReleaseAge(s.ReleaseAgeSeconds, s.MinimumReleaseAgeSeconds))}
-                      </span>
-                    )}
                     {s.CriticalVulnCount > 0 && <span className="px-1.5 py-0.5 rounded text-[10px] font-semibold bg-severity-critical/20 text-severity-critical">{s.CriticalVulnCount} Critical</span>}
                     {s.HighVulnCount > 0 && <span className="px-1.5 py-0.5 rounded text-[10px] font-semibold bg-severity-high/20 text-severity-high">{s.HighVulnCount} High</span>}
                   </div>

@@ -51,6 +51,9 @@ func ParseRegsync(path string) (*RegsyncConfig, error) {
 	if err := config.ValidateVEXStatements(); err != nil {
 		return nil, errors.NewPermanentf("invalid VEX configuration: %w", err)
 	}
+	if err := config.ValidateCooldowns(); err != nil {
+		return nil, errors.NewPermanentf("invalid cooldown configuration: %w", err)
+	}
 
 	return &config, nil
 }
@@ -377,6 +380,74 @@ func (c *RegsyncConfig) GetRescanInterval(target string) (time.Duration, error) 
 
 	// Fall back to hardcoded default
 	return 7 * 24 * time.Hour, nil
+}
+
+// GetCooldown returns the cooldown for a target repository: the sync entry's
+// x-cooldown when set, otherwise defaults.x-cooldown, otherwise zero (off).
+// "0" switches the cooldown off for an entry even when defaults set one.
+func (c *RegsyncConfig) GetCooldown(target string) (time.Duration, error) {
+	for _, sync := range c.Active() {
+		if syncTargetRepository(sync) == target && sync.Cooldown != "" {
+			return parseCooldown(sync.Cooldown)
+		}
+	}
+	return parseCooldown(c.Defaults.Cooldown)
+}
+
+// CooldownReleased reports whether a Cooldown release names digest in the
+// sync entries of a target repository.
+func (c *RegsyncConfig) CooldownReleased(target, digest string) bool {
+	if digest == "" {
+		return false
+	}
+	for _, sync := range c.Active() {
+		if syncTargetRepository(sync) != target {
+			continue
+		}
+		for _, release := range sync.CooldownReleases {
+			if release.Digest == digest {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+// ValidateCooldowns checks every configured x-cooldown and x-cooldown-release.
+func (c *RegsyncConfig) ValidateCooldowns() error {
+	if _, err := parseCooldown(c.Defaults.Cooldown); err != nil {
+		return fmt.Errorf("defaults.x-cooldown: %w", err)
+	}
+	for _, sync := range c.Sync {
+		if _, err := parseCooldown(sync.Cooldown); err != nil {
+			return fmt.Errorf("sync %s: x-cooldown: %w", sync.Target, err)
+		}
+		for _, release := range sync.CooldownReleases {
+			if !strings.HasPrefix(release.Digest, "sha256:") {
+				return fmt.Errorf("sync %s: x-cooldown-release digest %q must be a sha256 digest", sync.Target, release.Digest)
+			}
+		}
+	}
+	return nil
+}
+
+func parseCooldown(value string) (time.Duration, error) {
+	if value == "" || value == "0" {
+		return 0, nil
+	}
+	return parseInterval(value)
+}
+
+// syncTargetRepository is a sync entry's target without the tag of a
+// type=image entry.
+func syncTargetRepository(sync SyncEntry) string {
+	target := sync.Target
+	if sync.Type == "image" {
+		if idx := strings.LastIndex(target, ":"); idx > strings.LastIndex(target, "/") {
+			target = target[:idx]
+		}
+	}
+	return target
 }
 
 // GetSCAIValidityExtension returns the SCAI validity extension for a specific target repository

@@ -112,7 +112,7 @@ func decisionFingerprints(cfg *config.RegsyncConfig) map[string]string {
 	}
 	for _, repository := range cfg.GetTargetRepositories() {
 		policy, evidence := effectiveIn(cfg, repository)
-		out[repository] = fingerprintDecision(policy, evidence)
+		out[repository] = fingerprintDecision(policy, evidence) + fingerprintCooldown(cfg, repository)
 	}
 	return out
 }
@@ -128,7 +128,7 @@ func DecisionChanges(prev, next *config.RegsyncConfig) []string {
 func fingerprintDecision(policy *config.PolicyConfig, evidence Evidence) string {
 	var b strings.Builder
 	if policy != nil {
-		fmt.Fprintf(&b, "%s\n%s\n%s\n", policy.Expression, policy.FailureMessage, policy.MinimumReleaseAge)
+		fmt.Fprintf(&b, "%s\n%s\n", policy.Expression, policy.FailureMessage)
 	}
 	fmt.Fprintf(&b, "vexrepo=%t\n", evidence.UseVEXRepo)
 	for _, statement := range evidence.VEXStatements {
@@ -138,6 +138,26 @@ func fingerprintDecision(policy *config.PolicyConfig, evidence Evidence) string 
 		}
 		fmt.Fprintf(&b, "%s\t%s\t%s\t%s\t%s\n", statement.ID, statement.State, statement.Justification, expires, statement.Detail)
 	}
+	return b.String()
+}
+
+// fingerprintCooldown covers what decides whether a scan stays pending: the
+// repository's cooldown and its Cooldown releases. A release is a Config edit
+// whose rescan moves the released digest's tag.
+func fingerprintCooldown(cfg *config.RegsyncConfig, repository string) string {
+	var b strings.Builder
+	cooldown, err := cfg.GetCooldown(repository)
+	fmt.Fprintf(&b, "cooldown=%s err=%v\n", cooldown, err)
+	_ = cfg.ForEachActive(func(i int) error {
+		sync := cfg.Sync[i]
+		if targetRepository(sync) != repository {
+			return nil
+		}
+		for _, release := range sync.CooldownReleases {
+			fmt.Fprintf(&b, "release=%s\n", release.Digest)
+		}
+		return nil
+	})
 	return b.String()
 }
 
@@ -153,24 +173,20 @@ func changedRepositories(before, after map[string]string) []string {
 }
 
 func (c *ConfigCatalog) ResolvePolicy(repository string) (policy.PolicyConfig, error) {
-	configured, _ := c.effective(repository)
-	if configured == nil {
-		return policy.PolicyConfig{}, nil
+	var resolved policy.PolicyConfig
+	if configured, _ := c.effective(repository); configured != nil {
+		resolved.Expression = configured.Expression
+		resolved.FailureMessage = configured.FailureMessage
 	}
-
-	resolved := policy.PolicyConfig{
-		Expression:     configured.Expression,
-		FailureMessage: configured.FailureMessage,
-	}
-	if configured.MinimumReleaseAge == "" {
+	cfg := c.Current()
+	if cfg == nil {
 		return resolved, nil
 	}
-
-	minimumReleaseAge, err := parseInterval(configured.MinimumReleaseAge)
+	cooldown, err := cfg.GetCooldown(repository)
 	if err != nil {
-		return policy.PolicyConfig{}, fmt.Errorf("invalid minimumReleaseAge for target %s: %w", repository, err)
+		return policy.PolicyConfig{}, fmt.Errorf("invalid x-cooldown for target %s: %w", repository, err)
 	}
-	resolved.MinimumReleaseAge = minimumReleaseAge
+	resolved.Cooldown = cooldown
 	return resolved, nil
 }
 
@@ -448,18 +464,6 @@ func (c *ConfigCatalog) UsesVEXRepo() bool {
 	return uses
 }
 
-func parseInterval(value string) (time.Duration, error) {
-	if strings.HasSuffix(value, "d") {
-		days := strings.TrimSuffix(value, "d")
-		var count int
-		if _, err := fmt.Sscanf(days, "%d", &count); err != nil {
-			return 0, fmt.Errorf("invalid duration format: %s", value)
-		}
-		return time.Duration(count) * 24 * time.Hour, nil
-	}
-	return time.ParseDuration(value)
-}
-
 // Upstream returns the catalog source image and platform for a mirrored repository.
 func (c *ConfigCatalog) Upstream(repository string) (source, platform string, ok bool) {
 	if c == nil || c.config == nil {
@@ -508,6 +512,43 @@ func (c *ConfigCatalog) SetSemverRanges(target string, ranges []string) (int, er
 			updated++
 			return nil
 		})
+	})
+	if err != nil {
+		return 0, err
+	}
+	return updated, nil
+}
+
+// AddCooldownRelease records a Cooldown release on every sync entry of
+// repository, replacing an earlier release of the same digest.
+func (c *ConfigCatalog) AddCooldownRelease(repository string, release config.CooldownRelease) (int, error) {
+	if c == nil || c.config == nil {
+		return 0, fmt.Errorf("no configuration catalog")
+	}
+	if strings.TrimSpace(repository) == "" || strings.TrimSpace(release.Digest) == "" {
+		return 0, fmt.Errorf("cooldown release needs a repository and a digest")
+	}
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	updated := 0
+	err := c.editLocked(func(next *config.RegsyncConfig) error {
+		for i := range next.Sync {
+			if targetRepository(next.Sync[i]) != repository {
+				continue
+			}
+			releases := make([]config.CooldownRelease, 0, len(next.Sync[i].CooldownReleases)+1)
+			for _, existing := range next.Sync[i].CooldownReleases {
+				if existing.Digest != release.Digest {
+					releases = append(releases, existing)
+				}
+			}
+			next.Sync[i].CooldownReleases = append(releases, release)
+			updated++
+		}
+		if updated == 0 {
+			return fmt.Errorf("no sync entry for repository %s", repository)
+		}
+		return nil
 	})
 	if err != nil {
 		return 0, err

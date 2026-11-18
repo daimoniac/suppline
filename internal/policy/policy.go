@@ -39,8 +39,9 @@ type PolicyConfig struct {
 	// FailureMessage is the message to return when the policy fails (optional)
 	FailureMessage string `yaml:"failureMessage" json:"failureMessage"`
 
-	// MinimumReleaseAge blocks policy pass/fail evaluation until the image age reaches this duration.
-	MinimumReleaseAge time.Duration `yaml:"-" json:"-"`
+	// Cooldown keeps a passing image pending, without an attestation, until
+	// this long after ScanResult.FirstSeenAt. A failing image fails at once.
+	Cooldown time.Duration `yaml:"-" json:"-"`
 }
 
 const (
@@ -165,51 +166,6 @@ func (e *Engine) Evaluate(ctx context.Context, imageRef string, result *scanner.
 
 	if result.ScannedAt.IsZero() {
 		result.ScannedAt = time.Now().UTC()
-	}
-
-	if e.config.MinimumReleaseAge > 0 {
-		var ageBase *time.Time
-		ageSource := ""
-
-		if result.ImageCreatedAt != nil {
-			ageBase = result.ImageCreatedAt
-			ageSource = "image_created_at"
-		} else if result.FirstSeenAt != nil {
-			ageBase = result.FirstSeenAt
-			ageSource = "first_seen"
-		}
-
-		decision.MinimumReleaseAgeSeconds = int64(e.config.MinimumReleaseAge.Seconds())
-		decision.ReleaseAgeSource = ageSource
-
-		if ageBase == nil {
-			decision.Passed = false
-			decision.Status = PolicyStatusPending
-			decision.ShouldAttest = false
-			decision.Reason = fmt.Sprintf("policy pending: minimum release age is configured (%s) but no age source is available", e.config.MinimumReleaseAge)
-			return decision, nil
-		}
-
-		releaseAge := result.ScannedAt.Sub(*ageBase)
-		if releaseAge < 0 {
-			releaseAge = 0
-		}
-		decision.ReleaseAgeSeconds = int64(releaseAge.Seconds())
-
-		if releaseAge < e.config.MinimumReleaseAge {
-			decision.Passed = false
-			decision.Status = PolicyStatusPending
-			decision.ShouldAttest = false
-			remaining := e.config.MinimumReleaseAge - releaseAge
-			decision.Reason = fmt.Sprintf(
-				"policy pending: image age %s is below minimum release age %s (remaining %s, source=%s)",
-				releaseAge.Truncate(time.Second),
-				e.config.MinimumReleaseAge,
-				remaining.Truncate(time.Second),
-				ageSource,
-			)
-			return decision, nil
-		}
 	}
 
 	nowUnix := time.Now().Unix()
@@ -414,7 +370,34 @@ func (e *Engine) Evaluate(ctx context.Context, imageRef string, result *scanner.
 		e.applyMaliciousGate(decision, imageRef, passed, maliciousFindings)
 	}
 
+	// After the malicious gate: a match fails the scan at once, and the
+	// cooldown only ever holds a passing scan back.
+	e.applyCooldown(imageRef, decision, result)
 	return decision, nil
+}
+
+// applyCooldown turns a passing decision into a pending one while the image's
+// Cooldown is still running. FirstSeenAt nil means no Cooldown clock runs for
+// the image: it was grandfathered, released, or its cooldown already ended.
+func (e *Engine) applyCooldown(imageRef string, decision *PolicyDecision, result *scanner.ScanResult) {
+	if e.config.Cooldown <= 0 || !decision.Passed || result.FirstSeenAt == nil {
+		return
+	}
+	age := max(result.ScannedAt.Sub(*result.FirstSeenAt), 0)
+	decision.MinimumReleaseAgeSeconds = int64(e.config.Cooldown.Seconds())
+	decision.ReleaseAgeSeconds = int64(age.Seconds())
+	decision.ReleaseAgeSource = "first_seen"
+	if age >= e.config.Cooldown {
+		return
+	}
+	remaining := e.config.Cooldown - age
+	decision.Passed = false
+	decision.Status = PolicyStatusPending
+	decision.ShouldAttest = false
+	decision.Reason = fmt.Sprintf("policy pending: cooldown %s not over (first seen %s ago, remaining %s)",
+		e.config.Cooldown, age.Truncate(time.Second), remaining.Truncate(time.Second))
+	e.logger.Info("policy evaluation pending cooldown",
+		"image", imageRef, "cooldown", e.config.Cooldown.String(), "remaining", remaining.Truncate(time.Second).String())
 }
 
 func (e *Engine) findPolicyFailureFindings(imageRef string, enrichedVulns []map[string]interface{}, malicious []map[string]interface{}, candidateIndexes []int, candidateVulns []types.Vulnerability) []types.PolicyFailureFinding {

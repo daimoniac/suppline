@@ -78,6 +78,8 @@ type ImageWorker struct {
 	scanObserver    ScanObserver
 	malicious       MaliciousChecker
 	maliciousGate   bool
+	cooldownClock   CooldownClock
+	heldDigests     func(repository string) []string
 }
 
 // MaliciousChecker matches an image's SBOM against known-malicious package
@@ -98,6 +100,29 @@ func (w *ImageWorker) SetMaliciousChecker(checker MaliciousChecker, block bool) 
 	if w != nil {
 		w.malicious = checker
 		w.maliciousGate = block
+	}
+}
+
+// SetHeldDigests lists the digests the tag runway holds. A held digest of a
+// new tag is scanned under a tag the registry does not have yet.
+func (w *ImageWorker) SetHeldDigests(held func(repository string) []string) {
+	if w != nil {
+		w.heldDigests = held
+	}
+}
+
+// CooldownClock tells when suppline first saw a digest upstream. A nil time
+// means no Cooldown clock runs for the digest. The tag runway is the clock of
+// mirrored repositories.
+type CooldownClock interface {
+	FirstSeen(ctx context.Context, repository, digest string) (*time.Time, error)
+}
+
+// SetCooldownClock replaces the artifact first-seen clock. Without one, a
+// repository's cooldown counts from the artifact's first scan.
+func (w *ImageWorker) SetCooldownClock(clock CooldownClock) {
+	if w != nil {
+		w.cooldownClock = clock
 	}
 }
 

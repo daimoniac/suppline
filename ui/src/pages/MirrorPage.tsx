@@ -1,15 +1,17 @@
 import { useCallback, useEffect, useState } from 'react';
 import { Navigate, useSearchParams } from 'react-router';
 import { useAuth } from '../lib/auth';
-import { formatRelativeTime } from '../lib/utils';
+import { useToast } from '../lib/toast';
+import { formatCooldown, formatDate, formatRelativeTime } from '../lib/utils';
 import { scheduleEffectLoad } from '../lib/scheduleEffectLoad';
 import { usePageSizePreference } from '../lib/pageSizePreference';
-import { EmptyState, ErrorState, LoadingState, PageHeader, Pagination } from '../components/ui';
-import type { MirrorDeletion, MirrorImage, MirrorOverview, MirrorSync } from '../lib/api';
-import { FolderSync, TriangleAlert } from 'lucide-react';
+import { ConfirmModal, DigestLinkWithCopy, EmptyState, ErrorState, LoadingState, PageHeader, Pagination, StatusBadge } from '../components/ui';
+import type { HeldDigest, MirrorDeletion, MirrorImage, MirrorOverview, MirrorSync } from '../lib/api';
+import { Clock, FolderSync, TriangleAlert } from 'lucide-react';
 
 export default function MirrorPage() {
   const { apiClient } = useAuth();
+  const { toast } = useToast();
   const { pageSize, setPageSize, options: pageSizeOptions } = usePageSizePreference();
   const [searchParams, setSearchParams] = useSearchParams();
   const [mirrorEnabled, setMirrorEnabled] = useState<boolean | null>(null);
@@ -20,6 +22,10 @@ export default function MirrorPage() {
   const [deletionTotal, setDeletionTotal] = useState(0);
   const [hubDeletions, setHubDeletions] = useState<MirrorDeletion[]>([]);
   const [hubTotal, setHubTotal] = useState(0);
+  const [held, setHeld] = useState<HeldDigest[]>([]);
+  const [releaseTarget, setReleaseTarget] = useState<HeldDigest | null>(null);
+  const [releaseReason, setReleaseReason] = useState('');
+  const [releasing, setReleasing] = useState(false);
   const [imagePage, setImagePage] = useState(1);
   const [deletionPage, setDeletionPage] = useState(1);
   const [hubPage, setHubPage] = useState(1);
@@ -39,9 +45,10 @@ export default function MirrorPage() {
         return;
       }
       setMirrorEnabled(true);
-      const [summary, hub] = await Promise.all([
+      const [summary, hub, heldDigests] = await Promise.all([
         apiClient.getMirror(),
         apiClient.getMirrorHubDeletions(pageSize, (hubPage - 1) * pageSize),
+        apiClient.getHeldDigests(),
       ]);
       const syncs = summary.Syncs ?? [];
       const key = syncs.some(sync => sync.Key === selectedKey) ? selectedKey : (syncs[0]?.Key ?? '');
@@ -60,6 +67,7 @@ export default function MirrorPage() {
         nextDeletionTotal = deletionPageResult.total;
       }
       setOverview(summary);
+      setHeld(heldDigests);
       setHubDeletions(hub.deletions);
       setHubTotal(hub.total);
       setImages(nextImages);
@@ -82,6 +90,22 @@ export default function MirrorPage() {
   const syncs = overview?.Syncs ?? [];
   const selected = syncs.find(sync => sync.Key === selectedKey) ?? syncs[0];
 
+  const confirmRelease = async () => {
+    if (!releaseTarget || !releaseReason.trim()) return;
+    setReleasing(true);
+    try {
+      const result = await apiClient.releaseCooldown(releaseTarget.Repository, releaseTarget.Digest, releaseReason.trim());
+      toast(result.commit ? `Released; committed ${result.commit.slice(0, 7)}. The tag moves after a passing scan.` : 'Released. The tag moves after a passing scan.', 'success');
+      setReleaseTarget(null);
+      setReleaseReason('');
+      await load();
+    } catch (e: unknown) {
+      toast(e instanceof Error ? e.message : 'Failed to release digest', 'error');
+    } finally {
+      setReleasing(false);
+    }
+  };
+
   const selectSync = (key: string) => {
     setImagePage(1);
     setDeletionPage(1);
@@ -100,6 +124,37 @@ export default function MirrorPage() {
           <span>Docker Hub repository cleanup failed: {overview.HubError}</span>
         </div>
       )}
+
+      <section className="bg-bg-primary border border-border rounded-xl overflow-hidden">
+        <div className="px-5 py-4 border-b border-border">
+          <h2 className="text-sm font-semibold">Held</h2>
+          <p className="text-xs text-text-muted mt-1">New digests copied from upstream that no tag names yet: in their cooldown, waiting for a passing scan, or failing policy</p>
+        </div>
+        {held.length === 0 ? (
+          <EmptyState icon={<Clock className="w-8 h-8" />} title="Nothing held" message="Every mirrored tag names the newest digest it may name." />
+        ) : (
+          <HeldTable rows={held} onRelease={row => { setReleaseTarget(row); setReleaseReason(''); }} />
+        )}
+      </section>
+
+      <ConfirmModal
+        open={releaseTarget !== null}
+        title="Release from cooldown"
+        message={releaseTarget ? `Skip the rest of the cooldown of ${releaseTarget.Digest.slice(0, 19)}… in ${releaseTarget.Repository}. This is recorded in suppline.yml. The tag still moves only after a passing scan and attestation.` : ''}
+        confirmLabel={releasing ? 'Releasing…' : 'Release now'}
+        confirmDisabled={releasing || !releaseReason.trim()}
+        onConfirm={confirmRelease}
+        onCancel={() => { if (!releasing) setReleaseTarget(null); }}
+      >
+        <label className="block text-xs text-text-secondary mb-1" htmlFor="release-reason">Reason</label>
+        <input
+          id="release-reason"
+          value={releaseReason}
+          onChange={e => setReleaseReason(e.target.value)}
+          placeholder="e.g. CVE-2026-1234 hotfix"
+          className="w-full px-3 py-2 bg-bg-primary border border-border rounded-lg text-sm text-text-primary placeholder:text-text-muted focus:outline-none focus:border-accent/50"
+        />
+      </ConfirmModal>
 
       <section className="bg-bg-primary border border-border rounded-xl overflow-hidden">
         <div className="px-5 py-4 border-b border-border">
@@ -274,5 +329,71 @@ function DeletionTable({ rows, showTag }: { rows: MirrorDeletion[]; showTag: boo
         </tbody>
       </table>
     </div>
+  );
+}
+
+function HeldTable({ rows, onRelease }: { rows: HeldDigest[]; onRelease: (row: HeldDigest) => void }) {
+  return (
+    <div className="overflow-x-auto">
+      <table className="w-full text-sm">
+        <thead className="text-left text-xs text-text-muted">
+          <tr className="border-b border-border">
+            <th className="px-5 py-2 font-medium">Repository</th>
+            <th className="px-5 py-2 font-medium">Tags</th>
+            <th className="px-5 py-2 font-medium">Digest</th>
+            <th className="px-5 py-2 font-medium">First seen</th>
+            <th className="px-5 py-2 font-medium">Cooldown</th>
+            <th className="px-5 py-2 font-medium">Scan</th>
+            <th className="px-5 py-2 font-medium" />
+          </tr>
+        </thead>
+        <tbody>
+          {rows.map(row => (
+            <tr key={`${row.Repository}@${row.Digest}`} className="border-b border-border last:border-0 align-top">
+              <td className="px-5 py-2 text-text-primary">
+                <div>{row.Repository}</div>
+                {row.Source && <div className="text-xs text-text-muted">from {row.Source}</div>}
+              </td>
+              <td className="px-5 py-2 text-text-secondary">{(row.Tags ?? []).join(', ')}</td>
+              <td className="px-5 py-2"><DigestLinkWithCopy digest={row.Digest} to={`/repositories/${encodeURIComponent(row.Repository)}/tags/${encodeURIComponent(row.Digest)}`} /></td>
+              <td className="px-5 py-2 text-text-muted" title={formatDate(row.FirstSeen)}>{formatRelativeTime(row.FirstSeen)}</td>
+              <td className="px-5 py-2"><CooldownCell row={row} /></td>
+              <td className="px-5 py-2">
+                {row.PolicyStatus ? (
+                  <div className="flex flex-col gap-1">
+                    <StatusBadge passed={row.PolicyStatus === 'passed'} status={row.PolicyStatus} label={row.PolicyStatus === 'pending' ? 'Held' : undefined} />
+                    {row.ScannedAt ? <span className="text-xs text-text-muted">{formatRelativeTime(row.ScannedAt)}</span> : null}
+                  </div>
+                ) : (
+                  <span className="text-xs text-text-muted">Not scanned yet</span>
+                )}
+              </td>
+              <td className="px-5 py-2 text-right">
+                {row.CooldownSeconds > 0 && !row.Released && row.RemainingSeconds > 0 && (
+                  <button
+                    type="button"
+                    onClick={() => onRelease(row)}
+                    className="px-3 py-1 text-xs rounded border border-warning/30 text-warning hover:bg-warning-bg whitespace-nowrap transition-colors"
+                  >
+                    Release now
+                  </button>
+                )}
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
+function CooldownCell({ row }: { row: HeldDigest }) {
+  if (row.Released) return <span className="text-xs font-medium text-info">Released</span>;
+  if (row.CooldownSeconds <= 0) return <span className="text-xs text-text-muted">None</span>;
+  if (row.RemainingSeconds <= 0) return <span className="text-xs text-text-secondary">Over</span>;
+  return (
+    <span className="text-xs font-medium text-warning" title={`Cooldown ${formatCooldown(row.CooldownSeconds)}`}>
+      {formatCooldown(row.RemainingSeconds)} left
+    </span>
   );
 }

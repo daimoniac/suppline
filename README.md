@@ -148,13 +148,14 @@ expression: |
 
 Available variables: `criticalCount`, `highCount`, `mediumCount`, `lowCount`, `exemptedCount`, `vulnerabilities`, `imageRef`.
 
-A policy can also refuse to judge an image that is too fresh to trust — useful against compromised upstream releases that get pulled within hours:
+A cooldown keeps brand-new upstream releases out until they have been public long enough to trust — useful against compromised releases that get pulled within hours:
 
 ```yaml
-x-policy:
-  expression: "criticalCount == 0"
-  minimumReleaseAge: 72h    # hold in "pending", no attestation, re-evaluated later
+defaults:
+  x-cooldown: 7d    # new digests stay held: scanned at once, but no attestation and no tag until 7 days after suppline first saw them
 ```
+
+With the in-process mirror, a held digest is copied by digest only; its tag (a new version tag included) is published once the cooldown is over and the scan passes. A `release now` on the Mirror page skips the rest of one digest's cooldown. See [docs/CONFIGURATION.md](docs/CONFIGURATION.md#cooldown).
 
 VEX statements are CycloneDX-style exemptions with a state, justification, detail, and **expiry** — so an accepted risk resurfaces instead of silently living forever. Expiring statements are logged and listed at `/api/v1/vex/inactive`. More in [docs/POLICY.md](docs/POLICY.md).
 

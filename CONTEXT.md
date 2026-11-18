@@ -17,8 +17,20 @@ The digest a repository tag currently identifies. A tag has one current binding 
 _Avoid_: latest scan, newest tag, tag history
 
 **Tag runway**:
-The path a mirrored digest takes onto an existing tag: copied by digest, held while a Scan request attests it, then published by moving the tag. A held digest never takes the tag's Current tag binding before the registry tag names it.
+The path a mirrored digest takes onto a tag: copied by digest, held while a Scan request attests it and its Cooldown runs, then published by moving or creating the tag. A Held digest never takes the tag's Current tag binding before the registry tag names it.
 _Avoid_: promotion, tag gate, retag
+
+**Cooldown**:
+The minimum time between suppline first seeing a digest upstream and that digest being published on a tag. It counts from suppline's own first sighting, never from the image's build date.
+_Avoid_: minimum release age, quarantine, maturity, embargo
+
+**Held digest**:
+A mirrored digest the Tag runway has not yet published, because its Cooldown is still running, it lacks a passing attestation, or both. A Held digest stays held after a policy failure so it can be triaged, and is dropped only when a newer candidate for the same tag is published.
+_Avoid_: pending image, quarantined image, staged digest
+
+**Cooldown release**:
+A recorded decision to skip the rest of one Held digest's Cooldown. It never skips the scan or the attestation.
+_Avoid_: bypass, override, fast-track
 
 **Scan request**:
 An expressed intent to scan a specific container image, whether discovered automatically or initiated as a rescan.

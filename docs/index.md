@@ -59,7 +59,7 @@ Open `http://localhost:3000` and log in with API key `demo`. Full checklist: [Ev
 
 - **Continuous mirroring** into any private registry, or the one bundled with the Helm chart
 - **Trivy scanning** with SBOM generation for every digest
-- **CEL policy engine** with per-repository overrides and a minimum release age hold
+- **CEL policy engine** with per-repository overrides, plus a cooldown that holds new upstream releases
 - **Expiring VEX exemptions**, so accepted risks resurface instead of living forever
 - **Sigstore attestations** — SBOM, vulnerability, VEX, and SCAI — signed with your own key
 - **Kyverno policy generation** for verified-only admission, straight from the API

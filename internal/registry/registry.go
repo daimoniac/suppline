@@ -255,7 +255,7 @@ func (c *clientImpl) ListTags(ctx context.Context, repo string) ([]string, error
 
 	filteredTags := make([]string, 0, len(tags))
 	for _, tag := range tags {
-		if !isCosignArtifactTag(tag) {
+		if _, hold := HoldTagDigest(tag); !isCosignArtifactTag(tag) && !hold {
 			filteredTags = append(filteredTags, tag)
 		}
 	}

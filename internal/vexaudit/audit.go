@@ -219,11 +219,9 @@ func (a *Auditor) auditCVEStatements(ctx context.Context, repository string, rec
 	if err != nil {
 		return nil, err
 	}
-	if cfg.MinimumReleaseAge > 0 {
-		// Release-age gating depends on the current time, so stored scans do
-		// not show whether a statement matters now. Nothing is offered here.
-		return nil, nil
-	}
+	// A cooldown only holds a passing scan back. It never turns on a VEX
+	// statement, so the audit compares pass/fail without it.
+	cfg.Cooldown = 0
 	if strings.Contains(cfg.Expression, "description") {
 		// Descriptions are not loaded with the findings. A policy that reads
 		// them cannot be checked from this cache.

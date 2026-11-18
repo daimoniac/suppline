@@ -13,9 +13,9 @@ import (
 )
 
 // Repository policy resolution is the one place where an unparseable
-// minimumReleaseAge must surface, and it must stay a permanent error so the
+// x-cooldown must surface, and it must stay a permanent error so the
 // task is not retried.
-func TestGetPolicyEngineForRepository_InvalidMinimumReleaseAge(t *testing.T) {
+func TestGetPolicyEngineForRepository_InvalidCooldown(t *testing.T) {
 	logger := observability.NewLogger("error")
 	defaultEngine, err := policy.NewEngine(logger, policy.PolicyConfig{Expression: "criticalCount == 0"})
 	if err != nil {
@@ -24,22 +24,23 @@ func TestGetPolicyEngineForRepository_InvalidMinimumReleaseAge(t *testing.T) {
 
 	regsyncCfg := &config.RegsyncConfig{
 		Sync: []config.SyncEntry{{
-			Target: "myorg/app",
-			Type:   "repository",
-			Policy: &config.PolicyConfig{Expression: "criticalCount == 0", MinimumReleaseAge: "not-a-duration"},
-			VEX:    []types.VEXStatement{{ID: "CVE-2024-1234", State: types.VEXStateNotAffected}},
+			Target:   "myorg/app",
+			Type:     "repository",
+			Policy:   &config.PolicyConfig{Expression: "criticalCount == 0"},
+			Cooldown: "not-a-duration",
+			VEX:      []types.VEXStatement{{ID: "CVE-2024-1234", State: types.VEXStateNotAffected}},
 		}},
 	}
 	worker := NewImageWorker(newMockQueue(1), nil, defaultEngine, nil, nil, nil, DefaultConfig(), logger, regsyncCfg)
 
 	engine, err := worker.pipeline.getPolicyEngineForRepository("myorg/app")
 	if err == nil {
-		t.Fatalf("getPolicyEngineForRepository() error = nil, want invalid minimumReleaseAge error (engine %+v)", engine)
+		t.Fatalf("getPolicyEngineForRepository() error = nil, want invalid x-cooldown error (engine %+v)", engine)
 	}
-	if !strings.Contains(err.Error(), "failed to resolve minimum release age for myorg/app") {
-		t.Errorf("error = %v, want target-specific minimum release age failure", err)
+	if !strings.Contains(err.Error(), "failed to resolve policy for myorg/app") {
+		t.Errorf("error = %v, want target-specific policy failure", err)
 	}
-	if !strings.Contains(err.Error(), "invalid minimumReleaseAge for target myorg/app") {
+	if !strings.Contains(err.Error(), "invalid x-cooldown for target myorg/app") {
 		t.Errorf("error = %v, want wrapped catalog parse error", err)
 	}
 	if !supperrors.IsPermanent(err) {

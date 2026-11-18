@@ -758,3 +758,53 @@ func TestCreateSBOMAttestationDefault(t *testing.T) {
 		t.Fatal("false option should skip SBOM attestations")
 	}
 }
+
+func TestGetCooldown(t *testing.T) {
+	cfg := &RegsyncConfig{
+		Defaults: Defaults{Cooldown: "7d"},
+		Sync: []SyncEntry{
+			{Target: "registry.example/app", Type: "repository", Cooldown: "3d",
+				CooldownReleases: []CooldownRelease{{Digest: "sha256:aaa"}}},
+			{Target: "registry.example/off", Type: "repository", Cooldown: "0"},
+			{Target: "registry.example/img:1.0", Type: "image"},
+		},
+	}
+	tests := []struct {
+		target string
+		want   time.Duration
+	}{
+		{"registry.example/app", 3 * 24 * time.Hour},
+		{"registry.example/off", 0},
+		{"registry.example/img", 7 * 24 * time.Hour},
+		{"registry.example/unknown", 7 * 24 * time.Hour},
+	}
+	for _, test := range tests {
+		got, err := cfg.GetCooldown(test.target)
+		if err != nil || got != test.want {
+			t.Errorf("GetCooldown(%q) = %v, %v; want %v", test.target, got, err, test.want)
+		}
+	}
+	if !cfg.CooldownReleased("registry.example/app", "sha256:aaa") {
+		t.Error("CooldownReleased() = false for a released digest")
+	}
+	if cfg.CooldownReleased("registry.example/app", "sha256:bbb") || cfg.CooldownReleased("registry.example/off", "sha256:aaa") {
+		t.Error("CooldownReleased() = true for a digest released elsewhere or not at all")
+	}
+}
+
+func TestValidateCooldowns(t *testing.T) {
+	bad := []*RegsyncConfig{
+		{Defaults: Defaults{Cooldown: "soon"}},
+		{Sync: []SyncEntry{{Target: "r", Cooldown: "-1d"}}},
+		{Sync: []SyncEntry{{Target: "r", CooldownReleases: []CooldownRelease{{Digest: "latest"}}}}},
+	}
+	for i, cfg := range bad {
+		if err := cfg.ValidateCooldowns(); err == nil {
+			t.Errorf("config %d: ValidateCooldowns() = nil, want error", i)
+		}
+	}
+	good := &RegsyncConfig{Defaults: Defaults{Cooldown: "72h"}, Sync: []SyncEntry{{Target: "r", Cooldown: "0"}}}
+	if err := good.ValidateCooldowns(); err != nil {
+		t.Errorf("ValidateCooldowns() = %v", err)
+	}
+}

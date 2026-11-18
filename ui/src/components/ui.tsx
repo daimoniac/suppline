@@ -8,7 +8,7 @@ import { useToast } from '../lib/toast';
 
 export function StatusBadge({ passed, label, status }: { passed: boolean; label?: string; status?: string }) {
   const isPending = status === 'pending';
-  return <span className={cn('inline-flex items-center px-2 py-0.5 rounded text-xs font-medium', isPending ? 'bg-warning-bg text-warning' : passed ? 'bg-success-bg text-success' : 'bg-danger-bg text-danger')}>{label || (isPending ? 'Pending' : passed ? 'Passed' : 'Failed')}</span>;
+  return <span className={cn('inline-flex items-center px-2 py-0.5 rounded text-xs font-medium', isPending ? 'bg-warning-bg text-warning' : passed ? 'bg-success-bg text-success' : 'bg-danger-bg text-danger')}>{label || (isPending ? 'Held' : passed ? 'Passed' : 'Failed')}</span>;
 }
 
 /** Labelled one-liner for a human-readable CEL policy; hides when description is empty. */
@@ -116,16 +116,23 @@ export function Pagination({ currentPage, totalPages, total, pageSize, onPageCha
   );
 }
 
-export function ConfirmModal({ open, title, message, onConfirm, onCancel }: { open: boolean; title: string; message: string; onConfirm: () => void; onCancel: () => void }) {
+export function ConfirmModal({ open, title, message, onConfirm, onCancel, children, confirmLabel = 'Confirm', confirmDisabled = false }: {
+  open: boolean; title: string; message: string; onConfirm: () => void; onCancel: () => void;
+  /** Extra content between the message and the buttons, such as an input. */
+  children?: ReactNode;
+  confirmLabel?: string;
+  confirmDisabled?: boolean;
+}) {
   if (!open) return null;
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60" onClick={onCancel}>
       <div className="bg-bg-secondary border border-border rounded-xl p-6 max-w-md w-full mx-4 shadow-2xl" onClick={e => e.stopPropagation()}>
         <h3 className="text-lg font-semibold mb-2">{title}</h3>
         <p className="text-sm text-text-secondary mb-6">{message}</p>
+        {children && <div className="mb-6">{children}</div>}
         <div className="flex justify-end gap-3">
           <button onClick={onCancel} className="px-4 py-2 text-sm rounded-lg border border-border text-text-secondary hover:bg-bg-tertiary transition-colors">Cancel</button>
-          <button onClick={onConfirm} className="px-4 py-2 text-sm rounded-lg bg-accent text-bg-primary font-medium hover:bg-accent-hover transition-colors">Confirm</button>
+          <button onClick={onConfirm} disabled={confirmDisabled} className="px-4 py-2 text-sm rounded-lg bg-accent text-bg-primary font-medium hover:bg-accent-hover transition-colors disabled:opacity-50 disabled:cursor-not-allowed">{confirmLabel}</button>
         </div>
       </div>
     </div>

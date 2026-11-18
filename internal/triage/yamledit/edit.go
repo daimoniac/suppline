@@ -46,6 +46,15 @@ func upsertList(document []byte, repository, key string, statement types.VEXStat
 		return nil, err
 	}
 
+	return spliceMatching(document, repository, key, func(text string, entry matchedEntry, delta int) (string, error) {
+		return spliceEntry(text, entry, key, statement, delta)
+	})
+}
+
+// spliceMatching runs splice on every sync entry whose target repository is
+// repository, last entry first so earlier line numbers stay valid. key must
+// be a list or missing on each matched entry.
+func spliceMatching(document []byte, repository, key string, splice func(text string, entry matchedEntry, delta int) (string, error)) ([]byte, error) {
 	var doc yaml.Node
 	if err := yaml.Unmarshal(document, &doc); err != nil {
 		return nil, fmt.Errorf("parse suppline yaml: %w", err)
@@ -92,7 +101,7 @@ func upsertList(document []byte, repository, key string, statement types.VEXStat
 	delta := sequenceDelta(text, root, sync)
 	for _, entry := range matched {
 		var err error
-		text, err = spliceEntry(text, entry, key, statement, delta)
+		text, err = splice(text, entry, delta)
 		if err != nil {
 			return nil, err
 		}

@@ -2,7 +2,7 @@ import { useEffect, useState, useCallback, useMemo } from 'react';
 import { Link, useParams, useSearchParams } from 'react-router';
 import { useAuth } from '../lib/auth';
 import { useToast } from '../lib/toast';
-import { formatRelativeTime, daysUntilReleaseAge, formatRemainingDays, compareTagNames } from '../lib/utils';
+import { formatRelativeTime, cooldownDaysLeft, formatHeld, compareTagNames } from '../lib/utils';
 import { useImageUsageFilter } from '../lib/imageUsageFilter';
 import { LoadingState, ErrorState, StatusBadge, VulnCounts, SortHeader, Pagination, ConfirmModal, RuntimeUsageBadge, PageFiltersBar, FilterActionButton, PolicyStatusSelect, PolicyDescriptionText } from '../components/ui';
 import type { RepositoryTag } from '../lib/api';
@@ -208,8 +208,8 @@ export default function RepositoryDetailPage() {
                     <div className="flex items-center gap-2 flex-wrap">
                       {tag.ScanError ? <span className="text-xs text-danger" title={tag.ScanError}>Error</span> : <StatusBadge passed={tag.PolicyPassed} status={tag.PolicyStatus} />}
                       {isPending && (
-                        <span className="px-1.5 py-0.5 rounded text-[10px] font-semibold bg-warning-bg text-warning" title="Image is maturing and will be eligible based on release age">
-                          {formatRemainingDays(daysUntilReleaseAge(tag.ReleaseAgeSeconds, tag.MinimumReleaseAgeSeconds))}
+                        <span className="px-1.5 py-0.5 rounded text-[10px] font-semibold bg-warning-bg text-warning" title="In its cooldown: no attestation until the cooldown is over">
+                          {formatHeld(cooldownDaysLeft(tag.ReleaseAgeSeconds, tag.MinimumReleaseAgeSeconds, tag.LastScanTime))}
                         </span>
                       )}
                       <RuntimeUsageBadge inUse={!!tag.RuntimeUsed} runtime={tag.Runtime} whitelisted={!!tag.Whitelisted} />

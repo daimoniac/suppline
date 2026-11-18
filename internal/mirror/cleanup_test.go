@@ -2,12 +2,16 @@ package mirror
 
 import (
 	"context"
+	"errors"
+	"io"
 	"log/slog"
 	"slices"
 	"strings"
 	"testing"
 
 	"github.com/daimoniac/suppline/internal/config"
+	"github.com/daimoniac/suppline/internal/registry"
+	"github.com/daimoniac/suppline/internal/runway"
 )
 
 func TestTagsToDelete_SharedTargetAndOrphans(t *testing.T) {
@@ -125,5 +129,46 @@ func TestCleanupReposNamespace(t *testing.T) {
 	}
 	if !slices.Equal(hub.deleted, []string{"old"}) {
 		t.Fatalf("deleted = %#v", hub.deleted)
+	}
+}
+
+// fakeHolding is a Runway that only answers which digests it holds.
+type fakeHolding struct {
+	held map[string]struct{}
+	err  error
+}
+
+func (f fakeHolding) Offer(context.Context, runway.Candidate) (bool, error) { return false, nil }
+func (f fakeHolding) Settle(context.Context, string, string)                {}
+func (f fakeHolding) Retain(context.Context, string, []string)              {}
+func (f fakeHolding) Holding(context.Context, string) (map[string]struct{}, error) {
+	return f.held, f.err
+}
+
+// Sync entry filters never select a hold tag, so cleanup keeps exactly the
+// hold tags of digests the runway holds, and every one when it cannot ask.
+func TestStaleHoldTags(t *testing.T) {
+	held := "sha256:" + strings.Repeat("a", 64)
+	stray := "sha256:" + strings.Repeat("b", 64)
+	tags := []string{"latest", registry.HoldTag(held), registry.HoldTag(stray)}
+
+	others, holds := splitHoldTags(tags)
+	if !slices.Equal(others, []string{"latest"}) || len(holds) != 2 {
+		t.Fatalf("splitHoldTags() = %v, %v", others, holds)
+	}
+
+	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
+	m := &runner{log: logger, runway: fakeHolding{held: map[string]struct{}{held: {}}}}
+	if got := m.staleHoldTags(context.Background(), "reg/app", holds); !slices.Equal(got, []string{registry.HoldTag(stray)}) {
+		t.Errorf("staleHoldTags() = %v, want only the stray hold tag", got)
+	}
+
+	m.runway = fakeHolding{err: errors.New("registry down")}
+	if got := m.staleHoldTags(context.Background(), "reg/app", holds); len(got) != 0 {
+		t.Errorf("staleHoldTags() = %v, want none when holding is unknown", got)
+	}
+	m.runway = nil
+	if got := m.staleHoldTags(context.Background(), "reg/app", holds); len(got) != 0 {
+		t.Errorf("staleHoldTags() = %v, want none without a runway", got)
 	}
 }

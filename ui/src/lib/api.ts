@@ -306,6 +306,15 @@ export class APIClient {
     );
     return { deletions: data ?? [], total: totalCount(response, data?.length ?? 0) };
   }
+  async getHeldDigests() {
+    return (await this.request<HeldDigest[] | null>('/api/v1/mirror/held')) ?? [];
+  }
+  async releaseCooldown(repository: string, digest: string, reason: string): Promise<ConfigEditResult> {
+    return this.request<ConfigEditResult>('/api/v1/mirror/held/release', {
+      method: 'POST',
+      body: JSON.stringify({ repository, digest, reason }),
+    });
+  }
   async getMirrorHubDeletions(limit: number, offset: number) {
     const { data, response } = await this.requestWithResponse<MirrorDeletion[]>(
       `/api/v1/mirror/hub-deletions${this.qs({ limit, offset })}`,
@@ -343,6 +352,25 @@ export interface MirrorImage {
   Repository: string;
   Tag: string;
   LastSeen: number;
+}
+
+/** A digest the tag runway holds off its tags. */
+export interface HeldDigest {
+  Repository: string;
+  Digest: string;
+  Source: string;
+  Tags: string[] | null;
+  /** When suppline first saw the digest upstream (Unix seconds). */
+  FirstSeen: number;
+  /** The repository's cooldown; 0 means the digest only waits for its attestation. */
+  CooldownSeconds: number;
+  /** Cooldown left; 0 once it is over or released. */
+  RemainingSeconds: number;
+  Released: boolean;
+  /** Latest scan's policy status; empty before the first scan. */
+  PolicyStatus: string;
+  PolicyReason?: string;
+  ScannedAt?: number;
 }
 
 export interface MirrorDeletion {

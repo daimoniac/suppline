@@ -100,18 +100,32 @@ export function severityTextColor(severity: string): string {
   }
 }
 
-export function daysUntilReleaseAge(releaseAgeSeconds?: number, minimumReleaseAgeSeconds?: number): number | null {
-  if (!releaseAgeSeconds || !minimumReleaseAgeSeconds) return null;
-  if (releaseAgeSeconds >= minimumReleaseAgeSeconds) return null;
-  const remainingSeconds = minimumReleaseAgeSeconds - releaseAgeSeconds;
+/**
+ * Days of cooldown left for a held scan. The scan recorded the digest's age
+ * when it ran; scannedAt (Unix seconds) moves that age to now.
+ */
+export function cooldownDaysLeft(ageSeconds?: number, cooldownSeconds?: number, scannedAt?: number): number | null {
+  if (!cooldownSeconds || ageSeconds == null) return null;
+  const sinceScan = scannedAt ? Math.max(0, Date.now() / 1000 - (scannedAt >= 1e12 ? scannedAt / 1000 : scannedAt)) : 0;
+  const remainingSeconds = cooldownSeconds - ageSeconds - sinceScan;
+  if (remainingSeconds <= 0) return 0;
   return Math.ceil(remainingSeconds / (24 * 60 * 60));
 }
 
-export function formatRemainingDays(days: number | null): string {
-  if (days === null) return '';
-  if (days <= 0) return 'Ready';
-  if (days === 1) return '1 day remaining';
-  return `${days} days remaining`;
+/** "Held, 3d remaining" for a scan whose cooldown is not over. */
+export function formatHeld(days: number | null): string {
+  if (days === null) return 'Held';
+  if (days <= 0) return 'Held, cooldown over';
+  return `Held, ${days}d remaining`;
+}
+
+/** "3d 4h" for a number of seconds. */
+export function formatCooldown(seconds: number): string {
+  if (seconds <= 0) return '0h';
+  const days = Math.floor(seconds / 86400);
+  const hours = Math.floor((seconds % 86400) / 3600);
+  if (days === 0) return `${Math.max(hours, 1)}h`;
+  return hours ? `${days}d ${hours}h` : `${days}d`;
 }
 
 export function getRuntimeClusterNames(runtime?: RuntimeInventory): string[] {

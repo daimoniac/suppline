@@ -34,6 +34,14 @@ func sequenceDelta(text string, root, sync *yaml.Node) int {
 }
 
 func spliceEntry(text string, entry matchedEntry, key string, statement types.VEXStatement, delta int) (string, error) {
+	return spliceItem(text, entry, key, "id", statement.ID, func(dashPrefix string) string {
+		return formatStatement(dashPrefix, statement)
+	}, delta)
+}
+
+// spliceItem replaces the item of entry's key list whose field equals value,
+// or appends one, with the block format returns for the list's dash prefix.
+func spliceItem(text string, entry matchedEntry, key, field, value string, format func(dashPrefix string) string, delta int) (string, error) {
 	lines := strings.Split(text, "\n")
 	keyIndent := entryKeyIndent(lines, entry.node)
 	seq := mappingChild(entry.node, key)
@@ -43,7 +51,7 @@ func spliceEntry(text string, entry matchedEntry, key string, statement types.VE
 			dashPrefix = prefix
 		}
 	}
-	block := formatStatement(dashPrefix, statement)
+	block := format(dashPrefix)
 	if seq == nil || len(seq.Content) == 0 {
 		at := entryLastLine(lines, entry.node.Line, entry.limit)
 		if seq != nil {
@@ -57,7 +65,7 @@ func spliceEntry(text string, entry matchedEntry, key string, statement types.VE
 		return joinLines(insertAfter(lines, at, block)), nil
 	}
 	for i, item := range seq.Content {
-		if item.Kind != yaml.MappingNode || mappingScalar(item, "id") != statement.ID {
+		if item.Kind != yaml.MappingNode || mappingScalar(item, field) != value {
 			continue
 		}
 		next := entry.limit

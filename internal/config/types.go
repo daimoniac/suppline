@@ -146,6 +146,9 @@ type Defaults struct {
 	UserAgent            string           `yaml:"userAgent,omitempty"`
 
 	RescanInterval string `yaml:"x-rescanInterval,omitempty"`
+	// Cooldown is the default minimum time between suppline first seeing a
+	// digest upstream and publishing it on a tag. Empty or "0" disables it.
+	Cooldown string `yaml:"x-cooldown,omitempty"`
 	// Ignored: runtime usage follows each cluster's latest inventory report.
 	// Kept so existing configs still parse; loading one logs a warning.
 	RuntimeInUseWindow    string `yaml:"x-runtimeInUseWindow,omitempty"`
@@ -200,7 +203,11 @@ type SyncEntry struct {
 	SCAIValidityExtension string               `yaml:"x-scaiValidityExtension,omitempty"`
 	Policy                *PolicyConfig        `yaml:"x-policy,omitempty"`
 	VEXRepo               *bool                `yaml:"x-vex-repo,omitempty"`
-	Ignore                bool                 `yaml:"-"` // If true, suppline skips scanning this entry. The mirror still copies it.
+	// Cooldown overrides defaults.x-cooldown for this entry. "0" disables it.
+	Cooldown string `yaml:"x-cooldown,omitempty"`
+	// CooldownReleases skip the rest of the cooldown for single digests.
+	CooldownReleases []CooldownRelease `yaml:"x-cooldown-release,omitempty"`
+	Ignore           bool              `yaml:"-"` // If true, suppline skips scanning this entry. The mirror still copies it.
 }
 
 // UnmarshalYAML supports both x-suppline-ignore and the legacy x-supplineIgnore field names.
@@ -264,7 +271,15 @@ type Hook struct {
 
 // PolicyConfig represents a CEL-based security policy
 type PolicyConfig struct {
-	Expression        string `yaml:"expression"`
-	FailureMessage    string `yaml:"failureMessage,omitempty"`
-	MinimumReleaseAge string `yaml:"minimumReleaseAge,omitempty"`
+	Expression     string `yaml:"expression"`
+	FailureMessage string `yaml:"failureMessage,omitempty"`
+}
+
+// CooldownRelease is a recorded decision to skip the rest of one digest's
+// cooldown. It never skips the scan or the attestation.
+type CooldownRelease struct {
+	Digest string `yaml:"digest"`
+	Reason string `yaml:"reason,omitempty"`
+	Author string `yaml:"author,omitempty"`
+	At     string `yaml:"at,omitempty"`
 }

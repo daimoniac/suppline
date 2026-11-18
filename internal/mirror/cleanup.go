@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/daimoniac/suppline/internal/config"
+	"github.com/daimoniac/suppline/internal/registry"
 	"github.com/regclient/regclient"
 	"github.com/regclient/regclient/types/errs"
 	"github.com/regclient/regclient/types/ref"
@@ -101,6 +102,41 @@ func tagsToDelete(present, wanted, excludes []string, orphan func(string) (bool,
 	return out, nil
 }
 
+// splitHoldTags separates the runway's hold tags from the other tags. Sync
+// entry filters never select a hold tag, so filtering would delete them all.
+func splitHoldTags(tags []string) (others, holds []string) {
+	for _, tag := range tags {
+		if _, ok := registry.HoldTagDigest(tag); ok {
+			holds = append(holds, tag)
+			continue
+		}
+		others = append(others, tag)
+	}
+	return others, holds
+}
+
+// staleHoldTags returns the hold tags of digests the runway no longer holds.
+// When the runway cannot say which digests it holds, every hold tag stays:
+// deleting one would let registry GC remove a Held digest.
+func (m *runner) staleHoldTags(ctx context.Context, tgt string, holdTags []string) []string {
+	if len(holdTags) == 0 || m.runway == nil {
+		return nil
+	}
+	holding, err := m.runway.Holding(ctx, tgt)
+	if err != nil {
+		m.log.Warn("cannot read held digests; keeping every hold tag", "target", tgt, "error", err.Error())
+		return nil
+	}
+	var stale []string
+	for _, tag := range holdTags {
+		digest, _ := registry.HoldTagDigest(tag)
+		if _, ok := holding[digest]; !ok {
+			stale = append(stale, tag)
+		}
+	}
+	return stale
+}
+
 func (m *runner) findSyncEntriesForTarget(tgt string) []config.SyncEntry {
 	var entries []config.SyncEntry
 	for _, sync := range m.cfg.Sync {
@@ -130,12 +166,14 @@ func (m *runner) cleanupTags(ctx context.Context, tgt string) error {
 	if err != nil {
 		return err
 	}
+	tTagsList, holdTags := splitHoldTags(tTagsList)
 	toDelete, err := tagsToDelete(tTagsList, wanted, excludes, func(tag string) (bool, error) {
 		return isOrphanedDigestTag(ctx, m.rc, tgtRef, tag)
 	})
 	if err != nil {
 		return err
 	}
+	toDelete = append(toDelete, m.staleHoldTags(ctx, tgt, holdTags)...)
 
 	var errs []error
 	for _, tag := range toDelete {
