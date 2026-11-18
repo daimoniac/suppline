@@ -120,15 +120,15 @@ x-malicious-packages:
 
 ## PR 3: Re-matching and catching up after an outage
 
-`malicious.Rematcher`, registered through `Service.OnUpdate`:
-- **Incremental update** (new or changed entries): for each entry's (ecosystem, name), run `ListInventoryByPackage`, match versions, and collect the digests that hit.
-- **Full update** (first load, or recovery from stale): run `ListLatestScansWithMALStatus(unavailable, stale)` and do a full match against each digest's inventory.
-  - On a hit, the digest goes into the rescan set.
-  - On a miss, `UpdateMALCheck(ok, commit, snapshotAt)` updates the database record. The SCAI is not touched (ADR).
-- **Rescans:** each digest in the rescan set gets `GetLastScan` to find the repo and tag, then `scanenqueue.EnqueueUrgentRescan`. The queue already drops duplicates. Enqueue runs off the sync goroutine and respects ctx, because `Enqueue` blocks when the buffer is full.
-- **Metrics:** `suppline_malicious_rematch_rescans_total`, plus `suppline_malicious_findings{repository,in_use}`, set from the latest scans.
+`malicious.Rematcher`, registered through `Service.OnUpdate`. It runs on its own goroutine: `Notify` never blocks the sync, queued updates are merged, and a full or dropped update makes the next run full.
+- **Inventory names are stored normalised** (the index key), so an advisory finds images with one `(ecosystem, name)` lookup, e.g. `amzn_client` in the image vs `amzn-client` in the advisory.
+- **Rescan rule:** a digest is rescanned (urgent, per repository holding it) only when an advisory now matches that its latest scan did not record. Withdrawn entries never trigger a rescan; the next normal rescan clears them.
+- **Incremental update** (new or changed entries): for each entry's packages, `ListInventoryByPackage`, then match those digests against the changed entries only.
+- **Full update** (first load, re-clone, or recovery from stale): match every digest with an inventory against the whole index. This also catches advisories published while suppline was down. A latest scan recorded as `unavailable` or `stale` with nothing new gets `UpdateMaliciousCheck` (status ok, current snapshot); its SCAI is not touched (ADR).
+- **Store:** `ListInventoryDigests`, `ListInventoryByPackage`, `ListLatestDigestScans` (latest scan and one tag per repository), `UpdateMaliciousCheck`.
+- **Metrics:** `suppline_malicious_rematch_rescans_total`. The `suppline_malicious_findings{repository,in_use}` gauge moves to PR 4, where the scan data it needs gets a count column.
 
-**Tests:** a fake store and enqueuer covering an incremental hit or miss, a full catch-up with a hit (rescan queued) and a miss (record updated, no rescan), and a withdrawn entry (no rescan; the next normal rescan clears it).
+**Tests:** real SQLite store with a fake feed: full catch-up (hit queues a rescan, clean late check is confirmed, known findings are not rescanned again), incremental hits including crates.io name normalisation, nothing done while unavailable, and update coalescing.
 
 ---
 

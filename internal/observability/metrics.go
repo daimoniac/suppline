@@ -45,6 +45,7 @@ type Metrics struct {
 	MaliciousLastSync   prometheus.Gauge
 	MaliciousSyncErrors prometheus.Counter
 	MaliciousPackages   *prometheus.GaugeVec
+	MaliciousRescans    prometheus.Counter
 }
 
 var (
@@ -159,6 +160,10 @@ func GetMetrics() *Metrics {
 				Name: "suppline_malicious_db_packages",
 				Help: "Number of packages with an active malicious-package advisory, by ecosystem",
 			}, []string{"ecosystem"}),
+			MaliciousRescans: promauto.NewCounter(prometheus.CounterOpts{
+				Name: "suppline_malicious_rematch_rescans_total",
+				Help: "Total number of rescans queued because a new malicious-package advisory matched a stored image",
+			}),
 		}
 	})
 	return metricsInstance

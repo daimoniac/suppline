@@ -283,3 +283,8 @@ func (s *Service) reportHealth(syncErr string) {
 	}
 	s.health.UpdateComponentHealth(HealthComponent, observability.StatusHealthy, message)
 }
+
+// Ecosystems returns the ecosystems the service indexes.
+func (s *Service) Ecosystems() []string {
+	return append([]string(nil), s.cfg.Ecosystems...)
+}

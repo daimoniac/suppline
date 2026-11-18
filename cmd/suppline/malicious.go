@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"fmt"
 	"log/slog"
 
@@ -8,6 +9,7 @@ import (
 	"github.com/daimoniac/suppline/internal/gitops"
 	"github.com/daimoniac/suppline/internal/malicious"
 	"github.com/daimoniac/suppline/internal/observability"
+	"github.com/daimoniac/suppline/internal/scanenqueue"
 )
 
 // newMaliciousService builds the malicious-package feed from x-malicious-packages.
@@ -38,4 +40,14 @@ func newMaliciousService(cfg *config.MaliciousPackagesConfig, health *observabil
 		"sync_interval", cfg.Interval().String(),
 		"stale_after", cfg.Staleness().String())
 	return service, nil
+}
+
+// maliciousRescanQueue queues urgent rescans for the malicious-package rematcher.
+type maliciousRescanQueue struct {
+	enqueuer *scanenqueue.Enqueuer
+}
+
+func (q maliciousRescanQueue) RescanMalicious(ctx context.Context, repository, digest, tag string) error {
+	_, err := q.enqueuer.EnqueueUrgentRescan(ctx, scanenqueue.Image{Repository: repository, Digest: digest, Tag: tag})
+	return err
 }

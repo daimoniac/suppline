@@ -40,13 +40,50 @@ func CheckPackages(snapshot Snapshot, packages []Package) *types.MaliciousCheck 
 	return check
 }
 
-// PackageRefs converts packages for storage.
+// PackageRefs converts packages for storage. Names are stored in the
+// normalised form the index is keyed on, so a stored package can be found by
+// an advisory's package name with an exact lookup.
 func PackageRefs(packages []Package) []types.PackageRef {
 	refs := make([]types.PackageRef, 0, len(packages))
 	for _, pkg := range packages {
-		refs = append(refs, types.PackageRef{Ecosystem: pkg.Ecosystem, Name: pkg.Name, Version: pkg.Version, PURL: pkg.PURL})
+		refs = append(refs, types.PackageRef{
+			Ecosystem: pkg.Ecosystem,
+			Name:      normalizeName(pkg.Ecosystem, pkg.Name),
+			Version:   pkg.Version,
+			PURL:      pkg.PURL,
+		})
 	}
 	return refs
+}
+
+// AffectedPackages lists the (ecosystem, normalised name) pairs an entry
+// covers, restricted to the given ecosystems.
+func AffectedPackages(entry *Entry, ecosystems []string) []types.PackageRef {
+	if entry == nil || entry.Withdrawn != "" {
+		return nil
+	}
+	if len(ecosystems) == 0 {
+		ecosystems = DefaultEcosystems
+	}
+	allowed := make(map[string]bool, len(ecosystems))
+	for _, ecosystem := range ecosystems {
+		allowed[ecosystem] = true
+	}
+	seen := make(map[packageKey]bool)
+	var out []types.PackageRef
+	for _, affected := range entry.Affected {
+		ecosystem := affected.Package.Ecosystem
+		if !allowed[ecosystem] {
+			continue
+		}
+		key := packageKey{ecosystem: ecosystem, name: normalizeName(ecosystem, affected.Package.Name)}
+		if seen[key] {
+			continue
+		}
+		seen[key] = true
+		out = append(out, types.PackageRef{Ecosystem: key.ecosystem, Name: key.name})
+	}
+	return out
 }
 
 // Packages converts stored package references back for matching.

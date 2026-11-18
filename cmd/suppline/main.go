@@ -18,6 +18,7 @@ import (
 	"github.com/daimoniac/suppline/internal/config"
 	"github.com/daimoniac/suppline/internal/configedit"
 	"github.com/daimoniac/suppline/internal/configreload"
+	"github.com/daimoniac/suppline/internal/malicious"
 	"github.com/daimoniac/suppline/internal/mirror"
 	"github.com/daimoniac/suppline/internal/observability"
 	"github.com/daimoniac/suppline/internal/policy"
@@ -382,7 +383,14 @@ func run() error {
 	}()
 
 	if maliciousService != nil {
-		wg.Add(1)
+		rematcher := malicious.NewRematcher(maliciousService, scanReads, maliciousRescanQueue{enqueuer: scanEnqueuer},
+			observability.GetMetrics().MaliciousRescans, logger.With("module", "malicious"))
+		maliciousService.OnUpdate(rematcher.Notify)
+		wg.Add(2)
+		go func() {
+			defer wg.Done()
+			rematcher.Run(ctx)
+		}()
 		go func() {
 			defer wg.Done()
 			maliciousService.Run(ctx)
