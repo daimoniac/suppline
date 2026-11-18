@@ -185,7 +185,7 @@ func (m *Manager) CommitFile(ctx context.Context, spec Spec, relPath string, mut
 				return "", err
 			}
 		}
-		auth, err := spec.Auth.transport(m.knownHostsPath(spec))
+		auth, err := spec.Auth.Transport(m.knownHostsPath(spec))
 		if err != nil {
 			return "", err
 		}
@@ -209,7 +209,7 @@ func (m *Manager) syncLocked(ctx context.Context, spec Spec) (Checkout, error) {
 	if err := os.MkdirAll(m.Base, 0o750); err != nil {
 		return Checkout{}, fmt.Errorf("create checkout dir: %w", err)
 	}
-	auth, err := spec.Auth.transport(m.knownHostsPath(spec))
+	auth, err := spec.Auth.Transport(m.knownHostsPath(spec))
 	if err != nil {
 		return Checkout{}, err
 	}
@@ -296,7 +296,9 @@ func commitWorktree(repo *git.Repository, spec Spec, relPath, message string) (s
 	return hash.String(), nil
 }
 
-func (a Auth) transport(knownHostsPath string) (transport.AuthMethod, error) {
+// Transport converts the credentials to a go-git auth method. SSH auth writes
+// the known_hosts data to knownHostsPath. An empty Auth returns nil (anonymous).
+func (a Auth) Transport(knownHostsPath string) (transport.AuthMethod, error) {
 	if len(a.PrivateKey) > 0 {
 		if len(a.KnownHosts) == 0 {
 			return nil, fmt.Errorf("ssh auth requires known_hosts")

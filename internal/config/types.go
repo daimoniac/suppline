@@ -89,6 +89,8 @@ type RegsyncConfig struct {
 	Defaults Defaults             `yaml:"defaults"`
 	Sync     []SyncEntry          `yaml:"sync"`
 	Triage   *TriageConfig        `yaml:"x-triage,omitempty"`
+	// MaliciousPackages configures known-malicious package detection.
+	MaliciousPackages *MaliciousPackagesConfig `yaml:"x-malicious-packages,omitempty"`
 }
 
 // RegistryCredential contains authentication information for a registry.

@@ -175,7 +175,7 @@ func justificationSet(values []string) map[types.VEXJustification]struct{} {
 func (s Settings) contextSpecs() ([]gitops.Spec, error) {
 	specs := make([]gitops.Spec, 0, len(s.Context))
 	for _, repo := range s.Context {
-		auth, err := resolveAuth(repo.Auth)
+		auth, err := gitops.ResolveAuth(repo.Auth)
 		if err != nil {
 			return nil, fmt.Errorf("context repo %s: %w", repo.URL, err)
 		}
@@ -193,7 +193,7 @@ func (s Settings) configSpec() (gitops.Spec, error) {
 	if s.ConfigRepo == nil {
 		return gitops.Spec{}, fmt.Errorf("no config repo")
 	}
-	auth, err := resolveAuth(s.ConfigRepo.Auth)
+	auth, err := gitops.ResolveAuth(s.ConfigRepo.Auth)
 	if err != nil {
 		return gitops.Spec{}, err
 	}
@@ -205,30 +205,6 @@ func (s Settings) configSpec() (gitops.Spec, error) {
 		AuthorName:  s.ConfigRepo.Author.Name,
 		AuthorEmail: s.ConfigRepo.Author.Email,
 	}, nil
-}
-
-func resolveAuth(cfg config.GitAuthConfig) (gitops.Auth, error) {
-	switch cfg.Type {
-	case config.GitAuthHTTPSToken:
-		token := os.Getenv(cfg.Env)
-		if strings.TrimSpace(token) == "" {
-			return gitops.Auth{}, fmt.Errorf("environment variable %s is empty", cfg.Env)
-		}
-		return gitops.Auth{Username: cfg.Username, Token: token}, nil
-	case config.GitAuthSSH:
-		key := os.Getenv(cfg.KeyEnv)
-		hosts := os.Getenv(cfg.KnownHostsEnv)
-		if strings.TrimSpace(key) == "" || strings.TrimSpace(hosts) == "" {
-			return gitops.Auth{}, fmt.Errorf("environment variables %s and %s are required", cfg.KeyEnv, cfg.KnownHostsEnv)
-		}
-		return gitops.Auth{
-			Username:   cfg.Username,
-			PrivateKey: gitops.NormalizeSecret(key),
-			KnownHosts: gitops.NormalizeSecret(hosts),
-		}, nil
-	default:
-		return gitops.Auth{}, fmt.Errorf("unsupported git auth type %q", cfg.Type)
-	}
 }
 
 // ConfigTarget says where config edits go: the config repository when one is

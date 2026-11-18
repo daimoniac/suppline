@@ -9,12 +9,14 @@ require (
 	github.com/Masterminds/semver/v3 v3.5.0
 	github.com/go-git/go-git/v5 v5.19.3
 	github.com/google/go-containerregistry v0.22.1
+	github.com/google/osv-scalibr v0.5.3
 	github.com/jackc/pgx/v5 v5.13.0
 	github.com/joho/godotenv v1.5.1
 	github.com/leanovate/gopter v0.2.11
 	github.com/mattn/go-sqlite3 v1.14.53
 	github.com/olareg/olareg v0.2.2
 	github.com/opencontainers/go-digest v1.0.0
+	github.com/package-url/packageurl-go v0.1.7
 	github.com/prometheus/client_golang v1.25.0
 	github.com/regclient/regclient v0.11.7
 	github.com/robfig/cron/v3 v3.0.1

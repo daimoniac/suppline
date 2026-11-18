@@ -27,6 +27,11 @@ defaults:
   x-scaiValidityExtension: 7d
   x-vex-repo: false
 
+# Malicious-package detection clones ossf/malicious-packages (a few hundred MB);
+# off here so the eval boots fast.
+x-malicious-packages:
+  enabled: false
+
 sync:
   # Guaranteed pass so first-run always produces attestations (demo policy).
   - source: public.ecr.aws/docker/library/busybox:1.36.1

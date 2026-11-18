@@ -40,6 +40,11 @@ type Metrics struct {
 	TriageTokens          prometheus.Counter
 	TriagePushFailures    prometheus.Counter
 	TriageBudgetExhausted prometheus.Gauge
+
+	// Malicious-package feed metrics
+	MaliciousLastSync   prometheus.Gauge
+	MaliciousSyncErrors prometheus.Counter
+	MaliciousPackages   *prometheus.GaugeVec
 }
 
 var (
@@ -142,6 +147,18 @@ func GetMetrics() *Metrics {
 				Name: "suppline_triage_budget_exhausted",
 				Help: "1 when the daily triage token budget is exhausted",
 			}),
+			MaliciousLastSync: promauto.NewGauge(prometheus.GaugeOpts{
+				Name: "suppline_malicious_db_last_sync_success_timestamp_seconds",
+				Help: "Unix time of the last successful malicious-packages sync",
+			}),
+			MaliciousSyncErrors: promauto.NewCounter(prometheus.CounterOpts{
+				Name: "suppline_malicious_db_sync_errors_total",
+				Help: "Total number of failed malicious-packages syncs",
+			}),
+			MaliciousPackages: promauto.NewGaugeVec(prometheus.GaugeOpts{
+				Name: "suppline_malicious_db_packages",
+				Help: "Number of packages with an active malicious-package advisory, by ecosystem",
+			}, []string{"ecosystem"}),
 		}
 	})
 	return metricsInstance

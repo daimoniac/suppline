@@ -315,6 +315,11 @@ func run() error {
 		return policy.NewEngine(quiet, cfg)
 	})
 
+	maliciousService, err := newMaliciousService(regsyncCfg.MaliciousPackages, healthChecker, logger)
+	if err != nil {
+		return fmt.Errorf("failed to initialize malicious-package detection: %w", err)
+	}
+
 	var apiServer *api.APIServer
 	if cfg.API.Enabled {
 		logger.Debug("initializing API server",
@@ -371,6 +376,14 @@ func run() error {
 		defer wg.Done()
 		vexAudit.Run(ctx)
 	}()
+
+	if maliciousService != nil {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			maliciousService.Run(ctx)
+		}()
+	}
 
 	wg.Add(1)
 	go func() {

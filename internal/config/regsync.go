@@ -521,5 +521,8 @@ func (c *RegsyncConfig) ValidateVEXStatements() error {
 	if err := c.Triage.Validate(); err != nil {
 		return err
 	}
+	if err := c.MaliciousPackages.Validate(); err != nil {
+		return err
+	}
 	return nil
 }
