@@ -210,3 +210,20 @@ func TestRematchCatchUpAfterFullRematch(t *testing.T) {
 		t.Fatalf("the late clean digest should be confirmed, got %+v", c)
 	}
 }
+
+// An image without language packages has no inventory rows; a full re-match
+// must still confirm a check recorded as unavailable (seen in production).
+func TestRematchFullConfirmsImageWithoutPackages(t *testing.T) {
+	f := newRematchFixture(t)
+	f.scan(digestLate, &types.MaliciousCheck{Status: types.MaliciousCheckUnavailable})
+	f.service.Sync(context.Background())
+	if err := f.r.Process(context.Background(), Update{Full: true}); err != nil {
+		t.Fatal(err)
+	}
+	if c := f.check(digestLate); c == nil || c.Status != types.MaliciousCheckOK {
+		t.Fatalf("expected the check to be confirmed, got %+v", c)
+	}
+	if got := f.queue.take(); len(got) != 0 {
+		t.Fatalf("nothing to rescan, got %v", got)
+	}
+}

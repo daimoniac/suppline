@@ -120,19 +120,24 @@ func (r *Rematcher) Process(ctx context.Context, update Update) error {
 	if snapshot.Status == StatusUnavailable {
 		return nil
 	}
+	var handled map[string]bool
 	if update.Full {
-		return r.full(ctx, snapshot)
-	}
-	if err := r.incremental(ctx, snapshot, update.Changed); err != nil {
+		var err error
+		if handled, err = r.full(ctx, snapshot); err != nil {
+			return err
+		}
+	} else if err := r.incremental(ctx, snapshot, update.Changed); err != nil {
 		return err
 	}
-	return r.catchUp(ctx, snapshot)
+	// Also covers images with no language packages: they have no inventory
+	// rows, so the full re-match never visits them.
+	return r.catchUp(ctx, snapshot, handled)
 }
 
 // catchUp matches digests whose latest scan ran while the index was
 // unavailable or stale. A full re-match covers them too, but a scan that
 // checked before the index loaded can be saved after that re-match ran.
-func (r *Rematcher) catchUp(ctx context.Context, snapshot Snapshot) error {
+func (r *Rematcher) catchUp(ctx context.Context, snapshot Snapshot, skip map[string]bool) error {
 	if snapshot.Status != StatusOK {
 		return nil
 	}
@@ -140,11 +145,15 @@ func (r *Rematcher) catchUp(ctx context.Context, snapshot Snapshot) error {
 	if err != nil {
 		return fmt.Errorf("list unchecked digests: %w", err)
 	}
-	rescanned, confirmed := 0, 0
+	rescanned, confirmed, visited := 0, 0, 0
 	for _, digest := range digests {
 		if ctx.Err() != nil {
 			return ctx.Err()
 		}
+		if skip[digest] {
+			continue
+		}
+		visited++
 		refs, err := r.store.ListPackageInventory(ctx, digest)
 		if err != nil {
 			return fmt.Errorf("list inventory of %s: %w", digest, err)
@@ -156,39 +165,41 @@ func (r *Rematcher) catchUp(ctx context.Context, snapshot Snapshot) error {
 		rescanned += n
 		confirmed += c
 	}
-	if len(digests) > 0 {
+	if visited > 0 {
 		r.logger.Info("malicious-packages catch-up finished",
-			"digests", len(digests), "rescans_queued", rescanned, "checks_confirmed", confirmed)
+			"digests", visited, "rescans_queued", rescanned, "checks_confirmed", confirmed)
 	}
 	return nil
 }
 
-// full re-matches every digest with a stored inventory.
-func (r *Rematcher) full(ctx context.Context, snapshot Snapshot) error {
+// full re-matches every digest with a stored inventory and returns them.
+func (r *Rematcher) full(ctx context.Context, snapshot Snapshot) (map[string]bool, error) {
 	digests, err := r.store.ListInventoryDigests(ctx)
 	if err != nil {
-		return fmt.Errorf("list inventory digests: %w", err)
+		return nil, fmt.Errorf("list inventory digests: %w", err)
 	}
+	handled := make(map[string]bool, len(digests))
 	rescanned, confirmed := 0, 0
 	for _, digest := range digests {
 		if ctx.Err() != nil {
-			return ctx.Err()
+			return nil, ctx.Err()
 		}
 		refs, err := r.store.ListPackageInventory(ctx, digest)
 		if err != nil {
-			return fmt.Errorf("list inventory of %s: %w", digest, err)
+			return nil, fmt.Errorf("list inventory of %s: %w", digest, err)
 		}
 		check := CheckPackages(snapshot, Packages(refs))
 		n, c, err := r.reconcile(ctx, digest, check, true)
 		if err != nil {
-			return err
+			return nil, err
 		}
+		handled[digest] = true
 		rescanned += n
 		confirmed += c
 	}
 	r.logger.Info("malicious-packages full re-match finished",
 		"digests", len(digests), "rescans_queued", rescanned, "checks_confirmed", confirmed)
-	return nil
+	return handled, nil
 }
 
 // incremental re-matches only digests holding a package that a changed entry
