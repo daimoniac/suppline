@@ -297,11 +297,6 @@ func (s *APIServer) authMiddleware(next http.HandlerFunc, requireWrite bool) htt
 
 // Start starts the API server
 func (s *APIServer) Start(ctx context.Context) error {
-	if !s.config.Enabled {
-		s.logger.Info("API server is disabled")
-		return nil
-	}
-
 	s.logger.Info("starting API server",
 		"port", s.config.Port)
 

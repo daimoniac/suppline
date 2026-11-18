@@ -111,8 +111,8 @@ k8s-restart: ## Restart Kubernetes deployment
 	kubectl rollout restart deployment/suppline -n suppline
 
 k8s-port-forward: ## Port forward to access services locally
-	@echo "Forwarding ports: API=8080, Metrics=9090, Health=8081"
-	kubectl port-forward -n suppline svc/suppline 8080:8080 9090:9090 8081:8081
+	@echo "Forwarding ports: UI/API=8080, metrics+health=9090"
+	kubectl port-forward -n suppline svc/suppline 8080:8080 9090:9090
 
 # Helm targets
 helm-package: ## Package Helm chart

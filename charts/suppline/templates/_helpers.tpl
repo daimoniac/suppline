@@ -60,10 +60,50 @@ Create the name of the service account to use
 {{- end }}
 
 {{/*
-URL path of the web UI and API: backend.basePath without a trailing slash, or "/".
+suppline.yml as mounted into the pod: backend.supplineConfig, or the chart's example file.
+*/}}
+{{- define "suppline.configText" -}}
+{{- if .Values.backend.supplineConfig -}}
+{{ .Values.backend.supplineConfig }}
+{{- else -}}
+{{- $cfg := .Files.Get "suppline.yml" -}}
+{{- if not $cfg -}}
+{{- fail "charts/suppline/suppline.yml is missing; set backend.supplineConfig or restore the chart example file" -}}
+{{- end -}}
+{{ $cfg }}
+{{- end -}}
+{{- end }}
+
+{{/*
+suppline.yml parsed, for the runtime settings the chart needs (ports, base path).
+*/}}
+{{- define "suppline.config" -}}
+{{- $c := fromYaml (include "suppline.configText" .) -}}
+{{- if hasKey $c "Error" -}}
+{{- fail (printf "suppline.yml is not valid YAML: %s" (get $c "Error")) -}}
+{{- end -}}
+{{- toJson $c -}}
+{{- end }}
+
+{{/*
+server.port from suppline.yml (default 8080).
+*/}}
+{{- define "suppline.apiPort" -}}
+{{- dig "server" "port" 8080 (include "suppline.config" . | fromJson) | int -}}
+{{- end }}
+
+{{/*
+observability.port from suppline.yml (default 9090): /metrics, /health and /ready.
+*/}}
+{{- define "suppline.opsPort" -}}
+{{- dig "observability" "port" 9090 (include "suppline.config" . | fromJson) | int -}}
+{{- end }}
+
+{{/*
+server.basePath from suppline.yml without a trailing slash, or "/".
 */}}
 {{- define "suppline.basePath" -}}
-{{- $p := trimSuffix "/" (default "" .Values.backend.basePath) -}}
+{{- $p := trimSuffix "/" (dig "server" "basePath" "" (include "suppline.config" . | fromJson) | toString) -}}
 {{- if $p }}{{ $p }}{{ else }}/{{ end -}}
 {{- end }}
 
@@ -99,7 +139,6 @@ Generate or use registry password
 {{/*
 Fetch registry certificate init container
 Fetches TLS certificate from the registry and creates a CA bundle
-Used by both backend (statefulset) and regsync (deployment)
 */}}
 {{- define "suppline.registryCertInitContainer" -}}
 - name: fetch-registry-cert

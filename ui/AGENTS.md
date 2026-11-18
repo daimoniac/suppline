@@ -96,7 +96,7 @@ All routes live in `src/App.tsx`. The app renders `<LoginPage />` full-screen wh
 
 `APIClient` is a class instantiated once by `AuthContext` and passed down via `useAuth().apiClient`.
 
-- **Base URL**: `basePath` from `src/lib/basePath.ts` (same origin). The backend can run under a prefix (`SUPPLINE_BASE_PATH`) and injects `<base href="{prefix}/">` into `index.html`; `basePath` reads it, and `App.tsx` passes it to `BrowserRouter` as `basename`. In dev there is no `<base>`, so it is `''` and Vite proxies `/api` to the backend.
+- **Base URL**: `basePath` from `src/lib/basePath.ts` (same origin). The backend can run under a prefix (`server.basePath` in suppline.yml) and injects `<base href="{prefix}/">` into `index.html`; `basePath` reads it, and `App.tsx` passes it to `BrowserRouter` as `basename`. In dev there is no `<base>`, so it is `''` and Vite proxies `/api` to the backend.
 - **Auth**: Every request sends `Authorization: Bearer <key>`. Key stored in `localStorage` under `stk_api_key`.
 - **Retry**: `TypeError` (network failure) retried up to 3 times with 1 s / 2 s / 3 s backoff. HTTP errors (`APIError`) are **not** retried.
 - **Pagination**: large lists (`/repositories`, `/vulnerabilities`) use `limit` + `offset` query params and read `X-Total-Count` from the response header. Use `requestWithResponse` for those.

@@ -30,7 +30,7 @@ To learn more about the release, try:
   kubectl logs --namespace {{ .Release.Namespace }} -l "app.kubernetes.io/name={{ include "suppline.name" . }},app.kubernetes.io/instance={{ .Release.Name }}" -c suppline
 
 4. View metrics:
-  kubectl --namespace {{ .Release.Namespace }} port-forward $POD_NAME 9090:{{ .Values.backend.service.metricsPort }}
+  kubectl --namespace {{ .Release.Namespace }} port-forward $POD_NAME 9090:{{ include "suppline.opsPort" . }}
   
   Then visit http://127.0.0.1:9090/metrics
 
@@ -47,7 +47,7 @@ suppline.yml targets are set. Optional lab registry: --set registry.enabled=true
 {{- if not (hasKey .Values.backend.secrets "SUPPLINE_API_KEY") }}
 
 WARNING: SUPPLINE_API_KEY is not set. The API refuses to start unless you set
-backend.secrets.SUPPLINE_API_KEY or SUPPLINE_ALLOW_NO_AUTH=1.
+backend.secrets.SUPPLINE_API_KEY or server.allowNoAuth: true in suppline.yml.
 {{- end }}
 
 {{- if not .Values.backend.attestationKey.enabled }}

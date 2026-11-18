@@ -132,7 +132,7 @@ func RemoveSyncTargets(document []byte, targets []string) ([]byte, int, error) {
 	return []byte(text), len(edits), nil
 }
 
-// RemoveVEXStatements deletes x-vex and x-vex-auto items with the given ids
+// RemoveVEXStatements deletes vex and vex-auto items with the given ids
 // from defaults and every sync entry. A list key is removed with its last
 // item, so an emptied list is not left behind as a null key.
 func RemoveVEXStatements(document []byte, ids []string) ([]byte, int, error) {
@@ -165,7 +165,7 @@ func RemoveVEXStatements(document []byte, ids []string) ([]byte, int, error) {
 }
 
 // SyncVEXRef names one statement stored on the sync entries of a repository.
-// Source is the key it is written under: "x-vex" or "x-vex-auto".
+// Source is the key it is written under: "vex" or "vex-auto".
 type SyncVEXRef struct {
 	Repository string
 	ID         string
@@ -187,7 +187,7 @@ func RemoveSyncVEXStatements(document []byte, refs []SyncVEXRef) ([]byte, int, e
 		if repository == "" || id == "" {
 			return nil, 0, fmt.Errorf("VEX repository and id must not be empty")
 		}
-		if ref.Source != "x-vex" && ref.Source != "x-vex-auto" {
+		if ref.Source != "vex" && ref.Source != "vex-auto" {
 			return nil, 0, fmt.Errorf("unknown VEX source %q", ref.Source)
 		}
 		if wanted[repository] == nil {
@@ -275,15 +275,15 @@ func matchesAnyTarget(target, kind string, wanted []string) (bool, error) {
 }
 
 func vexSpans(lines []string, mapping *yaml.Node, ids []string, limit int) []spanEdit {
-	return vexSpansByKey(lines, mapping, map[string][]string{"x-vex": ids, "x-vex-auto": ids}, limit)
+	return vexSpansByKey(lines, mapping, map[string][]string{"vex": ids, "vex-auto": ids}, limit)
 }
 
 // vexSpansByKey finds items to delete under each VEX list key, using the ids
 // wanted for that key only. When every item under a key is deleted, the key
-// line is included so the file does not keep an empty x-vex or x-vex-auto.
+// line is included so the file does not keep an empty vex or vex-auto.
 func vexSpansByKey(lines []string, mapping *yaml.Node, idsByKey map[string][]string, limit int) []spanEdit {
 	var edits []spanEdit
-	for _, key := range []string{"x-vex", "x-vex-auto"} {
+	for _, key := range []string{"vex", "vex-auto"} {
 		ids := idsByKey[key]
 		if len(ids) == 0 {
 			continue

@@ -22,7 +22,7 @@ var testUIFiles = fstest.MapFS{
 
 func newUITestServer(t *testing.T, basePath string) http.Handler {
 	t.Helper()
-	cfg := &config.APIConfig{Enabled: true, Port: 8080, BasePath: basePath}
+	cfg := &config.APIConfig{Port: 8080, BasePath: basePath}
 	server := NewAPIServer(cfg, mockAttestationConfig(), &mockStateStore{}, queue.NewInMemoryQueue(10), mockRegsyncConfig(), observability.NewLogger("error"))
 	h, err := server.rootHandler(testUIFiles)
 	if err != nil {

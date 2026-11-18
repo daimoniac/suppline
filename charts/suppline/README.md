@@ -61,7 +61,7 @@ backend:
         user: '{{ env "SUPPLINE_REGISTRY_USERNAME" }}'
         pass: '{{ env "SUPPLINE_REGISTRY_PASSWORD" }}'
     defaults:
-      x-policy:
+      policy:
         expression: "criticalCount == 0"
     sync:
       - source: public.ecr.aws/docker/library/alpine:3.20.3
@@ -97,11 +97,8 @@ Data PVCs may be retained (`helm.sh/resource-policy: keep`) so reinstalls can re
 | `backend.supplineConfig` | Inline `suppline.yml` (overrides chart file) | unset (use chart `suppline.yml`) |
 | `backend.attestationKey.enabled` | Sign attestations | `true` |
 | `backend.secrets.*` | API key, cosign key, registry creds | via secrets file |
-| `backend.basePath` | URL prefix for the UI and API (e.g. `/suppline`); also the ingress path | `""` → `/` |
-| `ingress.enabled` | Ingress to the UI and API on the backend service | `false` |
+| `ingress.enabled` | Ingress to the UI and API on the backend service; its path is `server.basePath` from suppline.yml | `false` |
 | `ingress.hosts` | Host names for the ingress | `[suppline.example.com]` |
-| `mirror.enabled` | Copy images in the suppline process | `true` |
-| `regsync.enabled` | Deploy the regsync sidecar (rollback; cannot be combined with `mirror.enabled`) | `false` |
 | `registry.enabled` | Bundled registry | `false` (BYO) |
 | `postgres.enabled` | Bundled PostgreSQL | `true` |
 | `persistence.data.enabled` | SQLite PVC (ignored while Postgres is enabled; `/data` is then an emptyDir and the malicious-packages feed is cloned again after each restart) | `true` |

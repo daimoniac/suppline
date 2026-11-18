@@ -697,7 +697,7 @@ func buildVEXExpiryPrompt(entries []VEXExpiryTaskEntry) string {
 
 	var b strings.Builder
 	b.WriteString("Update suppline.yml VEX statements that are expired or expiring soon.\n")
-	b.WriteString("For each entry, either extend expires_at with a justified new date or remove the x-vex statement if no longer needed.\n")
+	b.WriteString("For each entry, either extend expires_at with a justified new date or remove the vex statement if no longer needed.\n")
 
 	for _, entry := range entries {
 		b.WriteString("- cve_id: ")

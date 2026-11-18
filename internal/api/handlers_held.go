@@ -90,7 +90,7 @@ func (s *APIServer) handleListHeldDigests(w http.ResponseWriter, r *http.Request
 
 // handleReleaseCooldown records a Cooldown release for one Held digest.
 // @Summary Release a held digest from its cooldown
-// @Description Writes x-cooldown-release on the repository's sync entries. The release skips the rest of the cooldown only; the digest still needs a passing scan and attestation before its tag moves.
+// @Description Writes cooldown-release on the repository's sync entries. The release skips the rest of the cooldown only; the digest still needs a passing scan and attestation before its tag moves.
 // @Tags Mirror
 // @Accept json
 // @Produce json

@@ -90,7 +90,7 @@ func NewService(source *Source, cfg ServiceConfig, health HealthReporter, metric
 func newService(source feed, cfg ServiceConfig, health HealthReporter, metrics *observability.Metrics, logger *slog.Logger) (*Service, error) {
 	for _, ecosystem := range cfg.Ecosystems {
 		if !KnownEcosystem(ecosystem) {
-			return nil, fmt.Errorf("x-malicious-packages.ecosystems: unsupported ecosystem %q (supported: %v)", ecosystem, DefaultEcosystems)
+			return nil, fmt.Errorf("malicious-packages.ecosystems: unsupported ecosystem %q (supported: %v)", ecosystem, DefaultEcosystems)
 		}
 	}
 	if len(cfg.Ecosystems) == 0 {

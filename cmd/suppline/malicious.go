@@ -12,7 +12,7 @@ import (
 	"github.com/daimoniac/suppline/internal/scanenqueue"
 )
 
-// newMaliciousService builds the malicious-package feed from x-malicious-packages.
+// newMaliciousService builds the malicious-package feed from malicious-packages.
 // It returns nil when the feature is disabled.
 func newMaliciousService(cfg *config.MaliciousPackagesConfig, health *observability.HealthChecker, logger *slog.Logger) (*malicious.Service, error) {
 	if !cfg.IsEnabled() {
@@ -21,7 +21,7 @@ func newMaliciousService(cfg *config.MaliciousPackagesConfig, health *observabil
 	}
 	auth, err := gitops.ResolveAuth(cfg.RepoAuth())
 	if err != nil {
-		return nil, fmt.Errorf("x-malicious-packages.repo.auth: %w", err)
+		return nil, fmt.Errorf("malicious-packages.repo.auth: %w", err)
 	}
 	moduleLogger := logger.With("module", "malicious")
 	source := malicious.NewSource(cfg.RepoURL(), cfg.RepoRef(), auth, cfg.Dir(), cfg.EcosystemList(), moduleLogger)

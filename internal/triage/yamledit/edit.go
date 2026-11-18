@@ -13,9 +13,9 @@ import (
 )
 
 // Upsert inserts or replaces one auto-VEX statement on every sync entry whose
-// target repository matches. x-vex is never modified.
+// target repository matches. vex is never modified.
 func Upsert(document []byte, repository string, statement types.VEXStatement) ([]byte, error) {
-	return upsertList(document, repository, "x-vex-auto", statement)
+	return upsertList(document, repository, "vex-auto", statement)
 }
 
 // UpsertMany inserts or replaces several auto-VEX statements in one pass over
@@ -32,10 +32,10 @@ func UpsertMany(document []byte, repository string, statements []types.VEXStatem
 	return out, nil
 }
 
-// UpsertManual inserts or replaces one hand-written x-vex statement.
-// x-vex-auto is never modified.
+// UpsertManual inserts or replaces one hand-written vex statement.
+// vex-auto is never modified.
 func UpsertManual(document []byte, repository string, statement types.VEXStatement) ([]byte, error) {
-	return upsertList(document, repository, "x-vex", statement)
+	return upsertList(document, repository, "vex", statement)
 }
 
 func upsertList(document []byte, repository, key string, statement types.VEXStatement) ([]byte, error) {
@@ -110,7 +110,7 @@ func spliceMatching(document []byte, repository, key string, splice func(text st
 }
 
 // isVEXList reports a sequence, or a null left after every entry was removed.
-// A cleared list is often left as "x-vex-auto:" or "x-vex-auto: null".
+// A cleared list is often left as "vex-auto:" or "vex-auto: null".
 func isVEXList(node *yaml.Node) bool {
 	if node == nil {
 		return false

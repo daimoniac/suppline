@@ -82,23 +82,20 @@ COPY --from=builder /build/suppline /app/suppline
 # Switch to non-root user
 USER suppline
 
-# Expose ports
-# 8080: API server and web UI
-# 9090: Metrics
-# 8081: Health checks
-EXPOSE 8080 9090 8081
+# Expose ports (defaults; set in suppline.yml)
+# 8080: web UI, API and Swagger (server.port)
+# 9090: metrics and health (observability.port)
+EXPOSE 8080 9090
 
-# Set default environment variables
-ENV SUPPLINE_CONFIG=/config/suppline.yml \
-    SQLITE_PATH=/data/suppline.db \
-    LOG_LEVEL=info \
-    METRICS_PORT=9090 \
-    HEALTH_PORT=8081 \
-    API_PORT=8080 \
-    API_ENABLED=true
+# Runtime settings live in suppline.yml; only secrets come from the environment.
+ENV SUPPLINE_CONFIG=/config/suppline.yml
+
+# Relative paths in suppline.yml (the default store.sqlitePath is suppline.db)
+# resolve inside the writable data volume.
+WORKDIR /data
 
 # Health check
 HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
-    CMD wget --no-verbose --tries=1 --spider http://localhost:8081/health || exit 1
+    CMD wget --no-verbose --tries=1 --spider http://localhost:9090/health || exit 1
 
 ENTRYPOINT ["/app/suppline"]

@@ -18,7 +18,7 @@ const (
 	defaultKEVFeed = "https://www.cisa.gov/sites/default/files/feeds/known_exploited_vulnerabilities.json"
 )
 
-// Settings is the resolved runtime view of x-triage.
+// Settings is the resolved runtime view of triage.
 type Settings struct {
 	Enabled          bool
 	OnlyInUse        bool
@@ -223,7 +223,7 @@ func (s Settings) ConfigTarget() configedit.Target {
 	return target
 }
 
-// ConfigTarget resolves x-triage and returns where config edits go.
+// ConfigTarget resolves triage and returns where config edits go.
 func ConfigTarget(cfg *config.TriageConfig, configPath string) (configedit.Target, error) {
 	settings, err := Resolve(cfg, configPath)
 	if err != nil {

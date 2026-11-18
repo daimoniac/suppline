@@ -229,7 +229,7 @@ type GitopsRepoResponse struct {
 	LastSupplineAt  int64    `json:"LastSupplineAt,omitempty"`
 }
 
-// handleTriageStatus reports whether x-triage is accepting work.
+// handleTriageStatus reports whether triage is accepting work.
 // @Summary Triage status
 // @Description Reports whether triage is enabled, its mode, and how many jobs are waiting.
 // @Tags Triage
@@ -423,14 +423,14 @@ type TriageAcceptRequest struct {
 	ExpiresAt     int64  `json:"ExpiresAt,omitempty"`
 }
 
-// TriageAcceptResult is the commit created for a hand-written x-vex statement.
+// TriageAcceptResult is the commit created for a hand-written vex statement.
 type TriageAcceptResult struct {
 	CommitSHA string `json:"CommitSHA,omitempty"`
 }
 
-// handleTriageAccept writes the edited decision into x-vex.
-// @Summary Accept a triage decision into x-vex
-// @Description Writes a hand-written x-vex statement. It overrides x-vex-auto for the same id.
+// handleTriageAccept writes the edited decision into vex.
+// @Summary Accept a triage decision into vex
+// @Description Writes a hand-written vex statement. It overrides vex-auto for the same id.
 // @Tags Triage
 // @Accept json
 // @Produce json
@@ -468,7 +468,7 @@ func (s *APIServer) handleTriageAccept(w http.ResponseWriter, r *http.Request) {
 	commit, err := s.triageService.PromoteManual(r.Context(), body.Repository, statement)
 	if err != nil {
 		s.respondError(w, http.StatusBadRequest, err.Error())
-		s.logger.Error("accept triage into x-vex", "repository", body.Repository, "cve", body.CVEID, "error", err)
+		s.logger.Error("accept triage into vex", "repository", body.Repository, "cve", body.CVEID, "error", err)
 		return
 	}
 	s.respondJSON(w, http.StatusOK, TriageAcceptResult{CommitSHA: commit})

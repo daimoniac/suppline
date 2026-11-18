@@ -7,7 +7,7 @@ import (
 )
 
 // mirrorSettingsChanged reports whether next copies differently from prev.
-// Fields only suppline's scanning reads (x-vex, x-policy, rescan and worker
+// Fields only suppline's scanning reads (vex, policy, rescan and worker
 // settings, triage) are ignored.
 func mirrorSettingsChanged(prev, next *config.RegsyncConfig) bool {
 	if prev == nil || next == nil {
@@ -26,7 +26,6 @@ func mirrorView(cfg *config.RegsyncConfig) mirrorSettings {
 	view := mirrorSettings{creds: cfg.Creds, defaults: cfg.Defaults}
 	d := &view.defaults
 	d.RescanInterval = ""
-	d.RuntimeInUseWindow = ""
 	d.WorkerPollInterval = ""
 	d.WorkerConcurrency = 0
 	d.WorkerRetryAttempts = 0

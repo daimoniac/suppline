@@ -44,10 +44,10 @@ const (
 )
 
 const (
-	// VEXSourceManual marks a statement from x-vex (hand-written).
-	VEXSourceManual = "x-vex"
-	// VEXSourceAuto marks a statement from x-vex-auto (Triage-owned).
-	VEXSourceAuto = "x-vex-auto"
+	// VEXSourceManual marks a statement from vex (hand-written).
+	VEXSourceManual = "vex"
+	// VEXSourceAuto marks a statement from vex-auto (Triage-owned).
+	VEXSourceAuto = "vex-auto"
 )
 
 // validVEXJustifications is the set of valid VEX justifications.
@@ -83,14 +83,14 @@ func NormalizeVEXJustification(j VEXJustification) VEXJustification {
 }
 
 // VEXStatement represents a CycloneDX VEX statement for a vulnerability.
-// This is the config-level type parsed from suppline.yml x-vex entries.
+// This is the config-level type parsed from suppline.yml vex entries.
 type VEXStatement struct {
 	ID            string           `yaml:"id" json:"id"`
 	State         VEXAnalysisState `yaml:"state" json:"state"`
 	Justification VEXJustification `yaml:"justification,omitempty" json:"justification,omitempty"`
 	Detail        string           `yaml:"detail,omitempty" json:"detail,omitempty"`
 	ExpiresAt     *int64           `yaml:"expires_at,omitempty" json:"expiresAt,omitempty"` // Unix timestamp in seconds, nil means no expiry
-	// Source is set when statements are merged (x-vex or x-vex-auto). It is not stored in YAML.
+	// Source is set when statements are merged (vex or vex-auto). It is not stored in YAML.
 	Source string `yaml:"-" json:"-"`
 }
 

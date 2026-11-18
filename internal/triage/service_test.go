@@ -79,7 +79,7 @@ sync:
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(string(body), "x-vex-auto") || !strings.Contains(string(body), "CVE-2026-1") {
+	if !strings.Contains(string(body), "vex-auto") || !strings.Contains(string(body), "CVE-2026-1") {
 		t.Fatalf("file was not updated:\n%s", body)
 	}
 	if _, err := os.Stat(path + ".bak.1"); err != nil {
@@ -156,7 +156,7 @@ sync:
 	if err != nil {
 		t.Fatal(err)
 	}
-	if strings.Contains(string(backup), "x-vex-auto") {
+	if strings.Contains(string(backup), "vex-auto") {
 		t.Fatal("backup was taken after the first statement")
 	}
 	first, err := store.LatestTriageRun(context.Background(), jobs[0].Repository, "CVE-2026-1")
@@ -194,7 +194,7 @@ sync:
   - source: example.com/app
     target: registry.local/app
     type: repository
-    x-vex-auto:
+    vex-auto:
       - id: CVE-2026-1
         state: not_affected
         justification: code_not_reachable
@@ -236,7 +236,7 @@ sync:
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(string(body), "protected_at_perimeter") || !strings.Contains(string(body), "x-vex-auto") {
+	if !strings.Contains(string(body), "protected_at_perimeter") || !strings.Contains(string(body), "vex-auto") {
 		t.Fatalf("file:\n%s", body)
 	}
 	evidence := cat.ResolveEvidence("registry.local/app")

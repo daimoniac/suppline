@@ -870,7 +870,7 @@ export interface VEXExpiryTasksResponse {
 export interface IneffectiveVEXStatement {
   repository: string;
   cve_id: string;
-  /** "x-vex" (hand-written) | "x-vex-auto" (triage-owned) */
+  /** "vex" (hand-written) | "vex-auto" (triage-owned) */
   source: string;
   state: string;
   justification?: string;

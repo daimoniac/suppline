@@ -8,11 +8,7 @@ import (
 
 func TestGetPublicKeyFromConfig_NoKey(t *testing.T) {
 	cfg := config.AttestationConfig{
-		KeyBased: struct {
-			Key string
-		}{
-			Key: "",
-		},
+		Key: "",
 	}
 
 	_, err := GetPublicKeyFromConfig(cfg)

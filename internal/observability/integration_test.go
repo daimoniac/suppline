@@ -20,9 +20,9 @@ func TestObservabilityServerIntegration(t *testing.T) {
 	healthChecker.RegisterComponent("test")
 	healthChecker.UpdateComponentHealth("test", StatusHealthy, "")
 	metricsPort := 19090
-	healthPort := 18081
+	healthPort := metricsPort // one port serves /metrics, /health and /ready
 
-	server := NewServer(metricsPort, healthPort, logger, healthChecker)
+	server := NewServer(metricsPort, logger, healthChecker)
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()

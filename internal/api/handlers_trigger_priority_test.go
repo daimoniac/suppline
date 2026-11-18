@@ -15,7 +15,7 @@ import (
 // A digest triggered through the API must be dequeued ahead of regular
 // discovery scans that were already waiting in the queue.
 func TestHandleTriggerScan_DigestJumpsDiscoveryBacklog(t *testing.T) {
-	cfg := &config.APIConfig{Enabled: true, Port: 8080}
+	cfg := &config.APIConfig{Port: 8080}
 	taskQueue := queue.NewInMemoryQueue(100)
 	enqueuer := scanenqueue.New(taskQueue, nil)
 	server := NewAPIServerWithEnqueuer(cfg, mockAttestationConfig(), &mockStateStore{}, taskQueue, enqueuer, mockRegsyncConfig(), observability.NewLogger("error"))

@@ -28,8 +28,8 @@ func TestMirrorSettingsChanged(t *testing.T) {
 		want   bool
 	}{
 		{"identical", func(*config.RegsyncConfig) {}, false},
-		{"x-vex-auto only", func(c *config.RegsyncConfig) { c.Sync[0].VEXAuto = []types.VEXStatement{{ID: "CVE-1"}} }, false},
-		{"x-policy only", func(c *config.RegsyncConfig) { c.Sync[0].Policy = &config.PolicyConfig{Expression: "true"} }, false},
+		{"vex-auto only", func(c *config.RegsyncConfig) { c.Sync[0].VEXAuto = []types.VEXStatement{{ID: "CVE-1"}} }, false},
+		{"policy only", func(c *config.RegsyncConfig) { c.Sync[0].Policy = &config.PolicyConfig{Expression: "true"} }, false},
 		{"default rescan interval", func(c *config.RegsyncConfig) { c.Defaults.RescanInterval = "1d" }, false},
 		{"suppline ignore", func(c *config.RegsyncConfig) { c.Sync[0].Ignore = true }, false},
 		{"semver range", func(c *config.RegsyncConfig) { c.Sync[0].Tags = &config.TagFilter{SemverRange: []string{">=2.0.0"}} }, true},
@@ -67,7 +67,7 @@ func TestWaitForChangeRestartsOnlyForMirrorSettings(t *testing.T) {
 	}
 	select {
 	case <-result:
-		t.Fatal("waitForChange returned after an x-vex-auto edit")
+		t.Fatal("waitForChange returned after an vex-auto edit")
 	case <-time.After(50 * time.Millisecond):
 	}
 

@@ -175,7 +175,7 @@ export default function IntegrationsPage() {
               </table>
             </div>
           ) : (
-            <p className="text-sm text-text-muted">No gitops repositories configured. Add them under x-triage.</p>
+            <p className="text-sm text-text-muted">No gitops repositories configured. Add them under triage.</p>
           )}
         </div>
       </div>

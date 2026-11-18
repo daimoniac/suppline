@@ -5,58 +5,79 @@ Complete reference for all configuration options in suppline.
 ## Table of Contents
 
 - [Configuration Sources](#configuration-sources)
-- [Environment Variables](#environment-variables)
-- [Regsync Configuration](#regsync-configuration)
+- [Secrets (environment variables)](#secrets-environment-variables)
+- [Runtime settings](#runtime-settings)
+- [Sync configuration](#sync-configuration)
 - [Examples](#examples)
-- [Triage (`x-triage`)](#triage-x-triage)
-- [Malicious packages (`x-malicious-packages`)](#malicious-packages-x-malicious-packages)
+- [Triage (`triage`)](#triage-triage)
+- [Malicious packages (`malicious-packages`)](#malicious-packages-malicious-packages)
 
 ## Configuration Sources
 
-Configuration is loaded from multiple sources in this priority order:
+suppline has two configuration sources:
 
-1. **Default values** - Built-in defaults in the application
-2. **Regsync file** - Registry and VEX configuration from `suppline.yml`
-3. **Environment variables** - Runtime configuration overrides
+1. **`suppline.yml`** — everything that is not a secret: runtime settings (ports, base path, log level, Trivy, store, attestation), defaults, sync entries, policy, VEX, triage and malicious-package detection. `SUPPLINE_CONFIG` holds its path.
+2. **Environment variables** — secrets only, plus `SUPPLINE_CONFIG`. `suppline.yml` can pull further secrets in with `{{ env "NAME" }}` (see [Credentials Section](#credentials-section)).
 
-suppline reads `suppline.yml` at startup and checks that same file every 15 seconds. A change that still parses replaces the running configuration, and current scans of repositories whose decision changed are queued again. Discovery, rescan intervals, attestation toggles, API tasks and policy all read the running configuration, so they follow the change. When the change touches what the mirror copies (sync entries, credentials or mirror defaults), the mirror stops its schedule and starts a new one from the new file, beginning with a pass over missing tags; VEX and policy edits leave it running. The chart mounts the ConfigMap at `/config` without `subPath`, so kubelet refreshes the file and the running process picks it up. Credentials used by discovery and cosign, and triage settings, stay as they were at startup until the process restarts. A Helm upgrade that changes the chart config still restarts the pod. A triage accept updates memory immediately. The reload applies when the file bytes change. An older ConfigMap that arrives before that accept is published drops the statement until a later file contains it.
+The file is parsed strictly: an unknown or misspelled key is a startup error, so a renamed setting never silently drops out.
 
-## Environment Variables
+suppline reads `suppline.yml` at startup and checks that same file every 15 seconds. A change that still parses replaces the running configuration, and current scans of repositories whose decision changed are queued again. Discovery, rescan intervals, attestation toggles, API tasks and policy all read the running configuration, so they follow the change. When the change touches what the mirror copies (sync entries, credentials or mirror defaults), the mirror stops its schedule and starts a new one from the new file, beginning with a pass over missing tags; VEX and policy edits leave it running. The chart mounts the ConfigMap at `/config` without `subPath`, so kubelet refreshes the file and the running process picks it up. Credentials used by discovery and cosign, triage settings, and the runtime settings below stay as they were at startup until the process restarts. A Helm upgrade that changes the chart config still restarts the pod. A triage accept updates memory immediately. The reload applies when the file bytes change. An older ConfigMap that arrives before that accept is published drops the statement until a later file contains it.
 
-### Core Configuration
+## Secrets (environment variables)
 
-| Variable | Type | Default | Description |
-|----------|------|---------|-------------|
-| `SUPPLINE_CONFIG` | string | `suppline.yml` | Path to regsync configuration file |
-| `SUPPLINE_MIRROR_ENABLED` | bool | `true` | Copy images inside the suppline process. Set `false` when running the regsync sidecar instead |
-| `LOG_LEVEL` | string | `info` | Log level: `debug`, `info`, `warn`, `error` |
+| Variable | Required | Description |
+|----------|----------|-------------|
+| `SUPPLINE_CONFIG` | no (default `suppline.yml`) | Path to `suppline.yml` |
+| `SUPPLINE_API_KEY` | yes, unless `server.allowNoAuth` | API key for the UI and API. The cluster-inventory webhook and cluster list stay unauthenticated |
+| `ATTESTATION_KEY` | yes | Base64-encoded cosign private key |
+| `ATTESTATION_KEY_PASSWORD` | if the key is encrypted | Password for `ATTESTATION_KEY` |
+| `POSTGRES_URL` | no | PostgreSQL connection URL. Set → PostgreSQL; unset → SQLite at `store.sqlitePath` |
+| `TRIVY_TOKEN` | no | Token for the Trivy server |
+| `SUPPLINE_LLM_API_KEY` | no | Bearer token for the Triage OpenAI-compatible endpoint. If `triage.enabled` is true and this is empty, Triage stays off |
+| `SUPPLINE_GITHUB_TOKEN` | no | GitHub token for Triage code and commit search. A generic `GITHUB_TOKEN` is ignored |
 
-### Queue & Worker
+A `.env` file in the working directory is loaded before these are read.
 
-| Variable | Type | Default | Description |
-|----------|------|---------|-------------|
-| `QUEUE_BUFFER_SIZE` | int | `1000` | In-memory queue buffer size (number of tasks) |
-| `WORKER_POLL_INTERVAL` | duration | `5s` | How often worker polls for new tasks |
-| `WORKER_RETRY_ATTEMPTS` | int | `3` | Maximum retry attempts for transient failures |
-| `WORKER_RETRY_BACKOFF` | duration | `10s` | Initial backoff duration for retries (exponential) |
+## Runtime settings
 
-### Scanner (Trivy)
+Top-level sections of `suppline.yml`, read once at startup. Every key is optional; the values shown are the defaults.
 
-| Variable | Type | Default | Description |
-|----------|------|---------|-------------|
-| `TRIVY_SERVER_ADDR` | string | `localhost:4954` | Trivy server address (host:port) |
-| `TRIVY_TOKEN` | string | `` | Optional authentication token for Trivy server |
-| `TRIVY_TIMEOUT` | duration | `5m` | Timeout for Trivy scan operations |
-| `TRIVY_INSECURE` | bool | `false` | Skip TLS verification / allow insecure registry access (eval/HTTP registries) |
+```yaml
+server:
+  port: 8080            # web UI, REST API and Swagger
+  basePath: ""          # serve everything under a prefix, e.g. /suppline (see below)
+  readOnly: false       # disable write operations, including rescans
+  allowNoAuth: false    # start without SUPPLINE_API_KEY; isolated evaluation only
 
-### State Store
+observability:
+  logLevel: info        # debug, info, warn, error
+  port: 9090            # /metrics, /health, /ready
 
-| Variable | Type | Default | Description |
-|----------|------|---------|-------------|
-| `STATE_STORE_TYPE` | string | `sqlite` | State store type: `sqlite`, `postgres`, or `memory` |
-| `SQLITE_PATH` | string | `suppline.db` | SQLite database file path (when `STATE_STORE_TYPE=sqlite`) |
-| `POSTGRES_URL` | string | `` | PostgreSQL connection URL (required when `STATE_STORE_TYPE=postgres`) |
-| `RESCAN_INTERVAL` | duration | `24h` | Default rescan interval for unchanged images |
+mirror:
+  enabled: true         # copy sync entries into the target registry in-process
+
+scanner:
+  server: localhost:4954  # Trivy server, host:port
+  timeout: 5m           # per scan
+  insecure: false       # skip TLS verification / allow HTTP registries (eval only)
+  localFallback: true   # retry a failed server-mode scan locally
+
+store:
+  sqlitePath: suppline.db  # SQLite file when POSTGRES_URL is unset; relative to the working directory (/data in the image)
+
+attestation:
+  commandTimeout: 2m    # per cosign invocation
+  allowHttpRegistry: false  # pass --allow-http-registry to cosign (Compose eval / HTTP registries only)
+  newBundleFormat: true # Cosign v3 protobuf bundles via OCI referrers; false writes classic sha256-<digest>.att tags
+```
+
+Queue and worker tuning stays under `defaults` (`rescanInterval`, `worker-poll-interval`, `worker-concurrency`, `worker-retry-attempts`, `worker-retry-backoff`, `queue-buffer-size`).
+
+**`server.basePath`** must start with `/`; a trailing `/` is ignored. suppline serves the UI, API and Swagger under it and expects proxies to forward paths unchanged (no prefix stripping); requests outside the prefix get 404. The Helm chart uses it as the ingress path.
+
+### State store
+
+suppline uses PostgreSQL when `POSTGRES_URL` is set and SQLite at `store.sqlitePath` otherwise. The default rescan interval is `defaults.rescanInterval` (7 days when unset).
 
 ### SQLite schema reset
 
@@ -69,7 +90,7 @@ the empty database. Suppline refuses to start if it detects the legacy table.
 
 ### PostgreSQL
 
-Set `STATE_STORE_TYPE=postgres` and `POSTGRES_URL` (for example
+Set `POSTGRES_URL` (for example
 `postgres://user:pass@host:5432/suppline?sslmode=disable`). Compose and the Helm
 chart default to a bundled PostgreSQL 18 instance. Official 18 images store data
 under `/var/lib/postgresql/18/docker`; Compose and the chart mount
@@ -79,46 +100,17 @@ To copy an existing catalog-schema SQLite database into an empty Postgres
 database without starting the full worker pipeline:
 
 ```bash
-SQLITE_PATH=/data/suppline.db POSTGRES_URL=postgres://... /app/suppline copy-sqlite
+# copies store.sqlitePath from suppline.yml into POSTGRES_URL
+POSTGRES_URL=postgres://... /app/suppline copy-sqlite
 ```
 
 The command preserves row IDs and refuses to run if the destination already has
 repositories. Do not switch a live backend to `postgres` until this copy
 succeeds.
 
-### Attestation
+## Sync configuration
 
-| Variable | Type | Default | Description |
-|----------|------|---------|-------------|
-| `ATTESTATION_KEY` | string | `` | Base64-encoded Cosign private key (required for signing) |
-| `ATTESTATION_KEY_PASSWORD` | string | `` | Password for encrypted private key |
-| `ATTESTATION_ALLOW_HTTP_REGISTRY` | bool | `false` | Pass `--allow-http-registry` to cosign (Compose eval / HTTP registries only) |
-| `ATTESTATION_NEW_BUNDLE_FORMAT` | bool | `true` | Pass `--new-bundle-format` to cosign. Default writes Cosign v3 protobuf bundles via OCI referrers; on registries without the referrers API cosign writes a `sha256-<digest>` fallback tag. Set `false` to write classic `sha256-<digest>.att` tags |
-| `FULCIO_URL` | string | `https://fulcio.sigstore.dev` | Fulcio certificate authority URL |
-| `ATTESTATION_COMMAND_TIMEOUT` | duration | `2m` | Timeout per Cosign attestation command |
-
-### API Server
-
-| Variable | Type | Default | Description |
-|----------|------|---------|-------------|
-| `API_ENABLED` | bool | `true` | Enable HTTP API server |
-| `API_PORT` | int | `8080` | Port for the web UI, REST API and Swagger |
-| `SUPPLINE_BASE_PATH` | string | `` | URL prefix to serve the UI, API and Swagger under, e.g. `/suppline`. Must start with `/`; a trailing `/` is ignored. Proxies forward paths unchanged (no prefix stripping); requests outside the prefix get 404 |
-| `SUPPLINE_API_KEY` | string | `` | Required when the API is enabled. The cluster-inventory webhook and cluster list stay unauthenticated |
-| `SUPPLINE_LLM_API_KEY` | string | `` | Bearer token for the Triage OpenAI-compatible endpoint. If `x-triage.enabled` is true and this is empty, Triage stays off |
-| `SUPPLINE_ALLOW_NO_AUTH` | bool | `false` | Explicit opt-in to start the API with authentication disabled. Isolated evaluation only |
-| `API_READ_ONLY` | bool | `false` | Disable write operations, including repository and tag rescan |
-
-### Observability
-
-| Variable | Type | Default | Description |
-|----------|------|---------|-------------|
-| `METRICS_PORT` | int | `9090` | Prometheus metrics port |
-| `HEALTH_CHECK_PORT` | int | `8081` | Health check endpoint port |
-
-## Regsync Configuration
-
-The `suppline.yml` file defines registry credentials, sync entries, and VEX (Vulnerability Exploitability Exchange) statements. Suppline copies those entries in-process. The regsync sidecar is the rollback path: set `SUPPLINE_MIRROR_ENABLED=false` and start the sidecar, and do not run both. `x-suppline-ignore` does not stop copying.
+Besides the runtime settings, `suppline.yml` defines registry credentials, sync entries, and VEX (Vulnerability Exploitability Exchange) statements. The `creds`, `defaults` and `sync` fields follow regsync's names; suppline copies those entries in-process. `suppline-ignore` does not stop copying.
 
 ### File Structure
 
@@ -138,13 +130,13 @@ creds:
 # Default settings
 defaults:
   parallel: int               # Parallel sync operations
-  x-rescanInterval: string    # Default rescan interval (e.g., "7d", "24h")
-  x-createVulnerabilityAttestation: bool  # Publish a cosign vulnerability attestation (default: true)
-  x-createSBOMAttestation: bool           # Publish a cosign SBOM attestation (default: true)
-  x-policy:                   # Default policy
+  rescanInterval: string    # Default rescan interval (e.g., "7d", "24h")
+  createVulnerabilityAttestation: bool  # Publish a cosign vulnerability attestation (default: true)
+  createSBOMAttestation: bool           # Publish a cosign SBOM attestation (default: true)
+  policy:                   # Default policy
     expression: string        # CEL expression
     failureMessage: string    # Custom failure message
-  x-vex:                     # Default VEX statements (optional)
+  vex:                     # Default VEX statements (optional)
     - id: string              # CVE identifier
       state: string           # Analysis state (not_affected, affected, in_triage, false_positive, resolved, resolved_with_pedigree)
       justification: string   # Justification (required when state is not_affected)
@@ -157,12 +149,12 @@ sync:
     target: string            # Target repository
     type: string              # Type: "image" or "repository"
     schedule: string          # Cron schedule (optional)
-    x-suppline-ignore: bool   # If true, the entry is only mirrored: no scan, policy, or attestation (default: false)
-    x-rescanInterval: string  # Rescan interval override (optional)
-    x-policy:                 # Policy override (optional)
+    suppline-ignore: bool   # If true, the entry is only mirrored: no scan, policy, or attestation (default: false)
+    rescanInterval: string  # Rescan interval override (optional)
+    policy:                 # Policy override (optional)
       expression: string
       failureMessage: string
-    x-vex:                    # VEX statements (optional)
+    vex:                    # VEX statements (optional)
       - id: string            # CVE identifier
         state: string         # Analysis state
         justification: string # Justification (for not_affected state)
@@ -244,12 +236,12 @@ sync:
   - source: legacy-app
     target: myregistry.example.com/legacy-app
     type: repository
-    x-suppline-ignore: true
+    suppline-ignore: true
 ```
 
 ### Ignoring Sync Entries
 
-The `x-suppline-ignore` field lets you temporarily disable a sync entry without deleting it from `suppline.yml`.
+The `suppline-ignore` field lets you temporarily disable a sync entry without deleting it from `suppline.yml`.
 
 **Behaviour:**
 - When `true`, the entry is only mirrored. Suppline skips scanning, policy, and attestation for it, and the in-process mirror moves its tags as soon as it copies, without waiting for an attestation. Use it for artifacts Trivy cannot scan, such as Helm charts.
@@ -269,18 +261,18 @@ sync:
   - source: legacy-app
     target: myregistry.example.com/legacy-app
     type: repository
-    x-suppline-ignore: true
+    suppline-ignore: true
 
   # Explicit false — same as omitting the field
   - source: alpine
     target: myregistry.example.com/alpine
     type: repository
-    x-suppline-ignore: false
+    suppline-ignore: false
 ```
 
 ### Rescan Interval Configuration
 
-The `x-rescanInterval` field controls how often images are rescanned even if their digest hasn't changed.
+The `rescanInterval` field controls how often images are rescanned even if their digest hasn't changed.
 
 **Interval Notation:**
 - `m` - minutes (e.g., `30m`, `90m`)
@@ -297,7 +289,7 @@ The `x-rescanInterval` field controls how often images are rescanned even if the
 
 ```yaml
 defaults:
-  x-rescanInterval: 7d        # Default: rescan every 7 days
+  rescanInterval: 7d        # Default: rescan every 7 days
 
 sync:
   # Uses default interval (7d)
@@ -309,13 +301,13 @@ sync:
   - source: postgres
     target: myregistry.example.com/postgres
     type: repository
-    x-rescanInterval: 3d      # Rescan every 3 days
+    rescanInterval: 3d      # Rescan every 3 days
   
   # Short interval for development images
   - source: myapp-dev
     target: myregistry.example.com/myapp-dev
     type: repository
-    x-rescanInterval: 12h     # Rescan every 12 hours
+    rescanInterval: 12h     # Rescan every 12 hours
 ```
 
 ### Policy Configuration
@@ -335,7 +327,7 @@ Policies use CEL (Common Expression Language) to evaluate security posture.
 
 ```yaml
 defaults:
-  x-policy:
+  policy:
     expression: "criticalCount == 0"
     failureMessage: "critical vulnerabilities found"
 
@@ -344,7 +336,7 @@ sync:
   - source: myapp-prod
     target: myregistry.example.com/myapp-prod
     type: repository
-    x-policy:
+    policy:
       expression: "criticalCount == 0 && highCount == 0"
       failureMessage: "critical or high vulnerabilities found"
   
@@ -352,25 +344,25 @@ sync:
   - source: myapp-dev
     target: myregistry.example.com/myapp-dev
     type: repository
-    x-policy:
+    policy:
       expression: "criticalCount <= 5"
       failureMessage: "too many critical vulnerabilities"
 ```
 
 ### Cooldown
 
-`x-cooldown` keeps a new upstream digest out until the cooldown has passed since suppline first saw it. Set it on `defaults` and override it per sync entry; `"0"` turns it off for an entry. It is off unless set. An invalid duration stops suppline from loading the file.
+`cooldown` keeps a new upstream digest out until the cooldown has passed since suppline first saw it. Set it on `defaults` and override it per sync entry; `"0"` turns it off for an entry. It is off unless set. An invalid duration stops suppline from loading the file.
 
 ```yaml
 defaults:
-  x-cooldown: 7d
+  cooldown: 7d
 
 sync:
   - source: docker.io/library/nginx
     target: myregistry.example.com/nginx
     type: repository
-    x-cooldown: 3d
-    x-cooldown-release:          # written by "Release now" on the Mirror page
+    cooldown: 3d
+    cooldown-release:          # written by "Release now" on the Mirror page
       - digest: sha256:4f1c…
         reason: CVE-2026-1234 hotfix
         at: "2026-11-18T10:00:00Z"
@@ -381,7 +373,7 @@ sync:
 - **With the in-process mirror** the digest is copied by digest only and its tag, a new tag included, moves only after the passing scan. Renovate pointed at your registry therefore never sees the release before then. Renovate pointed at the upstream registry bypasses the cooldown; use Renovate's own `minimumReleaseAge` there as a second layer. See [STATE_MACHINE.md](STATE_MACHINE.md) for how the tag runway holds digests, and [REGISTRY.md](REGISTRY.md#hold-tags) for the hold tags it writes.
 - **Without the mirror** suppline cannot hold the import. The cooldown only withholds the attestation, counting from the digest's first scan.
 - **Grandfathering:** a digest a target tag already names when the cooldown is switched on, or when suppline starts with a new database, counts as past its cooldown.
-- **`x-cooldown-release`** skips the rest of one digest's cooldown. It never skips the scan or the attestation. The Mirror page writes it as a config edit, committed to the config repository when one is configured, and rescans the held digest at once, so its tag moves as soon as that scan passes. A release edited into the file directly takes effect on the next mirror pass.
+- **`cooldown-release`** skips the rest of one digest's cooldown. It never skips the scan or the attestation. The Mirror page writes it as a config edit, committed to the config repository when one is configured, and rescans the held digest at once, so its tag moves as soon as that scan passes. A release edited into the file directly takes effect on the next mirror pass.
 
 ### VEX Statements
 
@@ -396,7 +388,7 @@ VEX statements from both levels are **merged together**, with sync-specific stat
 
 ```yaml
 defaults:
-  x-vex:
+  vex:
     # These VEX statements apply to ALL sync targets
     - id: CVE-2024-00001
       state: false_positive
@@ -413,7 +405,7 @@ sync:
     target: myregistry.example.com/nginx
     type: repository
     # This target gets both default VEX statements PLUS the one below
-    x-vex:
+    vex:
       - id: CVE-2024-56171
         state: not_affected
         justification: vulnerable_code_not_in_execute_path
@@ -433,7 +425,7 @@ sync:
   - source: nginx
     target: myregistry.example.com/nginx
     type: repository
-    x-vex:
+    vex:
       # Temporary exemption with expiry
       - id: CVE-2024-56171
         state: not_affected
@@ -495,59 +487,51 @@ sync:
 
 ## Examples
 
-### Minimal Configuration
-
-```bash
-# .env file
-SUPPLINE_CONFIG=suppline.yml
-ATTESTATION_KEY_PATH=/keys/cosign.key
-```
-
-### Development Configuration
-
-```bash
-# .env file
-SUPPLINE_CONFIG=suppline.yml
-ATTESTATION_KEY_PATH=./keys/cosign.key
-LOG_LEVEL=debug
-TRIVY_SERVER_ADDR=localhost:4954
-STATE_STORE_TYPE=sqlite
-SQLITE_PATH=./suppline.db
-SUPPLINE_API_KEY=dev-secret-key
-RESCAN_INTERVAL=1h
-```
-
-### Production Configuration
-
-```bash
-# Kubernetes ConfigMap
-WORKER_POLL_INTERVAL=5s
-WORKER_RETRY_ATTEMPTS=3
-RESCAN_INTERVAL=24h
-QUEUE_BUFFER_SIZE=2000
-TRIVY_SERVER_ADDR=trivy:4954
-TRIVY_TIMEOUT=10m
-STATE_STORE_TYPE=postgres
-POSTGRES_URL=postgres://suppline:suppline@postgres:5432/suppline?sslmode=disable
-LOG_LEVEL=info
-METRICS_PORT=9090
-HEALTH_CHECK_PORT=8081
-API_ENABLED=true
-API_PORT=8080
-
-# Kubernetes Secret
-SUPPLINE_CONFIG=/config/suppline.yml
-ATTESTATION_KEY_PATH=/keys/cosign.key
-ATTESTATION_KEY_PASSWORD=<from-secret>
-SUPPLINE_API_KEY=<from-secret>
-```
-
-## Triage (`x-triage`)
-
-Triage runs after a CEL failure on a repository that is currently running in a cluster (`only_in_use`, default true; the same runtime window as `source="runtime"` alerts). The statement covers every tag, so one session inspects one representative digest and decides the repository's CVEs together. A CVE that is only present on an idle digest is not triaged while `only_in_use` is on. Set `only_in_use: false` to triage every failure. When triage is enabled, the policy views show **Triage now** and **Fix using coding agent** together. **Triage now** queues the failures in the current image-usage view. The coding-agent button copies a prompt for those same failures. The Triage view, and the Tasks triage card, list current automated runs that were rejected or left unresolved. Each row can be requeued or copied as **Fix this using coding assistant**, and **Fix all open using coding assistant** copies that whole set. Triage checks out the gitops repositories in `context_repos`, asks an OpenAI-compatible chat model whether the CVE affects this deployment, and may write `x-vex-auto` on the matching sync entry. The model can also read the latest image snapshots reported by the cluster agents, fetch the public CVE or GHSA advisory, and check out one directory of the image's source commit. That commit comes from the OCI labels `org.opencontainers.image.source` and `org.opencontainers.image.revision` when they are present. Otherwise triage reads the upstream tag's SLSA provenance (`configSource.uri` on the attestation attached to the catalog source image). A `-sha-` tag is searched on GitHub only when that attestation is missing, and only a single matching repository is used. The checkout is searched with the same grep and read_file tools as the gitops repos. `dependency_sources` then checks out at most five direct npm or pnpm dependents of the vulnerable package. `requires_configuration` and `requires_environment` may cite a gitops line or a line from one of those checkouts. `code_not_reachable` may cite a public line, an empty grep by the `grep_id` of a directory that was fully fetched (a parent that was not fetched is not absence), or an empty grep of the scanned image when that search reports absence. A CVE reported only in kernel header packages (`linux-libc-dev`, `linux-headers`, `linux-headers-*`, `kernel-headers`, `linux-api-headers`, `linux-uapi-headers`) on every current digest is decided without the model: suppline writes `not_affected` with `code_not_present`, because a container runs the node's kernel and a header package ships no kernel code. The KEV rule still applies. This decision does not cover the node kernel, which is patched on the host. Other kernel packages (`linux`, `kernel`) go to the model, which stays uncertain so a person reviews them. The image checkout is named `image` and is used when the image has no source commit. It searches scripts, source files, and Go binaries. A skipped stripped native library that belongs to the package is not absence. A `grep_id` whose search returned rows is those lines. An empty grep does not satisfy `requires_configuration` or `requires_environment`. An empty grep of the gitops tree stays uncertain. `SUPPLINE_GITHUB_TOKEN` is used for GitHub code search and for the commit-search fallback. Hand-written `x-vex` is never modified and wins when both lists contain the same id. The workflow, dedupe rules, and guardrails are in [STATE_MACHINE.md](STATE_MACHINE.md).
+### Local development
 
 ```yaml
-x-triage:
+# suppline.yml
+version: 1
+observability:
+  logLevel: debug
+store:
+  sqlitePath: ./data/suppline.db
+defaults:
+  rescanInterval: 1h
+sync: []
+```
+
+```bash
+# .env
+ATTESTATION_KEY=<base64 -w0 cosign.key>
+ATTESTATION_KEY_PASSWORD=<password>
+SUPPLINE_API_KEY=dev-secret-key
+```
+
+### Production (Helm)
+
+```yaml
+# backend.supplineConfig
+version: 1
+server:
+  basePath: /suppline   # also the chart's ingress path
+scanner:
+  server: localhost:4954  # the chart's Trivy sidecar
+  timeout: 10m
+defaults:
+  rescanInterval: 1d
+  queue-buffer-size: 2000
+sync: [...]
+```
+
+Secrets go in `backend.secrets` (`SUPPLINE_API_KEY`, `ATTESTATION_KEY`, `ATTESTATION_KEY_PASSWORD`, registry credentials). The bundled PostgreSQL provides `POSTGRES_URL`.
+
+## Triage (`triage`)
+
+Triage runs after a CEL failure on a repository that is currently running in a cluster (`only_in_use`, default true; the same runtime window as `source="runtime"` alerts). The statement covers every tag, so one session inspects one representative digest and decides the repository's CVEs together. A CVE that is only present on an idle digest is not triaged while `only_in_use` is on. Set `only_in_use: false` to triage every failure. When triage is enabled, the policy views show **Triage now** and **Fix using coding agent** together. **Triage now** queues the failures in the current image-usage view. The coding-agent button copies a prompt for those same failures. The Triage view, and the Tasks triage card, list current automated runs that were rejected or left unresolved. Each row can be requeued or copied as **Fix this using coding assistant**, and **Fix all open using coding assistant** copies that whole set. Triage checks out the gitops repositories in `context_repos`, asks an OpenAI-compatible chat model whether the CVE affects this deployment, and may write `vex-auto` on the matching sync entry. The model can also read the latest image snapshots reported by the cluster agents, fetch the public CVE or GHSA advisory, and check out one directory of the image's source commit. That commit comes from the OCI labels `org.opencontainers.image.source` and `org.opencontainers.image.revision` when they are present. Otherwise triage reads the upstream tag's SLSA provenance (`configSource.uri` on the attestation attached to the catalog source image). A `-sha-` tag is searched on GitHub only when that attestation is missing, and only a single matching repository is used. The checkout is searched with the same grep and read_file tools as the gitops repos. `dependency_sources` then checks out at most five direct npm or pnpm dependents of the vulnerable package. `requires_configuration` and `requires_environment` may cite a gitops line or a line from one of those checkouts. `code_not_reachable` may cite a public line, an empty grep by the `grep_id` of a directory that was fully fetched (a parent that was not fetched is not absence), or an empty grep of the scanned image when that search reports absence. A CVE reported only in kernel header packages (`linux-libc-dev`, `linux-headers`, `linux-headers-*`, `kernel-headers`, `linux-api-headers`, `linux-uapi-headers`) on every current digest is decided without the model: suppline writes `not_affected` with `code_not_present`, because a container runs the node's kernel and a header package ships no kernel code. The KEV rule still applies. This decision does not cover the node kernel, which is patched on the host. Other kernel packages (`linux`, `kernel`) go to the model, which stays uncertain so a person reviews them. The image checkout is named `image` and is used when the image has no source commit. It searches scripts, source files, and Go binaries. A skipped stripped native library that belongs to the package is not absence. A `grep_id` whose search returned rows is those lines. An empty grep does not satisfy `requires_configuration` or `requires_environment`. An empty grep of the gitops tree stays uncertain. `SUPPLINE_GITHUB_TOKEN` is used for GitHub code search and for the commit-search fallback. Hand-written `vex` is never modified and wins when both lists contain the same id. The workflow, dedupe rules, and guardrails are in [STATE_MACHINE.md](STATE_MACHINE.md).
+
+```yaml
+triage:
   enabled: true
   only_in_use: true      # default; false triages images that are not running
   mode: dry-run          # dry-run (default) | enforce
@@ -588,7 +572,7 @@ x-triage:
 
 `prompt` replaces the built-in decision policy. Leave it unset to accept a low residual risk with `requires_configuration` or `requires_environment`, and to rate a finding that is not exposed to the public down one severity step (`critical -> high`, `high -> medium`, `medium -> low`). The tool workflow and the JSON output contract stay in place either way.
 
-Git credentials and `SUPPLINE_LLM_API_KEY` come from the environment, not from this file. SSH auth requires both a private key and `known_hosts`. An empty `branch` follows the remote HEAD. `config_repo.path` is a plain file inside that repository. In enforce mode without `config_repo`, the local file must be writable; a read-only ConfigMap mount refuses to start. Local writes keep `suppline.yml.bak.1` (newest) through `.bak.N`. The Tasks view uses the same writer for semver range updates, removing unused sync entries, and removing unused VEX statements. The unused list covers statements that are never applied to any scan. A background audit, hourly and once at startup, also lists sync-entry `x-vex` and `x-vex-auto` `not_affected` statements whose removal leaves the pass/fail result of every repository artifact's latest scan unchanged. The check uses the severity recorded on each finding. A later scan that rates the same CVE differently does not rewrite an earlier finding, and a finding with no recorded severity is left in place. Removing one of those edits only its own sync entry, never `defaults`. A configured `config_repo` is committed and pushed, otherwise the local file is updated. Those actions stay available when the LLM loop is off, as long as the file or config repository can be written.
+Git credentials and `SUPPLINE_LLM_API_KEY` come from the environment, not from this file. SSH auth requires both a private key and `known_hosts`. An empty `branch` follows the remote HEAD. `config_repo.path` is a plain file inside that repository. In enforce mode without `config_repo`, the local file must be writable; a read-only ConfigMap mount refuses to start. Local writes keep `suppline.yml.bak.1` (newest) through `.bak.N`. The Tasks view uses the same writer for semver range updates, removing unused sync entries, and removing unused VEX statements. The unused list covers statements that are never applied to any scan. A background audit, hourly and once at startup, also lists sync-entry `vex` and `vex-auto` `not_affected` statements whose removal leaves the pass/fail result of every repository artifact's latest scan unchanged. The check uses the severity recorded on each finding. A later scan that rates the same CVE differently does not rewrite an earlier finding, and a finding with no recorded severity is left in place. Removing one of those edits only its own sync entry, never `defaults`. A configured `config_repo` is committed and pushed, otherwise the local file is updated. Those actions stay available when the LLM loop is off, as long as the file or config repository can be written.
 
 Per-sync auto statements:
 
@@ -597,24 +581,24 @@ sync:
   - source: nginx
     target: registry.example/nginx
     type: repository
-    x-vex: []        # people
-    x-vex-auto: []   # Triage
+    vex: []        # people
+    vex-auto: []   # Triage
 ```
 
-## Malicious packages (`x-malicious-packages`)
+## Malicious packages (`malicious-packages`)
 
 suppline matches the language packages in every scan's SBOM against [ossf/malicious-packages](https://github.com/ossf/malicious-packages) (OSV `MAL-*` advisories). It keeps a shallow, bare git clone of that repository, syncs it on `sync_interval`, and indexes it in memory; no extra scanner binary is involved. The design is in [adr/0001-in-process-malicious-package-detection.md](adr/0001-in-process-malicious-package-detection.md). The block is read at startup only; restart suppline to change it.
 
 The feature is on when the block is missing. Every key is optional:
 
 ```yaml
-x-malicious-packages:
+malicious-packages:
   enabled: true            # false turns detection off
   block: true              # a malicious package fails policy whatever the expression says
   repo:
     url: https://github.com/ossf/malicious-packages.git   # or an internal mirror
     ref: main
-    auth: { type: https-token, env: MAL_FEED_TOKEN }       # optional; same shape as x-triage repos, empty is anonymous
+    auth: { type: https-token, env: MAL_FEED_TOKEN }       # optional; same shape as triage repos, empty is anonymous
   checkout_dir: /data/malicious-packages
   sync_interval: 1h
   stale_after: 6h          # must be at least sync_interval
@@ -629,7 +613,7 @@ How it behaves:
 - **The SCAI attestation** always carries a `malicious-package-check` attribute with the status, the feed commit and time it matched against, and any findings.
 - **Health** reports `malicious_packages` as healthy in every state, with the status in the message. `/health` has no degraded state and backs the liveness probe, so a stale feed must not restart the pod. Alert on the metrics instead.
 - **Disk:** the bare clone is under 100 MB. With the bundled PostgreSQL in the Helm chart, `/data` is an emptyDir, so the feed is cloned again after each restart.
-- **False positives:** exempt them per repository with a hand-written `x-vex` statement in state `false_positive` (see [POLICY.md](POLICY.md#malicious-packages)). `not_affected` and `x-vex-auto` are rejected for MAL ids. The VEX audit in the Tasks view lists such a statement as unused once no current, checked scan of the repository matches the advisory.
+- **False positives:** exempt them per repository with a hand-written `vex` statement in state `false_positive` (see [POLICY.md](POLICY.md#malicious-packages)). `not_affected` and `vex-auto` are rejected for MAL ids. The VEX audit in the Tasks view lists such a statement as unused once no current, checked scan of the repository matches the advisory.
 - **UI:** the **Malicious Packages** view shows the feed's sync state, how many current images were checked on current data, and every affected image grouped by package or by image, with images running in a cluster first. `GET /api/v1/malicious` returns the same data.
 
 The eval stack (`suppline.demo.yml`) sets `enabled: false` so it boots quickly.
@@ -644,26 +628,19 @@ Duration values use Go's duration format:
 - Combined (e.g., `1h30m`, `2h45m30s`)
 
 **Examples:**
-```bash
-WORKER_POLL_INTERVAL=5s
-TRIVY_TIMEOUT=5m
-RESCAN_INTERVAL=24h
-WORKER_RETRY_BACKOFF=30s
+```yaml
+scanner:
+  timeout: 5m
+defaults:
+  worker-poll-interval: 5s
+  worker-retry-backoff: 30s
 ```
+
+`rescanInterval`, `cooldown` and `scaiValidityExtension` also accept days, e.g. `7d`.
 
 ## Boolean Format
 
-Boolean values accept multiple formats:
-
-**True values:** `true`, `1`, `yes`
-**False values:** `false`, `0`, `no`, `` (empty)
-
-**Examples:**
-```bash
-API_ENABLED=true
-TRIVY_INSECURE=false
-API_READ_ONLY=1
-```
+Booleans in `suppline.yml` are YAML booleans: `true` or `false`.
 
 ## Configuration Best Practices
 

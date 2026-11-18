@@ -198,7 +198,7 @@ export default function MaliciousPage() {
           onSave={async body => {
             await apiClient.acceptTriage(body);
             setTriage(null);
-            toast('Saved to x-vex. The image is scanned again after the config reload.', 'success');
+            toast('Saved to vex. The image is scanned again after the config reload.', 'success');
             await load();
           }}
         />
@@ -230,14 +230,14 @@ function AffectedSummary({ images, packages, inUse, exempted, block }: { images:
       </div>
       {exempted > 0 && (
         <p className="text-xs text-text-muted mt-3">
-          {exempted} more image{exempted === 1 ? '' : 's'} only match advisories marked false_positive in x-vex.
+          {exempted} more image{exempted === 1 ? '' : 's'} only match advisories marked false_positive in vex.
         </p>
       )}
       <p className="text-xs text-text-muted mt-3">
         {block
           ? 'Blocking: any malicious package fails the policy, whatever the policy expression says.'
-          : 'Not blocking: x-malicious-packages.block is off, so only the policy expression decides.'}
-        {' '}A confirmed false positive is exempted with a hand-written x-vex statement in state false_positive.
+          : 'Not blocking: malicious-packages.block is off, so only the policy expression decides.'}
+        {' '}A confirmed false positive is exempted with a hand-written vex statement in state false_positive.
       </p>
     </section>
   );
@@ -387,7 +387,7 @@ function FalsePositiveBadge() {
   return (
     <span
       className="px-1.5 py-0.5 rounded text-[10px] font-semibold bg-bg-tertiary text-text-secondary"
-      title="Exempted by a false_positive x-vex statement"
+      title="Exempted by a false_positive vex statement"
     >
       False positive
     </span>

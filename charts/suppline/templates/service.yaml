@@ -11,13 +11,9 @@ spec:
     port: {{ .Values.backend.service.port }}
     targetPort: api
     protocol: TCP
-  - name: metrics
-    port: {{ .Values.backend.service.metricsPort }}
-    targetPort: metrics
-    protocol: TCP
-  - name: health
-    port: {{ .Values.backend.service.healthPort }}
-    targetPort: health
+  - name: ops
+    port: {{ include "suppline.opsPort" . }}
+    targetPort: ops
     protocol: TCP
   selector:
     {{- include "suppline.selectorLabels" . | nindent 4 }}
@@ -30,14 +26,14 @@ metadata:
     {{- include "suppline.labels" . | nindent 4 }}
   annotations:
     prometheus.io/scrape: "true"
-    prometheus.io/port: {{ .Values.backend.service.metricsPort | quote }}
+    prometheus.io/port: {{ include "suppline.opsPort" . | quote }}
     prometheus.io/path: "/metrics"
 spec:
   type: ClusterIP
   ports:
   - name: metrics
-    port: {{ .Values.backend.service.metricsPort }}
-    targetPort: metrics
+    port: {{ include "suppline.opsPort" . }}
+    targetPort: ops
     protocol: TCP
   selector:
     {{- include "suppline.selectorLabels" . | nindent 4 }}

@@ -73,7 +73,7 @@ helm upgrade --install suppline-smoke oci://ghcr.io/daimoniac/charts/suppline \
 
 kubectl get pods -n suppline-smoke
 kubectl exec -n suppline-smoke suppline-smoke-0 -c suppline -- \
-  wget -qO- http://localhost:8081/health
+  wget -qO- http://localhost:9090/health
 
 kubectl -n suppline-smoke port-forward svc/suppline-smoke 8080:8080
 # http://localhost:8080 — API key: demo

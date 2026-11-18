@@ -23,7 +23,7 @@ func TestApplyTaskEditsWriteTheLocalConfig(t *testing.T) {
 	path := filepath.Join(dir, "suppline.yml")
 	original := []byte(`version: 1
 defaults:
-  x-vex:
+  vex:
     - id: CVE-OLD
       state: not_affected
       justification: code_not_present
@@ -39,7 +39,7 @@ sync:
   - source: docker.io/legacy
     target: registry.example.com/legacy
     type: repository
-    x-vex:
+    vex:
       - id: CVE-OLD
         state: not_affected
         justification: code_not_present
@@ -136,7 +136,7 @@ sync:
 	if len(parsed.Sync[0].Tags.Deny) != 1 {
 		t.Fatalf("deny lost:\n%s", body)
 	}
-	if strings.Contains(string(body), "legacy") || strings.Contains(string(body), "CVE-OLD") || strings.Contains(string(body), "x-vex:") {
+	if strings.Contains(string(body), "legacy") || strings.Contains(string(body), "CVE-OLD") || strings.Contains(string(body), "vex:") {
 		t.Fatalf("removed content remains:\n%s", body)
 	}
 }

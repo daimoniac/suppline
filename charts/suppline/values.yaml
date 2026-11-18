@@ -10,8 +10,8 @@ backend:
   # DO NOT commit actual secrets to git.
   # SUPPLINE_API_KEY is required when the API is enabled.
   # Triage reads SUPPLINE_LLM_API_KEY and the git credential variables named by
-  # x-triage from this secret. Checkouts use the backend PVC at
-  # /data/gitops (x-triage.checkout_dir). Example:
+  # triage from this secret. Checkouts use the backend PVC at
+  # /data/gitops (triage.checkout_dir). Example:
   #   SUPPLINE_LLM_API_KEY: ""
   #   GITOPS_INFRA_TOKEN: ""
   #   SUPPLINE_CONFIG_REPO_KEY: ""
@@ -25,16 +25,10 @@ backend:
     # Empty → Chart.AppVersion (set on each v* release)
     tag: ""
 
-  # URL prefix to serve the web UI and API under, e.g. /suppline. Empty → /.
-  # The backend serves everything under this path, so the ingress forwards
-  # paths unchanged (no rewrite or prefix stripping).
-  basePath: ""
-
+  # The container ports come from suppline.yml (server.port, observability.port).
   service:
     type: ClusterIP
     port: 8080
-    metricsPort: 9090
-    healthPort: 8081
 
   # Memory is dominated by attestation spikes, not the Go heap. A large SBOM/vuln
   # predicate is written to disk, then cosign parses it while Longhorn may still
@@ -42,7 +36,7 @@ backend:
   # cgroup OOMs instead of dropping cache. 1Gi/1536Mi limits clamp working set
   # and look like a leak. GOMEMLIMIT only covers heap (~hundreds of MiB) and
   # will not prevent these kills. Size for RSS + dirty cache + worker concurrency.
-  # The in-process mirror now does the work the regsync sidecar used to do
+  # The in-process mirror does the work a separate regsync deployment used to do
   # (that sidecar requested 250m CPU / 256Mi). Leave these numbers as they are.
   resources:
     requests:
@@ -66,7 +60,7 @@ backend:
   livenessProbe:
     httpGet:
       path: /health
-      port: health
+      port: ops
     initialDelaySeconds: 30
     periodSeconds: 30
     timeoutSeconds: 10
@@ -75,25 +69,15 @@ backend:
   readinessProbe:
     httpGet:
       path: /health
-      port: health
+      port: ops
     initialDelaySeconds: 10
     periodSeconds: 10
     timeoutSeconds: 5
     failureThreshold: 3
 
-  env:
-    LOG_LEVEL: "info"
-    API_ENABLED: "true"
-    API_READ_ONLY: "false"
-    QUEUE_BUFFER_SIZE: "1000"
-    WORKER_POLL_INTERVAL: "5m"
-    WORKER_RETRY_ATTEMPTS: "3"
-    WORKER_RETRY_BACKOFF: "10s"
-    SCANNER_TIMEOUT: "5m"
-    RESCAN_INTERVAL: "24h"
-    # Cosign protobuf bundles via OCI referrers (sha256-<digest> fallback tag where referrers are
-    # unsupported). Set "false" to write classic sha256-<digest>.att tags.
-    ATTESTATION_NEW_BUNDLE_FORMAT: "true"
+  # Extra non-secret environment variables, e.g. for {{ env "NAME" }} in suppline.yml.
+  # Runtime settings (ports, log level, scanner, store, ...) live in suppline.yml.
+  env: {}
 
   # Optional: inline suppline.yml content (overrides the chart’s example file).
   # Prefer this for production so you do not edit files inside charts/suppline/.
@@ -138,44 +122,9 @@ trivy:
     initialDelaySeconds: 10
     periodSeconds: 10
 
-# In-process mirror. Copies every sync entry, including x-suppline-ignore.
-# Do not enable this together with the regsync sidecar.
-mirror:
-  enabled: true
-
-# Regsync sidecar. Rollback path only. The chart refuses to render when this
-# and mirror.enabled are both true, so a rollback cannot double-sync.
-regsync:
-  enabled: false
-  replicaCount: 1
-
-  image:
-    repository: daimon666/regsync
-    tag: "latest"
-    pullPolicy: Always
-
-  resources:
-    requests:
-      memory: "256Mi"
-      cpu: "250m"
-    limits:
-      memory: "512Mi"
-      cpu: "500m"
-
-  securityContext:
-    runAsNonRoot: true
-    runAsUser: 1000
-    runAsGroup: 1000
-    fsGroup: 1000
-    allowPrivilegeEscalation: false
-    readOnlyRootFilesystem: false
-    capabilities:
-      drop:
-        - ALL
-
 # Ingress for the web UI and API (both served by the backend on its API port).
 # Off by default: it needs a real host, and usually a class and TLS secret.
-# The ingress path is backend.basePath (or / when that is empty).
+# The ingress path is server.basePath from suppline.yml (or / when unset).
 ingress:
   enabled: false
   className: nginx
@@ -240,10 +189,9 @@ rbac:
   create: true
 
 # Pod annotations
-podAnnotations:
-  prometheus.io/scrape: "true"
-  prometheus.io/port: "9090"
-  prometheus.io/path: "/metrics"
+# Extra pod annotations. The chart already adds prometheus.io/{scrape,port,path}
+# for the observability port from suppline.yml.
+podAnnotations: {}
 
 # Image pull secrets
 imagePullSecrets: []

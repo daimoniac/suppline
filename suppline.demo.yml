@@ -2,6 +2,17 @@
 # Throwaway only — not for production. See docs/EVAL.md.
 version: 1
 
+# Runtime settings (read at startup). Secrets come from docker-compose.yml.
+server:
+  port: 8080
+observability:
+  port: 9090
+scanner:
+  server: trivy:4954
+  insecure: true
+attestation:
+  allowHttpRegistry: true   # the bundled registry speaks plain HTTP
+
 creds:
   # Bundled Compose registry (HTTP, no auth)
   - registry: registry:5000
@@ -18,18 +29,18 @@ defaults:
   cleanupTagsExclude:
     - ".*\\.sig$"
     - ".*\\.att$"
-  x-rescanInterval: 1d
-  x-worker-poll-interval: 15s
-  x-worker-concurrency: 2
-  x-worker-retry-attempts: 3
-  x-worker-retry-backoff: 10s
-  x-queue-buffer-size: 100
-  x-scaiValidityExtension: 7d
-  x-vex-repo: false
+  rescanInterval: 1d
+  worker-poll-interval: 15s
+  worker-concurrency: 2
+  worker-retry-attempts: 3
+  worker-retry-backoff: 10s
+  queue-buffer-size: 100
+  scaiValidityExtension: 7d
+  vex-repo: false
 
 # Malicious-package detection clones ossf/malicious-packages (a few hundred MB);
 # off here so the eval boots fast.
-x-malicious-packages:
+malicious-packages:
   enabled: false
 
 sync:
@@ -38,7 +49,7 @@ sync:
     target: registry:5000/demo-pass:1.36.1
     type: image
     platform: linux/amd64
-    x-policy:
+    policy:
       expression: "true"
       failureMessage: "demo-pass should never fail"
 
@@ -47,7 +58,7 @@ sync:
     target: registry:5000/demo-fail:3.18.4
     type: image
     platform: linux/amd64
-    x-policy:
+    policy:
       expression: "false"
       failureMessage: "demo-fail is intentionally blocked"
 
@@ -63,23 +74,23 @@ sync:
         - "^3\\.20\\.[0-2]$"
       deny:
         - "latest"
-    x-policy:
+    policy:
       expression: "true"
       failureMessage: "demo-semver should never fail"
 
   # Real CVE + VEX exemption (distinct digest from demo-fail so it is scanned).
-  # Policy fails on CVE-2023-5363 unless VEX-exempted → with x-vex below it passes.
+  # Policy fails on CVE-2023-5363 unless VEX-exempted → with vex below it passes.
   - source: public.ecr.aws/docker/library/alpine:3.18.3
     target: registry:5000/demo-vex:3.18.3
     type: image
     platform: linux/amd64
-    x-policy:
+    policy:
       expression: |
         vulnerabilities.filter(v,
           v.id == "CVE-2023-5363" && !v.exempted
         ).size() == 0
       failureMessage: "CVE-2023-5363 must be fixed or VEX-exempted"
-    x-vex:
+    vex:
       - id: CVE-2023-5363
         state: not_affected
         justification: vulnerable_code_not_in_execute_path

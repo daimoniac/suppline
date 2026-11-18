@@ -14,7 +14,7 @@ type MaliciousFeed interface {
 	Overview() malicious.Overview
 }
 
-// MaliciousSettings is the static part of x-malicious-packages shown in the UI.
+// MaliciousSettings is the static part of malicious-packages shown in the UI.
 type MaliciousSettings struct {
 	Block   bool
 	RepoURL string

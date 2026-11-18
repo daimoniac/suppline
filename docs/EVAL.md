@@ -35,14 +35,13 @@ Then:
 API check:
 
 ```bash
-curl -s http://localhost:8081/health
+curl -s http://localhost:9090/health
 curl -s -H "Authorization: Bearer demo" http://localhost:8080/api/v1/scans | head
 ```
 
 | Port | Service |
 |------|---------|
 | 8080 | Web UI (API key `demo`), REST API, Swagger |
-| 8081 | Health |
 | 5000 | Throwaway registry (localhost only) |
 | 9090 | Metrics |
 | 4954 | Trivy |

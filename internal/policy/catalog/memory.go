@@ -14,7 +14,7 @@ type MemoryEntry struct {
 	Evidence Evidence
 
 	// PolicyError makes ResolvePolicy fail the way an unparseable
-	// x-cooldown does, while the expression and the evidence for this
+	// cooldown does, while the expression and the evidence for this
 	// repository stay available.
 	PolicyError error
 

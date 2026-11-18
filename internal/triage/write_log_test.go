@@ -84,8 +84,8 @@ sync:
 	editor.WaitRequeues()
 	out := logs.String()
 	for _, want := range []string{
-		`msg="wrote x-vex-auto statements" repository=registry.local/app ids=[CVE-2026-2] mode=local commit="" requeue=[registry.local/app]`,
-		`msg="wrote x-vex statement" repository=registry.local/app ids=[CVE-2026-3] mode=local commit="" requeue=[registry.local/app]`,
+		`msg="wrote vex-auto statements" repository=registry.local/app ids=[CVE-2026-2] mode=local commit="" requeue=[registry.local/app]`,
+		`msg="wrote vex statement" repository=registry.local/app ids=[CVE-2026-3] mode=local commit="" requeue=[registry.local/app]`,
 		`msg="config edit requeued images" repositories=[registry.local/app] queued=2`,
 	} {
 		if !strings.Contains(out, want) {

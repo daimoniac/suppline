@@ -22,11 +22,7 @@ type mockStateStore struct{}
 // mockAttestationConfig returns a minimal attestation config for testing
 func mockAttestationConfig() *config.AttestationConfig {
 	return &config.AttestationConfig{
-		KeyBased: struct {
-			Key string
-		}{
-			Key: "",
-		},
+		Key: "",
 	}
 }
 
@@ -234,7 +230,6 @@ func (m *mockStateStore) RemoveRuntimeUnusedRepositoryWhitelist(ctx context.Cont
 
 func TestNewAPIServer(t *testing.T) {
 	cfg := &config.APIConfig{
-		Enabled:  true,
 		Port:     8080,
 		APIKey:   "",
 		ReadOnly: false,
@@ -278,7 +273,6 @@ func TestNewAPIServer(t *testing.T) {
 
 func TestAuthMiddleware_NoAPIKey(t *testing.T) {
 	cfg := &config.APIConfig{
-		Enabled:  true,
 		Port:     8080,
 		APIKey:   "", // No API key required
 		ReadOnly: false,
@@ -303,7 +297,6 @@ func TestAuthMiddleware_NoAPIKey(t *testing.T) {
 
 func TestAuthMiddleware_WithAPIKey_Valid(t *testing.T) {
 	cfg := &config.APIConfig{
-		Enabled:  true,
 		Port:     8080,
 		APIKey:   "test-api-key",
 		ReadOnly: false,
@@ -328,7 +321,6 @@ func TestAuthMiddleware_WithAPIKey_Valid(t *testing.T) {
 
 func TestAuthMiddleware_WithAPIKey_Invalid(t *testing.T) {
 	cfg := &config.APIConfig{
-		Enabled:  true,
 		Port:     8080,
 		APIKey:   "test-api-key",
 		ReadOnly: false,
@@ -353,7 +345,6 @@ func TestAuthMiddleware_WithAPIKey_Invalid(t *testing.T) {
 
 func TestAuthMiddleware_WithAPIKey_Missing(t *testing.T) {
 	cfg := &config.APIConfig{
-		Enabled:  true,
 		Port:     8080,
 		APIKey:   "test-api-key",
 		ReadOnly: false,
@@ -378,7 +369,6 @@ func TestAuthMiddleware_WithAPIKey_Missing(t *testing.T) {
 
 func TestAuthMiddleware_ReadOnlyMode(t *testing.T) {
 	cfg := &config.APIConfig{
-		Enabled:  true,
 		Port:     8080,
 		APIKey:   "",
 		ReadOnly: true,
@@ -417,7 +407,6 @@ func TestAuthMiddleware_ReadOnlyMode(t *testing.T) {
 
 func TestListScans_EmptyResultReturnsJSONArray(t *testing.T) {
 	cfg := &config.APIConfig{
-		Enabled:  true,
 		Port:     8080,
 		APIKey:   "",
 		ReadOnly: false,
@@ -484,7 +473,7 @@ func (m *mockScansWithFindingsStore) ListScansWithTotal(ctx context.Context, fil
 }
 
 func TestListScans_IncludesPolicyFailureFindings(t *testing.T) {
-	cfg := &config.APIConfig{Enabled: true, Port: 8080, APIKey: "", ReadOnly: false}
+	cfg := &config.APIConfig{Port: 8080, APIKey: "", ReadOnly: false}
 	server := NewAPIServer(cfg, mockAttestationConfig(), &mockScansWithFindingsStore{}, queue.NewInMemoryQueue(100), mockRegsyncConfig(), observability.NewLogger("error"))
 
 	req := httptest.NewRequest(http.MethodGet, "/api/v1/scans", nil)
@@ -522,7 +511,6 @@ func TestListScans_IncludesPolicyFailureFindings(t *testing.T) {
 
 func TestRoutes_QueryEndpoints(t *testing.T) {
 	cfg := &config.APIConfig{
-		Enabled:  true,
 		Port:     8080,
 		APIKey:   "",
 		ReadOnly: false,
@@ -560,7 +548,6 @@ func TestRoutes_QueryEndpoints(t *testing.T) {
 
 func TestRoutes_ActionEndpoints(t *testing.T) {
 	cfg := &config.APIConfig{
-		Enabled:  true,
 		Port:     8080,
 		APIKey:   "",
 		ReadOnly: false,
@@ -595,7 +582,6 @@ func TestRoutes_ActionEndpoints(t *testing.T) {
 
 func TestHealthEndpoint(t *testing.T) {
 	cfg := &config.APIConfig{
-		Enabled:  true,
 		Port:     8080,
 		APIKey:   "",
 		ReadOnly: false,
@@ -628,7 +614,6 @@ func TestHealthEndpoint(t *testing.T) {
 
 func TestHandleTriggerScan_MissingFields(t *testing.T) {
 	cfg := &config.APIConfig{
-		Enabled:  true,
 		Port:     8080,
 		APIKey:   "",
 		ReadOnly: false,
@@ -649,7 +634,6 @@ func TestHandleTriggerScan_MissingFields(t *testing.T) {
 
 func TestHandleTriggerScan_BothFields(t *testing.T) {
 	cfg := &config.APIConfig{
-		Enabled:  true,
 		Port:     8080,
 		APIKey:   "",
 		ReadOnly: false,
@@ -671,7 +655,6 @@ func TestHandleTriggerScan_BothFields(t *testing.T) {
 
 func TestHandleTriggerScan_InvalidJSON(t *testing.T) {
 	cfg := &config.APIConfig{
-		Enabled:  true,
 		Port:     8080,
 		APIKey:   "",
 		ReadOnly: false,
@@ -692,7 +675,6 @@ func TestHandleTriggerScan_InvalidJSON(t *testing.T) {
 
 func TestHandleReevaluatePolicy_EmptyBody(t *testing.T) {
 	cfg := &config.APIConfig{
-		Enabled:  true,
 		Port:     8080,
 		APIKey:   "",
 		ReadOnly: false,
@@ -714,7 +696,6 @@ func TestHandleReevaluatePolicy_EmptyBody(t *testing.T) {
 
 func TestHandleReevaluatePolicy_WithRepository(t *testing.T) {
 	cfg := &config.APIConfig{
-		Enabled:  true,
 		Port:     8080,
 		APIKey:   "",
 		ReadOnly: false,
@@ -737,7 +718,6 @@ func TestHandleReevaluatePolicy_WithRepository(t *testing.T) {
 
 func TestActionEndpoints_ReadOnlyMode(t *testing.T) {
 	cfg := &config.APIConfig{
-		Enabled:  true,
 		Port:     8080,
 		APIKey:   "",
 		ReadOnly: true,
@@ -772,7 +752,6 @@ func TestActionEndpoints_ReadOnlyMode(t *testing.T) {
 
 func TestHandleGetRepository_Success(t *testing.T) {
 	cfg := &config.APIConfig{
-		Enabled:  true,
 		Port:     8080,
 		APIKey:   "",
 		ReadOnly: false,
@@ -813,7 +792,6 @@ func (m *emptyRepositoryMockStore) GetRepository(ctx context.Context, name strin
 
 func TestHandleGetRepository_NotFound(t *testing.T) {
 	cfg := &config.APIConfig{
-		Enabled:  true,
 		Port:     8080,
 		APIKey:   "",
 		ReadOnly: false,
@@ -835,7 +813,6 @@ func TestHandleGetRepository_NotFound(t *testing.T) {
 
 func TestHandleGetRepository_WithPagination(t *testing.T) {
 	cfg := &config.APIConfig{
-		Enabled:  true,
 		Port:     8080,
 		APIKey:   "",
 		ReadOnly: false,
@@ -857,7 +834,6 @@ func TestHandleGetRepository_WithPagination(t *testing.T) {
 
 func TestHandleGetRepository_WithSearch(t *testing.T) {
 	cfg := &config.APIConfig{
-		Enabled:  true,
 		Port:     8080,
 		APIKey:   "",
 		ReadOnly: false,
@@ -879,7 +855,6 @@ func TestHandleGetRepository_WithSearch(t *testing.T) {
 
 func TestHandleGetRepository_WithInUseFilterAndNoMatches(t *testing.T) {
 	cfg := &config.APIConfig{
-		Enabled:  true,
 		Port:     8080,
 		APIKey:   "",
 		ReadOnly: false,
@@ -905,7 +880,6 @@ func TestHandleGetRepository_WithInUseFilterAndNoMatches(t *testing.T) {
 
 func TestHandleListRepositories_WithNewFilters(t *testing.T) {
 	cfg := &config.APIConfig{
-		Enabled:  true,
 		Port:     8080,
 		APIKey:   "",
 		ReadOnly: false,
@@ -934,7 +908,6 @@ func TestHandleListRepositories_WithNewFilters(t *testing.T) {
 
 func TestHandleListRepositories_StatusSorting(t *testing.T) {
 	cfg := &config.APIConfig{
-		Enabled:  true,
 		Port:     8080,
 		APIKey:   "",
 		ReadOnly: false,

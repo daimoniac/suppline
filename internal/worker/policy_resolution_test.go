@@ -13,7 +13,7 @@ import (
 )
 
 // Repository policy resolution is the one place where an unparseable
-// x-cooldown must surface, and it must stay a permanent error so the
+// cooldown must surface, and it must stay a permanent error so the
 // task is not retried.
 func TestGetPolicyEngineForRepository_InvalidCooldown(t *testing.T) {
 	logger := observability.NewLogger("error")
@@ -35,12 +35,12 @@ func TestGetPolicyEngineForRepository_InvalidCooldown(t *testing.T) {
 
 	engine, err := worker.pipeline.getPolicyEngineForRepository("myorg/app")
 	if err == nil {
-		t.Fatalf("getPolicyEngineForRepository() error = nil, want invalid x-cooldown error (engine %+v)", engine)
+		t.Fatalf("getPolicyEngineForRepository() error = nil, want invalid cooldown error (engine %+v)", engine)
 	}
 	if !strings.Contains(err.Error(), "failed to resolve policy for myorg/app") {
 		t.Errorf("error = %v, want target-specific policy failure", err)
 	}
-	if !strings.Contains(err.Error(), "invalid x-cooldown for target myorg/app") {
+	if !strings.Contains(err.Error(), "invalid cooldown for target myorg/app") {
 		t.Errorf("error = %v, want wrapped catalog parse error", err)
 	}
 	if !supperrors.IsPermanent(err) {

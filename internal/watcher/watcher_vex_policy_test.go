@@ -12,7 +12,7 @@ import (
 	"github.com/daimoniac/suppline/internal/types"
 )
 
-// Discovery does not resolve policy, so a repository whose x-cooldown
+// Discovery does not resolve policy, so a repository whose cooldown
 // cannot be parsed is still discovered; the invalid duration surfaces during
 // policy evaluation when the scan runs.
 func TestWatcher_Discover_InvalidCooldownStillQueues(t *testing.T) {

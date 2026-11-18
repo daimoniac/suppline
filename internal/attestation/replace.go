@@ -148,7 +148,7 @@ func createdOf(desc v1.Descriptor) string {
 // is already published, and failing here would retry and publish another one.
 func (a *SigstoreAttestor) attestReplacingSameKind(ctx context.Context, operation, cosignType, predicatePath, imageRef string) error {
 	predicate := canonicalPredicate(cosignType)
-	digest, digestErr := parseImageDigest(imageRef)
+	digest, digestErr := a.parseImageDigest(imageRef)
 
 	started := time.Now()
 	if _, err := a.runCosignAttest(ctx, operation, a.attestArgs(cosignType, predicatePath, imageRef)...); err != nil {
@@ -170,7 +170,7 @@ func (a *SigstoreAttestor) attestReplacingSameKind(ctx context.Context, operatio
 // DeleteReferrers removes every referrer of one predicate. A scan that no longer publishes
 // that predicate uses this so old bundles do not stay for Kyverno to download.
 func (a *SigstoreAttestor) DeleteReferrers(ctx context.Context, imageRef, predicate string) error {
-	digest, err := parseImageDigest(imageRef)
+	digest, err := a.parseImageDigest(imageRef)
 	if err != nil {
 		return nil
 	}
@@ -226,9 +226,9 @@ func (a *SigstoreAttestor) collapseLater(ctx context.Context, digest name.Digest
 	}()
 }
 
-func parseImageDigest(imageRef string) (name.Digest, error) {
+func (a *SigstoreAttestor) parseImageDigest(imageRef string) (name.Digest, error) {
 	var opts []name.Option
-	if allowHTTPRegistry() {
+	if a.allowHTTP {
 		opts = append(opts, name.Insecure)
 	}
 	return name.NewDigest(imageRef, opts...)
@@ -377,7 +377,7 @@ func collapseReferrers(ctx context.Context, a *SigstoreAttestor, digest name.Dig
 	// only historical, so drop this predicate from it. Classic mode just rewrote that tag
 	// with --replace, and stripping it would delete the attestation we just wrote.
 	// Signature referrers are not stored in that tag.
-	if useNewBundleFormat() && predicate != predicateCosignSign {
+	if a.newBundleFormat && predicate != predicateCosignSign {
 		if err := stripClassicAttestation(ctx, digest, predicate); err != nil {
 			errs = append(errs, err)
 		}

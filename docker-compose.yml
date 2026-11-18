@@ -60,36 +60,18 @@ services:
       postgres:
         condition: service_healthy
     ports:
-      - "8080:8080" # API
-      - "9090:9090" # Metrics
-      - "8081:8081" # Health
+      - "8080:8080" # Web UI, API, Swagger
+      - "9090:9090" # Metrics and health
     env_file:
       - path: .env
         required: false
+    # Runtime settings live in suppline.demo.yml; only secrets are set here.
     environment:
       - SUPPLINE_CONFIG=/config/suppline.yml
       - SUPPLINE_API_KEY=demo
-      - LOG_LEVEL=info
-      - METRICS_PORT=9090
-      - HEALTH_PORT=8081
-      - API_PORT=8080
-      - API_ENABLED=true
-      - API_READ_ONLY=false
-      - QUEUE_BUFFER_SIZE=100
-      - WORKER_POLL_INTERVAL=15s
-      - WORKER_RETRY_ATTEMPTS=3
-      - WORKER_RETRY_BACKOFF=10s
-      - TRIVY_SERVER_ADDR=trivy:4954
-      - TRIVY_INSECURE=true
-      - SCANNER_TIMEOUT=5m
-      - STATE_STORE_TYPE=postgres
       - POSTGRES_URL=postgres://suppline:suppline@postgres:5432/suppline?sslmode=disable
-      - RESCAN_INTERVAL=24h
-      - ATTESTATION_ALLOW_HTTP_REGISTRY=true
       - ATTESTATION_KEY_PASSWORD=demo
       - KEYS_DIR=/keys/demo
-      # In-process mirror. Set false when starting the sidecar-mirror profile.
-      - SUPPLINE_MIRROR_ENABLED=${SUPPLINE_MIRROR_ENABLED:-true}
     volumes:
       - ./keys:/keys
       - ./suppline.demo.yml:/config/suppline.yml:ro
@@ -99,7 +81,7 @@ services:
       - suppline
     restart: unless-stopped
     healthcheck:
-      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:8081/health"]
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:9090/health"]
       interval: 30s
       timeout: 10s
       retries: 3
@@ -126,26 +108,6 @@ services:
       timeout: 10s
       retries: 3
       start_period: 30s
-
-  # Rollback path. Start with: docker compose --profile sidecar-mirror up
-  # and SUPPLINE_MIRROR_ENABLED=false, or the in-process mirror and this
-  # sidecar copy the same images.
-  regsync:
-    profiles: ["sidecar-mirror"]
-    image: daimon666/regsync:latest
-    container_name: regsync
-    command: ["server", "-c", "/config/suppline.yml"]
-    depends_on:
-      registry:
-        condition: service_healthy
-    env_file:
-      - path: .env
-        required: false
-    volumes:
-      - ./suppline.demo.yml:/config/suppline.yml:ro
-    networks:
-      - suppline
-    restart: unless-stopped
 
   # Attestation gate POC (same SCAI checks as Kyverno admit/deny).
   # Usage: docker compose --profile eval-gate run --rm eval-gate

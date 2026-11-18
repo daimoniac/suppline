@@ -60,7 +60,7 @@ func TestConfigCatalogEditsPublishNewSnapshots(t *testing.T) {
 			},
 			check: func(t *testing.T, before, after *config.RegsyncConfig) {
 				if len(before.Sync[0].VEXAuto) != 0 || len(after.Sync[0].VEXAuto) != 1 {
-					t.Errorf("x-vex-auto before=%v after=%v, want none then one", before.Sync[0].VEXAuto, after.Sync[0].VEXAuto)
+					t.Errorf("vex-auto before=%v after=%v, want none then one", before.Sync[0].VEXAuto, after.Sync[0].VEXAuto)
 				}
 			},
 		},
@@ -71,7 +71,7 @@ func TestConfigCatalogEditsPublishNewSnapshots(t *testing.T) {
 			},
 			check: func(t *testing.T, before, after *config.RegsyncConfig) {
 				if before.Sync[0].VEX[0].State != types.VEXStateNotAffected || after.Sync[0].VEX[0].State != types.VEXStateAffected {
-					t.Errorf("x-vex state before=%s after=%s", before.Sync[0].VEX[0].State, after.Sync[0].VEX[0].State)
+					t.Errorf("vex state before=%s after=%s", before.Sync[0].VEX[0].State, after.Sync[0].VEX[0].State)
 				}
 			},
 		},
@@ -110,7 +110,7 @@ func TestConfigCatalogEditsPublishNewSnapshots(t *testing.T) {
 			},
 			check: func(t *testing.T, before, after *config.RegsyncConfig) {
 				if len(before.Sync[0].VEX) != 1 || len(after.Sync[0].VEX) != 0 {
-					t.Errorf("x-vex before=%v after=%v, want one then none", before.Sync[0].VEX, after.Sync[0].VEX)
+					t.Errorf("vex before=%v after=%v, want one then none", before.Sync[0].VEX, after.Sync[0].VEX)
 				}
 			},
 		},

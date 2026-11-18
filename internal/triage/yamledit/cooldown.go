@@ -7,7 +7,7 @@ import (
 	"github.com/daimoniac/suppline/internal/config"
 )
 
-// AddCooldownRelease writes release into x-cooldown-release of every sync
+// AddCooldownRelease writes release into cooldown-release of every sync
 // entry for repository, replacing an earlier release of the same digest.
 func AddCooldownRelease(document []byte, repository string, release config.CooldownRelease) ([]byte, error) {
 	if strings.TrimSpace(repository) == "" {
@@ -16,7 +16,7 @@ func AddCooldownRelease(document []byte, repository string, release config.Coold
 	if !strings.HasPrefix(release.Digest, "sha256:") {
 		return nil, fmt.Errorf("cooldown release needs a sha256 digest, got %q", release.Digest)
 	}
-	const key = "x-cooldown-release"
+	const key = "cooldown-release"
 	return spliceMatching(document, repository, key, func(text string, entry matchedEntry, delta int) (string, error) {
 		return spliceItem(text, entry, key, "digest", release.Digest, func(dashPrefix string) string {
 			return formatCooldownRelease(dashPrefix, release)
