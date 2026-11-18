@@ -72,7 +72,7 @@ x-vex:
     expires_at: 2027-05-01T00:00:00Z
 ```
 
-No other state exempts a MAL id (`not_affected` with a MAL id is rejected when the config loads), and `x-vex-auto` may never name one. An exempted finding stays in the `malicious` list with `exempted: true`, is not counted in `maliciousCount`, does not trigger the gate, and is recorded in the VEX and SCAI attestations.
+You can write it by hand, or from the **Triage** view (malicious findings show there as *Malicious*; automated triage never runs on them) and the **Malicious Packages** view, which open the usual statement dialog locked to `false_positive` with a required detail. No other state exempts a MAL id (`not_affected` with a MAL id is rejected when the config loads), and `x-vex-auto` may never name one. An exempted finding stays in the `malicious` list with `exempted: true`, is not counted in `maliciousCount`, does not trigger the gate, and is recorded in the VEX and SCAI attestations.
 
 With `x-malicious-packages.block: true` (the default), any malicious finding fails the image regardless of the expression. The reason starts with `malicious packages found:` and each finding is recorded as a policy-failure finding with `Kind: "malicious"`. You don't need to add `maliciousCount == 0` to your expression. With `block: false` only the expression decides, and you can write rules such as:
 

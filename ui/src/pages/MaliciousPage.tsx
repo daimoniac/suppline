@@ -2,13 +2,16 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Link, Navigate, useSearchParams } from 'react-router';
 import { ExternalLink, ShieldCheck, Skull, TriangleAlert } from 'lucide-react';
 import { useAuth } from '../lib/auth';
+import { useToast } from '../lib/toast';
+import { EditModal } from '../components/TriageEditModal';
+import type { StatementRow } from '../lib/triageRows';
 import { cn, formatRelativeTime } from '../lib/utils';
 import { scheduleEffectLoad } from '../lib/scheduleEffectLoad';
 import { runtimeWorkloadLocations } from '../lib/policyComplianceData';
 import {
   activeFindings, feedCommitURL, formatSeconds, groupMaliciousByPackage, maliciousFeedWarning,
 } from '../lib/malicious';
-import type { MaliciousCoverage, MaliciousFeed, MaliciousImage, MaliciousOverview } from '../lib/api';
+import type { MaliciousCoverage, MaliciousFeed, MaliciousImage, MaliciousOverview, MaliciousStatement } from '../lib/api';
 import {
   DigestLinkWithCopy, EmptyState, ErrorState, LoadingState, MaliciousCheckBadge, PageHeader,
   RuntimeUsageBadge, StatusBadge,
@@ -16,9 +19,35 @@ import {
 
 type View = 'packages' | 'images';
 
+type Triage = { repository: string; id: string; packages: string[]; statement?: MaliciousStatement };
+type OnTriage = (triage: Triage) => void;
+
+function triageRow(triage: Triage): StatementRow {
+  return {
+    key: `${triage.repository}\n${triage.id}`,
+    cve: triage.id,
+    repository: triage.repository,
+    packages: triage.packages,
+    state: triage.statement ? 'false_positive' : '',
+    justification: '',
+    detail: triage.statement?.Detail ?? '',
+    expiresAt: triage.statement?.ExpiresAt ?? 0,
+    triagedAt: 0,
+    affectedImages: 1,
+    source: triage.statement ? 'manual' : 'open',
+    needsFix: false,
+  };
+}
+
+function triageFor(image: MaliciousImage, id: string, packages: string[]): Triage {
+  return { repository: image.Repository, id, packages, statement: (image.FalsePositives ?? []).find(s => s.ID === id) };
+}
+
 export default function MaliciousPage() {
   const { apiClient } = useAuth();
+  const { toast } = useToast();
   const [searchParams, setSearchParams] = useSearchParams();
+  const [triage, setTriage] = useState<Triage | null>(null);
   const [overview, setOverview] = useState<MaliciousOverview | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -126,7 +155,14 @@ export default function MaliciousPage() {
                 </div>
                 {group.summary && <p className="text-xs text-text-muted mt-1">{group.summary}</p>}
                 <ul className="mt-3 space-y-2">
-                  {group.images.map(image => <li key={`${image.Repository}@${image.Digest}`}><ImageLine image={image} /></li>)}
+                  {group.images.map(image => (
+                    <li key={`${image.Repository}@${image.Digest}`}>
+                      <ImageLine image={image} actions={group.ids.map(id => (
+                        <TriageButton key={id} label={group.ids.length > 1 ? id : undefined}
+                          triage={triageFor(image, id, [`${group.packageName}@${group.version}`])} onTriage={setTriage} />
+                      ))} />
+                    </li>
+                  ))}
                 </ul>
               </div>
             ))}
@@ -143,6 +179,7 @@ export default function MaliciousPage() {
                       <span className="font-mono text-text-primary">{finding.PackageName}@{finding.Version}</span>
                       <span className="text-text-muted">{finding.Ecosystem}</span>
                       {finding.Exempted && <FalsePositiveBadge />}
+                      <TriageButton triage={triageFor(image, finding.ID, [`${finding.PackageName}@${finding.Version}`])} onTriage={setTriage} />
                     </li>
                   ))}
                 </ul>
@@ -151,7 +188,31 @@ export default function MaliciousPage() {
           </div>
         )}
       </section>
+
+      {triage && (
+        <EditModal
+          key={`${triage.repository}\n${triage.id}`}
+          row={triageRow(triage)}
+          withCVEs={[]}
+          onClose={() => setTriage(null)}
+          onSave={async body => {
+            await apiClient.acceptTriage(body);
+            setTriage(null);
+            toast('Saved to x-vex. The image is scanned again after the config reload.', 'success');
+            await load();
+          }}
+        />
+      )}
     </div>
+  );
+}
+
+function TriageButton({ triage, label, onTriage }: { triage: Triage; label?: string; onTriage: OnTriage }) {
+  return (
+    <button type="button" onClick={() => onTriage(triage)}
+      className="px-2 py-0.5 text-[11px] rounded-md border border-border text-text-secondary hover:bg-bg-tertiary hover:text-text-primary">
+      {triage.statement ? 'Edit false positive' : 'Triage'}{label ? ` ${label}` : ''}
+    </button>
   );
 }
 
@@ -258,7 +319,7 @@ function CoverageCard({ coverage }: { coverage: MaliciousCoverage }) {
   );
 }
 
-function ImageLine({ image }: { image: MaliciousImage }) {
+function ImageLine({ image, actions }: { image: MaliciousImage; actions?: React.ReactNode }) {
   const tags = image.Tags ?? [];
   const locations = runtimeWorkloadLocations(image.Runtime ?? undefined);
   const to = `/repositories/${encodeURIComponent(image.Repository)}/tags/${encodeURIComponent(image.Digest)}`;
@@ -271,6 +332,7 @@ function ImageLine({ image }: { image: MaliciousImage }) {
         <RuntimeUsageBadge inUse={image.RuntimeUsed} runtime={image.Runtime ?? undefined} />
         <StatusBadge passed={image.PolicyPassed} status={image.PolicyStatus} />
         <span className="text-xs text-text-muted">scanned {formatRelativeTime(image.ScannedAt)}</span>
+        {actions}
       </div>
       {image.RuntimeUsed && locations.length > 0 && (
         <div className="mt-1 text-xs text-text-muted">

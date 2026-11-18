@@ -19,6 +19,9 @@ const (
 	phaseQueued     = "queued"
 	phaseDecided    = "decided"
 	phaseExempt     = "exempt"
+	// phaseManual is a malicious-package finding: automated triage never
+	// decides it, a person removes the package or marks a false positive.
+	phaseManual = "manual"
 )
 
 // TriageRepositoryTag is one running image tag of a repository.
@@ -40,6 +43,7 @@ type TriageRepositoryCounts struct {
 	Decided        int `json:"Decided"`
 	ExemptAuto     int `json:"ExemptAuto"`
 	ExemptManual   int `json:"ExemptManual"`
+	Malicious      int `json:"Malicious"`
 }
 
 // TriageRepositoryCVE is one CVE that blocks or is exempt on a running image.
@@ -47,8 +51,11 @@ type TriageRepositoryCounts struct {
 // ReasonCode and ReasonAt are set when triage recorded why it left the CVE alone.
 // Run is the latest stored decision. Older runs are never returned.
 type TriageRepositoryCVE struct {
-	CVEID         string             `json:"CVEID"`
-	Phase         string             `json:"Phase"`
+	CVEID string `json:"CVEID"`
+	Phase string `json:"Phase"`
+	// Malicious marks a malicious-package advisory (MAL-*). It is never
+	// triaged automatically; only a hand-written false_positive exempts it.
+	Malicious     bool               `json:"Malicious,omitempty"`
 	Blocking      bool               `json:"Blocking"`
 	Packages      []string           `json:"Packages,omitempty"`
 	Tags          []string           `json:"Tags"`
@@ -197,9 +204,6 @@ func buildRepositoryCard(repository string, scans []*statestore.ScanRecord, in r
 		}
 		card.Tags = append(card.Tags, TriageRepositoryTag{Tag: scan.Tag, Digest: scan.Digest, PolicyPassed: passed, PolicyStatus: scan.PolicyStatus})
 		for _, finding := range scan.PolicyFailureFindings {
-			if finding.IsMalicious() {
-				continue // not triageable; see docs/adr/0001
-			}
 			item := get(finding.CVEID)
 			item.blocking = true
 			item.tags[scan.Tag] = struct{}{}
@@ -242,10 +246,11 @@ func buildRepositoryCard(repository string, scans []*statestore.ScanRecord, in r
 func repositoryCVE(repository string, item *cveAccumulator, sources map[string]string, in repositoryCardInput) TriageRepositoryCVE {
 	key := triage.SkipKey(repository, item.cveID)
 	cve := TriageRepositoryCVE{
-		CVEID:    item.cveID,
-		Blocking: item.blocking,
-		Packages: sortedKeys(item.packages),
-		Tags:     sortedKeys(item.tags),
+		CVEID:     item.cveID,
+		Malicious: types.IsMaliciousID(item.cveID),
+		Blocking:  item.blocking,
+		Packages:  sortedKeys(item.packages),
+		Tags:      sortedKeys(item.tags),
 	}
 	if run, ok := in.Runs[key]; ok {
 		attached := run
@@ -266,6 +271,14 @@ func repositoryCVE(repository string, item *cveAccumulator, sources map[string]s
 			}
 		}
 		cve.Reason = "Covered by an exemption, so it does not block the policy."
+		if cve.Malicious {
+			cve.Reason = "Marked as a false positive: the image holds a different package with this name, so it does not block the policy."
+		}
+		return cve
+	}
+	if cve.Malicious {
+		cve.Phase = phaseManual
+		cve.Reason = "Known-malicious package. Automated triage never decides these: remove the package and rebuild, or, if the image holds a different package with the same name, mark it as a false positive."
 		return cve
 	}
 
@@ -352,6 +365,9 @@ func countCVE(counts *TriageRepositoryCounts, cve TriageRepositoryCVE) {
 		counts.InProgress++
 	case phaseDecided:
 		counts.Decided++
+	case phaseManual:
+		counts.Malicious++
+		counts.NeedsAttention++
 	case phaseExempt:
 		if cve.Origin == "auto" {
 			counts.ExemptAuto++
@@ -363,6 +379,8 @@ func countCVE(counts *TriageRepositoryCounts, cve TriageRepositoryCVE) {
 
 func phaseOrder(phase string) int {
 	switch phase {
+	case phaseManual:
+		return -1
 	case phaseUncertain:
 		return 0
 	case phaseError:

@@ -44,6 +44,8 @@ export type StatementRow = {
   key: string;
   cve: string;
   repository: string;
+  /** Packages the finding names, when the caller knows them. */
+  packages?: string[];
   state: string;
   justification: string;
   detail: string;
@@ -67,4 +69,9 @@ export function toLocalInput(unix?: number) {
   const date = new Date(unix * 1000);
   const pad = (value: number) => String(value).padStart(2, '0');
   return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}T${pad(date.getHours())}:${pad(date.getMinutes())}`;
+}
+
+/** A malicious-package advisory id (OSV MAL-*). */
+export function isMaliciousID(id: string): boolean {
+  return id.startsWith('MAL-');
 }

@@ -93,3 +93,37 @@ func TestMaliciousEndpointDisabled(t *testing.T) {
 		t.Fatalf("health body = %s", health.Body.String())
 	}
 }
+
+func TestTriageRepositoriesShowMalicious(t *testing.T) {
+	scans := []*statestore.ScanRecord{{
+		Repository: "library/app", Tag: "1.0", Digest: "sha256:a", RuntimeUsed: true, PolicyStatus: "failed",
+		PolicyFailureFindings: []types.PolicyFailureFinding{
+			{CVEID: "MAL-1", PackageName: "evil", Kind: types.PolicyFailureKindMalicious},
+			{CVEID: "CVE-1", PackageName: "openssl"},
+		},
+		AppliedVEXStatements: []types.AppliedVEXStatement{{CVEID: "MAL-2", State: types.VEXStateFalsePositive, Detail: "workspace package"}},
+	}}
+	cards := buildTriageRepositories(repositoryCardInput{Scans: scans})
+	if len(cards) != 1 {
+		t.Fatalf("cards = %+v", cards)
+	}
+	byID := map[string]TriageRepositoryCVE{}
+	for _, cve := range cards[0].CVEs {
+		byID[cve.CVEID] = cve
+	}
+	if mal := byID["MAL-1"]; !mal.Malicious || mal.Phase != phaseManual || !mal.Blocking || mal.Packages[0] != "evil" {
+		t.Fatalf("MAL-1 = %+v", mal)
+	}
+	if cards[0].CVEs[0].CVEID != "MAL-1" {
+		t.Fatalf("malicious findings should sort first, got %+v", cards[0].CVEs)
+	}
+	if fp := byID["MAL-2"]; !fp.Malicious || fp.Phase != phaseExempt || fp.State != "false_positive" {
+		t.Fatalf("MAL-2 = %+v", fp)
+	}
+	if byID["CVE-1"].Malicious {
+		t.Fatal("CVE-1 is not malicious")
+	}
+	if cards[0].Counts.Malicious != 1 || cards[0].Counts.NeedsAttention < 1 {
+		t.Fatalf("counts = %+v", cards[0].Counts)
+	}
+}

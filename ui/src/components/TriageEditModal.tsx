@@ -2,8 +2,9 @@ import { useEffect, useState } from 'react';
 import { useAuth } from '../lib/auth';
 import { formatDate } from '../lib/utils';
 import { SeverityBadge } from './ui';
+import { ExternalLink, Skull } from 'lucide-react';
 import { scheduleEffectLoad } from '../lib/scheduleEffectLoad';
-import { STATUS_LABELS, VEX_JUSTIFICATIONS, VEX_STATES, fromLocalInput, toLocalInput, type StatementRow } from '../lib/triageRows';
+import { STATUS_LABELS, VEX_JUSTIFICATIONS, VEX_STATES, fromLocalInput, isMaliciousID, toLocalInput, type StatementRow } from '../lib/triageRows';
 import type { TriageAccept, VulnerabilityGroup } from '../lib/api';
 
 export function EditModal({
@@ -18,17 +19,20 @@ export function EditModal({
   onSave: (body: TriageAccept) => Promise<void>;
 }) {
   const { apiClient } = useAuth();
+  // Malicious-package advisories only accept a hand-written false_positive.
+  const malicious = isMaliciousID(row.cve);
   const knownState = VEX_STATES.some(([value]) => value === row.state);
-  const [state, setState] = useState(knownState ? row.state : 'not_affected');
+  const [state, setState] = useState(malicious ? 'false_positive' : knownState ? row.state : 'not_affected');
   const [justification, setJustification] = useState(row.justification || 'code_not_reachable');
   const [detail, setDetail] = useState(row.detail);
   const [expires, setExpires] = useState(toLocalInput(row.expiresAt));
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [vuln, setVuln] = useState<VulnerabilityGroup | null>(null);
-  const [vulnState, setVulnState] = useState<'loading' | 'ready' | 'missing'>('loading');
+  const [vulnState, setVulnState] = useState<'loading' | 'ready' | 'missing'>(malicious ? 'missing' : 'loading');
 
   useEffect(() => {
+    if (malicious) return;
     let cancelled = false;
     scheduleEffectLoad(async () => {
       try {
@@ -41,13 +45,17 @@ export function EditModal({
       }
     });
     return () => { cancelled = true; };
-  }, [apiClient, row.cve]);
+  }, [apiClient, row.cve, malicious]);
 
   const packages = [...new Set(
     (vuln?.affected || []).flatMap(image => (image.digests || []).map(digest => digest.packageName).filter(Boolean)),
   )];
 
   const save = async () => {
+    if (malicious && !detail.trim()) {
+      setError('Say why this is not the malicious package, e.g. where the image gets it from.');
+      return;
+    }
     setSaving(true);
     setError(null);
     try {
@@ -70,13 +78,33 @@ export function EditModal({
       <div className="bg-bg-secondary border border-border rounded-xl shadow-2xl w-full max-w-5xl max-h-[90vh] flex flex-col" onClick={e => e.stopPropagation()}>
         <div className="flex items-center gap-3 px-6 pt-5 pb-4 border-b border-border shrink-0">
           <h3 className="text-lg font-semibold font-mono">{row.cve}</h3>
+          {malicious && <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-xs font-medium bg-danger-bg text-danger"><Skull className="w-3 h-3" /> Malicious package</span>}
           {vuln?.Severity && <SeverityBadge severity={vuln.Severity} />}
           <p className="text-xs text-text-muted truncate ml-auto">{row.repository}</p>
         </div>
         <div className="grid grid-cols-1 md:grid-cols-2 min-h-0 overflow-y-auto md:overflow-hidden md:flex-1">
           <div className="px-6 py-5 space-y-4 border-b md:border-b-0 md:border-r border-border md:overflow-y-auto">
-            {vulnState === 'loading' && <p className="text-sm text-text-muted">Loading vulnerability…</p>}
-            {vulnState === 'missing' && (
+            {malicious && (
+              <div className="space-y-2 text-sm">
+                <p className="text-text-secondary">
+                  A known-malicious package advisory from ossf/malicious-packages. The image contains a package with this name and version.
+                </p>
+                {row.packages && row.packages.length > 0 && (
+                  <p className="text-xs text-text-muted">Package: <span className="font-mono">{row.packages.join(', ')}</span></p>
+                )}
+                <a href={`https://osv.dev/vulnerability/${encodeURIComponent(row.cve)}`} target="_blank" rel="noreferrer"
+                  className="inline-flex items-center gap-1 text-xs text-accent hover:text-accent-hover">
+                  Advisory on osv.dev <ExternalLink className="w-3 h-3" />
+                </a>
+                <p className="text-xs text-text-muted">
+                  Remove the package and rebuild if it is the published malicious one. Mark a false positive only when the image holds a
+                  different package with the same name, for example the project's own workspace package that someone squatted on the
+                  public registry. Check where the image gets it from before saving.
+                </p>
+              </div>
+            )}
+            {!malicious && vulnState === 'loading' && <p className="text-sm text-text-muted">Loading vulnerability…</p>}
+            {!malicious && vulnState === 'missing' && (
               <p className="text-sm text-text-secondary">This CVE has no vulnerability record in the current scans.</p>
             )}
             {vuln && (
@@ -102,7 +130,9 @@ export function EditModal({
               {withCVEs.length > 0 && (
                 <p className="text-xs text-text-muted mb-2">Triaged with {withCVEs.join(', ')}</p>
               )}
-              {row.run?.Reasoning ? (
+              {malicious ? (
+                <p className="text-text-muted">Automated triage never decides malicious packages; this statement is yours.</p>
+              ) : row.run?.Reasoning ? (
                 <p className="text-text-secondary whitespace-pre-wrap">{row.run.Reasoning}</p>
               ) : (
                 <p className="text-text-muted">No automated triage notes for this statement.</p>
@@ -113,11 +143,15 @@ export function EditModal({
             <div className="space-y-3">
               <label className="block text-xs text-text-secondary">
                 Outcome
-                <select value={state} onChange={e => setState(e.target.value)}
-                  className="mt-1 w-full px-3 py-2 bg-bg-primary border border-border rounded-lg text-sm text-text-primary focus:outline-none focus:border-accent/50">
-                  {VEX_STATES.map(([value, label]) => <option key={value} value={value}>{label}</option>)}
+                <select value={state} onChange={e => setState(e.target.value)} disabled={malicious}
+                  className="mt-1 w-full px-3 py-2 bg-bg-primary border border-border rounded-lg text-sm text-text-primary focus:outline-none focus:border-accent/50 disabled:opacity-70">
+                  {(malicious ? VEX_STATES.filter(([value]) => value === 'false_positive') : VEX_STATES)
+                    .map(([value, label]) => <option key={value} value={value}>{label}</option>)}
                 </select>
               </label>
+              {malicious && (
+                <p className="text-xs text-text-muted">Only false positive can exempt a malicious package: the image does not contain the malicious one.</p>
+              )}
               {state === 'not_affected' && (
                 <label className="block text-xs text-text-secondary">
                   Justification
@@ -130,6 +164,7 @@ export function EditModal({
               <label className="block text-xs text-text-secondary">
                 Detail
                 <textarea value={detail} onChange={e => setDetail(e.target.value)} rows={8}
+                  placeholder={malicious ? 'Why this is not the malicious package, e.g. "@scope/name 1.2.3 is the project\'s own workspace package (packages/name), not the npm publish".' : undefined}
                   className="mt-1 w-full px-3 py-2 bg-bg-primary border border-border rounded-lg text-sm text-text-primary focus:outline-none focus:border-accent/50" />
               </label>
               <label className="block text-xs text-text-secondary">

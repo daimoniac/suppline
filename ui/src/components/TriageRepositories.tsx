@@ -14,6 +14,7 @@ import { STATUS_LABELS, VEX_STATES, type StatementRow } from '../lib/triageRows'
 import type { TriagePhase, TriageRepository, TriageRepositoryCVE, TriageRun } from '../lib/api';
 
 const PHASE_LABELS: Record<TriagePhase, string> = {
+  manual: 'Malicious',
   uncertain: 'Uncertain',
   error: 'Failed',
   not_triaged: 'Not triaged',
@@ -24,6 +25,7 @@ const PHASE_LABELS: Record<TriagePhase, string> = {
 };
 
 const PHASE_STYLES: Record<TriagePhase, string> = {
+  manual: 'bg-danger-bg text-danger',
   uncertain: 'bg-warning-bg text-warning',
   error: 'bg-danger-bg text-danger',
   not_triaged: 'bg-danger-bg text-danger',
@@ -33,7 +35,7 @@ const PHASE_STYLES: Record<TriagePhase, string> = {
   exempt: 'bg-bg-tertiary text-text-secondary',
 };
 
-const ATTENTION: TriagePhase[] = ['uncertain', 'error', 'not_triaged'];
+const ATTENTION: TriagePhase[] = ['manual', 'uncertain', 'error', 'not_triaged'];
 
 function pairKey(repository: string, cve: string) {
   return `${repository}\n${cve}`;
@@ -54,6 +56,7 @@ function modalRow(repository: string, cve: TriageRepositoryCVE): StatementRow {
     key: pairKey(repository, cve.CVEID),
     cve: cve.CVEID,
     repository,
+    packages: cve.Packages,
     state: cve.State || (verdictIsState && run ? run.Verdict : ''),
     justification: cve.Justification || run?.Justification || '',
     detail: cve.Detail || run?.Reasoning || '',
@@ -67,7 +70,9 @@ function modalRow(repository: string, cve: TriageRepositoryCVE): StatementRow {
 }
 
 function PhasePill({ cve }: { cve: TriageRepositoryCVE }) {
-  const label = cve.Phase === 'exempt' ? `Exempt · ${cve.Origin ?? 'manual'}` : PHASE_LABELS[cve.Phase];
+  const label = cve.Phase === 'exempt'
+    ? (cve.Malicious ? 'False positive' : `Exempt · ${cve.Origin ?? 'manual'}`)
+    : PHASE_LABELS[cve.Phase];
   return (
     <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded text-xs font-medium whitespace-nowrap ${PHASE_STYLES[cve.Phase]}`}>
       {cve.Phase === 'running' && <Loader2 className="w-3 h-3 animate-spin" />}
@@ -239,7 +244,7 @@ export function TriageRepositories() {
             const expanded = open[card.Repository] ?? (counts.NeedsAttention + counts.InProgress > 0);
             const blocking = card.CVEs.filter(cve => cve.Phase !== 'exempt');
             const exempt = card.CVEs.filter(cve => cve.Phase === 'exempt');
-            const attention = blocking.filter(needsAttention);
+            const attention = blocking.filter(cve => needsAttention(cve) && !cve.Malicious);
             const fixable = blocking.filter(cve => (cve.Phase === 'uncertain' || cve.Phase === 'error') && cve.Run);
             const exemptShown = showExempt[card.Repository] ?? false;
             const rows = exemptShown ? [...blocking, ...exempt] : blocking;
@@ -327,7 +332,15 @@ export function TriageRepositories() {
                                   <p className="text-xs text-text-muted mt-1 line-clamp-2 whitespace-pre-wrap">{cve.Run.Reasoning}</p>
                                 )}
                               </button>
-                              {cve.Phase !== 'exempt' && (
+                              {cve.Malicious && cve.Phase !== 'exempt' && (
+                                <div className="mt-2 md:mt-0 flex flex-wrap items-center gap-2 md:justify-end shrink-0">
+                                  <button type="button" onClick={() => setEditing({ repository: card.Repository, cve, withCVEs: [] })}
+                                    className="px-2 py-1 text-xs rounded-md border border-border text-text-secondary hover:bg-bg-tertiary">
+                                    Mark false positive
+                                  </button>
+                                </div>
+                              )}
+                              {!cve.Malicious && cve.Phase !== 'exempt' && (
                                 <div className="mt-2 md:mt-0 flex flex-wrap items-center gap-2 md:justify-end shrink-0">
                                   <button type="button" onClick={() => runAgain(card.Repository, [cve])}
                                     disabled={retrying.has(key) || isBusy(cve)}

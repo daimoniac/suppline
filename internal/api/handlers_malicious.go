@@ -55,6 +55,16 @@ type MaliciousImageResponse struct {
 	Runtime      statestore.RuntimeInventory
 	CheckStatus  string
 	Findings     []types.MaliciousFinding
+	// FalsePositives are the repository's false_positive statements for
+	// malicious advisories, so the UI can show and edit them.
+	FalsePositives []MaliciousStatement
+}
+
+// MaliciousStatement is a false_positive VEX statement for a MAL advisory.
+type MaliciousStatement struct {
+	ID        string
+	Detail    string
+	ExpiresAt *int64
 }
 
 // MaliciousOverviewResponse is the malicious-packages page.
@@ -98,16 +108,17 @@ func (s *APIServer) handleGetMalicious(w http.ResponseWriter, r *http.Request) {
 				findings = []types.MaliciousFinding{}
 			}
 			out.Images = append(out.Images, MaliciousImageResponse{
-				Repository:   image.Repository,
-				Digest:       image.Digest,
-				Tags:         image.Tags,
-				ScannedAt:    image.ScannedAt,
-				PolicyPassed: image.PolicyPassed,
-				PolicyStatus: image.PolicyStatus,
-				RuntimeUsed:  image.RuntimeUsed,
-				Runtime:      image.Runtime,
-				CheckStatus:  image.Check.Status,
-				Findings:     findings,
+				Repository:     image.Repository,
+				Digest:         image.Digest,
+				Tags:           image.Tags,
+				ScannedAt:      image.ScannedAt,
+				PolicyPassed:   image.PolicyPassed,
+				PolicyStatus:   image.PolicyStatus,
+				RuntimeUsed:    image.RuntimeUsed,
+				Runtime:        image.Runtime,
+				CheckStatus:    image.Check.Status,
+				Findings:       findings,
+				FalsePositives: s.maliciousStatements(image.Repository),
 			})
 		}
 	}
@@ -138,4 +149,18 @@ func maliciousFeedResponse(overview malicious.Overview, settings MaliciousSettin
 		feed.LastAttemptAt = &at
 	}
 	return feed
+}
+
+func (s *APIServer) maliciousStatements(repository string) []MaliciousStatement {
+	out := []MaliciousStatement{}
+	if s.policyCatalog == nil {
+		return out
+	}
+	for _, statement := range s.policyCatalog.ResolveEvidence(repository).VEXStatements {
+		if !types.IsMaliciousID(statement.ID) || statement.State != types.VEXStateFalsePositive {
+			continue
+		}
+		out = append(out, MaliciousStatement{ID: statement.ID, Detail: statement.Detail, ExpiresAt: statement.ExpiresAt})
+	}
+	return out
 }

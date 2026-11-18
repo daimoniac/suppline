@@ -397,7 +397,7 @@ func (s *Service) Retry(ctx context.Context, repository, cve string) int {
 	}
 	repository = strings.TrimSpace(repository)
 	cve = strings.TrimSpace(cve)
-	if repository == "" || cve == "" {
+	if repository == "" || cve == "" || types.IsMaliciousID(cve) {
 		return 0
 	}
 	if s.settings.OnlyInUse {
@@ -1046,6 +1046,12 @@ func (s *Service) applyStatements(ctx context.Context, repository string, statem
 	if len(statements) == 0 {
 		return "", nil
 	}
+	for _, statement := range statements {
+		// Automated statements never exempt malware; see docs/adr/0001.
+		if err := types.ValidateMaliciousVEXStatement(statement, true); err != nil {
+			return "", err
+		}
+	}
 	result, err := s.editor.Apply(ctx, configedit.Change{
 		Message: message,
 		File: func(current []byte) ([]byte, error) {
@@ -1114,6 +1120,9 @@ func (s *Service) PromoteManual(ctx context.Context, repository string, statemen
 		return "", fmt.Errorf("repository and id are required")
 	}
 	if err := types.ValidateVEXStatement(statement); err != nil {
+		return "", err
+	}
+	if err := types.ValidateMaliciousVEXStatement(statement, false); err != nil {
 		return "", err
 	}
 	message := fmt.Sprintf("chore(vex): accept %s for %s\n\nhuman override of triage", statement.ID, repository)

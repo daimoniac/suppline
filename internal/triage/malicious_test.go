@@ -3,6 +3,7 @@ package triage
 import (
 	"context"
 	"log/slog"
+	"strings"
 	"testing"
 
 	"github.com/daimoniac/suppline/internal/types"
@@ -39,5 +40,25 @@ func TestMaliciousFindingsNeverQueueTriage(t *testing.T) {
 	}
 	if job := <-svc.jobs; job.CVEID != "CVE-1" {
 		t.Fatalf("queued %s", job.CVEID)
+	}
+}
+
+func TestRetryNeverQueuesMalicious(t *testing.T) {
+	svc := &Service{
+		settings: Settings{Enabled: true, OnlyInUse: false},
+		logger:   slog.Default(),
+		jobs:     make(chan Job, 1),
+		pending:  map[string]ActiveJob{},
+	}
+	if queued := svc.Retry(context.Background(), "example/app", "MAL-2025-1"); queued != 0 {
+		t.Fatalf("queued %d jobs for a malicious advisory", queued)
+	}
+}
+
+func TestPromoteManualRejectsNotAffectedMalicious(t *testing.T) {
+	svc := &Service{settings: Settings{Enabled: true}, logger: slog.Default()}
+	_, err := svc.PromoteManual(context.Background(), "example/app", types.VEXStatement{ID: "MAL-2025-1", State: types.VEXStateNotAffected, Justification: types.VEXJustCodeNotReachable})
+	if err == nil || !strings.Contains(err.Error(), "false_positive") {
+		t.Fatalf("expected false_positive rule, got %v", err)
 	}
 }

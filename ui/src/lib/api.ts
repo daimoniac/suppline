@@ -422,9 +422,17 @@ export interface MaliciousImage {
   PolicyPassed: boolean;
   PolicyStatus: string;
   RuntimeUsed: boolean;
+  /** Hand-written false_positive statements of this repository for its findings. */
+  FalsePositives?: MaliciousStatement[] | null;
   Runtime?: RuntimeInventory | null;
   CheckStatus: MaliciousCheckStatus;
   Findings: MaliciousFinding[];
+}
+
+export interface MaliciousStatement {
+  ID: string;
+  Detail: string;
+  ExpiresAt?: number | null;
 }
 
 export interface MaliciousOverview {
@@ -702,7 +710,8 @@ export interface TriageStatement {
   Run?: TriageRun;
 }
 
-export type TriagePhase = 'uncertain' | 'error' | 'not_triaged' | 'running' | 'queued' | 'decided' | 'exempt';
+/** 'manual' is a malicious-package finding: never triaged automatically, decided by a person. */
+export type TriagePhase = 'manual' | 'uncertain' | 'error' | 'not_triaged' | 'running' | 'queued' | 'decided' | 'exempt';
 
 export interface TriageRepositoryTag {
   Tag: string;
@@ -726,6 +735,8 @@ export interface TriageRepositoryCounts {
 export interface TriageRepositoryCVE {
   CVEID: string;
   Phase: TriagePhase;
+  /** A malicious-package advisory (MAL-*); only a hand-written false_positive exempts it. */
+  Malicious?: boolean;
   Blocking: boolean;
   Packages?: string[];
   Tags: string[];
