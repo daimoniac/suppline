@@ -380,7 +380,7 @@ sync:
 - **With the in-process mirror** the digest is copied by digest only and its tag, a new tag included, moves only after the passing scan. Renovate pointed at your registry therefore never sees the release before then. Renovate pointed at the upstream registry bypasses the cooldown; use Renovate's own `minimumReleaseAge` there as a second layer. See [STATE_MACHINE.md](STATE_MACHINE.md) for how the tag runway holds digests, and [REGISTRY.md](REGISTRY.md#hold-tags) for the hold tags it writes.
 - **Without the mirror** suppline cannot hold the import. The cooldown only withholds the attestation, counting from the digest's first scan.
 - **Grandfathering:** a digest a target tag already names when the cooldown is switched on, or when suppline starts with a new database, counts as past its cooldown.
-- **`x-cooldown-release`** skips the rest of one digest's cooldown. It never skips the scan or the attestation. The Mirror page writes it as a config edit, committed to the config repository when one is configured.
+- **`x-cooldown-release`** skips the rest of one digest's cooldown. It never skips the scan or the attestation. The Mirror page writes it as a config edit, committed to the config repository when one is configured, and rescans the held digest at once, so its tag moves as soon as that scan passes. A release edited into the file directly takes effect on the next mirror pass.
 
 ### VEX Statements
 

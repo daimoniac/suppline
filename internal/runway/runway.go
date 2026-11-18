@@ -71,6 +71,7 @@ type Holds interface {
 // Scheduler submits the Scan request that attests a held digest.
 type Scheduler interface {
 	EnqueueDiscovery(ctx context.Context, image scanenqueue.Image, kind scanenqueue.DiscoveryKind) (*queue.ScanTask, error)
+	EnqueueUrgentRescan(ctx context.Context, image scanenqueue.Image) (*queue.ScanTask, error)
 }
 
 // Config wires a Runway. Store, Tagger and Scheduler are required; Holds is
@@ -253,6 +254,29 @@ func (r *Runway) FirstSeen(ctx context.Context, repository, digest string) (*tim
 	return &firstSeen, nil
 }
 
+// Release requests an urgent rescan of a Held digest a Cooldown release
+// names, so its tag moves as soon as the scan attests it instead of on the
+// next mirror pass. It reports whether the runway holds the digest.
+func (r *Runway) Release(ctx context.Context, repository, digest string) (bool, error) {
+	if err := r.load(ctx, repository); err != nil {
+		return false, err
+	}
+	tags := r.tagsOf(repository, digest)
+	if len(tags) == 0 {
+		return false, nil
+	}
+	if _, err := r.cfg.Scheduler.EnqueueUrgentRescan(ctx, scanenqueue.Image{
+		Repository: repository,
+		Tag:        tags[0],
+		Digest:     digest,
+	}); err != nil {
+		return true, fmt.Errorf("enqueue rescan of released digest: %w", err)
+	}
+	r.cfg.Log.Info("queued rescan of released digest",
+		"repository", repository, "digest", digest, "tags", tags)
+	return true, nil
+}
+
 // HeldDigests lists the digests held off a tag in repository.
 func (r *Runway) HeldDigests(repository string) []string {
 	r.mu.Lock()
@@ -305,7 +329,7 @@ func (r *Runway) reviewTag(ctx context.Context, repository, tag string) (string,
 		if attested(rec) {
 			return digest, r.publish(ctx, repository, tag, digest, "digest attested")
 		}
-		if !scanDue(rec, r.cfg.Now(), r.rescanInterval(repository)) {
+		if !scanDue(rec, r.cfg.Now(), r.rescanInterval(repository)) && !r.releasedWhilePending(repository, digest, rec) {
 			r.cfg.Log.Info("holding tag; scan is not due yet",
 				"repository", repository, "tag", tag, "digest", digest,
 				"policy_status", statusOf(rec))
@@ -599,6 +623,13 @@ func (r *Runway) cooldown(repository string) time.Duration {
 
 func (r *Runway) released(repository, digest string) bool {
 	return r.cfg.Released != nil && r.cfg.Released(repository, digest)
+}
+
+// releasedWhilePending reports a Cooldown release that came after the
+// digest's last scan: that scan is still pending for the cooldown, so the
+// rescan it waits for would only come once the cooldown is over.
+func (r *Runway) releasedWhilePending(repository, digest string, rec *statestore.ScanRecord) bool {
+	return rec != nil && rec.PolicyStatus == policy.PolicyStatusPending && r.released(repository, digest)
 }
 
 func (r *Runway) rescanInterval(repository string) time.Duration {

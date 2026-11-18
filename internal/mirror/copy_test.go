@@ -279,6 +279,10 @@ func (s *scanState) EnqueueDiscovery(_ context.Context, image scanenqueue.Image,
 	return &queue.ScanTask{}, nil
 }
 
+func (s *scanState) EnqueueUrgentRescan(ctx context.Context, image scanenqueue.Image) (*queue.ScanTask, error) {
+	return s.EnqueueDiscovery(ctx, image, scanenqueue.DiscoveryRescan)
+}
+
 // regTagger moves tags in the test registry.
 type regTagger struct{ rc *regclient.RegClient }
 
