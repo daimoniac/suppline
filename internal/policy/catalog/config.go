@@ -464,18 +464,6 @@ func (c *ConfigCatalog) UsesVEXRepo() bool {
 	return uses
 }
 
-func parseInterval(value string) (time.Duration, error) {
-	if strings.HasSuffix(value, "d") {
-		days := strings.TrimSuffix(value, "d")
-		var count int
-		if _, err := fmt.Sscanf(days, "%d", &count); err != nil {
-			return 0, fmt.Errorf("invalid duration format: %s", value)
-		}
-		return time.Duration(count) * 24 * time.Hour, nil
-	}
-	return time.ParseDuration(value)
-}
-
 // Upstream returns the catalog source image and platform for a mirrored repository.
 func (c *ConfigCatalog) Upstream(repository string) (source, platform string, ok bool) {
 	if c == nil || c.config == nil {
