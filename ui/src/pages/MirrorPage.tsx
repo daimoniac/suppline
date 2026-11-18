@@ -128,10 +128,10 @@ export default function MirrorPage() {
       <section className="bg-bg-primary border border-border rounded-xl overflow-hidden">
         <div className="px-5 py-4 border-b border-border">
           <h2 className="text-sm font-semibold">Held</h2>
-          <p className="text-xs text-text-muted mt-1">New digests copied from upstream that no tag names yet: in their cooldown, waiting for a passing scan, or failing policy</p>
+          <p className="text-xs text-text-muted mt-1">New images from upstream that are held back for the configured cooldown period.</p>
         </div>
         {held.length === 0 ? (
-          <EmptyState icon={<Clock className="w-8 h-8" />} title="Nothing held" message="Every mirrored tag names the newest digest it may name." />
+          <EmptyState icon={<Clock className="w-8 h-8" />} title="Nothing held" message="No images are being held back." />
         ) : (
           <HeldTable rows={held} onRelease={row => { setReleaseTarget(row); setReleaseReason(''); }} />
         )}
