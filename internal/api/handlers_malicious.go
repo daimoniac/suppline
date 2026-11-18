@@ -164,3 +164,30 @@ func (s *APIServer) maliciousStatements(repository string) []MaliciousStatement 
 	}
 	return out
 }
+
+// addMaliciousImageCounts adds, per MAL id, how many current image digests
+// have it in their latest malicious-package check, exempted ones included.
+// Malicious findings are not vulnerability findings, so the CVE count misses them.
+func (s *APIServer) addMaliciousImageCounts(ctx context.Context, counts map[string]int) error {
+	store, ok := s.stateStore.(maliciousImageStore)
+	if !ok || counts == nil {
+		return nil
+	}
+	images, _, err := store.ListMaliciousImages(ctx)
+	if err != nil {
+		return err
+	}
+	digests := make(map[string]map[string]bool)
+	for _, image := range images {
+		for _, finding := range image.Check.Findings {
+			if digests[finding.ID] == nil {
+				digests[finding.ID] = make(map[string]bool)
+			}
+			digests[finding.ID][image.Digest] = true
+		}
+	}
+	for id, set := range digests {
+		counts[id] = len(set)
+	}
+	return nil
+}

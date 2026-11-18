@@ -127,3 +127,28 @@ func TestTriageRepositoriesShowMalicious(t *testing.T) {
 		t.Fatalf("counts = %+v", cards[0].Counts)
 	}
 }
+
+func TestAddMaliciousImageCounts(t *testing.T) {
+	store, err := statestore.NewSQLiteStore(filepath.Join(t.TempDir(), "counts.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = store.Close() })
+	check := &types.MaliciousCheck{Status: types.MaliciousCheckOK, Findings: []types.MaliciousFinding{{ID: "MAL-1", Exempted: true}}}
+	for _, scan := range []*statestore.ScanRecord{
+		{Repository: "library/a", Digest: "sha256:aaaa000000000000000000000000000000000000000000000000000000000000", Tag: "1", PolicyPassed: true, PolicyStatus: "passed", Malicious: check},
+		{Repository: "library/a", Digest: "sha256:bbbb000000000000000000000000000000000000000000000000000000000000", Tag: "2", PolicyPassed: true, PolicyStatus: "passed", Malicious: check},
+	} {
+		if err := store.RecordScan(t.Context(), scan); err != nil {
+			t.Fatal(err)
+		}
+	}
+	server := NewAPIServer(&config.APIConfig{Enabled: true, Port: 8080}, mockAttestationConfig(), store, queue.NewInMemoryQueue(8), mockRegsyncConfig(), observability.NewLogger("error"))
+	counts := map[string]int{"CVE-1": 3}
+	if err := server.addMaliciousImageCounts(t.Context(), counts); err != nil {
+		t.Fatal(err)
+	}
+	if counts["MAL-1"] != 2 || counts["CVE-1"] != 3 {
+		t.Fatalf("counts = %+v", counts)
+	}
+}

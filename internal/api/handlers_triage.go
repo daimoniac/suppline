@@ -113,6 +113,12 @@ func (s *APIServer) handleListTriageStatements(w http.ResponseWriter, r *http.Re
 		s.logger.Error("count finding images", "error", err)
 		return
 	}
+	if findingImages == nil {
+		findingImages = map[string]int{}
+	}
+	if err := s.addMaliciousImageCounts(r.Context(), findingImages); err != nil {
+		s.logger.Error("count malicious finding images", "error", err)
+	}
 	rows := statementList(active, inactive, runRows, findingImages)
 	if rows == nil {
 		rows = []TriageStatement{}
