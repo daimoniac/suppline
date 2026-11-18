@@ -54,7 +54,7 @@ The agent loads configuration from a `.env` file (if present) before checking en
 
 | Variable | Required | Default | Description |
 |---|---|---|---|
-| `SUPPLINE_URL` | **yes** | — | Base URL of the suppline API, e.g. `http://suppline:8080` |
+| `SUPPLINE_URL` | **yes** | — | Base URL of the suppline API, e.g. `http://suppline:8080`. Include suppline's base path if it has one, e.g. `https://example.com/suppline` |
 | `CLUSTER_NAME` | **yes** | — | Cluster identifier reported in the inventory payload |
 | `SUPPLINE_API_KEY` | no | — | If set, sent as `Authorization: Bearer <key>` |
 | `WATCH_FLUSH_INTERVAL` | no | `30s` | Interval for retrying failed inventory uploads (legacy name; maps to retry interval) |

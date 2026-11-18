@@ -9,6 +9,8 @@ import (
 	"strings"
 	"time"
 
+	_ "github.com/daimoniac/suppline/build/swagger" // registers generated docs
+
 	"github.com/daimoniac/suppline/internal/config"
 	"github.com/daimoniac/suppline/internal/configedit"
 	"github.com/daimoniac/suppline/internal/mirror"
@@ -21,7 +23,7 @@ import (
 	"github.com/daimoniac/suppline/internal/vexaudit"
 	httpSwagger "github.com/swaggo/http-swagger"
 
-	_ "github.com/daimoniac/suppline/build/swagger" // Import generated docs
+	uiassets "github.com/daimoniac/suppline/ui"
 )
 
 // @title suppline API
@@ -39,7 +41,6 @@ import (
 // @license.name Apache 2.0
 // @license.url https://www.apache.org/licenses/LICENSE-2.0.html
 
-// @host localhost:8080
 // @BasePath /api/v1
 
 // @securityDefinitions.apikey BearerAuth
@@ -66,6 +67,7 @@ type APIServer struct {
 	maliciousInfo     MaliciousSettings
 	heldDigests       HeldDigestLister
 	router            *http.ServeMux
+	ui                http.Handler
 	server            *http.Server
 	logger            *slog.Logger
 }
@@ -118,23 +120,11 @@ func NewAPIServerWithCatalogAndEnqueuer(cfg *config.APIConfig, attestationCfg *c
 
 	api.setupRoutes()
 
-	// Wrap router with global CORS handler
-	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		// Set CORS headers for all requests BEFORE writing any response
-		w.Header().Set("Access-Control-Allow-Origin", "*")
-		w.Header().Set("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS")
-		w.Header().Set("Access-Control-Allow-Headers", "Content-Type, Authorization")
-		w.Header().Set("Access-Control-Max-Age", "3600")
-
-		// Handle preflight OPTIONS request
-		if r.Method == http.MethodOptions {
-			w.WriteHeader(http.StatusNoContent)
-			return
-		}
-
-		// Delegate to the router
-		api.router.ServeHTTP(w, r)
-	})
+	handler, err := api.rootHandler(uiassets.Files())
+	if err != nil {
+		// The UI's index.html is embedded at build time, so this only fails on a broken build.
+		panic(fmt.Sprintf("api: build UI handler: %v", err))
+	}
 
 	api.server = &http.Server{
 		Addr:         fmt.Sprintf(":%d", cfg.Port),
@@ -207,84 +197,67 @@ func (s *APIServer) SetHeldDigests(held HeldDigestLister) {
 // setupRoutes configures all API routes
 func (s *APIServer) setupRoutes() {
 	// Query endpoints (GET)
-	s.router.HandleFunc("/api/v1/scans", s.corsMiddleware(s.authMiddleware(s.handleListScans, false)))
-	s.router.HandleFunc("/api/v1/scans/", s.corsMiddleware(s.authMiddleware(s.handleGetScan, false)))
-	s.router.HandleFunc("/api/v1/vulnerabilities", s.corsMiddleware(s.authMiddleware(s.handleQueryVulnerabilities, false)))
-	s.router.HandleFunc("/api/v1/vulnerabilities/", s.corsMiddleware(s.authMiddleware(s.handleGetVulnerabilityDetails, false)))
-	s.router.HandleFunc("/api/v1/coverage", s.corsMiddleware(s.authMiddleware(s.handleGetCoverage, false)))
-	s.router.HandleFunc("/api/v1/vex", s.corsMiddleware(s.authMiddleware(s.handleListVEX, false)))
-	s.router.HandleFunc("/api/v1/triage", s.corsMiddleware(s.authMiddleware(s.handleListTriage, false)))
-	s.router.HandleFunc("/api/v1/triage/statements", s.corsMiddleware(s.authMiddleware(s.handleListTriageStatements, false)))
-	s.router.HandleFunc("/api/v1/triage/repositories", s.corsMiddleware(s.authMiddleware(s.handleListTriageRepositories, false)))
-	s.router.HandleFunc("/api/v1/triage/status", s.corsMiddleware(s.authMiddleware(s.handleTriageStatus, false)))
-	s.router.HandleFunc("/api/v1/triage/run", s.corsMiddleware(s.authMiddleware(s.handleTriageRun, true)))
-	s.router.HandleFunc("/api/v1/triage/retry", s.corsMiddleware(s.authMiddleware(s.handleTriageRetry, true)))
-	s.router.HandleFunc("/api/v1/triage/accept", s.corsMiddleware(s.authMiddleware(s.handleTriageAccept, true)))
-	s.router.HandleFunc("/api/v1/triage/budget/reset", s.corsMiddleware(s.authMiddleware(s.handleTriageBudgetReset, true)))
-	s.router.HandleFunc("/api/v1/vex/inactive", s.corsMiddleware(s.authMiddleware(s.handleListInactiveVEX, false)))
-	s.router.HandleFunc("/api/v1/images/failed", s.corsMiddleware(s.authMiddleware(s.handleListFailedImages, false)))
-	s.router.HandleFunc("/api/v1/images/running-failures", s.corsMiddleware(s.authMiddleware(s.handleListRunningPolicyFailures, false)))
-	s.router.HandleFunc("/api/v1/policies", s.corsMiddleware(s.authMiddleware(s.handleListPolicies, false)))
-	s.router.HandleFunc("/api/v1/repositories", s.corsMiddleware(s.authMiddleware(s.handleListRepositories, false)))
-	s.router.HandleFunc("/api/v1/repositories/", s.corsMiddleware(s.authMiddleware(s.handleRepositoriesRouter, false)))
+	s.router.HandleFunc("/api/v1/scans", s.authMiddleware(s.handleListScans, false))
+	s.router.HandleFunc("/api/v1/scans/", s.authMiddleware(s.handleGetScan, false))
+	s.router.HandleFunc("/api/v1/vulnerabilities", s.authMiddleware(s.handleQueryVulnerabilities, false))
+	s.router.HandleFunc("/api/v1/vulnerabilities/", s.authMiddleware(s.handleGetVulnerabilityDetails, false))
+	s.router.HandleFunc("/api/v1/coverage", s.authMiddleware(s.handleGetCoverage, false))
+	s.router.HandleFunc("/api/v1/vex", s.authMiddleware(s.handleListVEX, false))
+	s.router.HandleFunc("/api/v1/triage", s.authMiddleware(s.handleListTriage, false))
+	s.router.HandleFunc("/api/v1/triage/statements", s.authMiddleware(s.handleListTriageStatements, false))
+	s.router.HandleFunc("/api/v1/triage/repositories", s.authMiddleware(s.handleListTriageRepositories, false))
+	s.router.HandleFunc("/api/v1/triage/status", s.authMiddleware(s.handleTriageStatus, false))
+	s.router.HandleFunc("/api/v1/triage/run", s.authMiddleware(s.handleTriageRun, true))
+	s.router.HandleFunc("/api/v1/triage/retry", s.authMiddleware(s.handleTriageRetry, true))
+	s.router.HandleFunc("/api/v1/triage/accept", s.authMiddleware(s.handleTriageAccept, true))
+	s.router.HandleFunc("/api/v1/triage/budget/reset", s.authMiddleware(s.handleTriageBudgetReset, true))
+	s.router.HandleFunc("/api/v1/vex/inactive", s.authMiddleware(s.handleListInactiveVEX, false))
+	s.router.HandleFunc("/api/v1/images/failed", s.authMiddleware(s.handleListFailedImages, false))
+	s.router.HandleFunc("/api/v1/images/running-failures", s.authMiddleware(s.handleListRunningPolicyFailures, false))
+	s.router.HandleFunc("/api/v1/policies", s.authMiddleware(s.handleListPolicies, false))
+	s.router.HandleFunc("/api/v1/repositories", s.authMiddleware(s.handleListRepositories, false))
+	s.router.HandleFunc("/api/v1/repositories/", s.authMiddleware(s.handleRepositoriesRouter, false))
 
 	// Action endpoints (POST)
-	s.router.HandleFunc("/api/v1/scans/trigger", s.corsMiddleware(s.authMiddleware(s.handleTriggerScan, true)))
-	s.router.HandleFunc("/api/v1/policy/reevaluate", s.corsMiddleware(s.authMiddleware(s.handleReevaluatePolicy, true)))
-	s.router.HandleFunc("/api/v1/webhook/cluster-inventory", s.corsMiddleware(s.handleClusterInventory))
+	s.router.HandleFunc("/api/v1/scans/trigger", s.authMiddleware(s.handleTriggerScan, true))
+	s.router.HandleFunc("/api/v1/policy/reevaluate", s.authMiddleware(s.handleReevaluatePolicy, true))
+	s.router.HandleFunc("/api/v1/webhook/cluster-inventory", s.handleClusterInventory)
 
 	// Health and metrics
-	s.router.HandleFunc("/health", s.corsMiddleware(s.handleHealth))
-	s.router.HandleFunc("/metrics", s.corsMiddleware(s.handleMetrics))
+	s.router.HandleFunc("/health", s.handleHealth)
 
 	// Task endpoints
-	s.router.HandleFunc("/api/v1/tasks/config-edits", s.corsMiddleware(s.authMiddleware(s.handleConfigEditStatus, false)))
-	s.router.HandleFunc("/api/v1/tasks/semver-updates", s.corsMiddleware(s.authMiddleware(s.handleSemverUpdateTasks, true)))
-	s.router.HandleFunc("/api/v1/tasks/sync-removals", s.corsMiddleware(s.authMiddleware(s.handleRemoveSyncTargets, true)))
-	s.router.HandleFunc("/api/v1/tasks/vex-removals", s.corsMiddleware(s.authMiddleware(s.handleRemoveVEXStatements, true)))
-	s.router.HandleFunc("/api/v1/tasks/vex-expiry", s.corsMiddleware(s.authMiddleware(s.handleGetVEXExpiryTasks, true)))
-	s.router.HandleFunc("/api/v1/tasks/ineffective-vex", s.corsMiddleware(s.authMiddleware(s.handleGetIneffectiveVEX, true)))
-	s.router.HandleFunc("/api/v1/tasks/ineffective-vex-removals", s.corsMiddleware(s.authMiddleware(s.handleRemoveIneffectiveVEX, true)))
-	s.router.HandleFunc("/api/v1/tasks/runtime-unused-whitelist", s.corsMiddleware(s.authMiddleware(s.handleRuntimeUnusedWhitelistRouter, false)))
+	s.router.HandleFunc("/api/v1/tasks/config-edits", s.authMiddleware(s.handleConfigEditStatus, false))
+	s.router.HandleFunc("/api/v1/tasks/semver-updates", s.authMiddleware(s.handleSemverUpdateTasks, true))
+	s.router.HandleFunc("/api/v1/tasks/sync-removals", s.authMiddleware(s.handleRemoveSyncTargets, true))
+	s.router.HandleFunc("/api/v1/tasks/vex-removals", s.authMiddleware(s.handleRemoveVEXStatements, true))
+	s.router.HandleFunc("/api/v1/tasks/vex-expiry", s.authMiddleware(s.handleGetVEXExpiryTasks, true))
+	s.router.HandleFunc("/api/v1/tasks/ineffective-vex", s.authMiddleware(s.handleGetIneffectiveVEX, true))
+	s.router.HandleFunc("/api/v1/tasks/ineffective-vex-removals", s.authMiddleware(s.handleRemoveIneffectiveVEX, true))
+	s.router.HandleFunc("/api/v1/tasks/runtime-unused-whitelist", s.authMiddleware(s.handleRuntimeUnusedWhitelistRouter, false))
 
 	// Integration endpoints
-	s.router.HandleFunc("/api/v1/integration/gitops", s.corsMiddleware(s.authMiddleware(s.handleGitopsStatus, false)))
-	s.router.HandleFunc("/api/v1/integration/kubernetes/clusters", s.corsMiddleware(s.handleListKubernetesClusters))
-	s.router.HandleFunc("/api/v1/integration/kubernetes/clusters/", s.corsMiddleware(s.authMiddleware(s.handleKubernetesClustersRouter, false)))
-	s.router.HandleFunc("/api/v1/mirror", s.corsMiddleware(s.authMiddleware(s.handleGetMirror, false)))
-	s.router.HandleFunc("/api/v1/mirror/held", s.corsMiddleware(s.authMiddleware(s.handleListHeldDigests, false)))
-	s.router.HandleFunc("/api/v1/mirror/held/release", s.corsMiddleware(s.authMiddleware(s.handleReleaseCooldown, true)))
-	s.router.HandleFunc("/api/v1/mirror/", s.corsMiddleware(s.authMiddleware(s.handleMirrorSub, false)))
-	s.router.HandleFunc("/api/v1/malicious", s.corsMiddleware(s.authMiddleware(s.handleGetMalicious, false)))
+	s.router.HandleFunc("/api/v1/integration/gitops", s.authMiddleware(s.handleGitopsStatus, false))
+	s.router.HandleFunc("/api/v1/integration/kubernetes/clusters", s.handleListKubernetesClusters)
+	s.router.HandleFunc("/api/v1/integration/kubernetes/clusters/", s.authMiddleware(s.handleKubernetesClustersRouter, false))
+	s.router.HandleFunc("/api/v1/mirror", s.authMiddleware(s.handleGetMirror, false))
+	s.router.HandleFunc("/api/v1/mirror/held", s.authMiddleware(s.handleListHeldDigests, false))
+	s.router.HandleFunc("/api/v1/mirror/held/release", s.authMiddleware(s.handleReleaseCooldown, true))
+	s.router.HandleFunc("/api/v1/mirror/", s.authMiddleware(s.handleMirrorSub, false))
+	s.router.HandleFunc("/api/v1/malicious", s.authMiddleware(s.handleGetMalicious, false))
 
-	s.router.HandleFunc("/api/v1/integration/publickey", s.corsMiddleware(s.handleGetPublicKey))
-	s.router.HandleFunc("/api/v1/integration/kyverno/policy", s.corsMiddleware(s.handleGenerateKyvernoPolicy))
+	s.router.HandleFunc("/api/v1/integration/publickey", s.handleGetPublicKey)
+	s.router.HandleFunc("/api/v1/integration/kyverno/policy", s.handleGenerateKyvernoPolicy)
 
 	// Swagger documentation
 	s.router.HandleFunc("/swagger/", httpSwagger.WrapHandler)
+	s.router.HandleFunc("/swagger", handleSwaggerRedirect)
 
-	// Redirect root to swagger
-	s.router.HandleFunc("/", s.handleRootRedirect)
-}
+	// Everything else is the embedded web UI.
+	s.router.HandleFunc("/", s.handleUI)
 
-// corsMiddleware adds CORS headers to allow cross-origin requests
-func (s *APIServer) corsMiddleware(next http.HandlerFunc) http.HandlerFunc {
-	return func(w http.ResponseWriter, r *http.Request) {
-		// Set CORS headers
-		w.Header().Set("Access-Control-Allow-Origin", "*")
-		w.Header().Set("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS")
-		w.Header().Set("Access-Control-Allow-Headers", "Content-Type, Authorization")
-		w.Header().Set("Access-Control-Max-Age", "3600")
-
-		// Handle preflight OPTIONS request
-		if r.Method == http.MethodOptions {
-			w.WriteHeader(http.StatusNoContent)
-			return
-		}
-
-		// Call the next handler
-		next(w, r)
-	}
+	// Unknown API paths answer with a JSON 404 instead of the UI.
+	s.router.HandleFunc("/api/", s.handleAPINotFound)
 }
 
 // authMiddleware provides optional API key authentication
@@ -416,13 +389,9 @@ func parseImageUsageQuery(r *http.Request) statestore.ImageUsage {
 	}
 }
 
-// handleRootRedirect redirects / to /swagger/
-func (s *APIServer) handleRootRedirect(w http.ResponseWriter, r *http.Request) {
-	if r.URL.Path != "/" {
-		s.respondError(w, http.StatusNotFound, "not found")
-		return
-	}
-	http.Redirect(w, r, "/swagger/", http.StatusMovedPermanently)
+// handleAPINotFound answers unknown /api/ paths with a JSON 404.
+func (s *APIServer) handleAPINotFound(w http.ResponseWriter, r *http.Request) {
+	s.respondError(w, http.StatusNotFound, "not found")
 }
 
 // runningConfig returns the configuration snapshot for one request, or nil.

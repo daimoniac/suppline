@@ -65,7 +65,7 @@ git clone https://github.com/daimoniac/suppline.git && cd suppline
 docker compose up --build -d
 ```
 
-Open **http://localhost:3000** and log in with API key **`demo`**. First boot needs a few minutes for image pulls and Trivy’s DB.
+Open **http://localhost:8080** and log in with API key **`demo`**. First boot needs a few minutes for image pulls and Trivy’s DB.
 
 ```bash
 curl http://localhost:8081/health
@@ -82,8 +82,7 @@ docker compose --profile eval-gate run --rm eval-gate
 
 | Port | Service |
 |------|---------|
-| 3000 | Web UI (API key `demo`) |
-| 8080 | REST API + Swagger |
+| 8080 | Web UI (API key `demo`), REST API, Swagger |
 | 8081 | Health checks |
 | 5000 | Throwaway registry (localhost) |
 | 9090 | Prometheus metrics |
@@ -221,11 +220,11 @@ helm upgrade --install suppline charts/suppline \
   -f charts/suppline/values-secrets.yaml
 ```
 
-Images ship to GHCR as `ghcr.io/daimoniac/suppline:<semver>` (and `-ui`). Cutting a release: [docs/RELEASE.md](docs/RELEASE.md).
+Images ship to GHCR as `ghcr.io/daimoniac/suppline:<semver>`; the web UI is built into the binary. Cutting a release: [docs/RELEASE.md](docs/RELEASE.md).
 
 Need raw YAML instead of applying with Helm? `helm template … > manifests.yaml` — there is no separate Kustomize tree.
 
-**Standalone binary** — CGO is required for SQLite, so you need a C toolchain:
+**Standalone binary** — CGO is required for SQLite, so you need a C toolchain, plus Node for the embedded UI:
 
 ```bash
 make build
@@ -283,7 +282,7 @@ internal/
   api/                 REST API and Swagger
 clusterstate-agent/    Kubernetes inventory reporter
 charts/suppline/       Helm chart
-ui/                    React + Vite frontend
+ui/                    React + Vite frontend, embedded into the binary
 ```
 
 Contributor notes are in [AGENTS.md](AGENTS.md) and [ui/AGENTS.md](ui/AGENTS.md). Swagger files under `build/swagger/` are generated — don't hand-edit them.

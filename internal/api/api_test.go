@@ -626,32 +626,6 @@ func TestHealthEndpoint(t *testing.T) {
 	}
 }
 
-func TestMetricsEndpoint(t *testing.T) {
-	cfg := &config.APIConfig{
-		Enabled:  true,
-		Port:     8080,
-		APIKey:   "",
-		ReadOnly: false,
-	}
-
-	server := NewAPIServer(cfg, mockAttestationConfig(), &mockStateStore{}, queue.NewInMemoryQueue(100), mockRegsyncConfig(), observability.NewLogger("error"))
-
-	req := httptest.NewRequest(http.MethodGet, "/metrics", nil)
-	w := httptest.NewRecorder()
-
-	server.router.ServeHTTP(w, req)
-
-	if w.Code != http.StatusOK {
-		t.Errorf("Expected status 200, got %d", w.Code)
-	}
-
-	// Check content type
-	contentType := w.Header().Get("Content-Type")
-	if contentType != "text/plain" {
-		t.Errorf("Expected Content-Type text/plain, got %s", contentType)
-	}
-}
-
 func TestHandleTriggerScan_MissingFields(t *testing.T) {
 	cfg := &config.APIConfig{
 		Enabled:  true,

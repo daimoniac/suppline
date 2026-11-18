@@ -53,7 +53,7 @@ git clone https://github.com/daimoniac/suppline.git && cd suppline
 docker compose up --build -d
 ```
 
-Open `http://localhost:3000` and log in with API key `demo`. Full checklist: [Eval quick start](EVAL.md).
+Open `http://localhost:8080` and log in with API key `demo`. Full checklist: [Eval quick start](EVAL.md).
 
 ## What you get
 

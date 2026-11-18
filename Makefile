@@ -1,4 +1,4 @@
-.PHONY: help test test-unit test-integration test-all lint docker-up docker-down docker-logs clean build
+.PHONY: help test test-unit test-integration test-all lint docker-up docker-down docker-logs clean build ui
 
 VERSION ?= dev
 
@@ -8,19 +8,11 @@ help: ## Show this help message
 	@echo 'Available targets:'
 	@awk 'BEGIN {FS = ":.*?## "} /^[a-zA-Z_-]+:.*?## / {printf "  %-20s %s\n", $$1, $$2}' $(MAKEFILE_LIST)
 
-build: swagger ## Build the application
-	go build -ldflags="-X github.com/daimoniac/suppline/internal/version.Version=$(VERSION)" -o suppline ./cmd/suppline
+build: swagger ui ## Build the binary with the embedded web UI
+	go build -tags embedui -ldflags="-X github.com/daimoniac/suppline/internal/version.Version=$(VERSION)" -o suppline ./cmd/suppline
 
-build-ui: ## Build the UI Docker image
-	@echo "Building UI Docker image..."
-	docker build -t suppline-ui:latest -f ui/Dockerfile ./ui
-	@echo "✅ UI image built successfully"
-
-build-all: ## Build all components (backend + UI)
-	@echo "Building all components..."
-	@$(MAKE) build
-	@$(MAKE) build-ui
-	@echo "✅ All components built successfully"
+ui: ## Build the web UI into ui/dist (embedded by `make build`)
+	cd ui && npm ci && npm run build
 
 test: test-unit ## Run unit tests (default)
 
@@ -49,7 +41,7 @@ clean: ## Clean build artifacts and test databases
 	rm -f *.db
 	rm -f coverage.txt
 	rm -rf test/*.db
-	rm -rf build/
+	rm -rf build/ ui/dist
 
 # Pinned to the CI version (.github/workflows/test.yml) and built with the local
 # Go toolchain, so it can read this module's Go version.
@@ -85,9 +77,6 @@ docker-build: ## Build Docker image
 
 docker-build-trivy: ## Build Trivy server Docker image
 	docker build -t trivy-server:latest -f Dockerfile.trivy .
-
-docker-build-ui: ## Build UI Docker image
-	docker build -t suppline-ui:latest -f ui/Dockerfile ./ui
 
 docker-run: ## Run application with Docker Compose
 	docker compose up -d
@@ -153,11 +142,11 @@ helm-uninstall: ## Uninstall Helm chart
 	@echo "✅ Helm chart uninstalled successfully"
 
 # Release targets
-release-build: ## Build release binaries for multiple platforms
-	GOOS=linux GOARCH=amd64 CGO_ENABLED=1 go build -o dist/suppline-linux-amd64 ./cmd/suppline
-	GOOS=linux GOARCH=arm64 CGO_ENABLED=1 go build -o dist/suppline-linux-arm64 ./cmd/suppline
-	GOOS=darwin GOARCH=amd64 CGO_ENABLED=1 go build -o dist/suppline-darwin-amd64 ./cmd/suppline
-	GOOS=darwin GOARCH=arm64 CGO_ENABLED=1 go build -o dist/suppline-darwin-arm64 ./cmd/suppline
+release-build: swagger ui ## Build release binaries for multiple platforms
+	GOOS=linux GOARCH=amd64 CGO_ENABLED=1 go build -tags embedui -o dist/suppline-linux-amd64 ./cmd/suppline
+	GOOS=linux GOARCH=arm64 CGO_ENABLED=1 go build -tags embedui -o dist/suppline-linux-arm64 ./cmd/suppline
+	GOOS=darwin GOARCH=amd64 CGO_ENABLED=1 go build -tags embedui -o dist/suppline-darwin-amd64 ./cmd/suppline
+	GOOS=darwin GOARCH=arm64 CGO_ENABLED=1 go build -tags embedui -o dist/suppline-darwin-arm64 ./cmd/suppline
 
 # API Documentation targets
 swagger: ## Generate Swagger/OpenAPI documentation

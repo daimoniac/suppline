@@ -1,5 +1,6 @@
 import { createContext, useContext, useState, useCallback, useEffect, type ReactNode } from 'react';
 import { APIClient, APIError } from './api';
+import { basePath } from './basePath';
 
 interface AuthContextType {
   isAuthenticated: boolean;
@@ -14,7 +15,7 @@ const STORAGE_KEY = 'stk_api_key';
 
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [apiClient] = useState(() => {
-    const client = new APIClient();
+    const client = new APIClient(basePath);
     const stored = localStorage.getItem(STORAGE_KEY);
     if (stored) {
       client.setAPIKey(stored);

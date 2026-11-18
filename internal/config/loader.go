@@ -107,6 +107,7 @@ func Load() (*Config, error) {
 			APIKey:      getEnv("SUPPLINE_API_KEY", ""),
 			ReadOnly:    getEnvBool("API_READ_ONLY", false),
 			AllowNoAuth: getEnvBool("SUPPLINE_ALLOW_NO_AUTH", false),
+			BasePath:    getEnv("SUPPLINE_BASE_PATH", ""),
 		},
 		Observability: ObservabilityConfig{
 			LogLevel:        getEnv("LOG_LEVEL", "info"),
@@ -151,6 +152,12 @@ func (c *Config) Validate() error {
 	if c.Attestation.UseKeyless && (c.Attestation.OIDCIssuer == "" || c.Attestation.OIDCClientID == "") {
 		return errors.NewPermanentf("OIDC issuer and client ID are required when using keyless mode")
 	}
+
+	basePath, err := NormalizeBasePath(c.API.BasePath)
+	if err != nil {
+		return err
+	}
+	c.API.BasePath = basePath
 
 	if c.API.Enabled && strings.TrimSpace(c.API.APIKey) == "" && !c.API.AllowNoAuth {
 		return errors.NewPermanentf("SUPPLINE_API_KEY is required when the API is enabled (authentication would otherwise be disabled for every route). Set SUPPLINE_ALLOW_NO_AUTH=1 only for isolated evaluation")

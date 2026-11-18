@@ -91,6 +91,10 @@ spec:
           value: /tmp
         - name: SUPPLINE_MIRROR_ENABLED
           value: {{ $mirrorEnabled | quote }}
+        {{- with .Values.backend.basePath }}
+        - name: SUPPLINE_BASE_PATH
+          value: {{ . | quote }}
+        {{- end }}
         {{- if .Values.registry.enabled }}
         - name: SSL_CERT_FILE
           value: /registry-certs/ca-bundle.crt

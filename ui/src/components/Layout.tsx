@@ -1,7 +1,8 @@
 import { useEffect, useState } from 'react';
 import { Link, NavLink, Outlet } from 'react-router';
 import { useAuth } from '../lib/auth';
-import { LogOut, Menu, X } from 'lucide-react';
+import { BookOpen, LogOut, Menu, X } from 'lucide-react';
+import { basePath } from '../lib/basePath';
 import { sidebarItems } from '../lib/navigation';
 import { ImageUsageFilterProvider, useImageUsageFilter } from '../lib/imageUsageFilter';
 import { PageSizePreferenceProvider } from '../lib/pageSizePreference';
@@ -180,6 +181,15 @@ function LayoutContent() {
 
         {/* Logout + version */}
         <div className="p-2 border-t border-border space-y-1">
+          <a
+            href={`${basePath}/swagger/index.html`}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="flex items-center gap-2.5 px-3 py-2 rounded-lg text-sm text-text-secondary hover:text-text-primary hover:bg-bg-tertiary w-full transition-colors"
+          >
+            <BookOpen className="w-4 h-4" />
+            API docs
+          </a>
           <button
             onClick={() => {
               closeMenuOnCompact();

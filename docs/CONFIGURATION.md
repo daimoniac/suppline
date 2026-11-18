@@ -102,7 +102,8 @@ succeeds.
 | Variable | Type | Default | Description |
 |----------|------|---------|-------------|
 | `API_ENABLED` | bool | `true` | Enable HTTP API server |
-| `API_PORT` | int | `8080` | API server port |
+| `API_PORT` | int | `8080` | Port for the web UI, REST API and Swagger |
+| `SUPPLINE_BASE_PATH` | string | `` | URL prefix to serve the UI, API and Swagger under, e.g. `/suppline`. Must start with `/`; a trailing `/` is ignored. Proxies forward paths unchanged (no prefix stripping); requests outside the prefix get 404 |
 | `SUPPLINE_API_KEY` | string | `` | Required when the API is enabled. The cluster-inventory webhook and cluster list stay unauthenticated |
 | `SUPPLINE_LLM_API_KEY` | string | `` | Bearer token for the Triage OpenAI-compatible endpoint. If `x-triage.enabled` is true and this is empty, Triage stays off |
 | `SUPPLINE_ALLOW_NO_AUTH` | bool | `false` | Explicit opt-in to start the API with authentication disabled. Isolated evaluation only |

@@ -30,8 +30,7 @@ That triggers [`.github/workflows/release.yml`](../.github/workflows/release.yml
 
 | Artifact | Location |
 |----------|----------|
-| Backend | `ghcr.io/daimoniac/suppline:<version>` and `daimon666/suppline:<version>` (+ `X.Y`, `X`, `latest`) |
-| UI | `ghcr.io/daimoniac/suppline-ui:<version>` and `daimon666/suppline-ui:<version>` |
+| suppline (backend + embedded web UI) | `ghcr.io/daimoniac/suppline:<version>` and `daimon666/suppline:<version>` (+ `X.Y`, `X`, `latest`) |
 | Trivy | upstream `aquasec/trivy` (Compose + Helm) — not rebuilt |
 | Helm chart | `oci://ghcr.io/daimoniac/charts/suppline` (version = release) |
 
@@ -76,8 +75,8 @@ kubectl get pods -n suppline-smoke
 kubectl exec -n suppline-smoke suppline-smoke-0 -c suppline -- \
   wget -qO- http://localhost:8081/health
 
-kubectl -n suppline-smoke port-forward svc/suppline-smoke-ui 3000:80
-# http://localhost:3000 — API key: demo
+kubectl -n suppline-smoke port-forward svc/suppline-smoke 8080:8080
+# http://localhost:8080 — API key: demo
 ```
 
 Bump `--version` to the tag you just cut. Attestation signing still needs a key (throwaway is fine for this smoke). `registry.enabled=true` is lab-only — production stays bring-your-own registry.

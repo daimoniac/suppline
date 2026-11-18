@@ -8,10 +8,12 @@
 !README.md
 docs/
 
-# Build artifacts
+# Build artifacts (ui/dist is built inside the image)
 build/
 suppline
 dist/
+ui/node_modules/
+ui/dist/
 *.db
 coverage.txt
 

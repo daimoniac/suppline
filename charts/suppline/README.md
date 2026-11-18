@@ -47,7 +47,7 @@ helm upgrade --install suppline ./charts/suppline \
 
 Point `sync[].target` (and `creds`) at your registry. The chart example uses `{{ env "SUPPLINE_REGISTRY_URL" }}`.
 
-Images default to `ghcr.io/daimoniac/suppline` / `suppline-ui`; empty tags use `Chart.AppVersion`. Releases: [docs/RELEASE.md](../../docs/RELEASE.md).
+The image defaults to `ghcr.io/daimoniac/suppline` (the web UI is built in); empty tags use `Chart.AppVersion`. Releases: [docs/RELEASE.md](../../docs/RELEASE.md).
 
 ### Override config without editing the chart
 
@@ -97,10 +97,9 @@ Data PVCs may be retained (`helm.sh/resource-policy: keep`) so reinstalls can re
 | `backend.supplineConfig` | Inline `suppline.yml` (overrides chart file) | unset (use chart `suppline.yml`) |
 | `backend.attestationKey.enabled` | Sign attestations | `true` |
 | `backend.secrets.*` | API key, cosign key, registry creds | via secrets file |
-| `frontend.enabled` | Deploy web UI | `true` |
-| `frontend.image.repository` | UI image | `ghcr.io/daimoniac/suppline-ui` |
-| `frontend.image.tag` | UI tag | `""` → `Chart.AppVersion` |
-| `frontend.ingress.enabled` | UI Ingress | `false` |
+| `backend.basePath` | URL prefix for the UI and API (e.g. `/suppline`); also the ingress path | `""` → `/` |
+| `ingress.enabled` | Ingress to the UI and API on the backend service | `false` |
+| `ingress.hosts` | Host names for the ingress | `[suppline.example.com]` |
 | `mirror.enabled` | Copy images in the suppline process | `true` |
 | `regsync.enabled` | Deploy the regsync sidecar (rollback; cannot be combined with `mirror.enabled`) | `false` |
 | `registry.enabled` | Bundled registry | `false` (BYO) |

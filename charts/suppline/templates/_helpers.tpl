@@ -60,24 +60,11 @@ Create the name of the service account to use
 {{- end }}
 
 {{/*
-Frontend labels
+URL path of the web UI and API: backend.basePath without a trailing slash, or "/".
 */}}
-{{- define "suppline.frontend.labels" -}}
-helm.sh/chart: {{ include "suppline.chart" . }}
-{{ include "suppline.frontend.selectorLabels" . }}
-{{- if .Chart.AppVersion }}
-app.kubernetes.io/version: {{ .Chart.AppVersion | quote }}
-{{- end }}
-app.kubernetes.io/managed-by: {{ .Release.Service }}
-app.kubernetes.io/component: web-ui
-{{- end }}
-
-{{/*
-Frontend selector labels
-*/}}
-{{- define "suppline.frontend.selectorLabels" -}}
-app.kubernetes.io/name: {{ include "suppline.name" . }}-ui
-app.kubernetes.io/instance: {{ .Release.Name }}
+{{- define "suppline.basePath" -}}
+{{- $p := trimSuffix "/" (default "" .Values.backend.basePath) -}}
+{{- if $p }}{{ $p }}{{ else }}/{{ end -}}
 {{- end }}
 
 {{/*

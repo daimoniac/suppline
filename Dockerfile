@@ -1,5 +1,15 @@
 # Multi-stage Dockerfile for suppline
-# Stage 1: Build the Go binary
+# Stage 1: Build the web UI
+FROM node:26-alpine3.24 AS ui
+
+WORKDIR /ui
+COPY ui/package.json ui/package-lock.json ./
+RUN --mount=type=cache,target=/root/.npm \
+    npm ci
+COPY ui/ ./
+RUN npm run build
+
+# Stage 2: Build the Go binary with the UI embedded
 FROM golang:1.27.4-alpine AS builder
 
 # Install build dependencies
@@ -22,6 +32,9 @@ RUN --mount=type=cache,target=/go/pkg/mod \
 # Copy source code
 COPY cmd/ ./cmd/
 COPY internal/ ./internal/
+COPY ui/*.go ./ui/
+COPY ui/notbuilt/ ./ui/notbuilt/
+COPY --from=ui /ui/dist/ ./ui/dist/
 
 # Generate Swagger documentation
 RUN mkdir -p build/swagger && \
@@ -31,7 +44,7 @@ RUN mkdir -p build/swagger && \
 ARG VERSION=dev
 RUN --mount=type=cache,target=/go/pkg/mod \
     --mount=type=cache,target=/root/.cache/go-build \
-    CGO_ENABLED=1 GOOS=linux go build \
+    CGO_ENABLED=1 GOOS=linux go build -tags embedui \
     -ldflags="-w -s -X github.com/daimoniac/suppline/internal/version.Version=${VERSION}" \
     -o suppline \
     ./cmd/suppline
@@ -39,7 +52,7 @@ RUN --mount=type=cache,target=/go/pkg/mod \
 # Create directories that will be needed in the runtime image
 RUN mkdir -p /build/data /build/config
 
-# Stage 2: Create minimal runtime image
+# Stage 3: Create minimal runtime image
 FROM alpine:3.24.4
 
 # Install runtime dependencies including trivy and cosign clients.
@@ -70,7 +83,7 @@ COPY --from=builder /build/suppline /app/suppline
 USER suppline
 
 # Expose ports
-# 8080: API server
+# 8080: API server and web UI
 # 9090: Metrics
 # 8081: Health checks
 EXPOSE 8080 9090 8081

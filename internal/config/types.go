@@ -73,6 +73,9 @@ type APIConfig struct {
 	APIKey      string
 	ReadOnly    bool
 	AllowNoAuth bool // explicit opt-in; empty API key otherwise refuses to start
+	// BasePath is the URL prefix the UI and API are served under, e.g. "/suppline".
+	// Empty means the root. Set via SUPPLINE_BASE_PATH; normalized by NormalizeBasePath.
+	BasePath string
 }
 
 // ObservabilityConfig configures logging and metrics

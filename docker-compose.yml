@@ -105,32 +105,6 @@ services:
       retries: 3
       start_period: 15s
 
-  ui:
-    image: daimon666/suppline-ui
-    build:
-      context: ui
-      dockerfile: Dockerfile
-      tags:
-        - daimon666/suppline-ui
-        - ghcr.io/daimoniac/suppline-ui
-    container_name: suppline-ui
-    ports:
-      - "3000:80"
-    environment:
-      - API_BASE_URL=/api
-      - BACKEND_URL=http://suppline:8080
-    depends_on:
-      - suppline
-    networks:
-      - suppline
-    restart: unless-stopped
-    healthcheck:
-      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:80/"]
-      interval: 30s
-      timeout: 5s
-      retries: 3
-      start_period: 5s
-
   trivy:
     image: aquasec/trivy:0.76.2
     container_name: trivy-server

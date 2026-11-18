@@ -27,7 +27,7 @@ docker compose up --build -d
 
 Then:
 
-1. Open **http://localhost:3000**
+1. Open **http://localhost:8080**
 2. Log in with API key **`demo`**
 3. Wait until repositories `demo-pass` and `demo-fail` appear
 4. Confirm **demo-pass** is policy-passed with attestations; **demo-fail** is blocked
@@ -41,8 +41,7 @@ curl -s -H "Authorization: Bearer demo" http://localhost:8080/api/v1/scans | hea
 
 | Port | Service |
 |------|---------|
-| 3000 | Web UI (API key `demo`) |
-| 8080 | REST API + Swagger |
+| 8080 | Web UI (API key `demo`), REST API, Swagger |
 | 8081 | Health |
 | 5000 | Throwaway registry (localhost only) |
 | 9090 | Metrics |

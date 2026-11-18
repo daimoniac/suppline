@@ -51,7 +51,6 @@ export class APIClient {
     try {
       const response = await fetch(url, {
         method: 'GET',
-        mode: 'cors',
         credentials: 'omit',
         ...opts,
         headers: { ...this.headers(), ...(opts.headers as Record<string, string> || {}) },
@@ -94,7 +93,7 @@ export class APIClient {
 
   private async requestText(endpoint: string): Promise<string> {
     const url = `${this.baseURL}${endpoint}`;
-    const response = await fetch(url, { method: 'GET', mode: 'cors', credentials: 'omit', headers: this.headers() });
+    const response = await fetch(url, { method: 'GET', credentials: 'omit', headers: this.headers() });
     if (response.status === 401) {
       this.notifyUnauthorized();
       throw new APIError('Unauthorized', 401, 'Authentication required');
