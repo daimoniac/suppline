@@ -65,7 +65,8 @@ ui/
         ├── TriagePage.tsx
         ├── IntegrationsPage.tsx
         ├── TasksPage.tsx
-        └── MirrorPage.tsx
+        ├── MirrorPage.tsx
+        └── MaliciousPage.tsx
 ```
 
 ## Routing
@@ -86,6 +87,7 @@ All routes live in `src/App.tsx`. The app renders `<LoginPage />` full-screen wh
 /integrations                  → IntegrationsPage
 /tasks                         → TasksPage
 /mirror                        → MirrorPage (sidebar link only when the in-process mirror is enabled)
+/malicious                     → MaliciousPage (sidebar link only when malicious-package detection is enabled)
 *                              → redirect to /
 ```
 

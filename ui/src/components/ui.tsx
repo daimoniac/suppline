@@ -197,3 +197,27 @@ const POLICY_STATUS_OPTIONS = [
 export function PolicyStatusSelect({ value, onChange }: { value: string; onChange: (v: string) => void }) {
   return <FilterSelect value={value} onChange={onChange} options={POLICY_STATUS_OPTIONS} />;
 }
+
+const maliciousCheckLabels: Record<string, string> = {
+  ok: 'Checked',
+  stale: 'Stale data',
+  unavailable: 'Not checked',
+};
+
+/** Status of a malicious-package check: green when it ran on current data. */
+export function MaliciousCheckBadge({ status, findings = 0 }: { status?: string | null; findings?: number }) {
+  if (!status) {
+    return <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-bg-tertiary text-text-muted">Not checked</span>;
+  }
+  if (findings > 0) {
+    return <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-danger-bg text-danger">{findings} malicious</span>;
+  }
+  return (
+    <span className={cn(
+      'inline-flex items-center px-2 py-0.5 rounded text-xs font-medium',
+      status === 'ok' ? 'bg-success-bg text-success' : 'bg-warning-bg text-warning',
+    )}>
+      {maliciousCheckLabels[status] ?? status}
+    </span>
+  );
+}

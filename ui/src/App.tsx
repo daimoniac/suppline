@@ -14,6 +14,7 @@ import TriagePage from './pages/TriagePage';
 import IntegrationsPage from './pages/IntegrationsPage';
 import TasksPage from './pages/TasksPage';
 import MirrorPage from './pages/MirrorPage';
+import MaliciousPage from './pages/MaliciousPage';
 
 function AppRoutes() {
   const { isAuthenticated } = useAuth();
@@ -36,6 +37,7 @@ function AppRoutes() {
         <Route path="integrations" element={<IntegrationsPage />} />
         <Route path="tasks" element={<TasksPage />} />
         <Route path="mirror" element={<MirrorPage />} />
+        <Route path="malicious" element={<MaliciousPage />} />
         <Route path="*" element={<Navigate to="/" replace />} />
       </Route>
     </Routes>

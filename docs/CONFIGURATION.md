@@ -9,6 +9,7 @@ Complete reference for all configuration options in suppline.
 - [Regsync Configuration](#regsync-configuration)
 - [Examples](#examples)
 - [Triage (`x-triage`)](#triage-x-triage)
+- [Malicious packages (`x-malicious-packages`)](#malicious-packages-x-malicious-packages)
 
 ## Configuration Sources
 
@@ -572,6 +573,38 @@ sync:
     x-vex: []        # people
     x-vex-auto: []   # Triage
 ```
+
+## Malicious packages (`x-malicious-packages`)
+
+suppline matches the language packages in every scan's SBOM against [ossf/malicious-packages](https://github.com/ossf/malicious-packages) (OSV `MAL-*` advisories). It keeps a shallow, bare git clone of that repository, syncs it on `sync_interval`, and indexes it in memory; no extra scanner binary is involved. The design is in [adr/0001-in-process-malicious-package-detection.md](adr/0001-in-process-malicious-package-detection.md). The block is read at startup only; restart suppline to change it.
+
+The feature is on when the block is missing. Every key is optional:
+
+```yaml
+x-malicious-packages:
+  enabled: true            # false turns detection off
+  block: true              # a malicious package fails policy whatever the expression says
+  repo:
+    url: https://github.com/ossf/malicious-packages.git   # or an internal mirror
+    ref: main
+    auth: { type: https-token, env: MAL_FEED_TOKEN }       # optional; same shape as x-triage repos, empty is anonymous
+  checkout_dir: /data/malicious-packages
+  sync_interval: 1h
+  stale_after: 6h          # must be at least sync_interval
+  ecosystems: [npm, PyPI, RubyGems, NuGet, crates.io, Go, Maven, Packagist]
+```
+
+How it behaves:
+
+- **Scans never wait for the feed.** Until the first index load (about 30 s to clone and 15 s to index on a fresh volume), scans record the check as `unavailable` and pass it. Once the index loads, those images are matched again; only images with a match are rescanned.
+- **Stale data still counts.** If no sync succeeds for `stale_after`, scans keep matching against the old data and record the check as `stale`. When syncing recovers, every stored image is matched again.
+- **New advisories reach existing images within one sync.** Each scan stores the image's language packages. After every sync, images holding a package that a new or changed advisory names are rescanned at high priority. An image that was scanned while the feed was unavailable or stale, and has no match, has its stored check updated to `ok`; its signed SCAI keeps the original status until the next rescan.
+- **The SCAI attestation** always carries a `malicious-package-check` attribute with the status, the feed commit and time it matched against, and any findings.
+- **Health** reports `malicious_packages` as healthy in every state, with the status in the message. `/health` has no degraded state and backs the liveness probe, so a stale feed must not restart the pod. Alert on the metrics instead.
+- **Disk:** the bare clone is under 100 MB. With the bundled PostgreSQL in the Helm chart, `/data` is an emptyDir, so the feed is cloned again after each restart.
+- **UI:** the **Malicious Packages** view shows the feed's sync state, how many current images were checked on current data, and every affected image grouped by package or by image, with images running in a cluster first. `GET /api/v1/malicious` returns the same data.
+
+The eval stack (`suppline.demo.yml`) sets `enabled: false` so it boots quickly.
 
 ## Duration Format
 

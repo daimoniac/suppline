@@ -166,6 +166,8 @@ export function buildPolicyFixPromptRows(
     const tag = scan.Tag || 'untagged';
     const findings: PolicyFailureFinding[] = scan.PolicyFailureFindings || [];
     for (const finding of findings) {
+      // Malicious packages are removed, never VEXed; keep them out of the triage prompt.
+      if (finding.Kind === 'malicious') continue;
       const cve = finding.CVEID || '';
       const component = finding.PackageName || '';
       if (!cve || !component) continue;

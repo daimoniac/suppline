@@ -39,8 +39,8 @@ One Go binary. SQLite or PostgreSQL state. No SaaS, no phone-home, air-gap compa
 </p>
 
 1. **Mirror** — suppline copies the upstream repositories listed in `suppline.yml` into your registry. The regsync sidecar remains available as a rollback.
-2. **Scan** — the watcher notices new or changed digests and enqueues them; Trivy produces an SBOM and vulnerability set.
-3. **Gate** — active VEX statements are applied, then your CEL policy decides: `passed`, `failed`, or `pending`.
+2. **Scan** — the watcher notices new or changed digests and enqueues them; Trivy produces an SBOM and vulnerability set. The SBOM's language packages are matched against known-malicious packages ([ossf/malicious-packages](https://github.com/ossf/malicious-packages), OSV `MAL-*`), synced hourly.
+3. **Gate** — active VEX statements are applied, then your CEL policy decides: `passed`, `failed`, or `pending`. A known-malicious package fails the image whatever the expression says; VEX cannot exempt it. See [docs/adr/0001-in-process-malicious-package-detection.md](docs/adr/0001-in-process-malicious-package-detection.md).
 4. **Triage** — a failed gate on an image running in a cluster can ask an LLM, with your gitops repos as context, whether the CVE affects this deployment. A guarded `not_affected` result is written to `x-vex-auto` and the image is evaluated again. See [docs/STATE_MACHINE.md](docs/STATE_MACHINE.md).
 5. **Attest** — cosign signs SBOM, vulnerability, VEX, and SCAI attestations into the registry next to the image.
 6. **Run** — clusters pull from the mirror; Kyverno/OPA verifies the SCAI attestation before a pod starts.
@@ -238,7 +238,7 @@ export ATTESTATION_KEY_PASSWORD=<cosign password>
 
 ## Observability
 
-Prometheus metrics on `:9090/metrics`, JSON logs on stdout, component health on `:8081/health` (config, queue, worker, trivy, database, watcher).
+Prometheus metrics on `:9090/metrics`, JSON logs on stdout, component health on `:8081/health` (config, queue, worker, trivy, database, watcher, malicious_packages). `malicious_packages` always reports healthy so a broken feed never restarts the pod; its message carries `ok`, `unavailable` or `stale` — alert on the metrics below instead.
 
 | Metric | Tells you |
 |--------|-----------|
@@ -251,6 +251,11 @@ Prometheus metrics on `:9090/metrics`, JSON logs on stdout, component health on 
 | `suppline_triage_tokens_total` | Tokens reported by the triage model |
 | `suppline_triage_push_failures_total` | Config-repo pushes rejected after retries |
 | `suppline_triage_budget_exhausted` | 1 while the daily token budget is used up |
+| `suppline_malicious_images_current{repository,in_use}` | Current images whose latest scan found a known-malicious package; alert on any `in_use="true"` |
+| `suppline_malicious_db_last_sync_success_timestamp_seconds` | Last successful malicious-packages sync; `time() - …` is the feed's age |
+| `suppline_malicious_db_sync_errors_total` | Failed malicious-packages syncs |
+| `suppline_malicious_db_packages{ecosystem}` | Packages with an active malicious-package advisory |
+| `suppline_malicious_rematch_rescans_total` | Rescans queued because a new advisory matched a stored image |
 
 A starter Grafana dashboard lives in [grafana/](grafana/).
 

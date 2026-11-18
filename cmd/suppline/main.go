@@ -343,6 +343,13 @@ func run() error {
 		apiServer.SetTriage(triageService)
 		apiServer.SetConfigEditor(configEditor)
 		apiServer.SetVEXAudit(vexAudit)
+		if maliciousService != nil {
+			apiServer.SetMalicious(maliciousService, api.MaliciousSettings{
+				Block:   maliciousGate,
+				RepoURL: regsyncCfg.MaliciousPackages.RepoURL(),
+				Ref:     regsyncCfg.MaliciousPackages.RepoRef(),
+			})
+		}
 		logger.Debug("API server initialized")
 	}
 	mirrorActivity := mirror.NewActivity()

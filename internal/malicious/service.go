@@ -76,6 +76,7 @@ type Service struct {
 	index      *Index
 	commit     plumbing.Hash
 	syncedAt   time.Time
+	attempt    syncAttempt
 	listenerMu sync.Mutex
 	listeners  []func(context.Context, Update)
 }
@@ -157,6 +158,9 @@ func (s *Service) Run(ctx context.Context) {
 func (s *Service) Sync(ctx context.Context) {
 	started := s.now()
 	update, err := s.sync(ctx)
+	if err == nil || ctx.Err() == nil {
+		s.recordAttempt(started, err)
+	}
 	if err != nil {
 		if ctx.Err() != nil {
 			return
@@ -287,4 +291,56 @@ func (s *Service) reportHealth(syncErr string) {
 // Ecosystems returns the ecosystems the service indexes.
 func (s *Service) Ecosystems() []string {
 	return append([]string(nil), s.cfg.Ecosystems...)
+}
+
+type syncAttempt struct {
+	at       time.Time
+	duration time.Duration
+	err      string
+}
+
+func (s *Service) recordAttempt(started time.Time, err error) {
+	attempt := syncAttempt{at: started, duration: s.now().Sub(started)}
+	if err != nil {
+		attempt.err = err.Error()
+	}
+	s.mu.Lock()
+	s.attempt = attempt
+	s.mu.Unlock()
+}
+
+// Overview describes the feed for the UI.
+type Overview struct {
+	Status        Status
+	Commit        string
+	SyncedAt      time.Time // last successful sync; zero before the first
+	LastAttemptAt time.Time // zero before the first attempt
+	LastDuration  time.Duration
+	LastError     string // empty when the last attempt succeeded
+	SyncInterval  time.Duration
+	StaleAfter    time.Duration
+	Ecosystems    []string
+	Entries       int
+	Packages      map[string]int // indexed packages per ecosystem
+}
+
+// Overview returns the current feed state.
+func (s *Service) Overview() Overview {
+	s.mu.RLock()
+	snapshot := s.snapshotLocked()
+	attempt := s.attempt
+	s.mu.RUnlock()
+	return Overview{
+		Status:        snapshot.Status,
+		Commit:        snapshot.Commit,
+		SyncedAt:      snapshot.SyncedAt,
+		LastAttemptAt: attempt.at,
+		LastDuration:  attempt.duration,
+		LastError:     attempt.err,
+		SyncInterval:  s.cfg.SyncInterval,
+		StaleAfter:    s.cfg.StaleAfter,
+		Ecosystems:    s.Ecosystems(),
+		Entries:       snapshot.Index.Len(),
+		Packages:      snapshot.Index.CountByEcosystem(),
+	}
 }

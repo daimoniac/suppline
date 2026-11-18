@@ -1,24 +1,11 @@
 import { useEffect, useState } from 'react';
 import { Link, NavLink, Outlet } from 'react-router';
 import { useAuth } from '../lib/auth';
-import {
-  LayoutDashboard, Layers, ScanSearch, ShieldAlert, Bug,
-  Plug, LogOut, ClipboardList, Menu, X, Scale, FolderSync,
-} from 'lucide-react';
+import { LogOut, Menu, X } from 'lucide-react';
+import { sidebarItems } from '../lib/navigation';
 import { ImageUsageFilterProvider, useImageUsageFilter } from '../lib/imageUsageFilter';
 import { PageSizePreferenceProvider } from '../lib/pageSizePreference';
 import supplineIcon from '../assets/suppline-icon.svg';
-
-const navItems = [
-  { to: '/', icon: LayoutDashboard, label: 'Dashboard', end: true },
-  { to: '/tasks', icon: ClipboardList, label: 'Housekeeping' },
-  { to: '/triage', icon: Scale, label: 'Triage' },
-  { to: '/repositories', icon: Layers, label: 'Repositories' },
-  { to: '/scans', icon: ScanSearch, label: 'Scans' },
-  { to: '/failed', icon: ShieldAlert, label: 'Policy Exceptions' },
-  { to: '/vulnerabilities?severity=critical', icon: Bug, label: 'Vulnerabilities' },
-  { to: '/integrations', icon: Plug, label: 'Integrations' },
-];
 
 export default function Layout() {
   return (
@@ -37,6 +24,7 @@ function LayoutContent() {
   const [menuOpen, setMenuOpen] = useState(false);
   const [version, setVersion] = useState<string | null>(null);
   const [mirrorEnabled, setMirrorEnabled] = useState(false);
+  const [maliciousEnabled, setMaliciousEnabled] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -45,9 +33,12 @@ function LayoutContent() {
         if (cancelled) return;
         if (h.version) setVersion(h.version);
         setMirrorEnabled(h.mirrorEnabled === true);
+        setMaliciousEnabled(h.maliciousEnabled === true);
       })
       .catch(() => {
-        if (!cancelled) setMirrorEnabled(false);
+        if (cancelled) return;
+        setMirrorEnabled(false);
+        setMaliciousEnabled(false);
       });
     return () => {
       cancelled = true;
@@ -145,11 +136,7 @@ function LayoutContent() {
 
         {/* Nav */}
         <nav className="flex-1 py-3 px-2 space-y-0.5 overflow-y-auto">
-          {(mirrorEnabled
-            // Mirror sits at the bottom, just above Integrations.
-            ? [...navItems.slice(0, -1), { to: '/mirror', icon: FolderSync, label: 'Mirror' }, ...navItems.slice(-1)]
-            : navItems
-          ).map(item => (
+          {sidebarItems(mirrorEnabled, maliciousEnabled).map(item => (
             <NavLink
               key={item.to}
               to={item.to}

@@ -61,6 +61,8 @@ type APIServer struct {
 	vexAudit          *vexaudit.Auditor
 	mirrorEnabled     bool
 	mirrorActivity    *mirror.Activity
+	malicious         MaliciousFeed
+	maliciousInfo     MaliciousSettings
 	router            *http.ServeMux
 	server            *http.Server
 	logger            *slog.Logger
@@ -176,6 +178,15 @@ func (s *APIServer) SetMirror(enabled bool, activity *mirror.Activity) {
 	s.mirrorActivity = activity
 }
 
+// SetMalicious enables the malicious-packages view. A nil feed leaves it off.
+func (s *APIServer) SetMalicious(feed MaliciousFeed, settings MaliciousSettings) {
+	if s == nil {
+		return
+	}
+	s.malicious = feed
+	s.maliciousInfo = settings
+}
+
 // setupRoutes configures all API routes
 func (s *APIServer) setupRoutes() {
 	// Query endpoints (GET)
@@ -225,6 +236,7 @@ func (s *APIServer) setupRoutes() {
 	s.router.HandleFunc("/api/v1/integration/kubernetes/clusters/", s.corsMiddleware(s.authMiddleware(s.handleKubernetesClustersRouter, false)))
 	s.router.HandleFunc("/api/v1/mirror", s.corsMiddleware(s.authMiddleware(s.handleGetMirror, false)))
 	s.router.HandleFunc("/api/v1/mirror/", s.corsMiddleware(s.authMiddleware(s.handleMirrorSub, false)))
+	s.router.HandleFunc("/api/v1/malicious", s.corsMiddleware(s.authMiddleware(s.handleGetMalicious, false)))
 
 	s.router.HandleFunc("/api/v1/integration/publickey", s.corsMiddleware(s.handleGetPublicKey))
 	s.router.HandleFunc("/api/v1/integration/kyverno/policy", s.corsMiddleware(s.handleGenerateKyvernoPolicy))

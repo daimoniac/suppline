@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"encoding/json"
+	"sort"
 
 	"github.com/daimoniac/suppline/internal/errors"
 	"github.com/daimoniac/suppline/internal/types"
@@ -241,4 +242,125 @@ func (s *SQLiteStore) UpdateMaliciousCheck(ctx context.Context, scanID int64, ch
 		return errors.NewTransientf("failed to update malicious check: %w", err)
 	}
 	return nil
+}
+
+// MaliciousImage is a current image (repository and digest) whose latest scan
+// recorded malicious-package findings.
+type MaliciousImage struct {
+	Repository   string
+	Digest       string
+	Tags         []string
+	ScanID       int64
+	ScannedAt    int64
+	PolicyPassed bool
+	PolicyStatus string
+	RuntimeUsed  bool
+	Runtime      RuntimeInventory
+	Check        types.MaliciousCheck
+}
+
+// MaliciousCoverage counts current images by the status of their latest
+// malicious-package check. Unchecked images were scanned before the check
+// existed or while it was disabled.
+type MaliciousCoverage struct {
+	OK          int
+	Unavailable int
+	Stale       int
+	Unchecked   int
+}
+
+// ListMaliciousImages returns every current image whose latest scan found
+// malicious packages, in-use images first, and how many current images each
+// check status covers.
+func (s *SQLiteStore) ListMaliciousImages(ctx context.Context) ([]MaliciousImage, MaliciousCoverage, error) {
+	rows, err := s.db.QueryContext(ctx, `
+		SELECT r.name, a.digest, COALESCE(a.tag, ''), sr.id, sr.created_at, sr.policy_passed, sr.policy_status,
+			sr.malicious_status, sr.malicious_check_json
+		FROM artifacts a
+		JOIN repositories r ON a.repository_id = r.id
+		JOIN scan_records sr ON sr.id = a.last_scan_id
+		ORDER BY r.name, a.digest, a.tag
+	`)
+	if err != nil {
+		return nil, MaliciousCoverage{}, errors.NewTransientf("failed to query malicious images: %w", err)
+	}
+	defer rows.Close()
+
+	type imageKey struct{ repository, digest string }
+	var coverage MaliciousCoverage
+	byKey := make(map[imageKey]*MaliciousImage)
+	var order []imageKey
+	counted := make(map[imageKey]bool)
+	for rows.Next() {
+		var repository, digest, tag, policyStatus, status string
+		var scanID, scannedAt int64
+		var policyPassed bool
+		var checkJSON sql.NullString
+		if err := rows.Scan(&repository, &digest, &tag, &scanID, &scannedAt, &policyPassed, &policyStatus, &status, &checkJSON); err != nil {
+			return nil, MaliciousCoverage{}, errors.NewTransientf("failed to scan malicious image: %w", err)
+		}
+		key := imageKey{repository, digest}
+		if !counted[key] {
+			counted[key] = true
+			switch status {
+			case types.MaliciousCheckOK:
+				coverage.OK++
+			case types.MaliciousCheckUnavailable:
+				coverage.Unavailable++
+			case types.MaliciousCheckStale:
+				coverage.Stale++
+			default:
+				coverage.Unchecked++
+			}
+		}
+		if image, ok := byKey[key]; ok {
+			if tag != "" {
+				image.Tags = append(image.Tags, tag)
+			}
+			continue
+		}
+		var record ScanRecord
+		if err := applyStoredMaliciousCheck(&record, checkJSON); err != nil {
+			return nil, MaliciousCoverage{}, err
+		}
+		if record.Malicious == nil || len(record.Malicious.Findings) == 0 {
+			continue
+		}
+		image := &MaliciousImage{
+			Repository: repository, Digest: digest, ScanID: scanID, ScannedAt: scannedAt,
+			PolicyPassed: policyPassed, PolicyStatus: policyStatus, Check: *record.Malicious,
+		}
+		if tag != "" {
+			image.Tags = []string{tag}
+		}
+		byKey[key] = image
+		order = append(order, key)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, MaliciousCoverage{}, errors.NewTransientf("error iterating malicious images: %w", err)
+	}
+
+	images := make([]MaliciousImage, 0, len(order))
+	digests := make([]string, 0, len(order))
+	for _, key := range order {
+		images = append(images, *byKey[key])
+		digests = append(digests, key.digest)
+	}
+	if len(digests) > 0 {
+		usage, err := s.queryRuntimeUsageByDigests(ctx, digests)
+		if err != nil {
+			return nil, MaliciousCoverage{}, err
+		}
+		for i := range images {
+			used, u := runtimeUseForDigest(usage, images[i].Digest)
+			images[i].RuntimeUsed = used
+			if used {
+				images[i].Runtime = u.Runtime
+			}
+		}
+	}
+	sort.SliceStable(images, func(i, j int) bool {
+		return images[i].RuntimeUsed && !images[j].RuntimeUsed
+	})
+	return images, coverage, nil
 }

@@ -171,3 +171,24 @@ func TestServiceRejectsUnknownEcosystem(t *testing.T) {
 		t.Fatalf("expected unsupported ecosystem error, got %v", err)
 	}
 }
+
+func TestServiceOverview(t *testing.T) {
+	feed := &fakeFeed{
+		result:  SyncResult{Current: hash(1)},
+		entries: map[string]*Entry{"a": entry("MAL-1", EcosystemNPM, "evil", nil, allVersions())},
+	}
+	service, clock, _ := newTestService(t, feed, nil)
+	if o := service.Overview(); o.Status != StatusUnavailable || !o.LastAttemptAt.IsZero() || o.Entries != 0 {
+		t.Fatalf("unexpected overview before sync %+v", o)
+	}
+	service.Sync(context.Background())
+	o := service.Overview()
+	if o.Status != StatusOK || o.Entries != 1 || o.Packages[EcosystemNPM] != 1 || o.LastError != "" || !o.LastAttemptAt.Equal(*clock) || o.SyncInterval != time.Hour {
+		t.Fatalf("unexpected overview %+v", o)
+	}
+	feed.syncErr = errors.New("network down")
+	service.Sync(context.Background())
+	if o := service.Overview(); o.LastError != "network down" || o.Status != StatusOK || !o.SyncedAt.Equal(*clock) {
+		t.Fatalf("a failed attempt keeps the last good sync, got %+v", o)
+	}
+}

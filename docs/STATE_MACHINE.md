@@ -91,12 +91,23 @@ The worker runs four phases per task. Each phase can end the task early.
 
 | Phase | Does | Early exits |
 |-------|------|-------------|
-| Scan | Trivy SBOM + vulnerability scan | `MANIFEST_UNKNOWN` triggers digest cleanup; permanent errors record a failed scan |
-| Evaluate | Apply active `not_affected` VEX, then the CEL expression | `pending` verdict sets `ShouldAttest=false` and skips attestation |
+| Scan | Trivy SBOM + vulnerability scan, then the malicious-package check on the SBOM | `MANIFEST_UNKNOWN` triggers digest cleanup; permanent errors record a failed scan. The malicious-package check never ends the task: without data it records `unavailable` |
+| Evaluate | Apply active `not_affected` VEX, then the CEL expression, then the malicious-package gate (`x-malicious-packages.block`) | `pending` verdict sets `ShouldAttest=false` and skips attestation |
 | Attest | cosign SBOM, vulnerability, VEX, and SCAI attestations | VEX attestation only when CVEs were exempted |
 | Persist | Write scan record, vulnerabilities, tag bindings | Transient errors retry; permanent errors are logged without undoing attestations |
 
-After persist, a `failed` decision enqueues Triage. Triage does not run on the scan worker.
+After persist, a `failed` decision enqueues Triage. Triage does not run on the scan worker. Malicious-package findings are never triaged.
+
+### Malicious-package re-match
+
+The malicious-packages feed syncs on its own schedule (`x-malicious-packages.sync_interval`). After each sync that changed something, a separate rematcher compares the stored package inventory of every current digest with the feed, without rescanning:
+
+| Trigger | Matched | Then |
+|---------|---------|------|
+| New or changed advisories | Digests holding a package those advisories name | Digest whose latest scan lacks the advisory: urgent rescan (per repository) |
+| First load, re-clone, or recovery from stale | Every digest with an inventory | Same; and a latest scan recorded `unavailable`/`stale` with no new match gets its stored check set to `ok` (its SCAI is not re-signed) |
+
+Withdrawn advisories never trigger a rescan; the next interval rescan drops them.
 
 ## Triage
 

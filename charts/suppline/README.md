@@ -105,7 +105,7 @@ Data PVCs may be retained (`helm.sh/resource-policy: keep`) so reinstalls can re
 | `regsync.enabled` | Deploy the regsync sidecar (rollback; cannot be combined with `mirror.enabled`) | `false` |
 | `registry.enabled` | Bundled registry | `false` (BYO) |
 | `postgres.enabled` | Bundled PostgreSQL | `true` |
-| `persistence.data.enabled` | SQLite PVC (ignored while Postgres is enabled) | `true` |
+| `persistence.data.enabled` | SQLite PVC (ignored while Postgres is enabled; `/data` is then an emptyDir and the malicious-packages feed is cloned again after each restart) | `true` |
 | `backend.resources` | CPU/memory for the suppline container | `1Gi` request / `4Gi` limit (attestation spikes + page cache; not a heap leak) |
 | `trivy.image.tag` | Trivy sidecar | `0.76.2` |
 

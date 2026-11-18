@@ -282,7 +282,12 @@ export class APIClient {
 
   // Health
   async getHealth() {
-    return this.request<{ status: string; version?: string; mirrorEnabled?: boolean }>('/health');
+    return this.request<{ status: string; version?: string; mirrorEnabled?: boolean; maliciousEnabled?: boolean }>('/health');
+  }
+
+  // Malicious packages
+  async getMalicious() {
+    return this.request<MaliciousOverview>('/api/v1/malicious');
   }
 
   // Mirror
@@ -355,8 +360,76 @@ export interface RuntimeImage {
 }
 
 export interface PolicyFailureFinding {
+  /** CVE id, or the MAL id when Kind is "malicious". */
   CVEID: string;
   PackageName: string;
+  /** "malicious" for the built-in malicious-package gate; absent for vulnerabilities. */
+  Kind?: 'vulnerability' | 'malicious';
+}
+
+export type MaliciousCheckStatus = 'ok' | 'unavailable' | 'stale';
+
+export interface MaliciousFinding {
+  ID: string;
+  Ecosystem: string;
+  PackageName: string;
+  Version: string;
+  PURL: string;
+  Summary: string;
+  URL: string;
+}
+
+/** Outcome of one scan's malicious-package check. */
+export interface MaliciousCheck {
+  Status: MaliciousCheckStatus;
+  Commit: string;
+  /** Unix seconds of the feed sync the check used; 0 when unavailable. */
+  SnapshotAt: number;
+  Findings: MaliciousFinding[] | null;
+}
+
+export interface MaliciousFeed {
+  Status: MaliciousCheckStatus;
+  Commit: string;
+  SyncedAt: number | null;
+  LastAttemptAt: number | null;
+  LastDurationMs: number;
+  LastError: string;
+  SyncIntervalSeconds: number;
+  StaleAfterSeconds: number;
+  RepoURL: string;
+  Ref: string;
+  Block: boolean;
+  Ecosystems: string[] | null;
+  Entries: number;
+  Packages: Record<string, number> | null;
+}
+
+export interface MaliciousCoverage {
+  OK: number;
+  Unavailable: number;
+  Stale: number;
+  Unchecked: number;
+}
+
+export interface MaliciousImage {
+  Repository: string;
+  Digest: string;
+  Tags: string[] | null;
+  ScannedAt: number;
+  PolicyPassed: boolean;
+  PolicyStatus: string;
+  RuntimeUsed: boolean;
+  Runtime?: RuntimeInventory | null;
+  CheckStatus: MaliciousCheckStatus;
+  Findings: MaliciousFinding[];
+}
+
+export interface MaliciousOverview {
+  Enabled: boolean;
+  Feed: MaliciousFeed | null;
+  Coverage: MaliciousCoverage;
+  Images: MaliciousImage[];
 }
 
 export type RuntimeInventory = Record<string, Record<string, RuntimeImage[]>>;
@@ -382,6 +455,8 @@ export interface Scan {
   RuntimeUsed?: boolean;
   Runtime?: RuntimeInventory;
   PolicyFailureFindings?: PolicyFailureFinding[];
+  /** Malicious-package check; null when the check was disabled or the scan predates it. */
+  Malicious?: MaliciousCheck | null;
   /** True when the tag has moved off this digest while a cluster still runs it. */
   Superseded?: boolean;
   /** The tag's current digest when Superseded is true. */

@@ -792,16 +792,18 @@ func (s *APIServer) handleHealth(w http.ResponseWriter, r *http.Request) {
 	// TODO: Implement in task 10 (observability)
 	// For now, return basic health status
 	s.respondJSON(w, http.StatusOK, healthResponse{
-		Status:        "healthy",
-		Version:       version.Version,
-		MirrorEnabled: s.mirrorEnabled,
+		Status:           "healthy",
+		Version:          version.Version,
+		MirrorEnabled:    s.mirrorEnabled,
+		MaliciousEnabled: s.malicious != nil,
 	})
 }
 
 type healthResponse struct {
-	Status        string `json:"status"`
-	Version       string `json:"version"`
-	MirrorEnabled bool   `json:"mirrorEnabled"`
+	Status           string `json:"status"`
+	Version          string `json:"version"`
+	MirrorEnabled    bool   `json:"mirrorEnabled"`
+	MaliciousEnabled bool   `json:"maliciousEnabled"`
 }
 
 // handleMetrics provides Prometheus metrics endpoint

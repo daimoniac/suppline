@@ -29,11 +29,16 @@ type DatabaseCollector struct {
 	vulnCounts   map[string]int
 	vulnCountsAt time.Time
 
+	maliciousMu     sync.Mutex
+	maliciousCounts map[maliciousImageKey]int
+	maliciousAt     time.Time
+
 	// Metric descriptors
 	vulnerabilitiesFoundDesc *prometheus.Desc
 	policyFailedDesc         *prometheus.Desc
 	policyPendingDesc        *prometheus.Desc
 	clusterLastSyncDesc      *prometheus.Desc
+	maliciousImagesDesc      *prometheus.Desc
 }
 
 // NewDatabaseCollector creates a new database metrics collector
@@ -66,6 +71,12 @@ func NewDatabaseCollector(store statestore.StateStore, logger *slog.Logger) *Dat
 			[]string{"cluster"},
 			nil,
 		),
+		maliciousImagesDesc: prometheus.NewDesc(
+			"suppline_malicious_images_current",
+			"Current images whose latest scan found known-malicious packages, by repository and whether a cluster runs them",
+			[]string{"repository", "in_use"},
+			nil,
+		),
 	}
 }
 
@@ -84,6 +95,7 @@ func (c *DatabaseCollector) Describe(ch chan<- *prometheus.Desc) {
 	ch <- c.policyFailedDesc
 	ch <- c.policyPendingDesc
 	ch <- c.clusterLastSyncDesc
+	ch <- c.maliciousImagesDesc
 }
 
 // Collect queries the database and sends current metrics to the provided channel
@@ -93,6 +105,9 @@ func (c *DatabaseCollector) Collect(ch chan<- prometheus.Metric) {
 
 	if clusterStore, ok := c.store.(statestore.ClusterInventoryStore); ok {
 		c.collectClusterLastSync(ctx, clusterStore, ch)
+	}
+	if maliciousStore, ok := c.store.(maliciousImageLister); ok {
+		c.collectMaliciousImages(ctx, maliciousStore, ch)
 	}
 
 	queryStore, ok := c.store.(statestore.StateStoreQuery)
@@ -224,4 +239,45 @@ func (c *DatabaseCollector) uniqueVulnerabilityCounts(ctx context.Context, store
 	c.vulnCounts = counts
 	c.vulnCountsAt = now
 	return counts, nil
+}
+
+type maliciousImageLister interface {
+	ListMaliciousImages(ctx context.Context) ([]statestore.MaliciousImage, statestore.MaliciousCoverage, error)
+}
+
+type maliciousImageKey struct {
+	repository string
+	inUse      bool
+}
+
+func (c *DatabaseCollector) collectMaliciousImages(ctx context.Context, store maliciousImageLister, ch chan<- prometheus.Metric) {
+	c.maliciousMu.Lock()
+	defer c.maliciousMu.Unlock()
+	if c.maliciousCounts == nil || c.now().Sub(c.maliciousAt) >= vulnerabilityCountsTTL {
+		images, _, err := store.ListMaliciousImages(ctx)
+		if err != nil {
+			if ctx.Err() != nil {
+				c.logger.Debug("malicious images metric collection timed out", "error", err)
+			} else {
+				c.logger.Error("failed to collect malicious images metric", "error", err)
+			}
+			if c.maliciousCounts == nil {
+				return
+			}
+		} else {
+			counts := make(map[maliciousImageKey]int)
+			for _, image := range images {
+				counts[maliciousImageKey{repository: image.Repository, inUse: image.RuntimeUsed}]++
+			}
+			c.maliciousCounts = counts
+			c.maliciousAt = c.now()
+		}
+	}
+	for key, count := range c.maliciousCounts {
+		inUse := "false"
+		if key.inUse {
+			inUse = "true"
+		}
+		ch <- prometheus.MustNewConstMetric(c.maliciousImagesDesc, prometheus.GaugeValue, float64(count), key.repository, inUse)
+	}
 }

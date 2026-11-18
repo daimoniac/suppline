@@ -4,9 +4,9 @@ import { useAuth } from '../lib/auth';
 import { useToast } from '../lib/toast';
 import { formatRelativeTime, formatDate, truncateDigest, copyToClipboard, daysUntilReleaseAge, formatRemainingDays, getRuntimeClusterCount, getRuntimeNamespaceEntries, isPast } from '../lib/utils';
 import { scheduleEffectLoad } from '../lib/scheduleEffectLoad';
-import { LoadingState, ErrorState, StatusBadge, SeverityBadge } from '../components/ui';
-import type { ScanDetail, Vulnerability } from '../lib/api';
-import { ArrowLeft, RefreshCw, Copy, CheckCircle, XCircle, ChevronDown, ChevronRight, ExternalLink } from 'lucide-react';
+import { LoadingState, ErrorState, StatusBadge, SeverityBadge, MaliciousCheckBadge } from '../components/ui';
+import type { MaliciousCheck, ScanDetail, Vulnerability } from '../lib/api';
+import { ArrowLeft, RefreshCw, Copy, CheckCircle, XCircle, ChevronDown, ChevronRight, ExternalLink, Skull } from 'lucide-react';
 
 export default function ScanDetailPage() {
   const { digest, name } = useParams<{ digest: string; name?: string }>();
@@ -157,8 +157,13 @@ export default function ScanDetailPage() {
               <AttestBadge label="Vuln" attested={scan.VulnAttested} />
             </div>
           } />
+          <InfoItem label="Malicious packages" value={
+            <MaliciousCheckBadge status={scan.Malicious?.Status} findings={scan.Malicious?.Findings?.length ?? 0} />
+          } />
         </div>
       </div>
+
+      {scan.Malicious && (scan.Malicious.Findings?.length ?? 0) > 0 && <MaliciousSection check={scan.Malicious} />}
 
       {/* Vulnerability Summary */}
       <div className="bg-bg-primary border border-border rounded-xl p-5">
@@ -248,6 +253,36 @@ export default function ScanDetailPage() {
             })}
           </div>
         )}
+      </div>
+    </div>
+  );
+}
+
+function MaliciousSection({ check }: { check: MaliciousCheck }) {
+  const findings = check.Findings ?? [];
+  return (
+    <div className="bg-bg-primary border border-danger/40 rounded-xl p-5">
+      <h2 className="text-sm font-semibold mb-1 flex items-center gap-2 text-danger">
+        <Skull className="w-4 h-4" /> Malicious packages ({findings.length})
+      </h2>
+      <p className="text-xs text-text-muted mb-4">
+        Known-malicious packages from ossf/malicious-packages. They cannot be exempted with VEX: remove the package and rebuild the image.
+        {check.SnapshotAt > 0 && <> Matched against the feed as of {formatDate(check.SnapshotAt)}.</>}
+      </p>
+      <div className="divide-y divide-border/50 border border-border rounded-lg">
+        {findings.map((finding, i) => (
+          <div key={`${finding.ID}-${finding.PURL}-${i}`} className="px-4 py-3">
+            <div className="flex flex-wrap items-center gap-2">
+              <a href={finding.URL || `https://osv.dev/vulnerability/${encodeURIComponent(finding.ID)}`} target="_blank" rel="noopener noreferrer" className="text-sm font-medium text-accent hover:underline inline-flex items-center gap-1">
+                {finding.ID} <ExternalLink className="w-3 h-3" />
+              </a>
+              <span className="text-sm font-mono">{finding.PackageName}@{finding.Version}</span>
+              <span className="px-1.5 py-0.5 rounded text-[10px] font-medium bg-bg-tertiary text-text-secondary">{finding.Ecosystem}</span>
+            </div>
+            {finding.Summary && <p className="text-xs text-text-muted mt-1">{finding.Summary}</p>}
+            {finding.PURL && <p className="text-[11px] text-text-muted font-mono mt-1 break-all">{finding.PURL}</p>}
+          </div>
+        ))}
       </div>
     </div>
   );

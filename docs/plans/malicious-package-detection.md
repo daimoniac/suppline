@@ -134,9 +134,15 @@ x-malicious-packages:
 
 ## PR 4: API, UI and docs
 
-- **API:** the new `ScanRecord` fields show up in `GET /scans/{digest}` (PascalCase, like today). Update the swagger annotations, then run `make swagger`; never edit `build/swagger/` by hand.
+- **API:**
+  - the new `ScanRecord` fields show up in `GET /scans/{digest}` (PascalCase, like today).
+  - `GET /api/v1/malicious`: the feed's state (enabled, block, status ok/unavailable/stale, commit, last successful sync, last attempt and its error, sync interval, stale_after, repository and ref, active entries per ecosystem), how many current images were checked ok, unavailable, stale or not at all, and every current image with a malicious finding (repository, digest, tags, scanned at, whether it runs in a cluster, policy result, findings).
+  - `/health` gains `maliciousEnabled`, like `mirrorEnabled`, so the sidebar shows the view only when the feature is on.
+  - Update the swagger annotations, then run `make swagger`; never edit `build/swagger/` by hand.
+- **Metrics:** `suppline_malicious_images_current{repository,in_use}` from the database collector (cached for a minute, like the CVE counts).
 - **UI** (read [ui/AGENTS.md](../../ui/AGENTS.md) first):
   - add the types in `ui/src/lib/api.ts`
+  - **a "Malicious packages" sidebar view** (`/malicious`, shown when enabled): feed sync state with a stale/unavailable warning, check coverage of current images, active entries per ecosystem, and the affected images grouped by package and by image, in-use first, linking to scan detail and osv.dev
   - in `ScanDetailPage.tsx`, show the MAL check status next to the attestation badges, plus a "Malicious packages" section listing the findings with links to osv.dev
   - give policy-failure rows with `Kind == malicious` their own label
 - **Docs:**

@@ -55,6 +55,20 @@ sync:
 
 - `vulnerabilities` - List of all vulnerabilities with details
 - `imageRef` - Image reference being evaluated (string)
+- `malicious` - List of known-malicious packages found in the image (see below)
+- `maliciousCount` - Number of known-malicious packages found (int)
+
+### Malicious Packages
+
+Each scan matches the image's language packages (npm, PyPI, RubyGems, NuGet, crates.io, Go, Maven, Packagist) against [ossf/malicious-packages](https://github.com/ossf/malicious-packages). A match is not a vulnerability: it has no severity, is not counted in `criticalCount` and friends, is not in `vulnerabilities`, and **cannot be exempted with VEX**. Malicious findings are never sent to triage.
+
+With `x-malicious-packages.block: true` (the default), any malicious finding fails the image regardless of the expression. The reason starts with `malicious packages found:` and each finding is recorded as a policy-failure finding with `Kind: "malicious"`. You don't need to add `maliciousCount == 0` to your expression. With `block: false` only the expression decides, and you can write rules such as:
+
+```yaml
+expression: 'criticalCount == 0 && malicious.filter(m, m.ecosystem == "npm").size() == 0'
+```
+
+Each item in the `malicious` list has `id` (MAL id), `ecosystem`, `packageName`, `version`, `purl`, `summary`, and `url`. See [CONFIGURATION.md](CONFIGURATION.md#malicious-packages-x-malicious-packages).
 
 ## Vulnerability Object Fields
 
