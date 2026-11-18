@@ -477,6 +477,11 @@ func updateScanRecordWithDuration(scanRecord *statestore.ScanRecord, duration ti
 
 // checkPolicyFailures logs warnings and alerts for policy failures
 func (p *Pipeline) checkPolicyFailures(ctx context.Context, task *queue.ScanTask, policyDecision *policy.PolicyDecision) {
+	// A pending scan did not fail: it waits for its cooldown, which the
+	// policy engine already logs.
+	if policyDecision.Status == policy.PolicyStatusPending {
+		return
+	}
 	if !policyDecision.Passed {
 		p.logger.Warn("image failed policy evaluation",
 			"digest", task.Digest,

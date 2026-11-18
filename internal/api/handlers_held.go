@@ -1,6 +1,7 @@
 package api
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"net/http"
@@ -129,5 +130,26 @@ func (s *APIServer) handleReleaseCooldown(w http.ResponseWriter, r *http.Request
 		return next, 1, err
 	}, func(cat *catalog.ConfigCatalog) (int, error) {
 		return cat.AddCooldownRelease(repository, release)
-	}, nil)
+	}, func() int {
+		s.rescanReleased(r.Context(), repository, release.Digest)
+		return 0
+	})
+}
+
+// rescanReleased asks the runway to rescan a released digest now. The config
+// edit only requeues a repository's current images, and a Held digest is not
+// one of them. A failure is logged: the next mirror pass rescans it as well.
+func (s *APIServer) rescanReleased(ctx context.Context, repository, digest string) {
+	if s.heldDigests == nil {
+		return
+	}
+	held, err := s.heldDigests.Release(ctx, repository, digest)
+	if err != nil {
+		s.logger.Warn("cannot queue rescan of released digest; next mirror pass rescans it",
+			"repository", repository, "digest", digest, "error", err.Error())
+		return
+	}
+	if !held {
+		s.logger.Info("released digest is not held", "repository", repository, "digest", digest)
+	}
 }

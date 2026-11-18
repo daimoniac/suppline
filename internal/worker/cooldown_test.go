@@ -1,13 +1,17 @@
 package worker
 
 import (
+	"bytes"
 	"context"
+	"log/slog"
+	"strings"
 	"testing"
 	"time"
 
 	"github.com/daimoniac/suppline/internal/config"
 	"github.com/daimoniac/suppline/internal/errors"
 	"github.com/daimoniac/suppline/internal/observability"
+	"github.com/daimoniac/suppline/internal/policy"
 	"github.com/daimoniac/suppline/internal/queue"
 	"github.com/daimoniac/suppline/internal/registry"
 )
@@ -66,5 +70,29 @@ func TestRetargetKeepsTagOfHeldDigest(t *testing.T) {
 	other := &queue.ScanTask{Repository: "myorg/app", Digest: "sha256:gone", Tag: "1.2.4"}
 	if err := w.pipeline.retargetTaskTag(context.Background(), other, other.Repository, other.Digest, map[string]struct{}{}); !errors.IsManifestNotFound(err) {
 		t.Errorf("retargetTaskTag() for a digest no tag names = %v, want manifest not found", err)
+	}
+}
+
+// A scan pending for its cooldown did not fail: it must not be reported as a
+// policy failure, while a real failure still is.
+func TestCheckPolicyFailuresIgnoresPendingCooldown(t *testing.T) {
+	var buf bytes.Buffer
+	logger := slog.New(slog.NewJSONHandler(&buf, nil))
+	w := NewImageWorker(newMockQueue(1), nil, nil, nil, nil, nil, DefaultConfig(), logger, &config.RegsyncConfig{})
+	task := &queue.ScanTask{Repository: "myorg/app", Digest: "sha256:held", Tag: "1.2.4", IsRescan: true}
+
+	w.pipeline.checkPolicyFailures(context.Background(), task, &policy.PolicyDecision{
+		Status: policy.PolicyStatusPending, Reason: "policy pending: cooldown 120h0m0s not over",
+	})
+	if strings.Contains(buf.String(), "failed policy") || strings.Contains(buf.String(), "ALERT") {
+		t.Fatalf("pending scan logged as a failure: %s", buf.String())
+	}
+
+	task.IsRescan = false
+	w.pipeline.checkPolicyFailures(context.Background(), task, &policy.PolicyDecision{
+		Status: policy.PolicyStatusFailed, Reason: "critical vulnerabilities found",
+	})
+	if !strings.Contains(buf.String(), "image failed policy evaluation") {
+		t.Fatalf("failed scan not logged: %s", buf.String())
 	}
 }

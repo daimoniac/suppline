@@ -189,9 +189,11 @@ func (s *APIServer) SetMalicious(feed MaliciousFeed, settings MaliciousSettings)
 	s.maliciousInfo = settings
 }
 
-// HeldDigestLister lists the digests the tag runway holds.
+// HeldDigestLister lists the digests the tag runway holds and rescans a
+// released one at once.
 type HeldDigestLister interface {
 	Held() []runway.HeldDigest
+	Release(ctx context.Context, repository, digest string) (bool, error)
 }
 
 // SetHeldDigests registers the tag runway for the Held section of the Mirror page.

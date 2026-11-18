@@ -32,6 +32,7 @@ type fakeRegistry struct {
 	images   []scanenqueue.Image
 	// enqueueErr fails EnqueueDiscovery.
 	enqueueErr error
+	urgent     []scanenqueue.Image
 }
 
 func (f *fakeRegistry) GetLastRepositoryScanSummary(context.Context, string, string) (*statestore.ScanRecord, error) {
@@ -61,6 +62,11 @@ func (f *fakeRegistry) EnqueueDiscovery(_ context.Context, image scanenqueue.Ima
 	f.queued = append(f.queued, kind)
 	f.images = append(f.images, image)
 	return &queue.ScanTask{}, nil
+}
+
+func (f *fakeRegistry) EnqueueUrgentRescan(ctx context.Context, image scanenqueue.Image) (*queue.ScanTask, error) {
+	f.urgent = append(f.urgent, image)
+	return f.EnqueueDiscovery(ctx, image, scanenqueue.DiscoveryRescan)
 }
 
 func newRunway(f *fakeRegistry, now time.Time) *Runway {

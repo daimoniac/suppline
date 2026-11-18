@@ -334,55 +334,105 @@ function DeletionTable({ rows, showTag }: { rows: MirrorDeletion[]; showTag: boo
 
 function HeldTable({ rows, onRelease }: { rows: HeldDigest[]; onRelease: (row: HeldDigest) => void }) {
   return (
-    <div className="overflow-x-auto">
-      <table className="w-full text-sm">
-        <thead className="text-left text-xs text-text-muted">
-          <tr className="border-b border-border">
-            <th className="px-5 py-2 font-medium">Repository</th>
-            <th className="px-5 py-2 font-medium">Tags</th>
-            <th className="px-5 py-2 font-medium">Digest</th>
-            <th className="px-5 py-2 font-medium">First seen</th>
-            <th className="px-5 py-2 font-medium">Cooldown</th>
-            <th className="px-5 py-2 font-medium">Scan</th>
-            <th className="px-5 py-2 font-medium" />
-          </tr>
-        </thead>
-        <tbody>
-          {rows.map(row => (
-            <tr key={`${row.Repository}@${row.Digest}`} className="border-b border-border last:border-0 align-top">
-              <td className="px-5 py-2 text-text-primary">
-                <div>{row.Repository}</div>
-                {row.Source && <div className="text-xs text-text-muted">from {row.Source}</div>}
-              </td>
-              <td className="px-5 py-2 text-text-secondary">{(row.Tags ?? []).join(', ')}</td>
-              <td className="px-5 py-2"><DigestLinkWithCopy digest={row.Digest} to={`/repositories/${encodeURIComponent(row.Repository)}/tags/${encodeURIComponent(row.Digest)}`} /></td>
-              <td className="px-5 py-2 text-text-muted" title={formatDate(row.FirstSeen)}>{formatRelativeTime(row.FirstSeen)}</td>
-              <td className="px-5 py-2"><CooldownCell row={row} /></td>
-              <td className="px-5 py-2">
-                {row.PolicyStatus ? (
-                  <div className="flex flex-col gap-1">
-                    <StatusBadge passed={row.PolicyStatus === 'passed'} status={row.PolicyStatus} label={row.PolicyStatus === 'pending' ? 'Held' : undefined} />
-                    {row.ScannedAt ? <span className="text-xs text-text-muted">{formatRelativeTime(row.ScannedAt)}</span> : null}
-                  </div>
-                ) : (
-                  <span className="text-xs text-text-muted">Not scanned yet</span>
-                )}
-              </td>
-              <td className="px-5 py-2 text-right">
-                {row.CooldownSeconds > 0 && !row.Released && row.RemainingSeconds > 0 && (
-                  <button
-                    type="button"
-                    onClick={() => onRelease(row)}
-                    className="px-3 py-1 text-xs rounded border border-warning/30 text-warning hover:bg-warning-bg whitespace-nowrap transition-colors"
-                  >
-                    Release now
-                  </button>
-                )}
-              </td>
+    <>
+      {/* Phones: one card per held digest, no sideways scrolling. */}
+      <ul className="md:hidden divide-y divide-border">
+        {rows.map(row => (
+          <li key={`${row.Repository}@${row.Digest}`} className="px-4 py-3 space-y-2">
+            <div className="min-w-0">
+              <div className="text-sm text-text-primary break-all">{row.Repository}</div>
+              {row.Source && <div className="text-xs text-text-muted break-all">from {row.Source}</div>}
+            </div>
+            <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs">
+              <span className="text-text-secondary">{(row.Tags ?? []).join(', ')}</span>
+              <DigestLinkWithCopy digest={row.Digest} to={heldDigestLink(row)} />
+            </div>
+            <dl className="grid grid-cols-3 gap-2 text-xs">
+              <div>
+                <dt className="text-text-muted">First seen</dt>
+                <dd className="text-text-secondary" title={formatDate(row.FirstSeen)}>{formatRelativeTime(row.FirstSeen)}</dd>
+              </div>
+              <div>
+                <dt className="text-text-muted">Cooldown</dt>
+                <dd><CooldownCell row={row} /></dd>
+              </div>
+              <div>
+                <dt className="text-text-muted">Scan</dt>
+                <dd><ScanCell row={row} /></dd>
+              </div>
+            </dl>
+            {canRelease(row) && (
+              <button
+                type="button"
+                onClick={() => onRelease(row)}
+                className="w-full px-3 py-2 text-xs rounded border border-warning/30 text-warning hover:bg-warning-bg transition-colors"
+              >
+                Release now
+              </button>
+            )}
+          </li>
+        ))}
+      </ul>
+
+      <div className="hidden md:block overflow-x-auto">
+        <table className="w-full text-sm">
+          <thead className="text-left text-xs text-text-muted">
+            <tr className="border-b border-border">
+              <th className="px-5 py-2 font-medium">Repository</th>
+              <th className="px-5 py-2 font-medium">Tags</th>
+              <th className="px-5 py-2 font-medium">Digest</th>
+              <th className="px-5 py-2 font-medium">First seen</th>
+              <th className="px-5 py-2 font-medium">Cooldown</th>
+              <th className="px-5 py-2 font-medium">Scan</th>
+              <th className="px-5 py-2 font-medium" />
             </tr>
-          ))}
-        </tbody>
-      </table>
+          </thead>
+          <tbody>
+            {rows.map(row => (
+              <tr key={`${row.Repository}@${row.Digest}`} className="border-b border-border last:border-0 align-top">
+                <td className="px-5 py-2 text-text-primary">
+                  <div>{row.Repository}</div>
+                  {row.Source && <div className="text-xs text-text-muted">from {row.Source}</div>}
+                </td>
+                <td className="px-5 py-2 text-text-secondary">{(row.Tags ?? []).join(', ')}</td>
+                <td className="px-5 py-2"><DigestLinkWithCopy digest={row.Digest} to={heldDigestLink(row)} /></td>
+                <td className="px-5 py-2 text-text-muted" title={formatDate(row.FirstSeen)}>{formatRelativeTime(row.FirstSeen)}</td>
+                <td className="px-5 py-2"><CooldownCell row={row} /></td>
+                <td className="px-5 py-2"><ScanCell row={row} /></td>
+                <td className="px-5 py-2 text-right">
+                  {canRelease(row) && (
+                    <button
+                      type="button"
+                      onClick={() => onRelease(row)}
+                      className="px-3 py-1 text-xs rounded border border-warning/30 text-warning hover:bg-warning-bg whitespace-nowrap transition-colors"
+                    >
+                      Release now
+                    </button>
+                  )}
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </>
+  );
+}
+
+function heldDigestLink(row: HeldDigest): string {
+  return `/repositories/${encodeURIComponent(row.Repository)}/tags/${encodeURIComponent(row.Digest)}`;
+}
+
+function canRelease(row: HeldDigest): boolean {
+  return row.CooldownSeconds > 0 && !row.Released && row.RemainingSeconds > 0;
+}
+
+function ScanCell({ row }: { row: HeldDigest }) {
+  if (!row.PolicyStatus) return <span className="text-xs text-text-muted">Not scanned yet</span>;
+  return (
+    <div className="flex flex-col items-start gap-1">
+      <StatusBadge passed={row.PolicyStatus === 'passed'} status={row.PolicyStatus} label={row.PolicyStatus === 'pending' ? 'Held' : undefined} />
+      {row.ScannedAt ? <span className="text-xs text-text-muted">{formatRelativeTime(row.ScannedAt)}</span> : null}
     </div>
   );
 }

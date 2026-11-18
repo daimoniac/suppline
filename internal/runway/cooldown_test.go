@@ -314,3 +314,56 @@ func TestCooldown_AttestedDigestPublishesWithoutHold(t *testing.T) {
 		t.Fatalf("holds = %v, want none", f.holds)
 	}
 }
+
+// A Cooldown release must reach a digest whose scan is pending: the API
+// queues an urgent rescan at once, and the next offer rescans it as well.
+func TestCooldown_ReleaseRescansPendingDigest(t *testing.T) {
+	ctx := context.Background()
+	c := &clock{now: time.Date(2026, 11, 18, 16, 0, 0, 0, time.UTC)}
+	f := newCooldownRegistry(map[string]string{})
+	r := newCooldownRunway(f, c)
+	offer := Candidate{Repository: repo, Tag: "v0.65.6", Digest: newDig}
+	if _, err := r.Offer(ctx, offer); err != nil {
+		t.Fatal(err)
+	}
+	f.recs[newDig] = pending(c.now, time.Minute)
+	f.queued = nil
+
+	// Before the release, the pending scan is not due for days.
+	if _, err := r.Offer(ctx, offer); err != nil {
+		t.Fatal(err)
+	}
+	if len(f.queued) != 0 {
+		t.Fatalf("queued = %v before the release", f.queued)
+	}
+
+	f.released[newDig] = true
+	held, err := r.Release(ctx, repo, newDig)
+	if err != nil || !held {
+		t.Fatalf("Release() = %t, %v", held, err)
+	}
+	if len(f.urgent) != 1 || f.urgent[0].Tag != "v0.65.6" {
+		t.Fatalf("urgent = %v, want one rescan under the held tag", f.urgent)
+	}
+	f.queued = nil
+	if _, err := r.Offer(ctx, offer); err != nil {
+		t.Fatal(err)
+	}
+	if len(f.queued) != 1 {
+		t.Fatalf("queued = %v, want the next offer to rescan the released digest", f.queued)
+	}
+
+	// The rescan passes without the cooldown and publishes the tag.
+	f.recs[newDig] = passed(c.now)
+	r.Scanned(ctx, repo, newDig)
+	if f.tags["v0.65.6"] != newDig {
+		t.Fatalf("tag = %q, want published", f.tags["v0.65.6"])
+	}
+	if _, ok := f.holds[newDig]; ok || !slices.Contains(f.deleted, newDig) {
+		t.Fatalf("holds = %v, deleted = %v; want the hold tag deleted", f.holds, f.deleted)
+	}
+
+	if held, err := r.Release(ctx, repo, "sha256:unknown"); err != nil || held {
+		t.Fatalf("Release() of an unheld digest = %t, %v", held, err)
+	}
+}
