@@ -16,6 +16,7 @@ type RematchStore interface {
 	ListPackageInventory(ctx context.Context, digest string) ([]types.PackageRef, error)
 	ListInventoryByPackage(ctx context.Context, ecosystem, name string) ([]statestore.InventoryPackage, error)
 	ListLatestDigestScans(ctx context.Context, digest string) ([]statestore.DigestScan, error)
+	ListDigestsWithMaliciousStatus(ctx context.Context, statuses ...string) ([]string, error)
 	UpdateMaliciousCheck(ctx context.Context, scanID int64, check *types.MaliciousCheck) error
 }
 
@@ -122,7 +123,44 @@ func (r *Rematcher) Process(ctx context.Context, update Update) error {
 	if update.Full {
 		return r.full(ctx, snapshot)
 	}
-	return r.incremental(ctx, snapshot, update.Changed)
+	if err := r.incremental(ctx, snapshot, update.Changed); err != nil {
+		return err
+	}
+	return r.catchUp(ctx, snapshot)
+}
+
+// catchUp matches digests whose latest scan ran while the index was
+// unavailable or stale. A full re-match covers them too, but a scan that
+// checked before the index loaded can be saved after that re-match ran.
+func (r *Rematcher) catchUp(ctx context.Context, snapshot Snapshot) error {
+	if snapshot.Status != StatusOK {
+		return nil
+	}
+	digests, err := r.store.ListDigestsWithMaliciousStatus(ctx, types.MaliciousCheckUnavailable, types.MaliciousCheckStale)
+	if err != nil {
+		return fmt.Errorf("list unchecked digests: %w", err)
+	}
+	rescanned, confirmed := 0, 0
+	for _, digest := range digests {
+		if ctx.Err() != nil {
+			return ctx.Err()
+		}
+		refs, err := r.store.ListPackageInventory(ctx, digest)
+		if err != nil {
+			return fmt.Errorf("list inventory of %s: %w", digest, err)
+		}
+		n, c, err := r.reconcile(ctx, digest, CheckPackages(snapshot, Packages(refs)), true)
+		if err != nil {
+			return err
+		}
+		rescanned += n
+		confirmed += c
+	}
+	if len(digests) > 0 {
+		r.logger.Info("malicious-packages catch-up finished",
+			"digests", len(digests), "rescans_queued", rescanned, "checks_confirmed", confirmed)
+	}
+	return nil
 }
 
 // full re-matches every digest with a stored inventory.

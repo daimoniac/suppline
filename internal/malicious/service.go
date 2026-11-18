@@ -35,9 +35,10 @@ type Snapshot struct {
 	Status   Status
 }
 
-// Update tells listeners what a sync changed. Full means every tracked image
-// should be matched again (first load, a re-clone, or recovery from stale);
-// otherwise Changed holds the added or modified entries.
+// Update tells listeners about a successful sync. Full means every tracked
+// image should be matched again (first load, a re-clone, or recovery from
+// stale); otherwise Changed holds the added or modified entries, and is empty
+// when nothing changed upstream.
 type Update struct {
 	Full    bool
 	Commit  string
@@ -107,7 +108,7 @@ func newService(source feed, cfg ServiceConfig, health HealthReporter, metrics *
 	return &Service{feed: source, cfg: cfg, health: health, metrics: metrics, logger: logger, now: time.Now}, nil
 }
 
-// OnUpdate registers a listener called after each sync that changed the index.
+// OnUpdate registers a listener called after each successful sync.
 // Listeners run on the sync goroutine and must not block for long.
 func (s *Service) OnUpdate(fn func(context.Context, Update)) {
 	s.listenerMu.Lock()
@@ -176,7 +177,7 @@ func (s *Service) Sync(ctx context.Context) {
 	s.logger.Info("malicious-packages synced",
 		"commit", snapshot.Commit,
 		"entries", snapshot.Index.Len(),
-		"full", update != nil && update.Full,
+		"full", update.Full,
 		"changed", changedCount(update),
 		"duration", s.now().Sub(started).String())
 	if s.metrics != nil {
@@ -186,9 +187,7 @@ func (s *Service) Sync(ctx context.Context) {
 		}
 	}
 	s.reportHealth("")
-	if update != nil {
-		s.notify(ctx, *update)
-	}
+	s.notify(ctx, *update)
 }
 
 func changedCount(update *Update) int {
@@ -247,6 +246,11 @@ func (s *Service) sync(ctx context.Context) (*Update, error) {
 		// Scans made while stale need matching against everything we missed.
 		update = &Update{Full: true}
 	}
+	if update == nil {
+		// Nothing changed upstream; listeners still hear about the sync so they
+		// can catch up on scans that ran without usable data.
+		update = &Update{}
+	}
 
 	s.mu.Lock()
 	s.index = next
@@ -254,9 +258,7 @@ func (s *Service) sync(ctx context.Context) (*Update, error) {
 	s.syncedAt = s.now()
 	s.mu.Unlock()
 
-	if update != nil {
-		update.Commit = result.Current.String()
-	}
+	update.Commit = result.Current.String()
 	return update, nil
 }
 

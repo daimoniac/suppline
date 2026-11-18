@@ -94,11 +94,11 @@ func TestServiceLifecycle(t *testing.T) {
 		t.Fatalf("unexpected health %s %q", health.status, health.message)
 	}
 
-	// No upstream change: no update, no reload.
+	// No upstream change: no reload, and an empty update so listeners can catch up.
 	feed.result = SyncResult{Previous: hash(1), Current: hash(1)}
 	service.Sync(ctx)
-	if len(*updates) != 1 || feed.loads != 1 || feed.diffs != 0 {
-		t.Fatalf("expected nothing to happen, updates=%d loads=%d diffs=%d", len(*updates), feed.loads, feed.diffs)
+	if len(*updates) != 2 || (*updates)[1].Full || len((*updates)[1].Changed) != 0 || feed.loads != 1 || feed.diffs != 0 {
+		t.Fatalf("expected an empty update without reload, updates=%+v loads=%d diffs=%d", *updates, feed.loads, feed.diffs)
 	}
 
 	// Incremental change: diff applied, changed entries announced.
@@ -106,7 +106,7 @@ func TestServiceLifecycle(t *testing.T) {
 	feed.changed = map[string]*Entry{"b": entry("MAL-2", EcosystemNPM, "worse", nil, allVersions())}
 	feed.removed = []string{"a"}
 	service.Sync(ctx)
-	if len(*updates) != 2 || (*updates)[1].Full || len((*updates)[1].Changed) != 1 || (*updates)[1].Changed[0].ID != "MAL-2" {
+	if len(*updates) != 3 || (*updates)[2].Full || len((*updates)[2].Changed) != 1 || (*updates)[2].Changed[0].ID != "MAL-2" {
 		t.Fatalf("expected incremental update, got %+v", *updates)
 	}
 	if service.Snapshot().Index.Match([]Package{npmEvil}) != nil {
@@ -132,7 +132,7 @@ func TestServiceLifecycle(t *testing.T) {
 	if service.Snapshot().Status != StatusOK {
 		t.Fatal("expected ok after recovery")
 	}
-	if len(*updates) != 3 || !(*updates)[2].Full {
+	if len(*updates) != 4 || !(*updates)[3].Full {
 		t.Fatalf("expected full update after recovery, got %+v", *updates)
 	}
 }

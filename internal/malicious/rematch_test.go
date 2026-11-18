@@ -185,3 +185,28 @@ func TestRematchCoalesce(t *testing.T) {
 		t.Fatalf("a dropped update forces a full re-match, got %+v", got)
 	}
 }
+
+// A scan can check before the index loads and be saved after the full
+// re-match ran (seen in production). The next sync's catch-up resolves it.
+func TestRematchCatchUpAfterFullRematch(t *testing.T) {
+	f := newRematchFixture(t)
+	f.service.Sync(context.Background())
+	if err := f.r.Process(context.Background(), Update{Full: true}); err != nil {
+		t.Fatal(err)
+	}
+
+	unavailable := &types.MaliciousCheck{Status: types.MaliciousCheckUnavailable}
+	f.scan(digestEvil, unavailable, npm("evil", "1.0.0"))
+	f.scan(digestLate, unavailable, npm("good", "1.0.0"))
+
+	// An hourly sync with no upstream change.
+	if err := f.r.Process(context.Background(), Update{}); err != nil {
+		t.Fatal(err)
+	}
+	if got := f.queue.take(); len(got) != 1 || got[0] != "library/app@"+digestEvil+":aaaa" {
+		t.Fatalf("the late malicious digest should be rescanned, got %v", got)
+	}
+	if c := f.check(digestLate); c == nil || c.Status != types.MaliciousCheckOK {
+		t.Fatalf("the late clean digest should be confirmed, got %+v", c)
+	}
+}

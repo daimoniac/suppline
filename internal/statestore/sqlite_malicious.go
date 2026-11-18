@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"encoding/json"
 	"sort"
+	"strings"
 
 	"github.com/daimoniac/suppline/internal/errors"
 	"github.com/daimoniac/suppline/internal/types"
@@ -363,4 +364,40 @@ func (s *SQLiteStore) ListMaliciousImages(ctx context.Context) ([]MaliciousImage
 		return images[i].RuntimeUsed && !images[j].RuntimeUsed
 	})
 	return images, coverage, nil
+}
+
+// ListDigestsWithMaliciousStatus returns the digests whose latest scan (in any
+// repository) recorded one of the given malicious-check statuses.
+func (s *SQLiteStore) ListDigestsWithMaliciousStatus(ctx context.Context, statuses ...string) ([]string, error) {
+	if len(statuses) == 0 {
+		return nil, nil
+	}
+	placeholders := strings.TrimSuffix(strings.Repeat("?,", len(statuses)), ",")
+	args := make([]any, 0, len(statuses))
+	for _, status := range statuses {
+		args = append(args, status)
+	}
+	rows, err := s.db.QueryContext(ctx, `
+		SELECT DISTINCT a.digest
+		FROM artifacts a
+		JOIN scan_records sr ON sr.id = a.last_scan_id
+		WHERE sr.malicious_status IN (`+placeholders+`)
+		ORDER BY a.digest
+	`, args...)
+	if err != nil {
+		return nil, errors.NewTransientf("failed to list digests by malicious status: %w", err)
+	}
+	defer rows.Close()
+	var digests []string
+	for rows.Next() {
+		var digest string
+		if err := rows.Scan(&digest); err != nil {
+			return nil, errors.NewTransientf("failed to scan digest: %w", err)
+		}
+		digests = append(digests, digest)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, errors.NewTransientf("error iterating digests: %w", err)
+	}
+	return digests, nil
 }
