@@ -39,7 +39,7 @@ stateDiagram-v2
     Failed --> Watched : rescan, VEX update, policy re-eval
     Failed --> Triage : no active exemption for a failing CVE
     Triage --> Evaluating : x-vex-auto updated, repository requeued
-    Pending --> Watched : minimum release age reached
+    Pending --> Watched : cooldown over
     ScanFailed --> Watched : manual rescan or startup replay
     Abandoned --> Watched : next poll
     Vanished --> [*] : state purged
@@ -55,7 +55,7 @@ stateDiagram-v2
     Passed : deployable under verified-only admission
     Failed : blocked, evidence still published
     Triage : gitops context plus LLM, writes x-vex-auto or records a rejection
-    Pending : held below minimumReleaseAge, no attestation
+    Pending : held in its cooldown, no attestation
     ScanFailed : error record, visible as failed in UI
     Abandoned : no record written, retried on next poll
     Vanished : digest gone from registry
@@ -79,7 +79,9 @@ flowchart TD
     B -. lookup error .-> K[Enqueue anyway, fail-open]
 ```
 
-The tag runway (`internal/runway`) owns every tag the in-process mirror writes. The mirror copies a changed digest by digest and offers it. When a tag already exists, it stays on the previous digest until the new one has a passing SCAI attestation (`passed` or `passed-with-exceptions`); the worker reports each persisted scan back to the runway, which then moves the tag and the Current tag binding together. A failed or pending scan leaves the tag where it is and is retried on the rescan interval, or sooner when the attestation itself failed to publish. A tag that does not exist yet is published immediately, and the runway queues its first scan at once instead of waiting for the next watcher pass. The regsync sidecar rollback path has no runway and moves tags on copy.
+The tag runway (`internal/runway`) owns every tag the in-process mirror writes. The mirror copies a changed digest by digest and offers it. When a tag already exists, it stays on the previous digest until the new one has a passing SCAI attestation (`passed` or `passed-with-exceptions`); the worker reports each persisted scan back to the runway, which then moves the tag and the Current tag binding together. A failed or pending scan leaves the tag where it is and is retried on the rescan interval, or sooner when the attestation itself failed to publish. Without a cooldown, a tag that does not exist yet is published immediately, and the runway queues its first scan at once instead of waiting for the next watcher pass. The regsync sidecar rollback path has no runway and moves tags on copy.
+
+With a cooldown (`x-cooldown`), every new digest is a Held digest, new tags included. The runway writes a hold tag `sha256-<hex>.hold` before anything else happens to the digest. It points at a small OCI index that references the held digest, so registry GC keeps the digest, and records when suppline first saw it, the upstream repository, and the tags it is a candidate for. The scan runs at once, so a malicious-feed match or a policy failure shows during the hold; a passing scan stays `pending` without an attestation until the cooldown is over, and the rescan due then attests it and moves the tag. When upstream moves a tag faster than the cooldown, each offer reviews all candidates of that tag and publishes the newest attested one; older candidates are dropped. A candidate is also dropped when upstream points the tag back at the digest the target already names, or deletes the tag. A failing candidate keeps its hold tag so it can be triaged. On startup, and after the database is thrown away, the runway rebuilds its candidates and first-seen times from the hold tags; mirror cleanup keeps the hold tags of held digests and deletes any other.
 
 A scan takes its tag's Current tag binding only when the registry tag resolves to the scanned digest. A held digest, and a superseded digest still running in a cluster, are recorded behind the current binding and keep their scan for renewal.
 
@@ -179,6 +181,6 @@ A sweep, hourly and once at startup, requeues auto statements within `renew_befo
 |--------|----------|---------|---------------|
 | `passed` | Yes | Gate open, deployable under verified-only admission | CEL expression true after VEX exemptions |
 | `failed` | Yes | Gate closed, evidence still published for audit | CEL expression false, e.g. `criticalCount > 0` |
-| `pending` | No | Held, re-evaluated on a later scan | `minimumReleaseAge` unmet or no age source available |
+| `pending` | No | Held, re-evaluated once the cooldown is over | The CEL expression passed but the cooldown (`x-cooldown`) is not over |
 
-See [POLICY.md](POLICY.md) for CEL expressions and VEX semantics, and [CONFIGURATION.md](CONFIGURATION.md) for `rescanInterval` and `minimumReleaseAge`.
+See [POLICY.md](POLICY.md) for CEL expressions and VEX semantics, and [CONFIGURATION.md](CONFIGURATION.md) for `rescanInterval` and `x-cooldown`.

@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import { Link, useParams } from 'react-router';
 import { useAuth } from '../lib/auth';
 import { useToast } from '../lib/toast';
-import { formatRelativeTime, formatDate, truncateDigest, copyToClipboard, daysUntilReleaseAge, formatRemainingDays, getRuntimeClusterCount, getRuntimeNamespaceEntries, isPast } from '../lib/utils';
+import { formatRelativeTime, formatDate, truncateDigest, copyToClipboard, cooldownDaysLeft, formatHeld, getRuntimeClusterCount, getRuntimeNamespaceEntries, isPast } from '../lib/utils';
 import { scheduleEffectLoad } from '../lib/scheduleEffectLoad';
 import { LoadingState, ErrorState, StatusBadge, SeverityBadge, MaliciousCheckBadge } from '../components/ui';
 import type { AppliedVEXStatement, MaliciousCheck, ScanDetail, Vulnerability } from '../lib/api';
@@ -142,11 +142,11 @@ export default function ScanDetailPage() {
               <StatusBadge
                 passed={scan.PolicyPassed}
                 status={scan.PolicyStatus}
-                label={scan.PolicyStatus === 'pending' ? 'Pending Maturity' : undefined}
+                label={scan.PolicyStatus === 'pending' ? 'Held' : undefined}
               />
               {scan.PolicyStatus === 'pending' && (
                 <div className="text-xs text-warning font-medium">
-                  {formatRemainingDays(daysUntilReleaseAge(scan.ReleaseAgeSeconds, scan.MinimumReleaseAgeSeconds))}
+                  {formatHeld(cooldownDaysLeft(scan.ReleaseAgeSeconds, scan.MinimumReleaseAgeSeconds, scan.CreatedAt))}
                 </div>
               )}
             </div>

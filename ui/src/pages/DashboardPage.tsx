@@ -66,6 +66,15 @@ export default function DashboardPage() {
   const [data, setData] = useState<DashboardData | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
+  const [mirrorEnabled, setMirrorEnabled] = useState(false);
+
+  useEffect(() => {
+    let cancelled = false;
+    apiClient.getHealth()
+      .then(health => { if (!cancelled) setMirrorEnabled(health.mirrorEnabled === true); })
+      .catch(() => { if (!cancelled) setMirrorEnabled(false); });
+    return () => { cancelled = true; };
+  }, [apiClient]);
 
   const load = async () => {
     setLoading(true);
@@ -157,7 +166,7 @@ export default function DashboardPage() {
           variant="danger"
           to="/failed"
         />
-        <SummaryCard icon={<Clock className="w-5 h-5" />} value={data.pendingCount} label="Pending Release" variant="warning" detail="Waiting to mature" />
+        <SummaryCard icon={<Clock className="w-5 h-5" />} value={data.pendingCount} label="Held" variant="warning" detail="In cooldown, not attested yet" to={mirrorEnabled ? '/mirror' : undefined} />
         <SummaryCard icon={<ShieldCheck className="w-5 h-5" />} value={data.activeVEXStatements} label="Active VEX Statements" variant="info" to="/triage" />
       </div>
 

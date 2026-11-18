@@ -24,12 +24,12 @@ type PolicyListing struct {
 // Catalog is the repository-policy seam used by policy consumers.
 //
 // Exemption evidence is resolved separately from the CEL policy configuration:
-// a repository whose minimumReleaseAge cannot be parsed must fail policy
+// a repository whose x-cooldown cannot be parsed must fail policy
 // evaluation for that repository only, while its VEX statements stay available
 // to scan enqueueing, discovery, the API, and metrics.
 type Catalog interface {
 	// ResolvePolicy returns the effective CEL policy configuration for building
-	// a policy engine. It fails only when the effective minimumReleaseAge for
+	// a policy engine. It fails only when the effective x-cooldown for
 	// the repository cannot be parsed.
 	ResolvePolicy(repository string) (policy.PolicyConfig, error)
 

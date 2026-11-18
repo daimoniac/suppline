@@ -14,6 +14,7 @@ import (
 	"github.com/daimoniac/suppline/internal/mirror"
 	"github.com/daimoniac/suppline/internal/policy/catalog"
 	"github.com/daimoniac/suppline/internal/queue"
+	"github.com/daimoniac/suppline/internal/runway"
 	"github.com/daimoniac/suppline/internal/scanenqueue"
 	"github.com/daimoniac/suppline/internal/statestore"
 	"github.com/daimoniac/suppline/internal/triage"
@@ -63,6 +64,7 @@ type APIServer struct {
 	mirrorActivity    *mirror.Activity
 	malicious         MaliciousFeed
 	maliciousInfo     MaliciousSettings
+	heldDigests       HeldDigestLister
 	router            *http.ServeMux
 	server            *http.Server
 	logger            *slog.Logger
@@ -187,6 +189,19 @@ func (s *APIServer) SetMalicious(feed MaliciousFeed, settings MaliciousSettings)
 	s.maliciousInfo = settings
 }
 
+// HeldDigestLister lists the digests the tag runway holds.
+type HeldDigestLister interface {
+	Held() []runway.HeldDigest
+}
+
+// SetHeldDigests registers the tag runway for the Held section of the Mirror page.
+func (s *APIServer) SetHeldDigests(held HeldDigestLister) {
+	if s == nil {
+		return
+	}
+	s.heldDigests = held
+}
+
 // setupRoutes configures all API routes
 func (s *APIServer) setupRoutes() {
 	// Query endpoints (GET)
@@ -235,6 +250,8 @@ func (s *APIServer) setupRoutes() {
 	s.router.HandleFunc("/api/v1/integration/kubernetes/clusters", s.corsMiddleware(s.handleListKubernetesClusters))
 	s.router.HandleFunc("/api/v1/integration/kubernetes/clusters/", s.corsMiddleware(s.authMiddleware(s.handleKubernetesClustersRouter, false)))
 	s.router.HandleFunc("/api/v1/mirror", s.corsMiddleware(s.authMiddleware(s.handleGetMirror, false)))
+	s.router.HandleFunc("/api/v1/mirror/held", s.corsMiddleware(s.authMiddleware(s.handleListHeldDigests, false)))
+	s.router.HandleFunc("/api/v1/mirror/held/release", s.corsMiddleware(s.authMiddleware(s.handleReleaseCooldown, true)))
 	s.router.HandleFunc("/api/v1/mirror/", s.corsMiddleware(s.authMiddleware(s.handleMirrorSub, false)))
 	s.router.HandleFunc("/api/v1/malicious", s.corsMiddleware(s.authMiddleware(s.handleGetMalicious, false)))
 

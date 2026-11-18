@@ -211,16 +211,29 @@ func run() error {
 		"rescan_interval", cfg.StateStore.RescanInterval)
 	var tagRunway *runway.Runway
 	if cfg.MirrorEnabled {
+		holds, ok := registryClient.(runway.Holds)
+		if !ok {
+			return fmt.Errorf("registry client cannot write hold tags")
+		}
 		tagRunway = runway.New(runway.Config{
 			Store:     store,
 			Tagger:    registryClient,
 			Scheduler: scanEnqueuer,
+			Holds:     holds,
 			RescanInterval: func(repository string) time.Duration {
 				interval, err := repositoryPolicies.Current().GetRescanInterval(repository)
 				if err != nil {
 					return 0
 				}
 				return interval
+			},
+			Cooldown: func(repository string) time.Duration {
+				// Configuration load already rejected an invalid x-cooldown.
+				cooldown, _ := repositoryPolicies.Current().GetCooldown(repository)
+				return cooldown
+			},
+			Released: func(repository, digest string) bool {
+				return repositoryPolicies.Current().CooldownReleased(repository, digest)
 			},
 			Log: logger.With("module", "runway"),
 		})
@@ -299,6 +312,8 @@ func run() error {
 	workerInstance.SetPolicyFailureNotifier(triageService)
 	if tagRunway != nil {
 		workerInstance.SetScanObserver(tagRunway)
+		workerInstance.SetCooldownClock(tagRunway)
+		workerInstance.SetHeldDigests(tagRunway.HeldDigests)
 	}
 	healthChecker.UpdateComponentHealth("worker", observability.StatusHealthy, "")
 	logger.Debug("worker initialized")
@@ -355,6 +370,9 @@ func run() error {
 	mirrorActivity := mirror.NewActivity()
 	if apiServer != nil {
 		apiServer.SetMirror(cfg.MirrorEnabled, mirrorActivity)
+		if tagRunway != nil {
+			apiServer.SetHeldDigests(tagRunway)
+		}
 	}
 
 	var wg sync.WaitGroup

@@ -15,11 +15,11 @@ func TestConfigCatalogResolve(t *testing.T) {
 	cfg := &config.RegsyncConfig{
 		Defaults: config.Defaults{
 			Policy: &config.PolicyConfig{
-				Expression:        "criticalCount == 0",
-				FailureMessage:    "default failure",
-				MinimumReleaseAge: "24h",
+				Expression:     "criticalCount == 0",
+				FailureMessage: "default failure",
 			},
-			VEXRepo: boolPointer(true),
+			Cooldown: "24h",
+			VEXRepo:  boolPointer(true),
 			VEX: []types.VEXStatement{
 				{ID: "CVE-shared", Detail: "default wins"},
 				{ID: "CVE-default"},
@@ -27,10 +27,11 @@ func TestConfigCatalogResolve(t *testing.T) {
 		},
 		Sync: []config.SyncEntry{
 			{
-				Target:  "registry.example/team/app:1.2.3",
-				Type:    "image",
-				Policy:  &config.PolicyConfig{Expression: "highCount == 0", FailureMessage: "override failure", MinimumReleaseAge: "2d"},
-				VEXRepo: boolPointer(false),
+				Target:   "registry.example/team/app:1.2.3",
+				Type:     "image",
+				Policy:   &config.PolicyConfig{Expression: "highCount == 0", FailureMessage: "override failure"},
+				Cooldown: "2d",
+				VEXRepo:  boolPointer(false),
 				VEX: []types.VEXStatement{
 					{ID: "CVE-shared", Detail: "repository duplicate"},
 					{ID: "CVE-app"},
@@ -46,7 +47,7 @@ func TestConfigCatalogResolve(t *testing.T) {
 		repository     string
 		wantExpression string
 		wantFailure    string
-		wantMinimumAge time.Duration
+		wantCooldown   time.Duration
 		wantVEXRepo    bool
 		wantStatements []string
 	}{
@@ -55,7 +56,7 @@ func TestConfigCatalogResolve(t *testing.T) {
 			repository:     "registry.example/team/app",
 			wantExpression: "highCount == 0",
 			wantFailure:    "override failure",
-			wantMinimumAge: 48 * time.Hour,
+			wantCooldown:   48 * time.Hour,
 			wantStatements: []string{"CVE-shared", "CVE-default", "CVE-app"},
 		},
 		{
@@ -63,7 +64,7 @@ func TestConfigCatalogResolve(t *testing.T) {
 			repository:     "registry.example/team/other",
 			wantExpression: "criticalCount == 0",
 			wantFailure:    "default failure",
-			wantMinimumAge: 24 * time.Hour,
+			wantCooldown:   24 * time.Hour,
 			wantVEXRepo:    true,
 			wantStatements: []string{"CVE-shared", "CVE-default"},
 		},
@@ -72,7 +73,7 @@ func TestConfigCatalogResolve(t *testing.T) {
 			repository:     "registry.example/team/unknown",
 			wantExpression: "criticalCount == 0",
 			wantFailure:    "default failure",
-			wantMinimumAge: 24 * time.Hour,
+			wantCooldown:   24 * time.Hour,
 			wantVEXRepo:    true,
 			wantStatements: []string{"CVE-shared", "CVE-default"},
 		},
@@ -87,8 +88,8 @@ func TestConfigCatalogResolve(t *testing.T) {
 			if gotPolicy.Expression != test.wantExpression || gotPolicy.FailureMessage != test.wantFailure {
 				t.Errorf("policy = %+v, want expression %q and failure %q", gotPolicy, test.wantExpression, test.wantFailure)
 			}
-			if gotPolicy.MinimumReleaseAge != test.wantMinimumAge {
-				t.Errorf("minimum release age = %v, want %v", gotPolicy.MinimumReleaseAge, test.wantMinimumAge)
+			if gotPolicy.Cooldown != test.wantCooldown {
+				t.Errorf("cooldown = %v, want %v", gotPolicy.Cooldown, test.wantCooldown)
 			}
 			if got := subject.ResolveExpression(test.repository); got != test.wantExpression {
 				t.Errorf("ResolveExpression() = %q, want %q", got, test.wantExpression)
@@ -162,14 +163,15 @@ func TestConfigCatalogAutoVEXLosesToManual(t *testing.T) {
 	}
 }
 
-func TestConfigCatalogInvalidMinimumReleaseAgeIsLocalToPolicy(t *testing.T) {
+func TestConfigCatalogInvalidCooldownIsLocalToPolicy(t *testing.T) {
 	statementExpiry := time.Now().Add(24 * time.Hour).Unix()
 	subject := NewConfigCatalog(&config.RegsyncConfig{
 		Sync: []config.SyncEntry{{
-			Target:  "repo",
-			Type:    "repository",
-			Policy:  &config.PolicyConfig{Expression: "criticalCount == 0", MinimumReleaseAge: "not-a-duration"},
-			VEXRepo: boolPointer(true),
+			Target:   "repo",
+			Type:     "repository",
+			Policy:   &config.PolicyConfig{Expression: "criticalCount == 0"},
+			Cooldown: "not-a-duration",
+			VEXRepo:  boolPointer(true),
 			VEX: []types.VEXStatement{
 				{ID: "CVE-active", State: types.VEXStateNotAffected, ExpiresAt: &statementExpiry},
 			},
@@ -177,7 +179,7 @@ func TestConfigCatalogInvalidMinimumReleaseAgeIsLocalToPolicy(t *testing.T) {
 	})
 
 	_, err := subject.ResolvePolicy("repo")
-	if err == nil || !strings.Contains(err.Error(), "invalid minimumReleaseAge for target repo") {
+	if err == nil || !strings.Contains(err.Error(), "invalid x-cooldown for target repo") {
 		t.Fatalf("ResolvePolicy() error = %v, want target-specific parse error", err)
 	}
 

@@ -356,6 +356,32 @@ sync:
       failureMessage: "too many critical vulnerabilities"
 ```
 
+### Cooldown
+
+`x-cooldown` keeps a new upstream digest out until the cooldown has passed since suppline first saw it. Set it on `defaults` and override it per sync entry; `"0"` turns it off for an entry. It is off unless set. An invalid duration stops suppline from loading the file.
+
+```yaml
+defaults:
+  x-cooldown: 7d
+
+sync:
+  - source: docker.io/library/nginx
+    target: myregistry.example.com/nginx
+    type: repository
+    x-cooldown: 3d
+    x-cooldown-release:          # written by "Release now" on the Mirror page
+      - digest: sha256:4f1c…
+        reason: CVE-2026-1234 hotfix
+        at: "2026-11-18T10:00:00Z"
+```
+
+- **The clock** starts when suppline first sees the digest upstream, never at the image's `created` date: a publisher sets that, and reproducible builds set it to 1970.
+- **During the cooldown** the digest is scanned at once. A passing scan stays `pending` with no attestation; a failing one fails and can be triaged. Once the cooldown is over, the next scan attests the digest.
+- **With the in-process mirror** the digest is copied by digest only and its tag, a new tag included, moves only after the passing scan. Renovate pointed at your registry therefore never sees the release before then. Renovate pointed at the upstream registry bypasses the cooldown; use Renovate's own `minimumReleaseAge` there as a second layer. See [STATE_MACHINE.md](STATE_MACHINE.md) for how the tag runway holds digests, and [REGISTRY.md](REGISTRY.md#hold-tags) for the hold tags it writes.
+- **Without the mirror** suppline cannot hold the import. The cooldown only withholds the attestation, counting from the digest's first scan.
+- **Grandfathering:** a digest a target tag already names when the cooldown is switched on, or when suppline starts with a new database, counts as past its cooldown.
+- **`x-cooldown-release`** skips the rest of one digest's cooldown. It never skips the scan or the attestation. The Mirror page writes it as a config edit, committed to the config repository when one is configured.
+
 ### VEX Statements
 
 VEX (Vulnerability Exploitability Exchange) statements follow the CycloneDX VEX standard and can be defined at two levels:
@@ -561,7 +587,7 @@ x-triage:
 
 `prompt` replaces the built-in decision policy. Leave it unset to accept a low residual risk with `requires_configuration` or `requires_environment`, and to rate a finding that is not exposed to the public down one severity step (`critical -> high`, `high -> medium`, `medium -> low`). The tool workflow and the JSON output contract stay in place either way.
 
-Git credentials and `SUPPLINE_LLM_API_KEY` come from the environment, not from this file. SSH auth requires both a private key and `known_hosts`. An empty `branch` follows the remote HEAD. `config_repo.path` is a plain file inside that repository. In enforce mode without `config_repo`, the local file must be writable; a read-only ConfigMap mount refuses to start. Local writes keep `suppline.yml.bak.1` (newest) through `.bak.N`. The Tasks view uses the same writer for semver range updates, removing unused sync entries, and removing unused VEX statements. The unused list covers statements that are never applied to any scan. A background audit, hourly and once at startup, also lists sync-entry `x-vex` and `x-vex-auto` `not_affected` statements whose removal leaves the pass/fail result of every repository artifact's latest scan unchanged. The check uses the severity recorded on each finding. A later scan that rates the same CVE differently does not rewrite an earlier finding, and a finding with no recorded severity is left in place. Removing one of those edits only its own sync entry, never `defaults`. Repositories with `minimumReleaseAge` are not audited. A configured `config_repo` is committed and pushed, otherwise the local file is updated. Those actions stay available when the LLM loop is off, as long as the file or config repository can be written.
+Git credentials and `SUPPLINE_LLM_API_KEY` come from the environment, not from this file. SSH auth requires both a private key and `known_hosts`. An empty `branch` follows the remote HEAD. `config_repo.path` is a plain file inside that repository. In enforce mode without `config_repo`, the local file must be writable; a read-only ConfigMap mount refuses to start. Local writes keep `suppline.yml.bak.1` (newest) through `.bak.N`. The Tasks view uses the same writer for semver range updates, removing unused sync entries, and removing unused VEX statements. The unused list covers statements that are never applied to any scan. A background audit, hourly and once at startup, also lists sync-entry `x-vex` and `x-vex-auto` `not_affected` statements whose removal leaves the pass/fail result of every repository artifact's latest scan unchanged. The check uses the severity recorded on each finding. A later scan that rates the same CVE differently does not rewrite an earlier finding, and a finding with no recorded severity is left in place. Removing one of those edits only its own sync entry, never `defaults`. A configured `config_repo` is committed and pushed, otherwise the local file is updated. Those actions stay available when the LLM loop is off, as long as the file or config repository can be written.
 
 Per-sync auto statements:
 

@@ -29,6 +29,13 @@ func WithReady(fn func()) Option {
 // and moves the tag. Offer reports whether the tag now names the digest.
 type Runway interface {
 	Offer(ctx context.Context, c runway.Candidate) (bool, error)
+	// Settle drops the candidates of a tag whose upstream digest the target
+	// tag already names.
+	Settle(ctx context.Context, repository, tag string)
+	// Retain drops the candidates of tags upstream no longer has.
+	Retain(ctx context.Context, repository string, upstreamTags []string)
+	// Holding lists the digests whose hold tags cleanup must keep.
+	Holding(ctx context.Context, repository string) (map[string]struct{}, error)
 }
 
 // WithRunway copies a changed digest by digest and leaves the tag to the

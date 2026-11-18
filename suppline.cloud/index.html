@@ -444,9 +444,9 @@ sync:
   - source: nginx
     target: myregistry.com/nginx
     type: repository
+    x-cooldown: 72h
     x-policy:
       expression: "criticalCount == 0 &amp;&amp; highCount &lt;= 5"
-      minimumReleaseAge: "72h"
     x-vex:
       - id: CVE-2024-56171
         state: not_affected
@@ -454,7 +454,7 @@ sync:
         detail: "Not reachable in our configuration"
         expires_at: 2026-12-31T23:59:59Z</code></pre>
                         <p class="policy-note">
-                            <code>minimumReleaseAge</code> holds brand-new images as <em>pending</em> until they have
+                            <code>x-cooldown</code> holds brand-new upstream releases until they have
                             been public long enough to trust — useful when an upstream release is compromised and
                             pulled within hours.
                         </p>

@@ -965,88 +965,78 @@ func TestEngine_Evaluate_ExpiredVEXStatementWithCELFilter(t *testing.T) {
 	}
 }
 
-func TestEngine_Evaluate_MinimumReleaseAgePendingFromImageCreatedAt(t *testing.T) {
-	engine, err := NewEngine(slog.Default(), PolicyConfig{
-		Expression:        "criticalCount == 0",
-		MinimumReleaseAge: 7 * 24 * time.Hour,
-	})
+func evaluateCooldown(t *testing.T, cooldown time.Duration, vulns []types.Vulnerability, firstSeen, created *time.Time, now time.Time) *PolicyDecision {
+	t.Helper()
+	engine, err := NewEngine(slog.Default(), PolicyConfig{Expression: "criticalCount == 0", Cooldown: cooldown})
 	if err != nil {
 		t.Fatalf("failed to create engine: %v", err)
 	}
-
-	now := time.Now().UTC()
-	createdAt := now.Add(-48 * time.Hour)
-
-	result := &scanner.ScanResult{
+	decision, err := engine.Evaluate(context.Background(), "test/image:v1", &scanner.ScanResult{
 		ImageRef:        "test/image:v1",
-		Vulnerabilities: []types.Vulnerability{},
+		Vulnerabilities: vulns,
 		ScannedAt:       now,
-		ImageCreatedAt:  &createdAt,
-	}
-
-	decision, err := engine.Evaluate(context.Background(), "test/image:v1", result, nil)
+		FirstSeenAt:     firstSeen,
+		ImageCreatedAt:  created,
+	}, nil)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
+	return decision
+}
 
-	if decision.Status != PolicyStatusPending {
-		t.Fatalf("expected pending status, got %s", decision.Status)
+// A passing image stays pending while its cooldown runs. The image's own
+// created date never counts: a publisher sets it, and reproducible builds set
+// it to 1970.
+func TestEngine_Evaluate_CooldownPendingCountsFromFirstSeenOnly(t *testing.T) {
+	now := time.Now().UTC()
+	firstSeen := now.Add(-48 * time.Hour)
+	created := time.Unix(0, 0).UTC()
+
+	decision := evaluateCooldown(t, 7*24*time.Hour, nil, &firstSeen, &created, now)
+
+	if decision.Status != PolicyStatusPending || decision.Passed || decision.ShouldAttest {
+		t.Fatalf("decision = %+v, want pending without attestation", decision)
 	}
-
-	if decision.Passed {
-		t.Fatalf("expected pending decision to be non-passing")
+	if decision.ReleaseAgeSource != "first_seen" {
+		t.Errorf("age source = %q, want first_seen", decision.ReleaseAgeSource)
 	}
-
-	if decision.ShouldAttest {
-		t.Fatalf("expected pending decision to disable attestation")
+	if decision.ReleaseAgeSeconds != int64((48 * time.Hour).Seconds()) {
+		t.Errorf("age seconds = %d, want 48h", decision.ReleaseAgeSeconds)
 	}
-
-	if decision.ReleaseAgeSource != "image_created_at" {
-		t.Fatalf("expected release age source image_created_at, got %s", decision.ReleaseAgeSource)
-	}
-
-	if decision.ReleaseAgeSeconds <= 0 {
-		t.Fatalf("expected release age seconds to be populated")
-	}
-
 	if decision.MinimumReleaseAgeSeconds != int64((7 * 24 * time.Hour).Seconds()) {
-		t.Fatalf("expected minimum release age seconds to match config")
+		t.Errorf("cooldown seconds = %d, want 7d", decision.MinimumReleaseAgeSeconds)
 	}
 }
 
-func TestEngine_Evaluate_MinimumReleaseAgeUsesFirstSeenFallback(t *testing.T) {
-	engine, err := NewEngine(slog.Default(), PolicyConfig{
-		Expression:        "criticalCount == 0",
-		MinimumReleaseAge: 24 * time.Hour,
-	})
-	if err != nil {
-		t.Fatalf("failed to create engine: %v", err)
-	}
-
+func TestEngine_Evaluate_CooldownOverPasses(t *testing.T) {
 	now := time.Now().UTC()
 	firstSeen := now.Add(-48 * time.Hour)
 
-	result := &scanner.ScanResult{
-		ImageRef:        "test/image:v1",
-		Vulnerabilities: []types.Vulnerability{},
-		ScannedAt:       now,
-		FirstSeenAt:     &firstSeen,
-	}
+	decision := evaluateCooldown(t, 24*time.Hour, nil, &firstSeen, nil, now)
 
-	decision, err := engine.Evaluate(context.Background(), "test/image:v1", result, nil)
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
+	if decision.Status != PolicyStatusPassed || !decision.Passed || !decision.ShouldAttest {
+		t.Fatalf("decision = %+v, want passed and attested", decision)
 	}
+}
+
+// No clock runs for a grandfathered or released image.
+func TestEngine_Evaluate_CooldownWithoutClockPasses(t *testing.T) {
+	decision := evaluateCooldown(t, 24*time.Hour, nil, nil, nil, time.Now().UTC())
 
 	if decision.Status != PolicyStatusPassed {
-		t.Fatalf("expected passed status from first_seen fallback, got %s", decision.Status)
+		t.Fatalf("status = %s, want passed", decision.Status)
 	}
+}
 
-	if !decision.Passed {
-		t.Fatalf("expected policy pass with adequate first_seen age")
-	}
+// A failing image fails during its cooldown, so it can be triaged at once.
+func TestEngine_Evaluate_CooldownFailureIsNotPending(t *testing.T) {
+	now := time.Now().UTC()
+	firstSeen := now.Add(-time.Hour)
+	vulns := []types.Vulnerability{{ID: "CVE-2026-0001", Severity: "CRITICAL", PackageName: "openssl"}}
 
-	if decision.ReleaseAgeSource != "first_seen" {
-		t.Fatalf("expected first_seen source, got %s", decision.ReleaseAgeSource)
+	decision := evaluateCooldown(t, 7*24*time.Hour, vulns, &firstSeen, nil, now)
+
+	if decision.Status != PolicyStatusFailed {
+		t.Fatalf("status = %s, want failed", decision.Status)
 	}
 }

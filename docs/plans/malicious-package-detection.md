@@ -97,7 +97,7 @@ x-malicious-packages:
 - Declare the CEL variables `malicious` (a list of maps) and `maliciousCount` in `NewEngine`, and fill them in both `Evaluate` and `evaluateSubset`.
 - **The gate:** a `policy.WithMaliciousGate(bool)` option, passed at all three construction sites. After CEL runs in `Engine.Evaluate`, if the gate is on and `len(Malicious) > 0`, the result is failed and one `PolicyFailureFinding` is added per MAL finding.
 - Add `Kind` (`vulnerability` | `malicious`) to `PolicyFailureFinding`. Existing JSON without it reads as `vulnerability`.
-- The `minimumReleaseAge` pending path stays first: a pending image isn't attested anyway, and it gets evaluated once it's old enough.
+- The cooldown (`x-cooldown`, which replaced `minimumReleaseAge`) runs after the gate: a malicious match fails the scan during the cooldown, and the cooldown only holds a passing scan back. See [ADR 0001](../adr/0001-cooldown-holds-imports-in-the-tag-runway.md).
 - `describe.go` is unchanged: its combined-clause wording ("No critical or malicious vulnerabilities") would be wrong, and the gate makes `maliciousCount` in expressions rare.
 - vexaudit's `scanResult()` deliberately leaves MAL findings out. The audit asks whether a VEX statement changes the outcome; with the gate in the replay, every statement on an image with malware would look unused.
 

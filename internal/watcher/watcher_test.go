@@ -1340,3 +1340,40 @@ func TestWatcher_Discover_SkipsRenewalWhoseClusterTagIsGone(t *testing.T) {
 		t.Fatalf("queued digests = %v, want current tag scan and stored-tag renewal", seen)
 	}
 }
+
+// A Held digest of a new tag is scanned under a tag the registry does not
+// have yet. Its stored scan stays, or the runway could never publish it.
+func TestWatcher_Discover_KeepsHeldNewTagScan(t *testing.T) {
+	ctx := context.Background()
+	repo := "myorg/app"
+
+	mockRegistry := &mockRegistryClient{
+		repositories: []string{repo},
+		tags:         map[string][]string{repo: {"1.0"}},
+		digests:      map[string]string{repo + ":1.0": "sha256:live"},
+	}
+	mockStore := &reconcilingMockStore{
+		mockStateStore: mockStateStore{scans: map[string]*statestore.ScanRecord{
+			"sha256:live": {Digest: "sha256:live", Repository: repo, Tag: "1.0", CreatedAt: time.Now().Unix()},
+		}},
+		artifactTags: map[string][]statestore.ArtifactTagBinding{repo: {
+			{Tag: "1.0", Digest: "sha256:live"},
+			{Tag: "1.1", Digest: "sha256:held"},
+			{Tag: "0.9", Digest: "sha256:stale"},
+		}},
+		repoNames: []string{repo},
+	}
+	w := NewWatcher(mockRegistry, &config.RegsyncConfig{Sync: []config.SyncEntry{{Target: repo}}},
+		mockStore, queue.NewInMemoryQueue(100), Config{
+			PollInterval:   5 * time.Second,
+			RescanInterval: 24 * time.Hour,
+			HeldDigests:    func(string) []string { return []string{"sha256:held"} },
+		}, observability.NewLogger("error"))
+
+	if err := w.Discover(ctx); err != nil {
+		t.Fatalf("Discover failed: %v", err)
+	}
+	if len(mockStore.cleanedTags) != 1 || mockStore.cleanedTags[0] != repo+":0.9:sha256:stale" {
+		t.Fatalf("cleaned = %v, want only the stale tag", mockStore.cleanedTags)
+	}
+}

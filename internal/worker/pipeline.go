@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"slices"
 	"strings"
 	"time"
 
@@ -183,13 +184,13 @@ func (p *Pipeline) scanPhase(ctx context.Context, task *queue.ScanTask, imageRef
 		"duration", durations["vuln_scan"])
 
 	scanResult.ImageCreatedAt = manifest.CreatedAt
-	if firstSeenAt, err := p.getArtifactFirstSeen(ctx, task); err != nil {
-		p.logger.Warn("failed to resolve artifact first_seen for release age fallback",
-			"image_ref", imageRef,
-			"error", err)
-	} else {
-		scanResult.FirstSeenAt = firstSeenAt
+	firstSeenAt, err := p.cooldownFirstSeen(ctx, task, scanResult.ScannedAt)
+	if err != nil {
+		// Without the clock the scan could attest a digest still in its
+		// cooldown. Retry instead.
+		return nil, nil, nil, errors.NewTransientf("failed to read cooldown clock for %s: %w", imageRef, err)
 	}
+	scanResult.FirstSeenAt = firstSeenAt
 
 	// Record scan metrics
 	metrics.ScansTotal.Inc()
@@ -796,6 +797,13 @@ func (p *Pipeline) reconcileStoredTags(ctx context.Context, task *queue.ScanTask
 	return p.retargetTaskTag(ctx, task, repository, digest, validTags)
 }
 
+func (p *Pipeline) isHeld(repository, digest string) bool {
+	if p.worker.heldDigests == nil {
+		return false
+	}
+	return slices.Contains(p.worker.heldDigests(repository), digest)
+}
+
 func (p *Pipeline) isStoredTagStale(ctx context.Context, repository, digest, tag string, liveTagSet map[string]struct{}) (bool, error) {
 	if _, exists := liveTagSet[tag]; !exists {
 		return true, nil
@@ -840,6 +848,11 @@ func (p *Pipeline) retargetTaskTag(ctx context.Context, task *queue.ScanTask, re
 		classified := errors.ClassifyRegistryError(err)
 		if errors.IsTransient(classified) {
 			return fmt.Errorf("failed to verify task tag during retarget: %w", classified)
+		}
+		// A Held digest of a new tag: the runway creates the tag once the
+		// digest is attested, so the scan keeps it.
+		if p.isHeld(repository, digest) {
+			return nil
 		}
 	}
 
@@ -902,12 +915,12 @@ func (p *Pipeline) getPolicyEngineForRepository(repository string) (policy.Polic
 
 	policyConfig, err := p.worker.policyCatalog.ResolvePolicy(repository)
 	if err != nil {
-		return nil, errors.NewPermanentf("failed to resolve minimum release age for %s: %w", repository, err)
+		return nil, errors.NewPermanentf("failed to resolve policy for %s: %w", repository, err)
 	}
 
-	// If neither custom expression nor minimum release age is configured, use default from worker.
+	// If neither a custom expression nor a cooldown is configured, use default from worker.
 	// The default engine is built with the same malicious-package gate setting.
-	if policyConfig.Expression == "" && policyConfig.MinimumReleaseAge <= 0 {
+	if policyConfig.Expression == "" && policyConfig.Cooldown <= 0 {
 		return p.worker.policy, nil
 	}
 
@@ -919,16 +932,32 @@ func (p *Pipeline) getPolicyEngineForRepository(repository string) (policy.Polic
 	return policy.NewEngine(p.logger, policyConfig, policy.WithMaliciousGate(p.worker.maliciousGate))
 }
 
-func (p *Pipeline) getArtifactFirstSeen(ctx context.Context, task *queue.ScanTask) (*time.Time, error) {
+// cooldownFirstSeen returns when the cooldown of task's digest started, or nil
+// when none runs. The runway's clock covers mirrored repositories. Without it,
+// the cooldown counts from the artifact's first scan, which starts now when
+// the digest was never scanned. A Cooldown release stops either clock.
+func (p *Pipeline) cooldownFirstSeen(ctx context.Context, task *queue.ScanTask, scannedAt time.Time) (*time.Time, error) {
+	if p.worker.cooldownClock != nil {
+		return p.worker.cooldownClock.FirstSeen(ctx, task.Repository, task.Digest)
+	}
+	if current := p.worker.currentConfig; current != nil {
+		if cfg := current(); cfg != nil && cfg.CooldownReleased(task.Repository, task.Digest) {
+			return nil, nil
+		}
+	}
 	metadataStore, ok := p.worker.stateStore.(statestore.ArtifactMetadataStore)
 	if !ok {
 		return nil, nil
 	}
-
 	firstSeenAt, err := metadataStore.GetArtifactFirstSeen(ctx, task.Digest, task.Repository, task.Tag)
 	if err != nil {
 		return nil, err
 	}
-
+	if firstSeenAt == nil {
+		if scannedAt.IsZero() {
+			scannedAt = time.Now().UTC()
+		}
+		firstSeenAt = &scannedAt
+	}
 	return firstSeenAt, nil
 }

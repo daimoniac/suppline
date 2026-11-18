@@ -23,7 +23,7 @@ func TestMemoryCatalogAdapters(t *testing.T) {
 		},
 		map[string]MemoryEntry{
 			"repo-b": {
-				Policy: policy.PolicyConfig{Expression: "highCount == 0", MinimumReleaseAge: time.Hour},
+				Policy: policy.PolicyConfig{Expression: "highCount == 0", Cooldown: time.Hour},
 				Evidence: Evidence{
 					UseVEXRepo: true,
 					VEXStatements: []types.VEXStatement{
@@ -110,7 +110,7 @@ func TestMemoryCatalogAdapters(t *testing.T) {
 // The in-memory adapter must be able to reproduce the config adapter's only
 // failure mode without withholding evidence for that repository.
 func TestMemoryCatalogPolicyErrorIsLocalToPolicy(t *testing.T) {
-	wantErr := errors.New("invalid minimumReleaseAge for target repo-b")
+	wantErr := errors.New("invalid x-cooldown for target repo-b")
 	subject := NewMemoryCatalog(MemoryEntry{}, map[string]MemoryEntry{
 		"repo-b": {
 			Policy:      policy.PolicyConfig{Expression: "criticalCount == 0"},

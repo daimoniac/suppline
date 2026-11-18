@@ -104,6 +104,9 @@ func (m *runner) processRepo(ctx context.Context, s config.SyncEntry, src, tgt s
 		m.log.Error("failed getting source tags", "source", sRepoRef.CommonName(), "error", err.Error())
 		return err
 	}
+	if m.runway != nil && !s.IsIgnored() {
+		m.runway.Retain(ctx, tgt, sTagsList)
+	}
 	sets := entryTagSets(s)
 	sTagsFiltered := []string{}
 	if len(sets) == 0 {
@@ -234,6 +237,7 @@ func (m *runner) processRef(ctx context.Context, s config.SyncEntry, src, tgt re
 	tgtMatches := err == nil && manifest.GetDigest(mSrc).String() == manifest.GetDigest(mTgt).String()
 	if tgtMatches && (fastCheck || (!forceRecursive && !referrers && !digestTags)) {
 		m.log.Debug("image matches", "source", src.CommonName(), "target", tgt.CommonName())
+		m.settle(ctx, s, repository, tgt)
 		m.observeRef(ctx, tgt)
 		return runHook(ctx, m.log, s.Hooks.Unchanged, "unchanged", src, tgt)
 	}
@@ -260,6 +264,7 @@ func (m *runner) processRef(ctx context.Context, s config.SyncEntry, src, tgt re
 		}
 		if tgtMatches && (s.ForceRecursive == nil || !*s.ForceRecursive) {
 			m.log.Debug("image matches for platform", "source", src.CommonName(), "platform", s.Platform, "target", tgt.CommonName())
+			m.settle(ctx, s, repository, tgt)
 			m.observeRef(ctx, tgt)
 			return runHook(ctx, m.log, s.Hooks.Unchanged, "unchanged", src, tgt)
 		}
@@ -378,11 +383,21 @@ func (m *runner) offerDigest(ctx context.Context, src, tgt ref.Ref, repository, 
 		Tag:        tgt.Tag,
 		Digest:     digest,
 		Previous:   previous,
+		Source:     src.Registry + "/" + src.Repository,
 	})
 	if err != nil {
 		return false, fmt.Errorf("runway: %w", err)
 	}
 	return published, nil
+}
+
+// settle tells the runway that the target tag already names upstream's
+// digest, so no held candidate of that tag may be published any more.
+func (m *runner) settle(ctx context.Context, s config.SyncEntry, repository string, tgt ref.Ref) {
+	if m.runway == nil || s.IsIgnored() || tgt.Tag == "" {
+		return
+	}
+	m.runway.Settle(ctx, repository, tgt.Tag)
 }
 
 // trimTag drops the tag from a repo:tag reference. A port in the registry

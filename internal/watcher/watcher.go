@@ -253,10 +253,21 @@ func (w *watcherImpl) reconcileStoredTags(ctx context.Context, repo string, live
 	for _, tag := range liveTags {
 		liveSet[tag] = struct{}{}
 	}
+	// A Held digest of a new tag is scanned under a tag the registry does not
+	// have yet. Its scan must stay, or the runway could never publish it.
+	held := map[string]struct{}{}
+	if w.heldDigests != nil {
+		for _, digest := range w.heldDigests(repo) {
+			held[digest] = struct{}{}
+		}
+	}
 
 	var removed int
 	for _, binding := range stored {
 		if _, exists := liveSet[binding.Tag]; exists {
+			continue
+		}
+		if _, isHeld := held[binding.Digest]; isHeld {
 			continue
 		}
 		w.logger.Info("removing stale tag binding during discovery",

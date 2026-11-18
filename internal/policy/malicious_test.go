@@ -196,3 +196,24 @@ func TestMaliciousFalsePositiveExpiredOrOtherIDDoesNotExempt(t *testing.T) {
 		}
 	}
 }
+
+// A malicious match during the cooldown fails at once: the cooldown only
+// holds a passing scan back, so the match is visible for triage while held.
+func TestMaliciousGateFailsDuringCooldown(t *testing.T) {
+	engine, err := NewEngine(slog.Default(), PolicyConfig{Expression: "criticalCount == 0", Cooldown: 7 * 24 * time.Hour})
+	if err != nil {
+		t.Fatal(err)
+	}
+	result := maliciousResult()
+	result.ScannedAt = time.Now()
+	firstSeen := result.ScannedAt.Add(-time.Hour)
+	result.FirstSeenAt = &firstSeen
+
+	decision, err := engine.Evaluate(context.Background(), "img", result, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if decision.Status != PolicyStatusFailed {
+		t.Fatalf("status = %s, want failed during the cooldown", decision.Status)
+	}
+}

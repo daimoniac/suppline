@@ -117,10 +117,11 @@ func TestAuditKeepsStatementThatDecidesHighCount(t *testing.T) {
 	}
 }
 
-func TestAuditSkipsReleaseAgeGatedRepositories(t *testing.T) {
+// A cooldown only holds a passing scan back, so it does not stop the audit.
+func TestAuditIgnoresCooldown(t *testing.T) {
 	statements := []types.VEXStatement{{ID: "CVE-LOW", State: types.VEXStateNotAffected, Source: types.VEXSourceManual}}
 	auditor := New(slog.New(slog.NewTextHandler(io.Discard, nil)),
-		fakeCatalog{statements: statements, policy: policy.PolicyConfig{Expression: "criticalCount == 0", MinimumReleaseAge: time.Hour}},
+		fakeCatalog{statements: statements, policy: policy.PolicyConfig{Expression: "criticalCount == 0", Cooldown: time.Hour}},
 		fakeScans{
 			records: []*statestore.ScanRecord{{ID: 7, Repository: testRepository, Digest: "sha256:one", CreatedAt: time.Now().Unix(), PolicyStatus: "passed"}},
 			vulns:   map[int64][]types.VulnerabilityRecord{7: {{CVEID: "CVE-LOW", Severity: "LOW"}}},
@@ -131,8 +132,8 @@ func TestAuditSkipsReleaseAgeGatedRepositories(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(findings) != 0 {
-		t.Fatalf("release-age gated repository produced findings: %+v", findings)
+	if len(findings) != 1 || findings[0].CVEID != "CVE-LOW" {
+		t.Fatalf("findings = %+v, want CVE-LOW: a cooldown never depends on a VEX statement", findings)
 	}
 }
 

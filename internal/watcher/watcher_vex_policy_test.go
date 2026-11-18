@@ -12,10 +12,10 @@ import (
 	"github.com/daimoniac/suppline/internal/types"
 )
 
-// Discovery does not resolve policy, so a repository whose minimumReleaseAge
+// Discovery does not resolve policy, so a repository whose x-cooldown
 // cannot be parsed is still discovered; the invalid duration surfaces during
 // policy evaluation when the scan runs.
-func TestWatcher_Discover_InvalidMinimumReleaseAgeStillQueues(t *testing.T) {
+func TestWatcher_Discover_InvalidCooldownStillQueues(t *testing.T) {
 	ctx := context.Background()
 
 	mockRegistry := &mockRegistryClient{
@@ -29,9 +29,10 @@ func TestWatcher_Discover_InvalidMinimumReleaseAgeStillQueues(t *testing.T) {
 	expiresAt := time.Now().Add(30 * 24 * time.Hour).Unix()
 	regsyncCfg := &config.RegsyncConfig{
 		Sync: []config.SyncEntry{{
-			Target: "myorg/app1",
-			Type:   "repository",
-			Policy: &config.PolicyConfig{Expression: "criticalCount == 0", MinimumReleaseAge: "not-a-duration"},
+			Target:   "myorg/app1",
+			Type:     "repository",
+			Policy:   &config.PolicyConfig{Expression: "criticalCount == 0"},
+			Cooldown: "not-a-duration",
 			VEX: []types.VEXStatement{
 				{ID: "CVE-2024-1234", State: types.VEXStateNotAffected, Detail: "test VEX statement", ExpiresAt: &expiresAt},
 			},

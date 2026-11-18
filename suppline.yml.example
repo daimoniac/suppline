@@ -31,7 +31,7 @@ defaults:
   x-policy:                   # Default policy for all sync entries (optional)
     expression: "criticalCount == 0"
     failureMessage: "critical vulnerabilities found"
-    minimumReleaseAge: "7d"   # Only allow images released at least 7 days ago (optional)
+  x-cooldown: 7d              # Hold new digests until 7 days after suppline first saw them upstream (optional, off when unset)
   x-vex-repo: true            # Apply Aqua VEX Hub to all scans by default (optional)
 
 sync:
@@ -62,7 +62,11 @@ sync:
     x-policy:                 # Override default policy for this entry (optional)
       expression: "criticalCount == 0 && highCount == 0"
       failureMessage: "critical or high vulnerabilities found"
-      minimumReleaseAge: "14d" # Override: require images to be at least 14 days old (optional)
+    x-cooldown: 14d           # Override the default cooldown for this entry; "0" turns it off (optional)
+    x-cooldown-release:       # Written by "Release now" on the Mirror page: skips the rest of one digest's cooldown
+      - digest: sha256:0000000000000000000000000000000000000000000000000000000000000000
+        reason: "CVE-2026-1234 hotfix"
+        at: "2026-11-18T10:00:00Z"
     x-vex:
       - id: CVE-2024-12345
         state: false_positive
