@@ -1,4 +1,4 @@
-.PHONY: help test test-unit test-integration test-auth test-all docker-up docker-down docker-logs clean build
+.PHONY: help test test-unit test-integration test-all lint docker-up docker-down docker-logs clean build
 
 VERSION ?= dev
 
@@ -24,17 +24,14 @@ build-all: ## Build all components (backend + UI)
 
 test: test-unit ## Run unit tests (default)
 
-test-unit: ## Run unit tests
-	@./scripts/test.sh unit
+test-unit: ## Run unit tests (same as CI)
+	go test -race ./internal/...
+	cd clusterstate-agent && go test -race ./...
 
-test-integration: ## Run integration tests with Docker Compose
-	@./scripts/test.sh integration
+test-integration: ## Run integration tests (needs a Trivy server; see test/integration/README.md)
+	INTEGRATION_TEST=true TRIVY_SERVER_ADDR=$${TRIVY_SERVER_ADDR:-localhost:4954} go test -v -timeout 10m ./test/integration/...
 
-test-auth: ## Test Trivy and Cosign authentication
-	@./scripts/test.sh auth
-
-test-all: ## Run all tests (unit, auth, integration)
-	@./scripts/test.sh all
+test-all: test-unit test-integration ## Run unit and integration tests
 
 docker-up: ## Start Docker Compose services for testing
 	docker compose -f docker-compose.test.yml up -d
@@ -54,8 +51,14 @@ clean: ## Clean build artifacts and test databases
 	rm -rf test/*.db
 	rm -rf build/
 
-lint: ## Run linters
-	golangci-lint run ./...
+# Pinned to the CI version (.github/workflows/test.yml) and built with the local
+# Go toolchain, so it can read this module's Go version.
+GOLANGCI_LINT_VERSION ?= v2.15.0
+GOLANGCI_LINT ?= go run github.com/golangci/golangci-lint/v2/cmd/golangci-lint@$(GOLANGCI_LINT_VERSION)
+
+lint: ## Run linters (same version as CI)
+	$(GOLANGCI_LINT) run --timeout=5m ./...
+	cd clusterstate-agent && $(GOLANGCI_LINT) run --timeout=5m ./...
 
 fmt: ## Format code
 	go fmt ./...
@@ -71,7 +74,7 @@ deps: ## Download dependencies
 # Development helpers
 dev-setup: deps ## Set up development environment
 	@echo "Installing development tools..."
-	go install github.com/golangci/golangci-lint/cmd/golangci-lint@latest
+	go install github.com/golangci/golangci-lint/v2/cmd/golangci-lint@$(GOLANGCI_LINT_VERSION)
 
 run: build ## Build and run the application
 	./suppline

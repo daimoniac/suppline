@@ -260,7 +260,7 @@ A starter Grafana dashboard lives in [grafana/](grafana/).
 make dev-setup          # deps + tooling
 make build              # regenerates swagger, then builds
 make test               # unit tests
-make test-integration   # integration tests (needs Docker Compose)
+make test-integration   # integration tests (needs a Trivy server)
 make lint fmt vet
 ```
 
