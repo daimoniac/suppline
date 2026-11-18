@@ -127,7 +127,7 @@ func (d *digestAccum) add(record *statestore.ScanRecord, wanted map[string]struc
 	}
 	for _, finding := range record.PolicyFailureFindings {
 		id := strings.TrimSpace(finding.CVEID)
-		if id == "" {
+		if id == "" || finding.IsMalicious() {
 			continue
 		}
 		d.failed[id] = true

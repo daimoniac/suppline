@@ -332,6 +332,10 @@ func (s *Service) queuePolicyFailure(ctx context.Context, notice worker.PolicyFa
 	if s == nil || !s.settings.Enabled {
 		return 0
 	}
+	notice.Findings = triageableFindings(notice.Findings)
+	if len(notice.Findings) == 0 {
+		return 0
+	}
 	if s.settings.OnlyInUse {
 		used, err := s.repositoryInUse(ctx, notice.Repository)
 		if err != nil {
@@ -1190,4 +1194,18 @@ func shaKey(checkouts []gitops.Checkout) string {
 	sort.Slice(items, func(i, j int) bool { return items[i].Name < items[j].Name })
 	raw, _ := json.Marshal(items)
 	return string(raw)
+}
+
+// triageableFindings drops malicious-package findings. A published malicious
+// package is not a vulnerability that a VEX statement can exempt, so it never
+// goes to the model.
+func triageableFindings(findings []types.PolicyFailureFinding) []types.PolicyFailureFinding {
+	out := make([]types.PolicyFailureFinding, 0, len(findings))
+	for _, finding := range findings {
+		if finding.IsMalicious() {
+			continue
+		}
+		out = append(out, finding)
+	}
+	return out
 }

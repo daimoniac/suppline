@@ -438,6 +438,10 @@ func evaluate(ctx context.Context, engine policy.PolicyEngine, scan *statestore.
 	return decision.Passed, nil
 }
 
+// scanResult rebuilds what the policy saw. Malicious-package findings are left
+// out on purpose: the audit asks whether a VEX statement changes the outcome,
+// and a malicious package fails the image whatever the CVE statements say, so
+// including it would make every statement on such an image look unused.
 func scanResult(scan *statestore.ScanRecord) scanner.ScanResult {
 	result := scanner.ScanResult{
 		ImageRef:        scan.Digest,

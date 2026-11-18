@@ -11,6 +11,7 @@ import (
 	"github.com/daimoniac/suppline/internal/policy"
 	"github.com/daimoniac/suppline/internal/policy/catalog"
 	"github.com/daimoniac/suppline/internal/scanner"
+	"github.com/daimoniac/suppline/internal/types"
 )
 
 // SCAIGenerator creates SCAI attestation predicates
@@ -110,7 +111,7 @@ func (g *SCAIGenerator) matchExemptedVulnerabilities(scanResult *scanner.ScanRes
 			}
 
 			attributes = append(attributes, SCAIAttributeItem{
-				Attribute: "vex-exempted-vulnerability",
+				Attribute: SCAIAttributeExemptedVulnerability,
 				Evidence:  evidence,
 			})
 		}
@@ -150,17 +151,22 @@ func (g *SCAIGenerator) GenerateSCAI(
 
 	// Match VEX-exempted vulnerabilities
 	attributes := g.matchExemptedVulnerabilities(scanResult, target)
+	exemptedCount := len(attributes)
 
 	// Determine scan status based on policy decision
 	scanStatus := "passed"
 	if policyDecision != nil {
 		if !policyDecision.Passed {
 			scanStatus = "failed"
-		} else if len(attributes) > 0 {
+		} else if exemptedCount > 0 {
 			scanStatus = "passed-with-exceptions"
 		}
-	} else if len(attributes) > 0 {
+	} else if exemptedCount > 0 {
 		scanStatus = "passed-with-exceptions"
+	}
+
+	if check := maliciousCheckAttribute(scanResult.Malicious); check != nil {
+		attributes = append(attributes, *check)
 	}
 
 	// Assemble complete SCAI attestation
@@ -180,8 +186,37 @@ func (g *SCAIGenerator) GenerateSCAI(
 	g.logger.Info("generated SCAI attestation",
 		"image_ref", imageRef,
 		"scan_status", scanStatus,
-		"exempted_count", len(attributes),
+		"exempted_count", exemptedCount,
 		"valid_until", validUntil.Format(time.RFC3339))
 
 	return scai, nil
+}
+
+// maliciousCheckAttribute records the malicious-package check, or nil when
+// the check is disabled. A clean result is recorded too: "checked, nothing
+// found, as of this snapshot" is evidence worth signing.
+func maliciousCheckAttribute(check *types.MaliciousCheck) *SCAIAttributeItem {
+	if check == nil {
+		return nil
+	}
+	evidence := SCAIMaliciousCheckEvidence{
+		Status:         check.Status,
+		SnapshotCommit: check.Commit,
+		Findings:       make([]SCAIMaliciousFinding, 0, len(check.Findings)),
+	}
+	if check.SnapshotAt > 0 {
+		at := time.Unix(check.SnapshotAt, 0).UTC()
+		evidence.SnapshotAt = &at
+	}
+	for _, finding := range check.Findings {
+		evidence.Findings = append(evidence.Findings, SCAIMaliciousFinding{
+			ID:          finding.ID,
+			Ecosystem:   finding.Ecosystem,
+			PackageName: finding.PackageName,
+			Version:     finding.Version,
+			PURL:        finding.PURL,
+			URL:         finding.URL,
+		})
+	}
+	return &SCAIAttributeItem{Attribute: SCAIAttributeMaliciousPackageCheck, Evidence: evidence}
 }

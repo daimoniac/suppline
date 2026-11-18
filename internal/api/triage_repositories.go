@@ -197,6 +197,9 @@ func buildRepositoryCard(repository string, scans []*statestore.ScanRecord, in r
 		}
 		card.Tags = append(card.Tags, TriageRepositoryTag{Tag: scan.Tag, Digest: scan.Digest, PolicyPassed: passed, PolicyStatus: scan.PolicyStatus})
 		for _, finding := range scan.PolicyFailureFindings {
+			if finding.IsMalicious() {
+				continue // not triageable; see docs/adr/0001
+			}
 			item := get(finding.CVEID)
 			item.blocking = true
 			item.tags[scan.Tag] = struct{}{}

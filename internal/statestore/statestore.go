@@ -446,9 +446,12 @@ type ScanRecord struct {
 	Vulnerabilities       []types.VulnerabilityRecord // Using canonical type
 	AppliedVEXStatements  []types.AppliedVEXStatement // VEX statements applied during this scan
 	PolicyFailureFindings []types.PolicyFailureFinding
-	VEXAttested           bool
-	RuntimeUsed           bool
-	Runtime               RuntimeInventory
+	// Malicious is the malicious-package check; nil when the check is disabled
+	// or the scan predates it.
+	Malicious   *types.MaliciousCheck
+	VEXAttested bool
+	RuntimeUsed bool
+	Runtime     RuntimeInventory
 	// Superseded is true when the tag has moved off this digest: the digest is no
 	// longer the tag's Current tag binding. Set by ListRunningPolicyFailures.
 	Superseded bool

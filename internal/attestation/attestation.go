@@ -133,10 +133,38 @@ type SCAIEvidence struct {
 	ScanStatus  string    `json:"scanStatus"`  // "passed-with-exceptions" or "passed"
 }
 
-// SCAIAttributeItem represents a single exempted vulnerability (via VEX statement)
+// SCAI attribute names.
+const (
+	SCAIAttributeExemptedVulnerability = "vex-exempted-vulnerability"
+	SCAIAttributeMaliciousPackageCheck = "malicious-package-check"
+)
+
+// SCAIAttributeItem is one attribute of the assessment. Evidence is a
+// SCAIExemptedVulnEvidence for "vex-exempted-vulnerability" and a
+// SCAIMaliciousCheckEvidence for "malicious-package-check".
 type SCAIAttributeItem struct {
-	Attribute string                   `json:"attribute"` // "vex-exempted-vulnerability"
-	Evidence  SCAIExemptedVulnEvidence `json:"evidence"`
+	Attribute string `json:"attribute"`
+	Evidence  any    `json:"evidence"`
+}
+
+// SCAIMaliciousCheckEvidence records the malicious-package check: whether it
+// ran on current data, which ossf/malicious-packages snapshot it used, and
+// what it found. It is present even when nothing was found.
+type SCAIMaliciousCheckEvidence struct {
+	Status         string                 `json:"status"` // ok, unavailable or stale
+	SnapshotCommit string                 `json:"snapshotCommit,omitempty"`
+	SnapshotAt     *time.Time             `json:"snapshotAt,omitempty"` // RFC 3339 format
+	Findings       []SCAIMaliciousFinding `json:"findings"`
+}
+
+// SCAIMaliciousFinding is one malicious package found in the image.
+type SCAIMaliciousFinding struct {
+	ID          string `json:"id"`
+	Ecosystem   string `json:"ecosystem"`
+	PackageName string `json:"packageName"`
+	Version     string `json:"version"`
+	PURL        string `json:"purl,omitempty"`
+	URL         string `json:"url,omitempty"`
 }
 
 // SCAIExemptedVulnEvidence contains details about a VEX-exempted vulnerability

@@ -76,6 +76,29 @@ type ImageWorker struct {
 	pipeline        *Pipeline
 	failureNotifier PolicyFailureNotifier
 	scanObserver    ScanObserver
+	malicious       MaliciousChecker
+	maliciousGate   bool
+}
+
+// MaliciousChecker matches an image's SBOM against known-malicious package
+// advisories. It returns the check outcome and the image's language packages.
+type MaliciousChecker interface {
+	Check(sbom []byte) (*types.MaliciousCheck, []types.PackageRef, error)
+}
+
+// packageInventoryStore records an image's language packages so new
+// malicious-package advisories can be matched without a rescan.
+type packageInventoryStore interface {
+	ReplacePackageInventory(ctx context.Context, digest string, packages []types.PackageRef) error
+}
+
+// SetMaliciousChecker enables the malicious-package check for every scan.
+// block is whether a finding fails policy regardless of the expression.
+func (w *ImageWorker) SetMaliciousChecker(checker MaliciousChecker, block bool) {
+	if w != nil {
+		w.malicious = checker
+		w.maliciousGate = block
+	}
 }
 
 // ScanObserver hears about each scan after it is persisted, whatever its

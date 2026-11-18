@@ -38,4 +38,6 @@ type ScanResult struct {
 	SBOM            *SBOM  // Optional: SBOM generated during the same scan (avoids separate SBOM call)
 	ImageCreatedAt  *time.Time
 	FirstSeenAt     *time.Time
+	// Malicious is the malicious-package check; nil when the check is disabled.
+	Malicious *types.MaliciousCheck
 }

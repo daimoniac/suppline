@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"strings"
 	"time"
 
 	"github.com/daimoniac/suppline/internal/attestation"
@@ -78,6 +79,9 @@ func (p *Pipeline) Execute(ctx context.Context, task *queue.ScanTask) error {
 		}
 		return err
 	}
+
+	// Phase 1b: Malicious-package check (never fails the scan)
+	p.maliciousPhase(ctx, task, imageRef, sbom, scanResult)
 
 	// Phase 2: Policy Evaluation
 	policyDecision, err := p.policyPhase(ctx, task, imageRef, scanResult, evidence)
@@ -192,6 +196,50 @@ func (p *Pipeline) scanPhase(ctx context.Context, task *queue.ScanTask, imageRef
 	metrics.ScanDuration.Observe(durations["vuln_scan"].Seconds())
 
 	return sbom, scanResult, durations, nil
+}
+
+// maliciousPhase matches the SBOM against known-malicious packages and
+// records the image's language packages. It fails open: problems are logged
+// and recorded as an unavailable check, never returned.
+func (p *Pipeline) maliciousPhase(ctx context.Context, task *queue.ScanTask, imageRef string, sbom *scanner.SBOM, scanResult *scanner.ScanResult) {
+	checker := p.worker.malicious
+	if checker == nil {
+		return
+	}
+	if sbom == nil || len(sbom.Data) == 0 {
+		scanResult.Malicious = &types.MaliciousCheck{Status: types.MaliciousCheckUnavailable}
+		p.logger.Warn("malicious-package check skipped: no SBOM", "image_ref", imageRef)
+		return
+	}
+	check, packages, err := checker.Check(sbom.Data)
+	scanResult.Malicious = check
+	if err != nil {
+		p.logger.Warn("malicious-package check could not read the SBOM", "image_ref", imageRef, "error", err)
+		return
+	}
+	if store, ok := p.worker.stateStore.(packageInventoryStore); ok {
+		if err := store.ReplacePackageInventory(ctx, task.Digest, packages); err != nil {
+			p.logger.Warn("failed to record package inventory", "image_ref", imageRef, "error", err)
+		}
+	}
+	if check == nil {
+		return
+	}
+	if len(check.Findings) > 0 {
+		ids := make([]string, 0, len(check.Findings))
+		for _, finding := range check.Findings {
+			ids = append(ids, finding.ID)
+		}
+		p.logger.Warn("malicious packages found",
+			"image_ref", imageRef,
+			"count", len(check.Findings),
+			"ids", strings.Join(ids, ","))
+	}
+	p.logger.Debug("malicious-package check completed",
+		"image_ref", imageRef,
+		"status", check.Status,
+		"packages", len(packages),
+		"findings", len(check.Findings))
 }
 
 // policyPhase evaluates policy with VEX statements
@@ -857,7 +905,8 @@ func (p *Pipeline) getPolicyEngineForRepository(repository string) (policy.Polic
 		return nil, errors.NewPermanentf("failed to resolve minimum release age for %s: %w", repository, err)
 	}
 
-	// If neither custom expression nor minimum release age is configured, use default from worker
+	// If neither custom expression nor minimum release age is configured, use default from worker.
+	// The default engine is built with the same malicious-package gate setting.
 	if policyConfig.Expression == "" && policyConfig.MinimumReleaseAge <= 0 {
 		return p.worker.policy, nil
 	}
@@ -867,7 +916,7 @@ func (p *Pipeline) getPolicyEngineForRepository(repository string) (policy.Polic
 		"expression", policyConfig.Expression)
 
 	// Create a new policy engine with the repository-specific config
-	return policy.NewEngine(p.logger, policyConfig)
+	return policy.NewEngine(p.logger, policyConfig, policy.WithMaliciousGate(p.worker.maliciousGate))
 }
 
 func (p *Pipeline) getArtifactFirstSeen(ctx context.Context, task *queue.ScanTask) (*time.Time, error) {

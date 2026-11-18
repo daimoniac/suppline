@@ -65,6 +65,14 @@ func CopySQLiteToPostgres(ctx context.Context, sqlitePath, postgresURL string, l
 	if err != nil {
 		return err
 	}
+	hasMalicious, err := sqliteHasColumn(ctx, src, "scan_records", "malicious_status")
+	if err != nil {
+		return err
+	}
+	maliciousColumns := `'' AS malicious_status, NULL AS malicious_check_json`
+	if hasMalicious {
+		maliciousColumns = `malicious_status, malicious_check_json`
+	}
 	artRows, err := src.QueryContext(ctx, `
 		SELECT id, repository_id, digest, tag, first_seen, last_seen, image_created_at, last_scan_id, next_scan_at, created_at
 		FROM artifacts
@@ -112,8 +120,8 @@ func CopySQLiteToPostgres(ctx context.Context, sqlitePath, postgresURL string, l
 		},
 		{
 			name:   "scan_records",
-			query:  `SELECT id, artifact_id, scan_duration_ms, critical_vuln_count, high_vuln_count, medium_vuln_count, low_vuln_count, policy_passed, policy_status, policy_reason, policy_failure_findings_json, release_age_seconds, minimum_release_age_seconds, release_age_source, sbom_attested, vuln_attested, scai_attested, COALESCE(vex_attested, 0) AS vex_attested, error_message, vex_statements_json, created_at FROM scan_records`,
-			insert: `INSERT INTO scan_records (id, artifact_id, scan_duration_ms, critical_vuln_count, high_vuln_count, medium_vuln_count, low_vuln_count, policy_passed, policy_status, policy_reason, policy_failure_findings_json, release_age_seconds, minimum_release_age_seconds, release_age_source, sbom_attested, vuln_attested, scai_attested, vex_attested, error_message, vex_statements_json, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+			query:  `SELECT id, artifact_id, scan_duration_ms, critical_vuln_count, high_vuln_count, medium_vuln_count, low_vuln_count, policy_passed, policy_status, policy_reason, policy_failure_findings_json, release_age_seconds, minimum_release_age_seconds, release_age_source, sbom_attested, vuln_attested, scai_attested, COALESCE(vex_attested, 0) AS vex_attested, error_message, vex_statements_json, ` + maliciousColumns + `, created_at FROM scan_records`,
+			insert: `INSERT INTO scan_records (id, artifact_id, scan_duration_ms, critical_vuln_count, high_vuln_count, medium_vuln_count, low_vuln_count, policy_passed, policy_status, policy_reason, policy_failure_findings_json, release_age_seconds, minimum_release_age_seconds, release_age_source, sbom_attested, vuln_attested, scai_attested, vex_attested, error_message, vex_statements_json, malicious_status, malicious_check_json, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 		},
 		{
 			name:   "cve_catalog",
@@ -150,6 +158,22 @@ func CopySQLiteToPostgres(ctx context.Context, sqlitePath, postgresURL string, l
 			query:  `SELECT repository, created_at FROM runtime_unused_repository_whitelist`,
 			insert: `INSERT INTO runtime_unused_repository_whitelist (repository, created_at) VALUES (?, ?)`,
 		},
+	}
+
+	var inventoryTable int
+	if err := src.QueryRowContext(ctx, `SELECT COUNT(*) FROM sqlite_master WHERE type = 'table' AND name = 'package_inventory'`).Scan(&inventoryTable); err != nil {
+		return errors.NewTransientf("inspect package_inventory: %w", err)
+	}
+	if inventoryTable > 0 {
+		copies = append(copies, struct {
+			name   string
+			query  string
+			insert string
+		}{
+			name:   "package_inventory",
+			query:  `SELECT digest, ecosystem, name, version, purl FROM package_inventory`,
+			insert: `INSERT INTO package_inventory (digest, ecosystem, name, version, purl) VALUES (?, ?, ?, ?, ?)`,
+		})
 	}
 
 	var triageTable int

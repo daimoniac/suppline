@@ -146,11 +146,18 @@ func (s *SQLiteStore) CleanupRepository(ctx context.Context, repository string) 
 				return errors.NewTransientf("failed to delete scan records for repository cleanup: %w", err)
 			}
 
+			digests, err := repositoryDigestsTx(ctx, tx, repositoryID)
+			if err != nil {
+				return err
+			}
 			_, err = tx.ExecContext(ctx, `
 				DELETE FROM artifacts WHERE repository_id = ?
 			`, repositoryID)
 			if err != nil {
 				return errors.NewTransientf("failed to delete artifacts for repository cleanup: %w", err)
+			}
+			if err := deleteOrphanedInventoryTx(ctx, tx, digests...); err != nil {
+				return err
 			}
 		}
 
@@ -281,6 +288,9 @@ func (s *SQLiteStore) CleanupArtifactScans(ctx context.Context, digest string) e
 		`, digest)
 		if err != nil {
 			return errors.NewTransientf("failed to delete artifacts: %w", err)
+		}
+		if err := deleteOrphanedInventoryTx(ctx, tx, digest); err != nil {
+			return err
 		}
 
 		// Check each affected repository for remaining artifacts and clean up if empty

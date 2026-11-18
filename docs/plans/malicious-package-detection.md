@@ -9,7 +9,7 @@ The work is split into four PRs. Each one is shippable alone, and each leaves `m
 - **The SBOM is never parsed today.** `GenerateSBOM` runs on every scan ([pipeline.go:152](../../internal/worker/pipeline.go)), but its raw CycloneDX output is passed only to `attestationPhase`. `ScanResult.SBOM` is declared but never set. go.mod has no CycloneDX, purl or osv-scalibr dependency.
 - **go-git can't do this yet.** `gitops.Manager` only makes non-bare checkouts with a hard reset, `Auth.transport` is unexported, and `validateGitAuth` rejects an empty auth type, so anonymous cloning isn't possible.
 - **Health has no "degraded" state.** Any non-healthy component makes `/health` return 503, and the Helm liveness and readiness probes both hit `/health`.
-- **There are three engine construction sites:** per repository (`pipeline.go:850`), the default (`main.go:192`), and the vexaudit factory (`main.go:311`). vexaudit replays policy from the database (`vexaudit/audit.go:441`), so MAL findings must be persisted for the gate to survive a replay.
+- **There are three engine construction sites:** per repository (`pipeline.go:850`), the default (`main.go:192`), and the vexaudit factory (`main.go:311`). vexaudit replays policy from the database (`vexaudit/audit.go:441`) to judge VEX statements; see PR 2 for why MAL findings stay out of that replay.
 - **A digest has no single parent row.** Artifacts are unique on (repo, digest, tag), so a per-digest table can't cascade from one parent and needs explicit cleanup.
 - **There's a periodic-job pattern to copy:** `vexaudit.Run` refreshes once, then runs on a ticker, and keeps an RWMutex snapshot.
 - **`x-triage` sets the config precedent:** a top-level `x-` block, read once at startup and not hot-reloaded.
@@ -73,11 +73,10 @@ x-malicious-packages:
 
 ## PR 2: Persistence, pipeline, policy gate, SCAI, triage exclusion
 
-**Types:** `types.MaliciousFinding{ID, Ecosystem, PackageName, Version, PURL, Summary, URL}` and `types.MALCheck{Status, Commit, SnapshotAt}`. `ScanResult` gains `Malicious []types.MaliciousFinding` and `MALCheck *types.MALCheck`.
+**Types:** `types.MaliciousFinding{ID, Ecosystem, PackageName, Version, PURL, Summary, URL}` and `types.MaliciousCheck{Status, Commit, SnapshotAt, Findings}`. `ScanResult` and `ScanRecord` gain `Malicious *types.MaliciousCheck` (nil when the check is disabled).
 
 **State store** (SQLite in `ensureSchemaColumns` plus inline DDL, Postgres in `ADD COLUMN IF NOT EXISTS` plus its statement list, and the `copy.go` lists for both)
-- `scan_records`: add `mal_check_status`, `mal_snapshot_commit` and `mal_snapshot_at`, and add them to every explicit SELECT in `sqlite_scans_read.go` (lines 57, 328, 448 and 831).
-- `scan_malicious_findings`: `scan_record_id` FK `ON DELETE CASCADE`, plus `mal_id`, `ecosystem`, `package`, `version`, `purl`, `summary` and `url`.
+- `scan_records`: add `malicious_status` (queryable for the PR 3 catch-up) and `malicious_check_json` (the whole check, findings included), following the existing `policy_failure_findings_json` pattern instead of a separate findings table. They are read by `GetLastScan` and `ListScans`; `copy.go` reads them only when the source SQLite has them.
 - `package_inventory`: `(digest, ecosystem, name, version, purl)`, PK `(digest, purl)`, index `(ecosystem, name)`. It is replaced per digest at scan time. Cleanup:
   - delete by digest in `CleanupArtifactScans`
   - an orphan sweep, `DELETE … WHERE digest NOT IN (SELECT digest FROM artifacts)`, inside the existing cleanup paths (`CleanupRepository`, `CleanupOrphanedRepositories`, and the artifact-delete helper)
@@ -99,8 +98,8 @@ x-malicious-packages:
 - **The gate:** a `policy.WithMaliciousGate(bool)` option, passed at all three construction sites. After CEL runs in `Engine.Evaluate`, if the gate is on and `len(Malicious) > 0`, the result is failed and one `PolicyFailureFinding` is added per MAL finding.
 - Add `Kind` (`vulnerability` | `malicious`) to `PolicyFailureFinding`. Existing JSON without it reads as `vulnerability`.
 - The `minimumReleaseAge` pending path stays first: a pending image isn't attested anyway, and it gets evaluated once it's old enough.
-- Add `maliciousCount` to the regexes and labels in `describe.go`.
-- Rebuild `Malicious` from the database in vexaudit's `scanResult()`, so replays keep the gate.
+- `describe.go` is unchanged: its combined-clause wording ("No critical or malicious vulnerabilities") would be wrong, and the gate makes `maliciousCount` in expressions rare.
+- vexaudit's `scanResult()` deliberately leaves MAL findings out. The audit asks whether a VEX statement changes the outcome; with the gate in the replay, every statement on an image with malware would look unused.
 
 **SCAI** ([scai.go](../../internal/attestation/scai.go))
 - Change `SCAIAttributeItem.Evidence` to `any`. The JSON for existing exempted-vulnerability attributes stays the same.
@@ -115,7 +114,7 @@ x-malicious-packages:
 - Statestore: migrations on a fresh and an existing database for both dialects; inventory cleanup; copy.
 - Pipeline with a fake snapshot.
 - SCAI JSON golden test.
-- vexaudit replay keeps the gate.
+- (vexaudit: covered by the comment on `scanResult()`; no behaviour change.)
 
 ---
 

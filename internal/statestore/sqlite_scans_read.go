@@ -49,6 +49,7 @@ func (s *SQLiteStore) getLastScan(ctx context.Context, digest, repository string
 	var record ScanRecord
 	var vexJSON sql.NullString
 	var failureFindingsJSON sql.NullString
+	var maliciousJSON sql.NullString
 
 	query := `
 		SELECT sr.id, sr.artifact_id, sr.scan_duration_ms,
@@ -57,7 +58,7 @@ func (s *SQLiteStore) getLastScan(ctx context.Context, digest, repository string
 			sr.sbom_attested, sr.vuln_attested, sr.scai_attested, COALESCE(sr.vex_attested, FALSE), sr.error_message, sr.created_at,
 			COALESCE(a.image_created_at, 0) as image_created_at,
 			a.digest, a.tag, r.name,
-			sr.vex_statements_json
+			sr.vex_statements_json, sr.malicious_check_json
 		FROM scan_records sr
 		JOIN artifacts a ON sr.artifact_id = a.id
 		JOIN repositories r ON a.repository_id = r.id
@@ -78,7 +79,7 @@ func (s *SQLiteStore) getLastScan(ctx context.Context, digest, repository string
 		&record.SBOMAttested, &record.VulnAttested, &record.SCAIAttested, &record.VEXAttested, &record.ErrorMessage, &record.CreatedAt,
 		&record.ImageCreatedAt,
 		&record.Digest, &record.Tag, &record.Repository,
-		&vexJSON,
+		&vexJSON, &maliciousJSON,
 	)
 	if err == sql.ErrNoRows {
 		return nil, ErrScanNotFound
@@ -99,6 +100,9 @@ func (s *SQLiteStore) getLastScan(ctx context.Context, digest, repository string
 		return nil, err
 	}
 	if err := applyStoredPolicyFailureFindings(&record, failureFindingsJSON); err != nil {
+		return nil, err
+	}
+	if err := applyStoredMaliciousCheck(&record, maliciousJSON); err != nil {
 		return nil, err
 	}
 
@@ -830,7 +834,7 @@ func (s *SQLiteStore) queryScanRecords(ctx context.Context, filter ScanFilter) (
 			sr.policy_passed, sr.policy_status, sr.policy_reason, sr.policy_failure_findings_json, sr.release_age_seconds, sr.minimum_release_age_seconds, sr.release_age_source,
 			sr.sbom_attested, sr.vuln_attested, sr.scai_attested, sr.error_message, sr.created_at,
 			COALESCE(a.image_created_at, 0) as image_created_at,
-			a.digest, a.tag, r.name` + exemptionColumn + `
+			a.digest, a.tag, r.name, sr.malicious_check_json` + exemptionColumn + `
 		FROM artifacts a
 		JOIN repositories r ON a.repository_id = r.id
 		JOIN scan_records sr ON a.last_scan_id = sr.id
@@ -888,6 +892,7 @@ func (s *SQLiteStore) queryScanRecords(ctx context.Context, filter ScanFilter) (
 		var record ScanRecord
 		var failureFindingsJSON sql.NullString
 		var vexJSON sql.NullString
+		var maliciousJSON sql.NullString
 
 		dest := []any{
 			&record.ID, &record.ArtifactID, &record.ScanDurationMs,
@@ -895,7 +900,7 @@ func (s *SQLiteStore) queryScanRecords(ctx context.Context, filter ScanFilter) (
 			&record.PolicyPassed, &record.PolicyStatus, &record.PolicyReason, &failureFindingsJSON, &record.ReleaseAgeSeconds, &record.MinimumReleaseAgeSeconds, &record.ReleaseAgeSource,
 			&record.SBOMAttested, &record.VulnAttested, &record.SCAIAttested, &record.ErrorMessage, &record.CreatedAt,
 			&record.ImageCreatedAt,
-			&record.Digest, &record.Tag, &record.Repository,
+			&record.Digest, &record.Tag, &record.Repository, &maliciousJSON,
 		}
 		if filter.IncludeExemptions {
 			dest = append(dest, &vexJSON)
@@ -913,6 +918,9 @@ func (s *SQLiteStore) queryScanRecords(ctx context.Context, filter ScanFilter) (
 		// These are only needed for detail views, which use GetLastScan directly
 		// This keeps list responses lightweight and fast
 		if err := applyStoredPolicyFailureFindings(&record, failureFindingsJSON); err != nil {
+			return nil, err
+		}
+		if err := applyStoredMaliciousCheck(&record, maliciousJSON); err != nil {
 			return nil, err
 		}
 

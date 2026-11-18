@@ -76,8 +76,19 @@ func (s *SQLiteStore) initPostgresSchema() error {
 			vex_attested BOOLEAN NOT NULL DEFAULT FALSE,
 			error_message TEXT,
 			vex_statements_json TEXT,
+			malicious_status TEXT NOT NULL DEFAULT '',
+			malicious_check_json TEXT,
 			created_at BIGINT NOT NULL DEFAULT (EXTRACT(EPOCH FROM CLOCK_TIMESTAMP())::BIGINT)
 		)`,
+		`CREATE TABLE IF NOT EXISTS package_inventory (
+			digest TEXT NOT NULL,
+			ecosystem TEXT NOT NULL,
+			name TEXT NOT NULL,
+			version TEXT NOT NULL,
+			purl TEXT NOT NULL,
+			PRIMARY KEY (digest, purl)
+		)`,
+		`CREATE INDEX IF NOT EXISTS idx_package_inventory_package ON package_inventory(ecosystem, name)`,
 		`CREATE TABLE IF NOT EXISTS cve_catalog (
 			cve_id TEXT PRIMARY KEY,
 			severity TEXT NOT NULL,
@@ -260,6 +271,16 @@ func (s *SQLiteStore) initPostgresSchema() error {
 		ALTER TABLE cluster_images_seen ADD COLUMN IF NOT EXISTS workloads TEXT NOT NULL DEFAULT ''
 	`); err != nil {
 		return fmt.Errorf("add cluster_images_seen.workloads: %w", err)
+	}
+	if _, err := s.db.Exec(`
+		ALTER TABLE scan_records ADD COLUMN IF NOT EXISTS malicious_status TEXT NOT NULL DEFAULT ''
+	`); err != nil {
+		return fmt.Errorf("add scan_records.malicious_status: %w", err)
+	}
+	if _, err := s.db.Exec(`
+		ALTER TABLE scan_records ADD COLUMN IF NOT EXISTS malicious_check_json TEXT
+	`); err != nil {
+		return fmt.Errorf("add scan_records.malicious_check_json: %w", err)
 	}
 
 	return nil

@@ -145,6 +145,15 @@ func (s *SQLiteStore) initSchema() error {
 		FOREIGN KEY (artifact_id) REFERENCES artifacts(id) ON DELETE CASCADE
 	);
 
+	CREATE TABLE IF NOT EXISTS package_inventory (
+		digest TEXT NOT NULL,
+		ecosystem TEXT NOT NULL,
+		name TEXT NOT NULL,
+		version TEXT NOT NULL,
+		purl TEXT NOT NULL,
+		PRIMARY KEY (digest, purl)
+	);
+
 	CREATE TABLE IF NOT EXISTS cve_catalog (
 		cve_id TEXT PRIMARY KEY,
 		severity TEXT NOT NULL,
@@ -221,6 +230,7 @@ func (s *SQLiteStore) initSchema() error {
 	CREATE INDEX IF NOT EXISTS idx_scan_findings_cve_scan ON scan_findings(cve_id, scan_record_id);
 	CREATE INDEX IF NOT EXISTS idx_cve_catalog_severity ON cve_catalog(severity);
 	CREATE INDEX IF NOT EXISTS idx_artifacts_last_scan ON artifacts(last_scan_id);
+	CREATE INDEX IF NOT EXISTS idx_package_inventory_package ON package_inventory(ecosystem, name);
 	CREATE INDEX IF NOT EXISTS idx_artifacts_last_scan_repo_digest ON artifacts(last_scan_id, repository_id, digest);
 	CREATE INDEX IF NOT EXISTS idx_cluster_images_cluster ON cluster_images(cluster_id);
 	CREATE INDEX IF NOT EXISTS idx_cluster_images_digest ON cluster_images(digest);
@@ -333,6 +343,8 @@ func (s *SQLiteStore) ensureSchemaColumns() error {
 		{table: "scan_records", column: "release_age_source", definition: "TEXT NOT NULL DEFAULT ''"},
 		{table: "scan_records", column: "vex_statements_json", definition: "TEXT"},
 		{table: "scan_records", column: "vex_attested", definition: "BOOLEAN NOT NULL DEFAULT 0"},
+		{table: "scan_records", column: "malicious_status", definition: "TEXT NOT NULL DEFAULT ''"},
+		{table: "scan_records", column: "malicious_check_json", definition: "TEXT"},
 		{table: "artifacts", column: "superseded", definition: "INTEGER NOT NULL DEFAULT 0"},
 		{table: "triage_runs", column: "session_id", definition: "TEXT NOT NULL DEFAULT ''"},
 		{table: "scan_findings", column: "severity", definition: "TEXT"},

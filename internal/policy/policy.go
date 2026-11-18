@@ -31,6 +31,9 @@ type PolicyConfig struct {
 	//   - highCount: number of high vulnerabilities (not exempted)
 	//   - mediumCount: number of medium vulnerabilities (not exempted)
 	//   - exemptedCount: number of exempted vulnerabilities
+	//   - malicious: list of malicious-package findings with fields:
+	//       id, ecosystem, packageName, version, purl, summary, url
+	//   - maliciousCount: number of malicious-package findings
 	Expression string `yaml:"expression" json:"expression"`
 
 	// FailureMessage is the message to return when the policy fails (optional)
@@ -80,10 +83,20 @@ type Engine struct {
 	config              PolicyConfig
 	celEnv              *cel.Env
 	celProgram          cel.Program
+	maliciousGate       bool
+}
+
+// Option configures an Engine.
+type Option func(*Engine)
+
+// WithMaliciousGate sets whether any malicious-package finding fails the
+// policy regardless of the expression. The gate is on by default.
+func WithMaliciousGate(enabled bool) Option {
+	return func(e *Engine) { e.maliciousGate = enabled }
 }
 
 // NewEngine creates a new policy engine with a CEL-based policy
-func NewEngine(logger *slog.Logger, config PolicyConfig) (*Engine, error) {
+func NewEngine(logger *slog.Logger, config PolicyConfig, opts ...Option) (*Engine, error) {
 	if logger == nil {
 		logger = slog.Default()
 	}
@@ -101,6 +114,8 @@ func NewEngine(logger *slog.Logger, config PolicyConfig) (*Engine, error) {
 		cel.Variable("mediumCount", cel.IntType),
 		cel.Variable("lowCount", cel.IntType),
 		cel.Variable("exemptedCount", cel.IntType),
+		cel.Variable("malicious", cel.ListType(cel.MapType(cel.StringType, cel.AnyType))),
+		cel.Variable("maliciousCount", cel.IntType),
 	)
 	if err != nil {
 		return nil, errors.NewPermanentf("failed to create CEL environment: %w", err)
@@ -120,13 +135,18 @@ func NewEngine(logger *slog.Logger, config PolicyConfig) (*Engine, error) {
 		return nil, errors.NewPermanentf("failed to create CEL program: %w", err)
 	}
 
-	return &Engine{
+	engine := &Engine{
 		logger:              logger,
 		expiryWarningWindow: 7 * 24 * time.Hour,
 		config:              config,
 		celEnv:              env,
 		celProgram:          program,
-	}, nil
+		maliciousGate:       true,
+	}
+	for _, opt := range opts {
+		opt(engine)
+	}
+	return engine, nil
 }
 
 // Evaluate determines if an image passes security policy using CEL expression
@@ -301,6 +321,9 @@ func (e *Engine) Evaluate(ctx context.Context, imageRef string, result *scanner.
 	decision.ExemptedVulnCount = exemptedCount
 	decision.UnfixedVulnCount = unfixedCriticalCount
 
+	maliciousFindings := maliciousFindingsOf(result)
+	maliciousInput := maliciousCELInput(maliciousFindings)
+
 	celInput := map[string]interface{}{
 		"vulnerabilities": enrichedVulns,
 		"imageRef":        imageRef,
@@ -309,6 +332,8 @@ func (e *Engine) Evaluate(ctx context.Context, imageRef string, result *scanner.
 		"mediumCount":     mediumCount,
 		"lowCount":        lowCount,
 		"exemptedCount":   exemptedCount,
+		"malicious":       maliciousInput,
+		"maliciousCount":  len(maliciousInput),
 	}
 
 	out, _, err := e.celProgram.Eval(celInput)
@@ -326,7 +351,11 @@ func (e *Engine) Evaluate(ctx context.Context, imageRef string, result *scanner.
 		decision.Status = PolicyStatusPassed
 	} else {
 		decision.Status = PolicyStatusFailed
-		decision.PolicyFailureFindings = e.findPolicyFailureFindings(imageRef, enrichedVulns, nonExemptedIndexes, nonExemptedVulns)
+		decision.PolicyFailureFindings = e.findPolicyFailureFindings(imageRef, enrichedVulns, maliciousInput, nonExemptedIndexes, nonExemptedVulns)
+		if !e.maliciousGate && len(maliciousFindings) > 0 && e.passesWithoutMalicious(celInput) {
+			// The expression itself fails on the malicious findings.
+			decision.PolicyFailureFindings = append(decision.PolicyFailureFindings, maliciousFailureFindings(maliciousFindings)...)
+		}
 	}
 
 	if passed {
@@ -379,10 +408,14 @@ func (e *Engine) Evaluate(ctx context.Context, imageRef string, result *scanner.
 		}
 	}
 
+	if e.maliciousGate && len(maliciousFindings) > 0 {
+		e.applyMaliciousGate(decision, imageRef, passed, maliciousFindings)
+	}
+
 	return decision, nil
 }
 
-func (e *Engine) findPolicyFailureFindings(imageRef string, enrichedVulns []map[string]interface{}, candidateIndexes []int, candidateVulns []types.Vulnerability) []types.PolicyFailureFinding {
+func (e *Engine) findPolicyFailureFindings(imageRef string, enrichedVulns []map[string]interface{}, malicious []map[string]interface{}, candidateIndexes []int, candidateVulns []types.Vulnerability) []types.PolicyFailureFinding {
 	if len(enrichedVulns) == 0 || len(candidateIndexes) == 0 || len(candidateVulns) == 0 {
 		return nil
 	}
@@ -393,7 +426,7 @@ func (e *Engine) findPolicyFailureFindings(imageRef string, enrichedVulns []map[
 	}
 
 	evaluate := func(included []bool) (bool, error) {
-		return e.evaluateSubset(imageRef, enrichedVulns, candidatePosByIndex, included)
+		return e.evaluateSubset(imageRef, enrichedVulns, malicious, candidatePosByIndex, included)
 	}
 
 	// If the fixed baseline (for example exempted vulnerabilities and imageRef)
@@ -534,7 +567,7 @@ func (e *Engine) findPolicyFailureFindings(imageRef string, enrichedVulns []map[
 	return findings
 }
 
-func (e *Engine) evaluateSubset(imageRef string, enrichedVulns []map[string]interface{}, candidatePosByIndex map[int]int, included []bool) (bool, error) {
+func (e *Engine) evaluateSubset(imageRef string, enrichedVulns []map[string]interface{}, malicious []map[string]interface{}, candidatePosByIndex map[int]int, included []bool) (bool, error) {
 	counterfactual := make([]map[string]interface{}, 0, len(enrichedVulns))
 	for idx, vuln := range enrichedVulns {
 		pos, isCandidate := candidatePosByIndex[idx]
@@ -578,6 +611,8 @@ func (e *Engine) evaluateSubset(imageRef string, enrichedVulns []map[string]inte
 		"mediumCount":     mediumCount,
 		"lowCount":        lowCount,
 		"exemptedCount":   exemptedCount,
+		"malicious":       malicious,
+		"maliciousCount":  len(malicious),
 	}
 
 	out, _, err := e.celProgram.Eval(celInput)

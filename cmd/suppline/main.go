@@ -189,9 +189,10 @@ func run() error {
 	logger.Debug("cosign authenticated with all registries")
 
 	logger.Debug("initializing policy engine")
+	maliciousGate := regsyncCfg.MaliciousPackages.BlockEnabled()
 	policyEngine, err := policy.NewEngine(logger, policy.PolicyConfig{
 		Expression: "criticalCount == 0",
-	})
+	}, policy.WithMaliciousGate(maliciousGate))
 	if err != nil {
 		return fmt.Errorf("failed to initialize policy engine: %w", err)
 	}
@@ -310,14 +311,17 @@ func run() error {
 	quiet := slog.New(slog.DiscardHandler)
 	vexAudit := vexaudit.New(logger, repositoryPolicies, scanReads, func(cfg policy.PolicyConfig) (policy.PolicyEngine, error) {
 		if cfg.Expression == "" {
-			return policy.NewEngine(quiet, policy.PolicyConfig{Expression: "criticalCount == 0"})
+			return policy.NewEngine(quiet, policy.PolicyConfig{Expression: "criticalCount == 0"}, policy.WithMaliciousGate(maliciousGate))
 		}
-		return policy.NewEngine(quiet, cfg)
+		return policy.NewEngine(quiet, cfg, policy.WithMaliciousGate(maliciousGate))
 	})
 
 	maliciousService, err := newMaliciousService(regsyncCfg.MaliciousPackages, healthChecker, logger)
 	if err != nil {
 		return fmt.Errorf("failed to initialize malicious-package detection: %w", err)
+	}
+	if maliciousService != nil {
+		workerInstance.SetMaliciousChecker(maliciousService, maliciousGate)
 	}
 
 	var apiServer *api.APIServer
