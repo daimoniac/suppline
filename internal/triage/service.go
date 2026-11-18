@@ -138,7 +138,7 @@ func New(cfg *config.TriageConfig, configPath string, cat *catalog.ConfigCatalog
 	return svc, nil
 }
 
-// ValidateStartup fails when enforce mode would have nowhere writable to put x-vex-auto.
+// ValidateStartup fails when enforce mode would have nowhere writable to put vex-auto.
 func (s *Service) ValidateStartup() error {
 	if s == nil || !s.settings.Enabled {
 		return nil
@@ -1031,7 +1031,7 @@ func (s *Service) pullCheckouts(ctx context.Context) ([]gitops.Checkout, Roots, 
 	return checkouts, roots, nil
 }
 
-// autoCommitMessage is the GitLab commit for one x-vex-auto write.
+// autoCommitMessage is the GitLab commit for one vex-auto write.
 // [skip ci] keeps that push from starting a pipeline. lines are "CVE state".
 func autoCommitMessage(repository string, lines []string) string {
 	n := len(lines)
@@ -1066,7 +1066,7 @@ func (s *Service) applyStatements(ctx context.Context, repository string, statem
 		},
 	})
 	if err == nil {
-		s.logWrite("wrote x-vex-auto statements", repository, statementIDs(statements), result)
+		s.logWrite("wrote vex-auto statements", repository, statementIDs(statements), result)
 	}
 	return result.Commit, s.writtenUnlessRefreshFailed(repository, err)
 }
@@ -1102,9 +1102,9 @@ func (s *Service) writtenUnlessRefreshFailed(repository string, err error) error
 	return err
 }
 
-// PromoteManual writes a hand-written x-vex statement and makes it effective
+// PromoteManual writes a hand-written vex statement and makes it effective
 // immediately. It runs even when triage mode is dry-run, because a person
-// asked for the override. x-vex-auto is left in place and loses on the same id.
+// asked for the override. vex-auto is left in place and loses on the same id.
 func (s *Service) PromoteManual(ctx context.Context, repository string, statement types.VEXStatement) (string, error) {
 	if s == nil || !s.settings.Enabled {
 		return "", fmt.Errorf("triage is not enabled")
@@ -1136,7 +1136,7 @@ func (s *Service) PromoteManual(ctx context.Context, repository string, statemen
 		},
 	})
 	if err == nil {
-		s.logWrite("wrote x-vex statement", repository, []string{statement.ID}, result)
+		s.logWrite("wrote vex statement", repository, []string{statement.ID}, result)
 	}
 	return result.Commit, err
 }

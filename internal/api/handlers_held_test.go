@@ -36,7 +36,7 @@ func TestHeldDigestsAndCooldownRelease(t *testing.T) {
 	path := filepath.Join(dir, "suppline.yml")
 	if err := os.WriteFile(path, []byte(`version: 1
 defaults:
-  x-cooldown: 7d
+  cooldown: 7d
 sync:
   - source: docker.io/nginx
     target: registry.example.com/nginx
@@ -100,7 +100,7 @@ sync:
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(string(written), "x-cooldown-release:") || !strings.Contains(string(written), "reason: CVE hotfix") {
+	if !strings.Contains(string(written), "cooldown-release:") || !strings.Contains(string(written), "reason: CVE hotfix") {
 		t.Errorf("file not updated:\n%s", written)
 	}
 }

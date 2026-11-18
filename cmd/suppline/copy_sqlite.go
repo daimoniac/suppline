@@ -6,17 +6,24 @@ import (
 	"log/slog"
 	"os"
 
+	"github.com/daimoniac/suppline/internal/config"
 	"github.com/daimoniac/suppline/internal/statestore"
 	"github.com/joho/godotenv"
 )
 
+// runCopySQLite copies the SQLite catalog at store.sqlitePath (suppline.yml)
+// into the PostgreSQL database at POSTGRES_URL.
 func runCopySQLite(ctx context.Context) error {
 	_ = godotenv.Load()
 
-	sqlitePath := os.Getenv("SQLITE_PATH")
-	postgresURL := os.Getenv("POSTGRES_URL")
-	if sqlitePath == "" || postgresURL == "" {
-		return fmt.Errorf("SQLITE_PATH and POSTGRES_URL are required for copy-sqlite")
+	cfg, err := config.Load()
+	if err != nil {
+		return fmt.Errorf("load configuration: %w", err)
+	}
+	sqlitePath := cfg.StateStore.SQLitePath
+	postgresURL := cfg.StateStore.PostgresURL
+	if postgresURL == "" {
+		return fmt.Errorf("POSTGRES_URL is required for copy-sqlite")
 	}
 
 	logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelInfo}))

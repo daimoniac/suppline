@@ -806,26 +806,6 @@ type healthResponse struct {
 	MaliciousEnabled bool   `json:"maliciousEnabled"`
 }
 
-// handleMetrics provides Prometheus metrics endpoint
-// @Summary Prometheus metrics
-// @Description Expose Prometheus-compatible metrics
-// @Tags Health
-// @Produce plain
-// @Success 200 {string} string "Prometheus metrics"
-// @Router /metrics [get]
-func (s *APIServer) handleMetrics(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodGet {
-		s.respondError(w, http.StatusMethodNotAllowed, "Method not allowed")
-		return
-	}
-
-	// TODO: Implement in task 10 (observability)
-	// For now, return empty metrics
-	w.Header().Set("Content-Type", "text/plain")
-	w.WriteHeader(http.StatusOK)
-	_, _ = w.Write([]byte("# Metrics endpoint - to be implemented\n"))
-}
-
 // handleListKubernetesClusters lists cluster inventory summaries.
 // @Summary List Kubernetes clusters
 // @Description List known Kubernetes clusters with latest inventory sync time and image count

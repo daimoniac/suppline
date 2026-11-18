@@ -42,7 +42,7 @@ func TestMaliciousPackagesDefaults(t *testing.T) {
 }
 
 func TestMaliciousPackagesParse(t *testing.T) {
-	cfg, err := parseMaliciousConfig(t, `x-malicious-packages:
+	cfg, err := parseMaliciousConfig(t, `malicious-packages:
   enabled: true
   block: false
   repo:
@@ -81,11 +81,11 @@ func TestMaliciousPackagesValidate(t *testing.T) {
 		block string
 		want  string
 	}{
-		{"bad interval", "x-malicious-packages:\n  sync_interval: soon\n", "sync_interval"},
-		{"stale before sync", "x-malicious-packages:\n  sync_interval: 2h\n  stale_after: 1h\n", "stale_after must be at least sync_interval"},
-		{"incomplete auth", "x-malicious-packages:\n  repo:\n    auth: { type: https-token }\n", "auth.env is required"},
-		{"unknown auth", "x-malicious-packages:\n  repo:\n    auth: { type: basic }\n", "auth.type must be"},
-		{"disabled skips checks", "x-malicious-packages:\n  enabled: false\n  sync_interval: soon\n", ""},
+		{"bad interval", "malicious-packages:\n  sync_interval: soon\n", "sync_interval"},
+		{"stale before sync", "malicious-packages:\n  sync_interval: 2h\n  stale_after: 1h\n", "stale_after must be at least sync_interval"},
+		{"incomplete auth", "malicious-packages:\n  repo:\n    auth: { type: https-token }\n", "auth.env is required"},
+		{"unknown auth", "malicious-packages:\n  repo:\n    auth: { type: basic }\n", "auth.type must be"},
+		{"disabled skips checks", "malicious-packages:\n  enabled: false\n  sync_interval: soon\n", ""},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -110,9 +110,9 @@ func TestMaliciousVEXStatementsValidated(t *testing.T) {
 		extra string
 		want  string
 	}{
-		{"false_positive ok", "    x-vex:\n      - id: MAL-2025-1\n        state: false_positive\n        detail: workspace package\n", ""},
-		{"not_affected rejected", "    x-vex:\n      - id: MAL-2025-1\n        state: not_affected\n        justification: code_not_reachable\n", "must be \"false_positive\""},
-		{"auto rejected", "    x-vex-auto:\n      - id: MAL-2025-1\n        state: false_positive\n", "only hand-written x-vex"},
+		{"false_positive ok", "    vex:\n      - id: MAL-2025-1\n        state: false_positive\n        detail: workspace package\n", ""},
+		{"not_affected rejected", "    vex:\n      - id: MAL-2025-1\n        state: not_affected\n        justification: code_not_reachable\n", "must be \"false_positive\""},
+		{"auto rejected", "    vex-auto:\n      - id: MAL-2025-1\n        state: false_positive\n", "only hand-written vex"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

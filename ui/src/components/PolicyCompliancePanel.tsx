@@ -17,7 +17,7 @@ export function PolicyCompliancePanel({
 }: {
   policyByRepo: Record<string, { failed: number; pending: number }>;
   failedScans: Scan[];
-  /** Default x-policy from config; rendered under the heading when configured. */
+  /** Default policy from config; rendered under the heading when configured. */
   defaultPolicy?: PolicyInfo | null;
   /** When false, the main heading is omitted (e.g. parent TaskSection already provides a title). */
   showCardHeading?: boolean;

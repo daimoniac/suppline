@@ -1019,7 +1019,7 @@ export default function TasksPage() {
         active={activeAnchor === 'vex-review'}
         icon={<Clock3 className="w-4 h-4 text-danger" />}
         title="VEX Review"
-        subtitle={<>VEX statements from <code className="bg-bg-tertiary px-1 rounded">x-vex</code> that are inactive, expired, or expiring within 7 days</>}
+        subtitle={<>VEX statements from <code className="bg-bg-tertiary px-1 rounded">vex</code> that are inactive, expired, or expiring within 7 days</>}
         loading={loading}
         loadingMessage="Checking VEX review tasks..."
         error={error}

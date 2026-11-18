@@ -43,7 +43,7 @@ func TestMaliciousEndpoint(t *testing.T) {
 		}
 	}
 
-	server := NewAPIServer(&config.APIConfig{Enabled: true, Port: 8080}, mockAttestationConfig(), store, queue.NewInMemoryQueue(8), mockRegsyncConfig(), observability.NewLogger("error"))
+	server := NewAPIServer(&config.APIConfig{Port: 8080}, mockAttestationConfig(), store, queue.NewInMemoryQueue(8), mockRegsyncConfig(), observability.NewLogger("error"))
 	synced := time.Date(2026, 11, 18, 12, 0, 0, 0, time.UTC)
 	server.SetMalicious(stubMaliciousFeed{malicious.Overview{
 		Status: malicious.StatusOK, Commit: "abc", SyncedAt: synced, LastAttemptAt: synced,
@@ -81,7 +81,7 @@ func TestMaliciousEndpoint(t *testing.T) {
 }
 
 func TestMaliciousEndpointDisabled(t *testing.T) {
-	server := NewAPIServer(&config.APIConfig{Enabled: true, Port: 8080}, mockAttestationConfig(), &mockStateStore{}, queue.NewInMemoryQueue(8), mockRegsyncConfig(), observability.NewLogger("error"))
+	server := NewAPIServer(&config.APIConfig{Port: 8080}, mockAttestationConfig(), &mockStateStore{}, queue.NewInMemoryQueue(8), mockRegsyncConfig(), observability.NewLogger("error"))
 	w := httptest.NewRecorder()
 	server.router.ServeHTTP(w, httptest.NewRequest(http.MethodGet, "/api/v1/malicious", nil))
 	if w.Code != http.StatusOK || !strings.Contains(w.Body.String(), `"Enabled":false`) || !strings.Contains(w.Body.String(), `"Feed":null`) {
@@ -143,7 +143,7 @@ func TestAddMaliciousImageCounts(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	server := NewAPIServer(&config.APIConfig{Enabled: true, Port: 8080}, mockAttestationConfig(), store, queue.NewInMemoryQueue(8), mockRegsyncConfig(), observability.NewLogger("error"))
+	server := NewAPIServer(&config.APIConfig{Port: 8080}, mockAttestationConfig(), store, queue.NewInMemoryQueue(8), mockRegsyncConfig(), observability.NewLogger("error"))
 	counts := map[string]int{"CVE-1": 3}
 	if err := server.addMaliciousImageCounts(t.Context(), counts); err != nil {
 		t.Fatal(err)

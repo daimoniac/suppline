@@ -20,7 +20,7 @@ import (
 // tasksTestServer creates a server with the given inventory store and regsync config.
 func tasksTestServer(t *testing.T, store statestore.StateStoreQuery, regsync *config.RegsyncConfig) *APIServer {
 	t.Helper()
-	cfg := &config.APIConfig{Enabled: true, Port: 8080, APIKey: "", ReadOnly: false}
+	cfg := &config.APIConfig{Port: 8080, APIKey: "", ReadOnly: false}
 	return NewAPIServer(cfg, mockAttestationConfig(), store, queue.NewInMemoryQueue(100), regsync, observability.NewLogger("error"))
 }
 
@@ -915,7 +915,7 @@ func TestHandleGetSemverUpdateTasks_AIAgentPromptReturnedWhenSuggestionsExist(t 
 
 func TestHandleGetSemverUpdateTasks_RequiresAuth(t *testing.T) {
 	// With an API key set, the endpoint must reject unauthenticated requests.
-	cfg := &config.APIConfig{Enabled: true, Port: 8080, APIKey: "secret-key", ReadOnly: false}
+	cfg := &config.APIConfig{Port: 8080, APIKey: "secret-key", ReadOnly: false}
 	regsync := regsyncWithSemver("docker.io/nginx", "registry.example.com/nginx", []string{">=1.20.0 <1.26.0"})
 	server := NewAPIServer(cfg, mockAttestationConfig(), &mockStateStore{}, queue.NewInMemoryQueue(100), regsync, observability.NewLogger("error"))
 
@@ -1105,7 +1105,7 @@ func TestHandleRuntimeUnusedWhitelist_GetPostDeleteFlow(t *testing.T) {
 
 func TestHandleRuntimeUnusedWhitelist_RejectsWritesInReadOnlyMode(t *testing.T) {
 	store := &mockRuntimeUnusedWhitelistStore{whitelist: map[string]struct{}{}}
-	cfg := &config.APIConfig{Enabled: true, Port: 8080, APIKey: "", ReadOnly: true}
+	cfg := &config.APIConfig{Port: 8080, APIKey: "", ReadOnly: true}
 	server := NewAPIServer(cfg, mockAttestationConfig(), store, queue.NewInMemoryQueue(100), mockRegsyncConfig(), observability.NewLogger("error"))
 
 	postReq := httptest.NewRequest(http.MethodPost, "/api/v1/tasks/runtime-unused-whitelist", bytes.NewBufferString(`{"repository":"registry.example.com/legacy/app"}`))

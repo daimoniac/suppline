@@ -46,7 +46,6 @@ func TestAllButNewestIgnoresListOrder(t *testing.T) {
 }
 
 func TestCollapseRelistsUntilOneRemains(t *testing.T) {
-	t.Setenv("ATTESTATION_NEW_BUNDLE_FORMAT", "false")
 	const scai = "https://in-toto.io/attestation/scai/attribute-report/v0.3"
 	older := v1.Descriptor{Digest: hash(t, 'a'), Annotations: map[string]string{annotationBundlePredicate: scai, annotationCreated: "2026-10-01T00:00:00Z"}}
 	expired := v1.Descriptor{Digest: hash(t, 'b'), Annotations: map[string]string{annotationBundlePredicate: scai, annotationCreated: "2026-11-01T00:00:00Z"}}
@@ -83,7 +82,7 @@ func TestCollapseRelistsUntilOneRemains(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := collapseReferrers(context.Background(), testAttestor(t), digest, scai, true, time.Time{}); err != nil {
+	if err := collapseReferrers(context.Background(), classicAttestor(t), digest, scai, true, time.Time{}); err != nil {
 		t.Fatal(err)
 	}
 	if calls != 3 {
@@ -137,7 +136,6 @@ func TestManifestWithoutPredicateDeletesWhenLastLayer(t *testing.T) {
 }
 
 func TestCollapseDeletesEverySignatureReferrer(t *testing.T) {
-	t.Setenv("ATTESTATION_NEW_BUNDLE_FORMAT", "false")
 	first := v1.Descriptor{Digest: hash(t, 'a'), Annotations: map[string]string{annotationBundlePredicate: predicateCosignSign, annotationCreated: "2026-04-11T00:00:00Z"}}
 	second := v1.Descriptor{Digest: hash(t, 'b'), Annotations: map[string]string{annotationBundlePredicate: predicateCosignSign, annotationCreated: "2026-04-14T00:00:00Z"}}
 	lists := [][]v1.Descriptor{{first, second}, {}}
@@ -167,7 +165,7 @@ func TestCollapseDeletesEverySignatureReferrer(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := collapseReferrers(context.Background(), testAttestor(t), digest, predicateCosignSign, false, time.Time{}); err != nil {
+	if err := collapseReferrers(context.Background(), classicAttestor(t), digest, predicateCosignSign, false, time.Time{}); err != nil {
 		t.Fatal(err)
 	}
 	if len(deleted) != 2 {
@@ -179,9 +177,14 @@ const scaiPredicate = "https://in-toto.io/attestation/scai/attribute-report/v0.3
 
 var stubMu sync.Mutex
 
+// classicAttestor writes classic .att tags, so collapse never strips them.
+func classicAttestor(t *testing.T) *SigstoreAttestor {
+	t.Helper()
+	return testAttestorWith(t, AttestationConfig{NewBundleFormat: false})
+}
+
 func stubRegistry(t *testing.T, lists [][]v1.Descriptor, exists func(string) bool) (calls *int, deleted *[]string) {
 	t.Helper()
-	t.Setenv("ATTESTATION_NEW_BUNDLE_FORMAT", "false")
 	prevLoad, prevRemove, prevExists, prevWaits := loadReferrers, removeReferrers, manifestExists, visibilityWaits
 	t.Cleanup(func() {
 		loadReferrers, removeReferrers, manifestExists, visibilityWaits = prevLoad, prevRemove, prevExists, prevWaits
@@ -226,7 +229,7 @@ func TestCollapseWaitsForTheNewAttestationToBeListed(t *testing.T) {
 	calls, deleted := stubRegistry(t, [][]v1.Descriptor{{older}, {older}, {older, fresh}, {fresh}}, func(string) bool { return false })
 
 	digest, _ := name.NewDigest("example.com/app@sha256:" + repeatHex('d'))
-	if err := collapseReferrers(context.Background(), testAttestor(t), digest, scaiPredicate, true, started); err != nil {
+	if err := collapseReferrers(context.Background(), classicAttestor(t), digest, scaiPredicate, true, started); err != nil {
 		t.Fatal(err)
 	}
 	if len(*deleted) != 1 || (*deleted)[0] != older.Digest.String() {
@@ -240,7 +243,7 @@ func TestCollapseReportsANewAttestationThatNeverAppears(t *testing.T) {
 	_, deleted := stubRegistry(t, [][]v1.Descriptor{{older}}, func(string) bool { return false })
 
 	digest, _ := name.NewDigest("example.com/app@sha256:" + repeatHex('d'))
-	err := collapseReferrers(context.Background(), testAttestor(t), digest, scaiPredicate, true, started)
+	err := collapseReferrers(context.Background(), classicAttestor(t), digest, scaiPredicate, true, started)
 	if !errors.Is(err, errNotListedYet) {
 		t.Fatalf("err = %v, want errNotListedYet", err)
 	}
@@ -262,7 +265,7 @@ func TestCollapseLaterDeletesOnceTheNewAttestationIsListed(t *testing.T) {
 	laterWaits = []time.Duration{time.Millisecond, time.Millisecond}
 	t.Cleanup(func() { laterWaits = prev })
 
-	attestor := testAttestor(t)
+	attestor := classicAttestor(t)
 	digest, _ := name.NewDigest("example.com/app@sha256:" + repeatHex('d'))
 	attestor.collapseSameKind(context.Background(), digest, scaiPredicate, true, started)
 
@@ -291,7 +294,7 @@ func TestCollapseAcceptsDeletedManifestsStillListed(t *testing.T) {
 	stubRegistry(t, [][]v1.Descriptor{{older, fresh}}, func(string) bool { return false })
 
 	digest, _ := name.NewDigest("example.com/app@sha256:" + repeatHex('d'))
-	if err := collapseReferrers(context.Background(), testAttestor(t), digest, scaiPredicate, true, started); err != nil {
+	if err := collapseReferrers(context.Background(), classicAttestor(t), digest, scaiPredicate, true, started); err != nil {
 		t.Fatalf("stale list reported as failure: %v", err)
 	}
 }
@@ -303,7 +306,7 @@ func TestCollapseReportsManifestsThatSurviveDelete(t *testing.T) {
 	stubRegistry(t, [][]v1.Descriptor{{older, fresh}}, func(string) bool { return true })
 
 	digest, _ := name.NewDigest("example.com/app@sha256:" + repeatHex('d'))
-	if err := collapseReferrers(context.Background(), testAttestor(t), digest, scaiPredicate, true, started); err == nil {
+	if err := collapseReferrers(context.Background(), classicAttestor(t), digest, scaiPredicate, true, started); err == nil {
 		t.Fatal("expected an error when the manifest is still served")
 	}
 }

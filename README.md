@@ -38,10 +38,10 @@ One Go binary. SQLite or PostgreSQL state. No SaaS, no phone-home, air-gap compa
   <img src="suppline.cloud/images/architecture-diagram.svg" alt="suppline architecture: regsync mirrors remote registries into a local registry, the watcher and queue feed a worker pipeline that scans with Trivy, evaluates CEL policy and signs cosign attestations back into the registry, results are persisted in SQLite and exposed through the API, dashboard and metrics, while Kubernetes pulls verified images and an optional cluster agent reports what is actually running" width="760"/>
 </p>
 
-1. **Mirror** — suppline copies the upstream repositories listed in `suppline.yml` into your registry. The regsync sidecar remains available as a rollback.
+1. **Mirror** — suppline copies the upstream repositories listed in `suppline.yml` into your registry.
 2. **Scan** — the watcher notices new or changed digests and enqueues them; Trivy produces an SBOM and vulnerability set. The SBOM's language packages are matched against known-malicious packages ([ossf/malicious-packages](https://github.com/ossf/malicious-packages), OSV `MAL-*`), synced hourly.
 3. **Gate** — active VEX statements are applied, then your CEL policy decides: `passed`, `failed`, or `pending`. A known-malicious package fails the image whatever the expression says; only a hand-written `false_positive` VEX statement exempts one (for a same-named package that is not the malicious one). See [docs/adr/0001-in-process-malicious-package-detection.md](docs/adr/0001-in-process-malicious-package-detection.md).
-4. **Triage** — a failed gate on an image running in a cluster can ask an LLM, with your gitops repos as context, whether the CVE affects this deployment. A guarded `not_affected` result is written to `x-vex-auto` and the image is evaluated again. See [docs/STATE_MACHINE.md](docs/STATE_MACHINE.md).
+4. **Triage** — a failed gate on an image running in a cluster can ask an LLM, with your gitops repos as context, whether the CVE affects this deployment. A guarded `not_affected` result is written to `vex-auto` and the image is evaluated again. See [docs/STATE_MACHINE.md](docs/STATE_MACHINE.md).
 5. **Attest** — cosign signs SBOM, vulnerability, VEX, and SCAI attestations into the registry next to the image.
 6. **Run** — clusters pull from the mirror; Kyverno/OPA verifies the SCAI attestation before a pod starts.
 
@@ -65,10 +65,10 @@ git clone https://github.com/daimoniac/suppline.git && cd suppline
 docker compose up --build -d
 ```
 
-Open **http://localhost:3000** and log in with API key **`demo`**. First boot needs a few minutes for image pulls and Trivy’s DB.
+Open **http://localhost:8080** and log in with API key **`demo`**. First boot needs a few minutes for image pulls and Trivy’s DB.
 
 ```bash
-curl http://localhost:8081/health
+curl http://localhost:9090/health
 curl -H "Authorization: Bearer demo" http://localhost:8080/api/v1/scans
 ```
 
@@ -82,11 +82,9 @@ docker compose --profile eval-gate run --rm eval-gate
 
 | Port | Service |
 |------|---------|
-| 3000 | Web UI (API key `demo`) |
-| 8080 | REST API + Swagger |
-| 8081 | Health checks |
+| 8080 | Web UI (API key `demo`), REST API, Swagger |
 | 5000 | Throwaway registry (localhost) |
-| 9090 | Prometheus metrics |
+| 9090 | Prometheus metrics and health |
 | 4954 | Trivy server |
 
 For a production-shaped Compose/Helm install (BYO registry, your keys, real policy), see [Deploy](#deploy) and `suppline.yml.example` / `env.example`.
@@ -108,8 +106,8 @@ creds:
 
 defaults:
   parallel: 2
-  x-rescanInterval: 7d              # rescan unchanged digests this often
-  x-policy:
+  rescanInterval: 7d              # rescan unchanged digests this often
+  policy:
     expression: "criticalCount == 0"
     failureMessage: "critical vulnerabilities found"
 
@@ -117,9 +115,9 @@ sync:
   - source: nginx
     target: myregistry.com/nginx
     type: repository                # all tags; use "image" for one tag
-    x-policy:                       # per-repository override
+    policy:                       # per-repository override
       expression: "criticalCount == 0 && highCount <= 5"
-    x-vex:
+    vex:
       - id: CVE-2024-56171
         state: not_affected
         justification: vulnerable_code_not_present
@@ -127,14 +125,14 @@ sync:
         expires_at: 2026-12-31T23:59:59Z
 ```
 
-Runtime behaviour is set with environment variables — `SUPPLINE_CONFIG`, `TRIVY_SERVER_ADDR`, `SQLITE_PATH`, `ATTESTATION_KEY`, `SUPPLINE_API_KEY`, `SUPPLINE_LLM_API_KEY`, `LOG_LEVEL`, and the worker/queue tunables. Full list in [docs/CONFIGURATION.md](docs/CONFIGURATION.md).
+Everything else is in `suppline.yml` too: the `server`, `observability`, `scanner`, `store`, `mirror` and `attestation` sections hold the runtime settings (ports, base path, Trivy address, SQLite path, ...). Environment variables carry only secrets — `SUPPLINE_API_KEY`, `ATTESTATION_KEY`, `ATTESTATION_KEY_PASSWORD`, `POSTGRES_URL`, `TRIVY_TOKEN`, `SUPPLINE_LLM_API_KEY`, `SUPPLINE_GITHUB_TOKEN` — plus `SUPPLINE_CONFIG`, the path to the file. Full reference: [docs/CONFIGURATION.md](docs/CONFIGURATION.md).
 
 ## Policy as code
 
 Policies are [CEL](https://github.com/google/cel-spec) expressions evaluated against the scan result. Counts exclude VEX-exempted CVEs.
 
 ```yaml
-# each line is an alternative for x-policy.expression
+# each line is an alternative for policy.expression
 expression: "criticalCount == 0"                        # block criticals
 expression: "criticalCount == 0 && highCount == 0"      # block criticals and highs
 expression: "criticalCount == 0 && highCount <= 5"      # budget for highs
@@ -152,7 +150,7 @@ A cooldown keeps brand-new upstream releases out until they have been public lon
 
 ```yaml
 defaults:
-  x-cooldown: 7d    # new digests stay held: scanned at once, but no attestation and no tag until 7 days after suppline first saw them
+  cooldown: 7d    # new digests stay held: scanned at once, but no attestation and no tag until 7 days after suppline first saw them
 ```
 
 With the in-process mirror, a held digest is copied by digest only; its tag (a new version tag included) is published once the cooldown is over and the scan passes. A `release now` on the Mirror page skips the rest of one digest's cooldown. See [docs/CONFIGURATION.md](docs/CONFIGURATION.md#cooldown).
@@ -221,17 +219,17 @@ helm upgrade --install suppline charts/suppline \
   -f charts/suppline/values-secrets.yaml
 ```
 
-Images ship to GHCR as `ghcr.io/daimoniac/suppline:<semver>` (and `-ui`). Cutting a release: [docs/RELEASE.md](docs/RELEASE.md).
+Images ship to GHCR as `ghcr.io/daimoniac/suppline:<semver>`; the web UI is built into the binary. Cutting a release: [docs/RELEASE.md](docs/RELEASE.md).
 
 Need raw YAML instead of applying with Helm? `helm template … > manifests.yaml` — there is no separate Kustomize tree.
 
-**Standalone binary** — CGO is required for SQLite, so you need a C toolchain:
+**Standalone binary** — CGO is required for SQLite, so you need a C toolchain, plus Node for the embedded UI:
 
 ```bash
 make build
 trivy server --listen localhost:4954 &
-export SUPPLINE_CONFIG=suppline.yml
-export TRIVY_SERVER_ADDR=localhost:4954
+export SUPPLINE_CONFIG=suppline.yml   # scanner.server defaults to localhost:4954
+export SUPPLINE_API_KEY=<api key>
 export ATTESTATION_KEY=$(base64 -w0 keys/cosign.key)
 export ATTESTATION_KEY_PASSWORD=<cosign password>
 ./suppline
@@ -239,7 +237,7 @@ export ATTESTATION_KEY_PASSWORD=<cosign password>
 
 ## Observability
 
-Prometheus metrics on `:9090/metrics`, JSON logs on stdout, component health on `:8081/health` (config, queue, worker, trivy, database, watcher, malicious_packages). `malicious_packages` always reports healthy so a broken feed never restarts the pod; its message carries `ok`, `unavailable` or `stale` — alert on the metrics below instead.
+Prometheus metrics on `:9090/metrics`, JSON logs on stdout, component health on `:9090/health` (config, queue, worker, trivy, database, watcher, malicious_packages). `malicious_packages` always reports healthy so a broken feed never restarts the pod; its message carries `ok`, `unavailable` or `stale` — alert on the metrics below instead.
 
 | Metric | Tells you |
 |--------|-----------|
@@ -283,7 +281,7 @@ internal/
   api/                 REST API and Swagger
 clusterstate-agent/    Kubernetes inventory reporter
 charts/suppline/       Helm chart
-ui/                    React + Vite frontend
+ui/                    React + Vite frontend, embedded into the binary
 ```
 
 Contributor notes are in [AGENTS.md](AGENTS.md) and [ui/AGENTS.md](ui/AGENTS.md). Swagger files under `build/swagger/` are generated — don't hand-edit them.

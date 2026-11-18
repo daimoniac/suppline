@@ -36,7 +36,7 @@ One Go binary. SQLite or PostgreSQL state. No SaaS, no phone-home, air-gap compa
 
 ![suppline architecture diagram](../suppline.cloud/images/architecture-diagram.svg)
 
-1. **Mirror** — suppline copies the upstream repositories listed in `suppline.yml` into your registry. The regsync sidecar remains available as a rollback.
+1. **Mirror** — suppline copies the upstream repositories listed in `suppline.yml` into your registry.
 2. **Scan** — the watcher notices new or changed digests and enqueues them; Trivy produces an SBOM and vulnerability set.
 3. **Gate** — active VEX statements are applied, then your CEL policy decides: `passed`, `failed`, or `pending`.
 4. **Attest** — cosign signs SBOM, vulnerability, VEX, and SCAI attestations into the registry next to the image.
@@ -53,7 +53,7 @@ git clone https://github.com/daimoniac/suppline.git && cd suppline
 docker compose up --build -d
 ```
 
-Open `http://localhost:3000` and log in with API key `demo`. Full checklist: [Eval quick start](EVAL.md).
+Open `http://localhost:8080` and log in with API key `demo`. Full checklist: [Eval quick start](EVAL.md).
 
 ## What you get
 

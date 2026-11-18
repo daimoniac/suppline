@@ -5,7 +5,6 @@ import (
 	"time"
 
 	"github.com/daimoniac/suppline/internal/types"
-	"gopkg.in/yaml.v3"
 )
 
 // Config represents the complete application configuration
@@ -46,21 +45,17 @@ type ScannerConfig struct {
 	Logger        *slog.Logger // Logger instance for structured logging
 }
 
-// AttestationConfig configures Sigstore attestation and signing
+// AttestationConfig configures cosign attestation signing
 type AttestationConfig struct {
-	KeyBased struct {
-		Key string // Base64-encoded key content
-	}
-	RekorURL     string
-	FulcioURL    string
-	UseKeyless   bool
-	OIDCIssuer   string
-	OIDCClientID string
+	Key               string // Base64-encoded cosign private key (ATTESTATION_KEY); its password is read from ATTESTATION_KEY_PASSWORD
+	CommandTimeout    time.Duration
+	AllowHTTPRegistry bool
+	NewBundleFormat   bool
 }
 
 // StateStoreConfig configures the state store
 type StateStoreConfig struct {
-	Type           string
+	Type           string // "postgres" when PostgresURL is set, else "sqlite"
 	PostgresURL    string
 	SQLitePath     string
 	RescanInterval time.Duration
@@ -68,18 +63,19 @@ type StateStoreConfig struct {
 
 // APIConfig configures the HTTP API server
 type APIConfig struct {
-	Enabled     bool
 	Port        int
 	APIKey      string
 	ReadOnly    bool
 	AllowNoAuth bool // explicit opt-in; empty API key otherwise refuses to start
+	// BasePath is the URL prefix the UI and API are served under, e.g. "/suppline".
+	// Empty means the root. Set via server.basePath; normalized by NormalizeBasePath.
+	BasePath string
 }
 
-// ObservabilityConfig configures logging and metrics
+// ObservabilityConfig configures logging and the operations port
 type ObservabilityConfig struct {
-	LogLevel        string
-	MetricsPort     int
-	HealthCheckPort int
+	LogLevel string
+	Port     int // serves /metrics, /health and /ready
 }
 
 // RegsyncConfig represents the complete regsync configuration
@@ -88,9 +84,17 @@ type RegsyncConfig struct {
 	Creds    []RegistryCredential `yaml:"creds"`
 	Defaults Defaults             `yaml:"defaults"`
 	Sync     []SyncEntry          `yaml:"sync"`
-	Triage   *TriageConfig        `yaml:"x-triage,omitempty"`
+	Triage   *TriageConfig        `yaml:"triage,omitempty"`
+
+	// Runtime settings, read once at startup (see runtime.go).
+	Server        ServerSettings        `yaml:"server,omitempty"`
+	Observability ObservabilitySettings `yaml:"observability,omitempty"`
+	Mirror        MirrorSettings        `yaml:"mirror,omitempty"`
+	Scanner       ScannerSettings       `yaml:"scanner,omitempty"`
+	Store         StoreSettings         `yaml:"store,omitempty"`
+	Attestation   AttestationSettings   `yaml:"attestation,omitempty"`
 	// MaliciousPackages configures known-malicious package detection.
-	MaliciousPackages *MaliciousPackagesConfig `yaml:"x-malicious-packages,omitempty"`
+	MaliciousPackages *MaliciousPackagesConfig `yaml:"malicious-packages,omitempty"`
 }
 
 // RegistryCredential contains authentication information for a registry.
@@ -145,29 +149,26 @@ type Defaults struct {
 	SkipDockerConf       bool             `yaml:"skipDockerConfig,omitempty"`
 	UserAgent            string           `yaml:"userAgent,omitempty"`
 
-	RescanInterval string `yaml:"x-rescanInterval,omitempty"`
+	RescanInterval string `yaml:"rescanInterval,omitempty"`
 	// Cooldown is the default minimum time between suppline first seeing a
 	// digest upstream and publishing it on a tag. Empty or "0" disables it.
-	Cooldown string `yaml:"x-cooldown,omitempty"`
-	// Ignored: runtime usage follows each cluster's latest inventory report.
-	// Kept so existing configs still parse; loading one logs a warning.
-	RuntimeInUseWindow    string `yaml:"x-runtimeInUseWindow,omitempty"`
-	WorkerPollInterval    string `yaml:"x-worker-poll-interval,omitempty"`
-	WorkerConcurrency     int    `yaml:"x-worker-concurrency,omitempty"`
-	WorkerRetryAttempts   int    `yaml:"x-worker-retry-attempts,omitempty"`
-	WorkerRetryBackoff    string `yaml:"x-worker-retry-backoff,omitempty"`
-	QueueBufferSize       int    `yaml:"x-queue-buffer-size,omitempty"`
-	SCAIValidityExtension string `yaml:"x-scaiValidityExtension,omitempty"`
+	Cooldown              string `yaml:"cooldown,omitempty"`
+	WorkerPollInterval    string `yaml:"worker-poll-interval,omitempty"`
+	WorkerConcurrency     int    `yaml:"worker-concurrency,omitempty"`
+	WorkerRetryAttempts   int    `yaml:"worker-retry-attempts,omitempty"`
+	WorkerRetryBackoff    string `yaml:"worker-retry-backoff,omitempty"`
+	QueueBufferSize       int    `yaml:"queue-buffer-size,omitempty"`
+	SCAIValidityExtension string `yaml:"scaiValidityExtension,omitempty"`
 	// CreateVulnerabilityAttestation reports whether a cosign vulnerability attestation is published.
 	// Nil means yes. Kyverno loads every referrer while checking SCAI, and vulnerability bundles are
 	// the large ones, so production sets this false.
-	CreateVulnerabilityAttestation *bool `yaml:"x-createVulnerabilityAttestation,omitempty"`
+	CreateVulnerabilityAttestation *bool `yaml:"createVulnerabilityAttestation,omitempty"`
 	// CreateSBOMAttestation reports whether a cosign SBOM attestation is published.
 	// Nil means yes. Kyverno reads these referrers too, so production sets this false.
-	CreateSBOMAttestation *bool                `yaml:"x-createSBOMAttestation,omitempty"`
-	Policy                *PolicyConfig        `yaml:"x-policy,omitempty"`
-	VEXRepo               *bool                `yaml:"x-vex-repo,omitempty"`
-	VEX                   []types.VEXStatement `yaml:"x-vex,omitempty"` // CycloneDX VEX statements merged with sync-specific ones
+	CreateSBOMAttestation *bool                `yaml:"createSBOMAttestation,omitempty"`
+	Policy                *PolicyConfig        `yaml:"policy,omitempty"`
+	VEXRepo               *bool                `yaml:"vex-repo,omitempty"`
+	VEX                   []types.VEXStatement `yaml:"vex,omitempty"` // CycloneDX VEX statements merged with sync-specific ones
 }
 
 // SyncEntry represents a single sync configuration.
@@ -197,37 +198,17 @@ type SyncEntry struct {
 	Hooks                 Hooks                `yaml:"hooks,omitempty"`
 	CleanupTags           *bool                `yaml:"cleanupTags,omitempty"`
 	CleanupTagsExclude    []string             `yaml:"cleanupTagsExclude,omitempty"`
-	VEX                   []types.VEXStatement `yaml:"x-vex,omitempty"`      // CycloneDX VEX statements authored by people
-	VEXAuto               []types.VEXStatement `yaml:"x-vex-auto,omitempty"` // Triage-owned statements; never written into x-vex
-	RescanInterval        string               `yaml:"x-rescanInterval,omitempty"`
-	SCAIValidityExtension string               `yaml:"x-scaiValidityExtension,omitempty"`
-	Policy                *PolicyConfig        `yaml:"x-policy,omitempty"`
-	VEXRepo               *bool                `yaml:"x-vex-repo,omitempty"`
-	// Cooldown overrides defaults.x-cooldown for this entry. "0" disables it.
-	Cooldown string `yaml:"x-cooldown,omitempty"`
+	VEX                   []types.VEXStatement `yaml:"vex,omitempty"`      // CycloneDX VEX statements authored by people
+	VEXAuto               []types.VEXStatement `yaml:"vex-auto,omitempty"` // Triage-owned statements; never written into vex
+	RescanInterval        string               `yaml:"rescanInterval,omitempty"`
+	SCAIValidityExtension string               `yaml:"scaiValidityExtension,omitempty"`
+	Policy                *PolicyConfig        `yaml:"policy,omitempty"`
+	VEXRepo               *bool                `yaml:"vex-repo,omitempty"`
+	// Cooldown overrides defaults.cooldown for this entry. "0" disables it.
+	Cooldown string `yaml:"cooldown,omitempty"`
 	// CooldownReleases skip the rest of the cooldown for single digests.
-	CooldownReleases []CooldownRelease `yaml:"x-cooldown-release,omitempty"`
-	Ignore           bool              `yaml:"-"` // If true, suppline skips scanning this entry. The mirror still copies it.
-}
-
-// UnmarshalYAML supports both x-suppline-ignore and the legacy x-supplineIgnore field names.
-func (s *SyncEntry) UnmarshalYAML(value *yaml.Node) error {
-	type syncEntryAlias SyncEntry
-
-	var aux struct {
-		syncEntryAlias `yaml:",inline"`
-		IgnoreLegacy   bool `yaml:"x-supplineIgnore,omitempty"`
-		IgnoreKebab    bool `yaml:"x-suppline-ignore,omitempty"`
-	}
-
-	if err := value.Decode(&aux); err != nil {
-		return err
-	}
-
-	*s = SyncEntry(aux.syncEntryAlias)
-	s.Ignore = aux.IgnoreLegacy || aux.IgnoreKebab
-
-	return nil
+	CooldownReleases []CooldownRelease `yaml:"cooldown-release,omitempty"`
+	Ignore           bool              `yaml:"suppline-ignore,omitempty"` // suppline skips scanning this entry; the mirror still copies it
 }
 
 // TagFilter defines tag filtering rules.

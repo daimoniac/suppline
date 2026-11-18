@@ -184,7 +184,7 @@ func (c *ConfigCatalog) ResolvePolicy(repository string) (policy.PolicyConfig, e
 	}
 	cooldown, err := cfg.GetCooldown(repository)
 	if err != nil {
-		return policy.PolicyConfig{}, fmt.Errorf("invalid x-cooldown for target %s: %w", repository, err)
+		return policy.PolicyConfig{}, fmt.Errorf("invalid cooldown for target %s: %w", repository, err)
 	}
 	resolved.Cooldown = cooldown
 	return resolved, nil
@@ -274,8 +274,8 @@ func effectiveIn(cfg *config.RegsyncConfig, repository string) (*config.PolicyCo
 	return configured, evidence
 }
 
-// ReplaceAutoVEX replaces x-vex-auto on every sync entry for repository.
-// Hand-written x-vex statements are left untouched. x-vex wins on the same id
+// ReplaceAutoVEX replaces vex-auto on every sync entry for repository.
+// Hand-written vex statements are left untouched. vex wins on the same id
 // at read time, so an auto statement with a duplicate id stays stored but is
 // not effective.
 func (c *ConfigCatalog) ReplaceAutoVEX(repository string, statements []types.VEXStatement) error {
@@ -307,8 +307,8 @@ func (c *ConfigCatalog) ReplaceAutoVEX(repository string, statements []types.VEX
 	})
 }
 
-// UpsertManualVEX inserts or replaces one hand-written x-vex statement on every
-// sync entry for repository. x-vex-auto is left untouched. The manual statement
+// UpsertManualVEX inserts or replaces one hand-written vex statement on every
+// sync entry for repository. vex-auto is left untouched. The manual statement
 // wins over an auto statement with the same id.
 func (c *ConfigCatalog) UpsertManualVEX(repository string, statement types.VEXStatement) error {
 	if c == nil || c.config == nil {

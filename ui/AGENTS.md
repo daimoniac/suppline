@@ -15,7 +15,7 @@
 | HTTP | Native `fetch` — no axios, no React Query |
 | State | Local `useState`/`useEffect` per page + React Context for auth/toast |
 | Lint | ESLint 10 (flat config), typescript-eslint, react-hooks, react-refresh plugins |
-| Runtime | nginx:alpine serving static assets built from `dist/` |
+| Runtime | Embedded in the Go binary (`ui/embed.go`, build tag `embedui`) and served by the API server |
 
 ## Essential commands
 
@@ -25,22 +25,19 @@ npm run build     # tsc -b && vite build  (type-check then bundle → dist/)
 npm run lint      # ESLint across all .ts/.tsx
 npm test          # Vitest unit tests (src/**/*.test.ts(x))
 npm run preview   # Serve production build locally
-
-# Docker
-docker build -t suppline-ui ui/
-docker run -p 3000:80 -e API_BASE_URL=http://localhost:8080 suppline-ui
 ```
+
+The backend serves `dist/` itself: `make build` runs `npm ci && npm run build` and then `go build -tags embedui`. A Go build without the tag embeds `notbuilt/index.html`, a placeholder page, so Go tests and lint never need Node.
 
 ## Project layout
 
 ```
 ui/
 ├── index.html                    # SPA shell; mounts <div id="root">; imports Inter font
-├── vite.config.ts                # Dev proxy: /api + /health + /config.json → localhost:8080
-├── nginx.conf                    # nginx template; SPA fallback; security headers; asset caching
-├── Dockerfile                    # Multi-stage: node:26-alpine build → nginx:alpine serve
-├── docker-entrypoint.d/
-│   └── 40-inject-env.sh         # Generates /config.json at container start; injects $API_BASE_URL
+├── vite.config.ts                # base './'; dev proxy: /api + /health + /swagger → localhost:8080
+├── embed.go                      # (embedui) embeds dist/ into the Go binary
+├── embed_stub.go                 # (!embedui) embeds notbuilt/ instead
+├── notbuilt/index.html           # placeholder page for builds without the UI
 └── src/
     ├── main.tsx                  # ReactDOM.createRoot entry
     ├── App.tsx                   # BrowserRouter + providers + route tree
@@ -99,7 +96,7 @@ All routes live in `src/App.tsx`. The app renders `<LoginPage />` full-screen wh
 
 `APIClient` is a class instantiated once by `AuthContext` and passed down via `useAuth().apiClient`.
 
-- **Base URL**: defaults to `''` (same-origin). nginx proxies `/api/*` to the Go backend. In dev, Vite proxies the same.
+- **Base URL**: `basePath` from `src/lib/basePath.ts` (same origin). The backend can run under a prefix (`server.basePath` in suppline.yml) and injects `<base href="{prefix}/">` into `index.html`; `basePath` reads it, and `App.tsx` passes it to `BrowserRouter` as `basename`. In dev there is no `<base>`, so it is `''` and Vite proxies `/api` to the backend.
 - **Auth**: Every request sends `Authorization: Bearer <key>`. Key stored in `localStorage` under `stk_api_key`.
 - **Retry**: `TypeError` (network failure) retried up to 3 times with 1 s / 2 s / 3 s backoff. HTTP errors (`APIError`) are **not** retried.
 - **Pagination**: large lists (`/repositories`, `/vulnerabilities`) use `limit` + `offset` query params and read `X-Total-Count` from the response header. Use `requestWithResponse` for those.
@@ -241,7 +238,7 @@ Timestamp handling: the backend returns some timestamps as Unix **seconds** (`< 
 - **Never use `dangerouslySetInnerHTML`** with unsanitised API data. If you must set raw HTML, call `escapeHtml()` first.
 - **`encodeURIComponent`** must be used when interpolating user-controlled strings (repo names, digests, CVE IDs) into URL paths or query strings.
 - **No XSS via `innerHTML`** — avoid `element.innerHTML = apiData` anywhere in the UI.
-- nginx sets `X-Frame-Options: SAMEORIGIN`, `X-Content-Type-Options: nosniff`, `X-XSS-Protection: 1; mode=block` — do not remove these from `nginx.conf`.
+- The backend (`internal/api/ui.go`) sets `X-Frame-Options: SAMEORIGIN` and `X-Content-Type-Options: nosniff` on UI responses, serves unknown extension-less paths as `index.html` (client routes), and marks `assets/*` immutable.
 - API key is stored in `localStorage` (`stk_api_key`). Do not log it or expose it in the DOM.
 
 ## Code conventions
@@ -282,4 +279,4 @@ Add it to the `APIClient` class in `src/lib/api.ts`. Add the corresponding TypeS
 - **Backend JSON is PascalCase** — `response.Digest`, not `response.digest`. Check Go struct JSON tags before writing a new type.
 - **Severity helpers are the single source of truth** — never hardcode colour strings for severity inside a page or component; always go through `severityColor()` / `severityTextColor()` in `utils.ts`.
 - **No global API client** — always get `apiClient` from `useAuth()`. Do not import and instantiate `APIClient` directly in a component.
-- **`/config.json`** is generated at container startup by `docker-entrypoint.d/40-inject-env.sh`. In dev, Vite proxies it from the backend. Do not commit a `config.json` file.
+- **Never use root-absolute URLs** (`/api/...` without `basePath`, `href="/..."`) for backend resources or static files. Go through `APIClient`, router links, or `basePath`, or the UI breaks under a base path. Asset URLs stay relative (`base: './'` in `vite.config.ts`).

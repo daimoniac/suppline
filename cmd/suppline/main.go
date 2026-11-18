@@ -69,7 +69,7 @@ func run() error {
 
 	_ = observability.GetMetrics()
 	logger.Debug("metrics initialized",
-		"metrics_port", cfg.Observability.MetricsPort)
+		"observability_port", cfg.Observability.Port)
 
 	healthChecker := observability.NewHealthChecker(logger)
 
@@ -85,15 +85,9 @@ func run() error {
 
 	healthChecker.UpdateComponentHealth("config", observability.StatusHealthy, "")
 
-	logger.Debug("health checker initialized",
-		"health_port", cfg.Observability.HealthCheckPort)
+	logger.Debug("health checker initialized")
 
-	obsServer := observability.NewServer(
-		cfg.Observability.MetricsPort,
-		cfg.Observability.HealthCheckPort,
-		logger,
-		healthChecker,
-	)
+	obsServer := observability.NewServer(cfg.Observability.Port, logger, healthChecker)
 
 	go func() {
 		if err := obsServer.Start(ctx); err != nil {
@@ -103,8 +97,7 @@ func run() error {
 	}()
 
 	logger.Debug("observability server started",
-		"metrics_port", cfg.Observability.MetricsPort,
-		"health_port", cfg.Observability.HealthCheckPort)
+		"observability_port", cfg.Observability.Port)
 
 	logger.Debug("parsing regsync configuration",
 		"path", cfg.RegsyncPath)
@@ -133,8 +126,6 @@ func run() error {
 			healthChecker.UpdateComponentHealth("database", observability.StatusUnhealthy, err.Error())
 			return fmt.Errorf("failed to initialize postgres store: %w", err)
 		}
-	case "memory":
-		return fmt.Errorf("memory state store not yet implemented")
 	default:
 		return fmt.Errorf("unsupported state store type: %s", cfg.StateStore.Type)
 	}
@@ -170,11 +161,14 @@ func run() error {
 	}
 
 	logger.Debug("initializing attestor",
-		"key_configured", cfg.Attestation.KeyBased.Key != "")
+		"key_configured", cfg.Attestation.Key != "")
 	attestorConfig := attestation.AttestationConfig{
 		KeyBased: attestation.KeyBasedConfig{
-			Key: cfg.Attestation.KeyBased.Key,
+			Key: cfg.Attestation.Key,
 		},
+		CommandTimeout:    cfg.Attestation.CommandTimeout,
+		AllowHTTPRegistry: cfg.Attestation.AllowHTTPRegistry,
+		NewBundleFormat:   cfg.Attestation.NewBundleFormat,
 	}
 
 	attestor, err := attestation.NewSigstoreAttestor(attestorConfig, logger)
@@ -228,7 +222,7 @@ func run() error {
 				return interval
 			},
 			Cooldown: func(repository string) time.Duration {
-				// Configuration load already rejected an invalid x-cooldown.
+				// Configuration load already rejected an invalid cooldown.
 				cooldown, _ := repositoryPolicies.Current().GetCooldown(repository)
 				return cooldown
 			},
@@ -340,39 +334,34 @@ func run() error {
 		workerInstance.SetMaliciousChecker(maliciousService, maliciousGate)
 	}
 
-	var apiServer *api.APIServer
-	if cfg.API.Enabled {
-		logger.Debug("initializing API server",
-			"port", cfg.API.Port,
-			"read_only", cfg.API.ReadOnly)
-		apiServer = api.NewAPIServerWithCatalogAndEnqueuer(
-			&cfg.API,
-			&cfg.Attestation,
-			store,
-			taskQueue,
-			scanEnqueuer,
-			repositoryPolicies.Current,
-			repositoryPolicies,
-			logger,
-		)
-		apiServer.SetTriage(triageService)
-		apiServer.SetConfigEditor(configEditor)
-		apiServer.SetVEXAudit(vexAudit)
-		if maliciousService != nil {
-			apiServer.SetMalicious(maliciousService, api.MaliciousSettings{
-				Block:   maliciousGate,
-				RepoURL: regsyncCfg.MaliciousPackages.RepoURL(),
-				Ref:     regsyncCfg.MaliciousPackages.RepoRef(),
-			})
-		}
-		logger.Debug("API server initialized")
+	logger.Debug("initializing API server",
+		"port", cfg.API.Port,
+		"read_only", cfg.API.ReadOnly)
+	apiServer := api.NewAPIServerWithCatalogAndEnqueuer(
+		&cfg.API,
+		&cfg.Attestation,
+		store,
+		taskQueue,
+		scanEnqueuer,
+		repositoryPolicies.Current,
+		repositoryPolicies,
+		logger,
+	)
+	apiServer.SetTriage(triageService)
+	apiServer.SetConfigEditor(configEditor)
+	apiServer.SetVEXAudit(vexAudit)
+	if maliciousService != nil {
+		apiServer.SetMalicious(maliciousService, api.MaliciousSettings{
+			Block:   maliciousGate,
+			RepoURL: regsyncCfg.MaliciousPackages.RepoURL(),
+			Ref:     regsyncCfg.MaliciousPackages.RepoRef(),
+		})
 	}
+	logger.Debug("API server initialized")
 	mirrorActivity := mirror.NewActivity()
-	if apiServer != nil {
-		apiServer.SetMirror(cfg.MirrorEnabled, mirrorActivity)
-		if tagRunway != nil {
-			apiServer.SetHeldDigests(tagRunway)
-		}
+	apiServer.SetMirror(cfg.MirrorEnabled, mirrorActivity)
+	if tagRunway != nil {
+		apiServer.SetHeldDigests(tagRunway)
 	}
 
 	var wg sync.WaitGroup

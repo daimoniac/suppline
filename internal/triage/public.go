@@ -273,7 +273,7 @@ func (p *publicSource) GitHubSearch(ctx context.Context, owner, repo, rel, query
 		return "", fmt.Errorf("query must be one symbol")
 	}
 	if githubToken() == "" {
-		return "", fmt.Errorf("GitHub code search requires SUPPLINE_GITHUB_TOKEN or GITHUB_TOKEN")
+		return "", fmt.Errorf("GitHub code search requires SUPPLINE_GITHUB_TOKEN")
 	}
 	q := query + " repo:" + owner + "/" + repo
 	if rel != "" {
@@ -344,11 +344,10 @@ func (p *publicSource) getAcceptLimit(ctx context.Context, rawURL, accept string
 	return body, resp.StatusCode, nil
 }
 
+// githubToken reads SUPPLINE_GITHUB_TOKEN only, never a generic GITHUB_TOKEN
+// meant for something else on the host or in CI.
 func githubToken() string {
-	if value := strings.TrimSpace(os.Getenv("SUPPLINE_GITHUB_TOKEN")); value != "" {
-		return value
-	}
-	return strings.TrimSpace(os.Getenv("GITHUB_TOKEN"))
+	return strings.TrimSpace(os.Getenv("SUPPLINE_GITHUB_TOKEN"))
 }
 
 func cleanGitHubPath(owner, repo, ref, rel string) (string, string, string, string, error) {

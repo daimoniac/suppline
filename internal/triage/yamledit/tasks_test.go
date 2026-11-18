@@ -13,7 +13,7 @@ import (
 const sampleConfig = `# keep
 version: 1
 defaults:
-  x-vex:
+  vex:
     - id: CVE-DEFAULT
       state: not_affected
       justification: code_not_present
@@ -26,7 +26,7 @@ sync:
         - ">=1.0.0"
       deny:
         - latest
-    x-vex:
+    vex:
       - id: CVE-KEEP
         state: not_affected
         justification: code_not_present
@@ -40,7 +40,7 @@ sync:
     tags:
       semverRange:
         - ">=1.0.0"
-    x-vex-auto:
+    vex-auto:
       - id: CVE-DROP
         state: not_affected
         justification: code_not_reachable
@@ -109,7 +109,7 @@ func TestRemoveVEXStatementsFromDefaultsAndSync(t *testing.T) {
 	if !strings.Contains(text, "CVE-KEEP") || !strings.Contains(text, "registry.local/drop") {
 		t.Fatalf("unrelated content missing:\n%s", text)
 	}
-	if strings.Count(text, "x-vex:") != 1 || strings.Contains(text, "x-vex-auto:") {
+	if strings.Count(text, "vex:") != 1 || strings.Contains(text, "vex-auto:") {
 		t.Fatalf("empty vex keys left behind:\n%s", text)
 	}
 	parsed := parseConfig(t, updated)
@@ -130,18 +130,18 @@ sync:
 - source: example.com/app
   target: registry.local/app
   type: repository
-  x-vex:
+  vex:
   - id: CVE-KEEP
     state: not_affected
     justification: code_not_present
   - id: CVE-DROP
     state: not_affected
     justification: code_not_present
-  x-vex-auto:
+  vex-auto:
   - id: CVE-DROP
     state: not_affected
     justification: code_not_reachable
-  x-rescanInterval: 12h
+  rescanInterval: 12h
 `)
 	updated, n, err := RemoveVEXStatements(doc, []string{"CVE-DROP"})
 	if err != nil {
@@ -151,10 +151,10 @@ sync:
 		t.Fatalf("removed %d statements", n)
 	}
 	text := string(updated)
-	if strings.Contains(text, "x-vex-auto:") || strings.Contains(text, "CVE-DROP") || strings.Contains(text, "code_not_reachable") {
+	if strings.Contains(text, "vex-auto:") || strings.Contains(text, "CVE-DROP") || strings.Contains(text, "code_not_reachable") {
 		t.Fatalf("empty auto key left behind:\n%s", text)
 	}
-	if strings.Count(text, "x-vex:") != 1 || !strings.Contains(text, "CVE-KEEP") || !strings.Contains(text, "x-rescanInterval: 12h") {
+	if strings.Count(text, "vex:") != 1 || !strings.Contains(text, "CVE-KEEP") || !strings.Contains(text, "rescanInterval: 12h") {
 		t.Fatalf("sibling key missing:\n%s", text)
 	}
 	if strings.Contains(text, "  - source:") {

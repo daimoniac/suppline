@@ -112,7 +112,7 @@ func (s *APIServer) handleRemoveIneffectiveVEX(w http.ResponseWriter, r *http.Re
 			return
 		}
 		if ref.Source != types.VEXSourceManual && ref.Source != types.VEXSourceAuto {
-			s.respondError(w, http.StatusBadRequest, "source must be x-vex or x-vex-auto")
+			s.respondError(w, http.StatusBadRequest, "source must be vex or vex-auto")
 			return
 		}
 		refs = append(refs, ref)

@@ -19,7 +19,7 @@ sync:
   - source: nginx
     target: registry.local/nginx
     type: repository
-    x-vex:
+    vex:
       - id: CVE-1
         state: not_affected
         justification: code_not_reachable

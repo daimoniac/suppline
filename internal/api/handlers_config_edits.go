@@ -219,7 +219,7 @@ func (s *APIServer) partitionSyncTargets(targets []string) (configured, gone []s
 // handleRemoveVEXStatements deletes unused VEX statements from suppline.yaml.
 //
 // @Summary     Remove unused VEX statements
-// @Description Deletes x-vex and x-vex-auto statements with the given ids and commits the config repository when one is configured.
+// @Description Deletes vex and vex-auto statements with the given ids and commits the config repository when one is configured.
 // @Tags        Tasks
 // @Accept      json
 // @Produce     json

@@ -435,8 +435,8 @@
                     <div class="policy-pane">
                         <h3>Gate images in <code>suppline.yml</code></h3>
 <pre><code>defaults:
-  x-rescanInterval: 7d
-  x-policy:
+  rescanInterval: 7d
+  policy:
     expression: "criticalCount == 0"
     failureMessage: "critical vulnerabilities found"
 
@@ -444,17 +444,17 @@ sync:
   - source: nginx
     target: myregistry.com/nginx
     type: repository
-    x-cooldown: 72h
-    x-policy:
+    cooldown: 72h
+    policy:
       expression: "criticalCount == 0 &amp;&amp; highCount &lt;= 5"
-    x-vex:
+    vex:
       - id: CVE-2024-56171
         state: not_affected
         justification: vulnerable_code_not_present
         detail: "Not reachable in our configuration"
         expires_at: 2026-12-31T23:59:59Z</code></pre>
                         <p class="policy-note">
-                            <code>x-cooldown</code> holds brand-new upstream releases until they have
+                            <code>cooldown</code> holds brand-new upstream releases until they have
                             been public long enough to trust — useful when an upstream release is compromised and
                             pulled within hours.
                         </p>
@@ -508,7 +508,7 @@ docker compose up --build -d</code></pre>
                         </li>
                         <li role="listitem">
                             <h3>Open the UI</h3>
-                            <p>Go to <code>http://localhost:3000</code> and log in with API key <code>demo</code>.</p>
+                            <p>Go to <code>http://localhost:8080</code> and log in with API key <code>demo</code>.</p>
                         </li>
                         <li role="listitem">
                             <h3>Confirm the gate</h3>
@@ -517,7 +517,7 @@ docker compose up --build -d</code></pre>
                                 <code>demo-pass</code> should be policy-passed with attestations;
                                 <code>demo-fail</code> should be blocked.
                             </p>
-                            <pre><code>curl -s http://localhost:8081/health
+                            <pre><code>curl -s http://localhost:9090/health
 curl -s -H "Authorization: Bearer demo" \
   http://localhost:8080/api/v1/scans | head</code></pre>
                         </li>

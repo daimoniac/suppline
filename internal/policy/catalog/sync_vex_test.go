@@ -10,19 +10,19 @@ import (
 
 const syncVEXCatalogConfig = `version: 1
 defaults:
-  x-vex:
+  vex:
     - id: CVE-DEFAULT
       state: not_affected
 sync:
   - source: a
     target: registry.local/app
     type: repository
-    x-vex:
+    vex:
       - id: CVE-1
         state: not_affected
       - id: CVE-2
         state: not_affected
-    x-vex-auto:
+    vex-auto:
       - id: CVE-3
         state: not_affected
       - id: CVE-DEFAULT
@@ -30,7 +30,7 @@ sync:
   - source: b
     target: registry.local/app
     type: repository
-    x-vex:
+    vex:
       - id: CVE-1
         state: not_affected
 `
@@ -65,7 +65,7 @@ func TestRemoveEntryVEXRemovesOnlyTheNamedCopy(t *testing.T) {
 
 	removed, err := cat.RemoveEntryVEX([]EntryVEXRef{
 		{Repository: "registry.local/app", ID: "CVE-2", Source: types.VEXSourceManual},
-		// Wrong key for CVE-3: it is stored under x-vex-auto, so nothing is removed.
+		// Wrong key for CVE-3: it is stored under vex-auto, so nothing is removed.
 		{Repository: "registry.local/app", ID: "CVE-3", Source: types.VEXSourceManual},
 	})
 	if err != nil {

@@ -6,7 +6,7 @@ import (
 	"time"
 )
 
-// Defaults for x-malicious-packages.
+// Defaults for malicious-packages.
 const (
 	DefaultMaliciousRepoURL      = "https://github.com/ossf/malicious-packages.git"
 	DefaultMaliciousRepoRef      = "main"
@@ -15,7 +15,7 @@ const (
 	DefaultMaliciousStaleAfter   = 6 * time.Hour
 )
 
-// MaliciousPackagesConfig is the x-malicious-packages block. It is read at
+// MaliciousPackagesConfig is the malicious-packages block. It is read at
 // startup only. A missing block means enabled with every default.
 type MaliciousPackagesConfig struct {
 	Enabled      *bool             `yaml:"enabled,omitempty"`
@@ -120,7 +120,7 @@ func (m *MaliciousPackagesConfig) Validate() error {
 		return nil
 	}
 	if m.Repo.Auth.Type != "" {
-		if err := validateGitAuth("x-malicious-packages.repo", m.RepoURL(), m.Repo.Auth); err != nil {
+		if err := validateGitAuth("malicious-packages.repo", m.RepoURL(), m.Repo.Auth); err != nil {
 			return err
 		}
 	}
@@ -133,14 +133,14 @@ func (m *MaliciousPackagesConfig) Validate() error {
 		}
 		parsed, err := ParseFlexibleDuration(field.value)
 		if err != nil {
-			return fmt.Errorf("x-malicious-packages.%s: %w", field.name, err)
+			return fmt.Errorf("malicious-packages.%s: %w", field.name, err)
 		}
 		if parsed <= 0 {
-			return fmt.Errorf("x-malicious-packages.%s must be positive", field.name)
+			return fmt.Errorf("malicious-packages.%s must be positive", field.name)
 		}
 	}
 	if m.Staleness() < m.Interval() {
-		return fmt.Errorf("x-malicious-packages.stale_after must be at least sync_interval")
+		return fmt.Errorf("malicious-packages.stale_after must be at least sync_interval")
 	}
 	return nil
 }

@@ -56,14 +56,14 @@ func IsMaliciousID(id string) bool {
 // ValidateMaliciousVEXStatement checks the extra rules for statements about
 // malicious-package advisories. Only false_positive can exempt one: "present
 // but not reachable" is no defence for a package that runs install scripts.
-// Automated statements (x-vex-auto) may never name one; exempting malware
+// Automated statements (vex-auto) may never name one; exempting malware
 // needs a person.
 func ValidateMaliciousVEXStatement(v VEXStatement, automated bool) error {
 	if !IsMaliciousID(v.ID) {
 		return nil
 	}
 	if automated {
-		return fmt.Errorf("%s is a malicious-package advisory; only hand-written x-vex may exempt it", v.ID)
+		return fmt.Errorf("%s is a malicious-package advisory; only hand-written vex may exempt it", v.ID)
 	}
 	if v.State != VEXStateFalsePositive {
 		return fmt.Errorf("%s is a malicious-package advisory; its state must be %q (the image does not contain the malicious package), got %q", v.ID, VEXStateFalsePositive, v.State)

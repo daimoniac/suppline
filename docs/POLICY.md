@@ -22,7 +22,7 @@ Set a default policy for all repositories:
 
 ```yaml
 defaults:
-  x-policy:
+  policy:
     expression: "criticalCount == 0"
     failureMessage: "critical vulnerabilities found"
 ```
@@ -36,7 +36,7 @@ sync:
   - source: nginx
     target: myregistry/nginx
     type: repository
-    x-policy:
+    policy:
       expression: "criticalCount == 0 && highCount == 0"
       failureMessage: "critical or high vulnerabilities found"
 ```
@@ -62,19 +62,19 @@ sync:
 
 Each scan matches the image's language packages (npm, PyPI, RubyGems, NuGet, crates.io, Go, Maven, Packagist) against [ossf/malicious-packages](https://github.com/ossf/malicious-packages). A match is not a vulnerability: it has no severity, is not counted in `criticalCount` and friends, is not in `vulnerabilities`, and is never sent to triage.
 
-A false positive — the image contains a *different* package with the same name and version, typically an internal workspace package that someone squatted on the public registry — is exempted with a hand-written `x-vex` statement in state `false_positive`:
+A false positive — the image contains a *different* package with the same name and version, typically an internal workspace package that someone squatted on the public registry — is exempted with a hand-written `vex` statement in state `false_positive`:
 
 ```yaml
-x-vex:
+vex:
   - id: MAL-2025-9145
     state: false_positive
     detail: "@opensearch/datemath 5.0.3 is OpenSearch Dashboards' own workspace package, not the squatted npm publish"
     expires_at: 2027-05-01T00:00:00Z
 ```
 
-You can write it by hand, or from the **Triage** view (malicious findings show there as *Malicious*; automated triage never runs on them) and the **Malicious Packages** view, which open the usual statement dialog locked to `false_positive` with a required detail. No other state exempts a MAL id (`not_affected` with a MAL id is rejected when the config loads), and `x-vex-auto` may never name one. An exempted finding stays in the `malicious` list with `exempted: true`, is not counted in `maliciousCount`, does not trigger the gate, and is recorded in the VEX and SCAI attestations.
+You can write it by hand, or from the **Triage** view (malicious findings show there as *Malicious*; automated triage never runs on them) and the **Malicious Packages** view, which open the usual statement dialog locked to `false_positive` with a required detail. No other state exempts a MAL id (`not_affected` with a MAL id is rejected when the config loads), and `vex-auto` may never name one. An exempted finding stays in the `malicious` list with `exempted: true`, is not counted in `maliciousCount`, does not trigger the gate, and is recorded in the VEX and SCAI attestations.
 
-With `x-malicious-packages.block: true` (the default), any malicious finding fails the image regardless of the expression. The reason starts with `malicious packages found:` and each finding is recorded as a policy-failure finding with `Kind: "malicious"`. You don't need to add `maliciousCount == 0` to your expression. With `block: false` only the expression decides, and you can write rules such as:
+With `malicious-packages.block: true` (the default), any malicious finding fails the image regardless of the expression. The reason starts with `malicious packages found:` and each finding is recorded as a policy-failure finding with `Kind: "malicious"`. You don't need to add `maliciousCount == 0` to your expression. With `block: false` only the expression decides, and you can write rules such as:
 
 ```yaml
 expression: 'criticalCount == 0 && malicious.filter(m, m.ecosystem == "npm").size() == 0'
@@ -133,7 +133,7 @@ Each item in the `vulnerabilities` list has:
 Block all critical, high, and medium vulnerabilities:
 
 ```yaml
-x-policy:
+policy:
   expression: "criticalCount == 0 && highCount == 0 && mediumCount == 0"
   failureMessage: "critical, high, or medium vulnerabilities found"
 ```
@@ -143,7 +143,7 @@ x-policy:
 Allow up to 5 critical vulnerabilities:
 
 ```yaml
-x-policy:
+policy:
   expression: "criticalCount <= 5"
   failureMessage: "too many critical vulnerabilities"
 ```
@@ -153,7 +153,7 @@ x-policy:
 Block only critical vulnerabilities that have a fix available:
 
 ```yaml
-x-policy:
+policy:
   expression: |
     vulnerabilities.filter(v,
       v.severity == "CRITICAL" &&
@@ -168,7 +168,7 @@ x-policy:
 Block critical vulnerabilities in specific packages:
 
 ```yaml
-x-policy:
+policy:
   expression: |
     vulnerabilities.filter(v,
       v.severity == "CRITICAL" &&
@@ -182,7 +182,7 @@ x-policy:
 Combine multiple conditions:
 
 ```yaml
-x-policy:
+policy:
   expression: |
     criticalCount == 0 &&
     highCount <= 3 &&
@@ -198,7 +198,7 @@ x-policy:
 Allow specific CVEs without using VEX statements:
 
 ```yaml
-x-policy:
+policy:
   expression: |
     vulnerabilities.filter(v,
       v.severity == "CRITICAL" &&
@@ -224,13 +224,13 @@ sync:
   - source: nginx
     target: myregistry/nginx
     type: repository
-    x-vex:
+    vex:
       - id: CVE-2024-56171
         state: not_affected
         justification: vulnerable_code_not_present
         detail: "Accepted risk"
         expires_at: 2025-12-31T23:59:59Z
-    x-policy:
+    policy:
       expression: "criticalCount == 0"  # CVE-2024-56171 won't count
 ```
 
@@ -240,9 +240,9 @@ sync:
 - Expired VEX statements are ignored (CVE counts as normal)
 - Only `not_affected` state exempts CVEs from policy counts; other states (e.g. `in_triage`, `affected`) are informational
 
-### `x-vex-auto`
+### `vex-auto`
 
-Triage writes exemptions into `x-vex-auto` on the sync entry. Effective statements are `defaults.x-vex`, then the sync entry's `x-vex`, then `x-vex-auto`. The first statement for an id wins, so a hand-written `x-vex` id is never replaced by an auto statement. An auto statement with `state: affected` stays in the file as the decision record and does not exempt the CVE, so the gate fails.
+Triage writes exemptions into `vex-auto` on the sync entry. Effective statements are `defaults.vex`, then the sync entry's `vex`, then `vex-auto`. The first statement for an id wins, so a hand-written `vex` id is never replaced by an auto statement. An auto statement with `state: affected` stays in the file as the decision record and does not exempt the CVE, so the gate fails.
 
 ## Testing Policies
 
@@ -275,9 +275,9 @@ To test a policy without affecting production:
 Begin with a strict policy and add VEX statements for specific CVEs:
 
 ```yaml
-x-policy:
+policy:
   expression: "criticalCount == 0 && highCount == 0"
-x-vex:
+vex:
   - id: CVE-2024-12345
     state: not_affected
     justification: vulnerable_code_not_in_execute_path
@@ -290,7 +290,7 @@ x-vex:
 Help developers understand why an image failed:
 
 ```yaml
-x-policy:
+policy:
   expression: "criticalCount == 0 && highCount <= 3"
   failureMessage: "Image has critical vulnerabilities or more than 3 high severity issues. Please update base image or add VEX statement with justification."
 ```
@@ -304,7 +304,7 @@ Keep a record of why policies are configured a certain way:
 # Rationale: Customer-facing service with PII
 - source: myapp-prod
   target: myregistry/myapp-prod
-  x-policy:
+  policy:
     expression: "criticalCount == 0 && highCount == 0"
 ```
 
@@ -329,13 +329,13 @@ sync:
   # Strict for production
   - source: myapp
     target: myregistry/myapp-prod
-    x-policy:
+    policy:
       expression: "criticalCount == 0 && highCount == 0"
   
   # Lenient for development
   - source: myapp
     target: myregistry/myapp-dev
-    x-policy:
+    policy:
       expression: "criticalCount <= 10"
 ```
 
@@ -368,7 +368,7 @@ docker compose logs suppline | grep "policy evaluation"
 curl http://localhost:8080/api/v1/vex
 
 # Verify policy configuration
-cat suppline.yml | grep -A5 x-policy
+cat suppline.yml | grep -A5 policy
 ```
 
 ### Expression Syntax Errors
@@ -392,7 +392,7 @@ Allow more vulnerabilities during business hours (requires custom implementation
 
 ```yaml
 # This is a conceptual example - not currently supported
-x-policy:
+policy:
   expression: |
     (hour(now()) >= 9 && hour(now()) <= 17) ?
       criticalCount <= 2 :
@@ -404,7 +404,7 @@ x-policy:
 Assign weights to different severity levels:
 
 ```yaml
-x-policy:
+policy:
   expression: |
     (criticalCount * 10 + highCount * 5 + mediumCount * 2 + lowCount) <= 20
   failureMessage: "vulnerability score exceeds threshold"
@@ -415,7 +415,7 @@ x-policy:
 Only allow vulnerabilities in specific packages:
 
 ```yaml
-x-policy:
+policy:
   expression: |
     vulnerabilities.filter(v,
       v.severity == "CRITICAL" &&
@@ -441,7 +441,7 @@ spec:
 
 Equivalent suppline policy:
 ```yaml
-x-policy:
+policy:
   expression: "criticalCount == 0"
   failureMessage: "Critical vulnerabilities found"
 ```
@@ -458,7 +458,7 @@ deny[msg] {
 
 Equivalent suppline policy:
 ```yaml
-x-policy:
+policy:
   expression: "criticalCount == 0"
   failureMessage: "Critical vulnerabilities found"
 ```

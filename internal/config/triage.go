@@ -16,7 +16,7 @@ const (
 	GitAuthSSH        = "ssh"
 )
 
-// TriageConfig is the x-triage block. The LLM API key is never stored here;
+// TriageConfig is the triage block. The LLM API key is never stored here;
 // it is read from SUPPLINE_LLM_API_KEY.
 type TriageConfig struct {
 	Enabled               bool              `yaml:"enabled"`
@@ -110,13 +110,13 @@ func (t *TriageConfig) Validate() error {
 		mode = TriageModeDryRun
 	}
 	if mode != TriageModeDryRun && mode != TriageModeEnforce {
-		return fmt.Errorf("x-triage.mode must be %q or %q, got %q", TriageModeDryRun, TriageModeEnforce, t.Mode)
+		return fmt.Errorf("triage.mode must be %q or %q, got %q", TriageModeDryRun, TriageModeEnforce, t.Mode)
 	}
 	if strings.TrimSpace(t.LLM.BaseURL) == "" || strings.TrimSpace(t.LLM.Model) == "" {
-		return fmt.Errorf("x-triage.llm.base_url and x-triage.llm.model are required when triage is enabled")
+		return fmt.Errorf("triage.llm.base_url and triage.llm.model are required when triage is enabled")
 	}
 	if t.MinConfidence != nil && (*t.MinConfidence < 0 || *t.MinConfidence > 1) {
-		return fmt.Errorf("x-triage.min_confidence must be between 0 and 1")
+		return fmt.Errorf("triage.min_confidence must be between 0 and 1")
 	}
 	for _, field := range []struct{ name, value string }{
 		{"expiry", t.Expiry},
@@ -128,7 +128,7 @@ func (t *TriageConfig) Validate() error {
 			continue
 		}
 		if _, err := ParseFlexibleDuration(field.value); err != nil {
-			return fmt.Errorf("x-triage.%s: %w", field.name, err)
+			return fmt.Errorf("triage.%s: %w", field.name, err)
 		}
 	}
 	for _, justification := range t.AllowedJustifications {
@@ -138,30 +138,30 @@ func (t *TriageConfig) Validate() error {
 			Justification: types.VEXJustification(justification),
 		}
 		if err := types.ValidateVEXStatement(stmt); err != nil {
-			return fmt.Errorf("x-triage.allowed_justifications: %w", err)
+			return fmt.Errorf("triage.allowed_justifications: %w", err)
 		}
 	}
 	for i, repo := range t.ContextRepos {
-		if err := validateGitAuth(fmt.Sprintf("x-triage.context_repos[%d]", i), repo.URL, repo.Auth); err != nil {
+		if err := validateGitAuth(fmt.Sprintf("triage.context_repos[%d]", i), repo.URL, repo.Auth); err != nil {
 			return err
 		}
 	}
 	if t.ConfigRepo != nil {
 		if strings.TrimSpace(t.ConfigRepo.Path) == "" {
-			return fmt.Errorf("x-triage.config_repo.path is required")
+			return fmt.Errorf("triage.config_repo.path is required")
 		}
-		if err := validateGitAuth("x-triage.config_repo", t.ConfigRepo.URL, t.ConfigRepo.Auth); err != nil {
+		if err := validateGitAuth("triage.config_repo", t.ConfigRepo.URL, t.ConfigRepo.Auth); err != nil {
 			return err
 		}
 	}
 	if t.BackupRetention < 0 {
-		return fmt.Errorf("x-triage.backup_retention must be >= 0")
+		return fmt.Errorf("triage.backup_retention must be >= 0")
 	}
 	if t.LLM.MaxGroup < 0 || t.LLM.MaxGroup > 32 {
-		return fmt.Errorf("x-triage.llm.max_group must be at most 32")
+		return fmt.Errorf("triage.llm.max_group must be at most 32")
 	}
 	if len(t.Prompt) > 16*1024 {
-		return fmt.Errorf("x-triage.prompt must be at most 16KiB")
+		return fmt.Errorf("triage.prompt must be at most 16KiB")
 	}
 	return nil
 }

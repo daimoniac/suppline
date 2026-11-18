@@ -166,7 +166,7 @@ func TestPublicIPAndToolAdvertisement(t *testing.T) {
 
 func TestPublicSearch(t *testing.T) {
 	t.Setenv("SUPPLINE_GITHUB_TOKEN", "")
-	t.Setenv("GITHUB_TOKEN", "")
+	t.Setenv("GITHUB_TOKEN", "ignored") // only SUPPLINE_GITHUB_TOKEN counts
 	blocked := &publicSource{github: "https://api.github.com", hosts: map[string]struct{}{"api.github.com": {}}}
 	if _, err := blocked.GitHubSearch(context.Background(), "acme", "mod", "", "SAFE_FOR_TEMPLATES"); err == nil || !strings.Contains(err.Error(), "SUPPLINE_GITHUB_TOKEN") {
 		t.Fatalf("missing token: %v", err)

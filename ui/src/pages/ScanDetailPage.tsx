@@ -267,7 +267,7 @@ function MaliciousSection({ check, vexStatements }: { check: MaliciousCheck; vex
         <Skull className="w-4 h-4" /> Malicious packages ({active}{active !== findings.length ? ` + ${findings.length - active} false positive` : ''})
       </h2>
       <p className="text-xs text-text-muted mb-4">
-        Known-malicious packages from ossf/malicious-packages. Remove the package and rebuild the image. Only a hand-written x-vex statement in state false_positive exempts one, for an image that contains a different package with the same name.
+        Known-malicious packages from ossf/malicious-packages. Remove the package and rebuild the image. Only a hand-written vex statement in state false_positive exempts one, for an image that contains a different package with the same name.
         {check.SnapshotAt > 0 && <> Matched against the feed as of {formatDate(check.SnapshotAt)}.</>}
       </p>
       <div className="divide-y divide-border/50 border border-border rounded-lg">

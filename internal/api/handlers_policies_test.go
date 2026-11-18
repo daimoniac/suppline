@@ -14,7 +14,7 @@ import (
 )
 
 func TestHandleListPolicies_NoDefault(t *testing.T) {
-	cfg := &config.APIConfig{Enabled: true, Port: 8080}
+	cfg := &config.APIConfig{Port: 8080}
 	server := NewAPIServer(cfg, mockAttestationConfig(), &mockStateStore{}, queue.NewInMemoryQueue(100), mockRegsyncConfig(), observability.NewLogger("error"))
 
 	req := httptest.NewRequest(http.MethodGet, "/api/v1/policies", nil)
@@ -38,7 +38,7 @@ func TestHandleListPolicies_NoDefault(t *testing.T) {
 }
 
 func TestHandleListPolicies_DefaultAndOverrides(t *testing.T) {
-	cfg := &config.APIConfig{Enabled: true, Port: 8080}
+	cfg := &config.APIConfig{Port: 8080}
 	regsync := &config.RegsyncConfig{
 		Version: 1,
 		Defaults: config.Defaults{
@@ -99,7 +99,7 @@ func TestHandleListPolicies_DefaultAndOverrides(t *testing.T) {
 }
 
 func TestHandleListRepositories_EnrichesPolicyDescription(t *testing.T) {
-	cfg := &config.APIConfig{Enabled: true, Port: 8080}
+	cfg := &config.APIConfig{Port: 8080}
 	regsync := &config.RegsyncConfig{
 		Version: 1,
 		Defaults: config.Defaults{

@@ -18,7 +18,7 @@ sync:
     target: registry.local/app
     type: repository
     # human statement stays
-    x-vex:
+    vex:
       - id: CVE-HUMAN
         state: not_affected
         justification: code_not_present
@@ -36,7 +36,7 @@ sync:
 		t.Fatal(err)
 	}
 	text := string(updated)
-	for _, want := range []string{"# keep me", "# human statement stays", `{{ env "FOO" }}`, "CVE-HUMAN", "x-vex-auto", "CVE-AUTO", "requires_configuration"} {
+	for _, want := range []string{"# keep me", "# human statement stays", `{{ env "FOO" }}`, "CVE-HUMAN", "vex-auto", "CVE-AUTO", "requires_configuration"} {
 		if !strings.Contains(text, want) {
 			t.Fatalf("missing %q in\n%s", want, text)
 		}
@@ -50,10 +50,10 @@ sync:
 		t.Fatalf("%v\n%s", err, text)
 	}
 	if len(parsed.Sync) != 1 || len(parsed.Sync[0].VEX) != 1 || parsed.Sync[0].VEX[0].ID != "CVE-HUMAN" {
-		t.Fatalf("human x-vex = %+v", parsed.Sync[0].VEX)
+		t.Fatalf("human vex = %+v", parsed.Sync[0].VEX)
 	}
 	if len(parsed.Sync[0].VEXAuto) != 1 || parsed.Sync[0].VEXAuto[0].ID != "CVE-AUTO" {
-		t.Fatalf("x-vex-auto = %+v", parsed.Sync[0].VEXAuto)
+		t.Fatalf("vex-auto = %+v", parsed.Sync[0].VEXAuto)
 	}
 
 	affected, err := Upsert(updated, "registry.local/app", types.VEXStatement{
@@ -74,7 +74,7 @@ sync:
   - source: example.com/app
     target: registry.local/app
     type: repository
-    x-vex-auto:
+    vex-auto:
       - id: CVE-AUTO
         state: not_affected
         justification: code_not_reachable
@@ -90,8 +90,8 @@ sync:
 	if !strings.Contains(text, "# keep me") || !strings.Contains(text, "code_not_reachable") || !strings.Contains(text, "protected_at_perimeter") {
 		t.Fatalf("manual edit:\n%s", text)
 	}
-	if strings.Count(text, "x-vex:") != 1 {
-		t.Fatalf("x-vex key:\n%s", text)
+	if strings.Count(text, "vex:") != 1 {
+		t.Fatalf("vex key:\n%s", text)
 	}
 }
 
@@ -132,12 +132,12 @@ sync:
 - source: docker.io/supabase/studio
   target: '{{ env "SUPPLINE_REGISTRY_URL" }}/supabase_studio'
   type: repository
-  x-vex:
+  vex:
   - id: CVE-1
     state: not_affected
     justification: code_not_reachable
     detail: keep
-x-triage:
+triage:
   enabled: true
 `)
 	updated, err := UpsertManual(original, "hostingmaloonde/supabase_studio", types.VEXStatement{
@@ -147,10 +147,10 @@ x-triage:
 		t.Fatal(err)
 	}
 	text := string(updated)
-	if !strings.HasPrefix(text, string(original[:len(original)-len("x-triage:\n  enabled: true\n")])) && !strings.Contains(text, "x-triage:\n  enabled: true") {
+	if !strings.HasPrefix(text, string(original[:len(original)-len("triage:\n  enabled: true\n")])) && !strings.Contains(text, "triage:\n  enabled: true") {
 		t.Fatalf("catalog tail changed:\n%s", text)
 	}
-	if strings.Count(text, "x-vex:") != 1 || !strings.Contains(text, "GHSA-673q-mjm6-r5xr") {
+	if strings.Count(text, "vex:") != 1 || !strings.Contains(text, "GHSA-673q-mjm6-r5xr") {
 		t.Fatalf("statement:\n%s", text)
 	}
 	if strings.Contains(text, "  - source:") || strings.Contains(text, "target: hostingmaloonde/") {
@@ -169,8 +169,8 @@ sync:
   - source: example.com/app
     target: registry.local/app
     type: repository
-    x-vex-auto:` + suffix + `
-    x-rescanInterval: 12h
+    vex-auto:` + suffix + `
+    rescanInterval: 12h
 `)
 		updated, err := Upsert(original, "registry.local/app", types.VEXStatement{
 			ID: "CVE-AUTO", State: types.VEXStateNotAffected, Justification: types.VEXJustCodeNotReachable, Detail: "again",
@@ -179,7 +179,7 @@ sync:
 			t.Fatalf("value %q: %v\n%s", value, err, original)
 		}
 		text := string(updated)
-		if !strings.Contains(text, "x-rescanInterval: 12h") || strings.Contains(text, "null") || strings.Contains(text, "~") {
+		if !strings.Contains(text, "rescanInterval: 12h") || strings.Contains(text, "null") || strings.Contains(text, "~") {
 			t.Fatalf("value %q left the null in place:\n%s", value, text)
 		}
 		path := t.TempDir() + "/suppline.yml"
@@ -191,7 +191,7 @@ sync:
 			t.Fatalf("value %q: %v\n%s", value, err, text)
 		}
 		if len(parsed.Sync) != 1 || len(parsed.Sync[0].VEXAuto) != 1 || parsed.Sync[0].VEXAuto[0].ID != "CVE-AUTO" {
-			t.Fatalf("value %q: x-vex-auto = %+v\n%s", value, parsed.Sync[0].VEXAuto, text)
+			t.Fatalf("value %q: vex-auto = %+v\n%s", value, parsed.Sync[0].VEXAuto, text)
 		}
 		if parsed.Sync[0].RescanInterval != "12h" {
 			t.Fatalf("value %q: rescan = %q\n%s", value, parsed.Sync[0].RescanInterval, text)
@@ -205,11 +205,11 @@ sync:
   - source: example.com/app
     target: registry.local/app
     type: repository
-    x-vex-auto: "not a list"
+    vex-auto: "not a list"
 `), "registry.local/app", types.VEXStatement{
 		ID: "CVE-AUTO", State: types.VEXStateAffected, Detail: "nope",
 	})
-	if err == nil || !strings.Contains(err.Error(), "x-vex-auto must be a list") {
+	if err == nil || !strings.Contains(err.Error(), "vex-auto must be a list") {
 		t.Fatalf("got %v", err)
 	}
 }

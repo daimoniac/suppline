@@ -47,7 +47,7 @@ helm upgrade --install suppline ./charts/suppline \
 
 Point `sync[].target` (and `creds`) at your registry. The chart example uses `{{ env "SUPPLINE_REGISTRY_URL" }}`.
 
-Images default to `ghcr.io/daimoniac/suppline` / `suppline-ui`; empty tags use `Chart.AppVersion`. Releases: [docs/RELEASE.md](../../docs/RELEASE.md).
+The image defaults to `ghcr.io/daimoniac/suppline` (the web UI is built in); empty tags use `Chart.AppVersion`. Releases: [docs/RELEASE.md](../../docs/RELEASE.md).
 
 ### Override config without editing the chart
 
@@ -61,7 +61,7 @@ backend:
         user: '{{ env "SUPPLINE_REGISTRY_USERNAME" }}'
         pass: '{{ env "SUPPLINE_REGISTRY_PASSWORD" }}'
     defaults:
-      x-policy:
+      policy:
         expression: "criticalCount == 0"
     sync:
       - source: public.ecr.aws/docker/library/alpine:3.20.3
@@ -97,12 +97,8 @@ Data PVCs may be retained (`helm.sh/resource-policy: keep`) so reinstalls can re
 | `backend.supplineConfig` | Inline `suppline.yml` (overrides chart file) | unset (use chart `suppline.yml`) |
 | `backend.attestationKey.enabled` | Sign attestations | `true` |
 | `backend.secrets.*` | API key, cosign key, registry creds | via secrets file |
-| `frontend.enabled` | Deploy web UI | `true` |
-| `frontend.image.repository` | UI image | `ghcr.io/daimoniac/suppline-ui` |
-| `frontend.image.tag` | UI tag | `""` → `Chart.AppVersion` |
-| `frontend.ingress.enabled` | UI Ingress | `false` |
-| `mirror.enabled` | Copy images in the suppline process | `true` |
-| `regsync.enabled` | Deploy the regsync sidecar (rollback; cannot be combined with `mirror.enabled`) | `false` |
+| `ingress.enabled` | Ingress to the UI and API on the backend service; its path is `server.basePath` from suppline.yml | `false` |
+| `ingress.hosts` | Host names for the ingress | `[suppline.example.com]` |
 | `registry.enabled` | Bundled registry | `false` (BYO) |
 | `postgres.enabled` | Bundled PostgreSQL | `true` |
 | `persistence.data.enabled` | SQLite PVC (ignored while Postgres is enabled; `/data` is then an emptyDir and the malicious-packages feed is cloned again after each restart) | `true` |

@@ -11,13 +11,13 @@ import (
 func TestAddCooldownRelease(t *testing.T) {
 	document := []byte(`# mirror setup
 defaults:
-  x-cooldown: 7d
+  cooldown: 7d
 sync:
   - source: docker.io/library/nginx
     target: registry.example/nginx
     type: repository
     # keep this comment
-    x-cooldown: 3d
+    cooldown: 3d
   - source: docker.io/library/redis
     target: registry.example/redis
     type: repository

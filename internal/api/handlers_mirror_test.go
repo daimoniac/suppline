@@ -34,7 +34,7 @@ func TestMirrorEndpointOverlaysRunning(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	cfg := &config.APIConfig{Enabled: true, Port: 8080}
+	cfg := &config.APIConfig{Port: 8080}
 	server := NewAPIServer(cfg, mockAttestationConfig(), store, queue.NewInMemoryQueue(8), mockRegsyncConfig(), observability.NewLogger("error"))
 	activity := mirror.NewActivity()
 	activity.Mark("sync-a")

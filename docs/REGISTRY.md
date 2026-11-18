@@ -81,7 +81,7 @@ kubectl run -it --rm debug --image=curlimages/curl --restart=Never -- \
 
 ## Hold tags
 
-With `x-cooldown` and the in-process mirror, suppline writes a tag `sha256-<hex>.hold` into the target repository for each Held digest. It points at a small OCI image index that references the held digest, so registry garbage collection keeps the digest while no version tag names it. The index annotations (`dev.suppline.hold.first-seen`, `dev.suppline.hold.source`, `dev.suppline.hold.tags`) are the durable record of the hold: suppline rebuilds its held digests from them at startup, so its database stays safe to throw away.
+With `cooldown` and the in-process mirror, suppline writes a tag `sha256-<hex>.hold` into the target repository for each Held digest. It points at a small OCI image index that references the held digest, so registry garbage collection keeps the digest while no version tag names it. The index annotations (`dev.suppline.hold.first-seen`, `dev.suppline.hold.source`, `dev.suppline.hold.tags`) are the durable record of the hold: suppline rebuilds its held digests from them at startup, so its database stays safe to throw away.
 
 - The target registry must accept an OCI image index that references another manifest or index. Distribution, Harbor, ECR and GHCR do. Where it is rejected, the hold fails like a failed copy and the tag is not published.
 - suppline removes the hold tag when the digest is published or superseded. A digest that fails policy keeps it until a later scan passes or a newer candidate is published.

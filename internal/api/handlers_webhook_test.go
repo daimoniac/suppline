@@ -54,7 +54,7 @@ func (m *mockClusterInventoryStore) DeleteClusterInventory(ctx context.Context, 
 
 func webhookTestServer(t *testing.T, store statestore.StateStoreQuery) *APIServer {
 	t.Helper()
-	cfg := &config.APIConfig{Enabled: true, Port: 8080, APIKey: "", ReadOnly: false}
+	cfg := &config.APIConfig{Port: 8080, APIKey: "", ReadOnly: false}
 	return NewAPIServer(cfg, mockAttestationConfig(), store, queue.NewInMemoryQueue(100), mockRegsyncConfig(), observability.NewLogger("error"))
 }
 

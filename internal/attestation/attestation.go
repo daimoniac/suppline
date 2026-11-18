@@ -104,12 +104,13 @@ type AttestationConfig struct {
 	// Key-based signing configuration
 	KeyBased KeyBasedConfig
 
-	// Future: Keyless signing configuration
-	// UseKeyless  bool
-	// RekorURL    string
-	// FulcioURL   string
-	// OIDCIssuer  string
-	// OIDCClientID string
+	// CommandTimeout bounds one cosign invocation. Zero uses the default.
+	CommandTimeout time.Duration
+	// AllowHTTPRegistry lets cosign and the referrer cleanup use plain-HTTP registries.
+	AllowHTTPRegistry bool
+	// NewBundleFormat writes Sigstore protobuf bundles; false writes classic
+	// sha256-<digest>.att tags.
+	NewBundleFormat bool
 }
 
 // SCAIAttestation represents the complete SCAI attestation structure

@@ -5,24 +5,9 @@ metadata:
   labels:
     {{- include "suppline.labels" . | nindent 4 }}
 data:
-  TRIVY_SERVER_ADDR: "localhost:4954"
-  {{- if .Values.postgres.enabled }}
-  STATE_STORE_TYPE: "postgres"
-  {{- else }}
-  STATE_STORE_TYPE: "sqlite"
-  SQLITE_PATH: "/data/suppline.db"
-  {{- end }}
   SUPPLINE_CONFIG: "/config/suppline.yml"
   {{- if .Values.backend.env }}
   {{- tpl (toYaml .Values.backend.env) . | nindent 2 }}
   {{- end }}
   suppline.yml: |
-{{- if .Values.backend.supplineConfig }}
-{{ .Values.backend.supplineConfig | indent 4 }}
-{{- else }}
-{{- $cfg := .Files.Get "suppline.yml" }}
-{{- if not $cfg }}
-{{- fail "charts/suppline/suppline.yml is missing; set backend.supplineConfig or restore the chart example file" }}
-{{- end }}
-{{ $cfg | indent 4 }}
-{{- end }}
+{{ include "suppline.configText" . | indent 4 }}

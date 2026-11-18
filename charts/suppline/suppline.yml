@@ -3,6 +3,17 @@
 # before packaging. Prefer bring-your-own registry via SUPPLINE_REGISTRY_* secrets.
 version: 1
 
+# Runtime settings (read at startup). Secrets stay in environment variables.
+server:
+  port: 8080
+  basePath: ""          # e.g. /suppline; also the chart's ingress path
+observability:
+  port: 9090            # /metrics, /health, /ready
+scanner:
+  server: localhost:4954  # Trivy sidecar
+store:
+  sqlitePath: /data/suppline.db  # used when POSTGRES_URL is not set (postgres.enabled=false)
+
 creds:
   - registry: registry-1.docker.io
     user: '{{ env "DOCKER_USERNAME" }}'
@@ -28,18 +39,18 @@ defaults:
   cleanupTagsExclude:
     - ".*\\.sig$"
     - ".*\\.att$"
-  x-rescanInterval: 7d
-  x-worker-poll-interval: 5m
-  x-worker-concurrency: 3
-  x-worker-retry-attempts: 3
-  x-worker-retry-backoff: 10s
-  x-queue-buffer-size: 1000
-  x-scaiValidityExtension: 7d
+  rescanInterval: 7d
+  worker-poll-interval: 5m
+  worker-concurrency: 3
+  worker-retry-attempts: 3
+  worker-retry-backoff: 10s
+  queue-buffer-size: 1000
+  scaiValidityExtension: 7d
   # Vulnerability and SBOM bundles are what Kyverno downloads on every SCAI check.
-  x-createVulnerabilityAttestation: false
-  x-createSBOMAttestation: false
-  x-vex-repo: false
-  x-policy:
+  createVulnerabilityAttestation: false
+  createSBOMAttestation: false
+  vex-repo: false
+  policy:
     expression: "criticalCount == 0"
     failureMessage: "critical vulnerabilities found"
 

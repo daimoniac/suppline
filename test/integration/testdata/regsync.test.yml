@@ -10,7 +10,7 @@ sync:
   - source: docker.io/library/alpine:3.7
     target: localhost:5000/test/alpine:3.7
     type: image
-    x-vex:
+    vex:
       - id: CVE-2024-99999
         state: not_affected
         detail: "Test VEX exemption for integration tests"

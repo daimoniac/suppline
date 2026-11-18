@@ -50,7 +50,6 @@ func TestHandleListTolerations_ReturnsAllConfiguredTolerations(t *testing.T) {
 	mockStore := &mockStateStore{}
 
 	cfg := &config.APIConfig{
-		Enabled:  true,
 		Port:     8080,
 		APIKey:   "",
 		ReadOnly: false,
@@ -212,7 +211,6 @@ func TestHandleListTolerations_WithHistoricalData(t *testing.T) {
 	}
 
 	cfg := &config.APIConfig{
-		Enabled:  true,
 		Port:     8080,
 		APIKey:   "",
 		ReadOnly: false,
@@ -293,7 +291,7 @@ func (m *mockStateStoreWithHistory) GetUniqueVulnerabilityCounts(ctx context.Con
 
 func TestHandleGetCoverage(t *testing.T) {
 	mockStore := &mockStateStore{}
-	cfg := &config.APIConfig{Enabled: true}
+	cfg := &config.APIConfig{}
 	server := NewAPIServer(cfg, nil, mockStore, nil, nil, observability.NewLogger("error"))
 
 	req := httptest.NewRequest(http.MethodGet, "/api/v1/coverage", nil)

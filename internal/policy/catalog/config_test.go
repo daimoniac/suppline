@@ -179,7 +179,7 @@ func TestConfigCatalogInvalidCooldownIsLocalToPolicy(t *testing.T) {
 	})
 
 	_, err := subject.ResolvePolicy("repo")
-	if err == nil || !strings.Contains(err.Error(), "invalid x-cooldown for target repo") {
+	if err == nil || !strings.Contains(err.Error(), "invalid cooldown for target repo") {
 		t.Fatalf("ResolvePolicy() error = %v, want target-specific parse error", err)
 	}
 

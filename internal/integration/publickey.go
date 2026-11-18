@@ -56,9 +56,9 @@ func ExtractPublicKey(base64Key string) (string, error) {
 
 // GetPublicKeyFromConfig extracts the public key from the attestation config
 func GetPublicKeyFromConfig(cfg config.AttestationConfig) (string, error) {
-	if cfg.KeyBased.Key == "" {
+	if cfg.Key == "" {
 		return "", fmt.Errorf("no attestation key configured")
 	}
 
-	return ExtractPublicKey(cfg.KeyBased.Key)
+	return ExtractPublicKey(cfg.Key)
 }

@@ -305,7 +305,7 @@ func (p *publicSource) SearchCommits(ctx context.Context, prefix, sourceHint str
 		return commitHit{}, nil, fmt.Errorf("commit prefix is empty")
 	}
 	if githubToken() == "" {
-		return commitHit{}, nil, fmt.Errorf("commit search requires SUPPLINE_GITHUB_TOKEN or GITHUB_TOKEN")
+		return commitHit{}, nil, fmt.Errorf("commit search requires SUPPLINE_GITHUB_TOKEN")
 	}
 	rawURL := strings.TrimRight(p.github, "/") + "/search/commits?per_page=10&q=" + url.QueryEscape("hash:"+prefix)
 	body, status, err := p.getAccept(ctx, rawURL, "application/vnd.github+json")

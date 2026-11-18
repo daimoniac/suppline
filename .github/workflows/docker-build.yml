@@ -28,11 +28,6 @@ jobs:
             file: ./Dockerfile
             image_suffix: ""
             version_arg: true
-          - name: ui
-            context: ./ui
-            file: ./ui/Dockerfile
-            image_suffix: "-ui"
-            version_arg: false
 
     steps:
       - uses: actions/checkout@v7

@@ -230,7 +230,7 @@ type RepositoryInfo struct {
 	PolicyPassed       bool
 	PolicyStatus       string
 	// PolicyExpression / PolicyDescription are filled by the API from live config
-	// (not persisted). Empty when no x-policy is configured for the repository.
+	// (not persisted). Empty when no policy is configured for the repository.
 	PolicyExpression  string `json:",omitempty"`
 	PolicyDescription string `json:",omitempty"`
 	RuntimeUsed       bool
@@ -252,7 +252,7 @@ type RepositoryDetail struct {
 	Tags  []TagInfo
 	Total int
 	// PolicyExpression / PolicyDescription are filled by the API from live config
-	// (not persisted). Empty when no x-policy is configured for the repository.
+	// (not persisted). Empty when no policy is configured for the repository.
 	PolicyExpression  string `json:",omitempty"`
 	PolicyDescription string `json:",omitempty"`
 }

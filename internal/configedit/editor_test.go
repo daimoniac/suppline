@@ -26,7 +26,7 @@ sync:
     type: repository
     tags:
       semverRange: [">=1.0.0"]
-    x-vex:
+    vex:
       - id: CVE-2026-1
         state: not_affected
         justification: code_not_reachable

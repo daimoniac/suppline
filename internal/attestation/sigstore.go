@@ -25,28 +25,20 @@ type SigstoreAttestor struct {
 	logger        *slog.Logger
 	cleanup       func() // Cleanup function to remove temp key file
 	attestTimeout time.Duration
+	// allowHTTP and newBundleFormat come from AttestationConfig.
+	allowHTTP       bool
+	newBundleFormat bool
 	// cleaner deletes previous attestations of the same predicate. Nil uses the registry.
 	cleaner sameKindCleaner
 	// deferred holds the image+predicate pairs with a retry collapse in flight.
 	deferred sync.Map
 }
 
-func resolveCosignAttestTimeout(logger *slog.Logger) time.Duration {
-	timeoutStr := strings.TrimSpace(os.Getenv("ATTESTATION_COMMAND_TIMEOUT"))
-	if timeoutStr == "" {
+func resolveCosignAttestTimeout(configured time.Duration) time.Duration {
+	if configured <= 0 {
 		return defaultCosignAttestTimeout
 	}
-
-	timeout, err := time.ParseDuration(timeoutStr)
-	if err != nil || timeout <= 0 {
-		logger.Warn("invalid ATTESTATION_COMMAND_TIMEOUT, using default",
-			"value", timeoutStr,
-			"default", defaultCosignAttestTimeout,
-			"error", err)
-		return defaultCosignAttestTimeout
-	}
-
-	return timeout
+	return configured
 }
 
 // attestArgs builds a key-based cosign attest invocation.
@@ -56,8 +48,8 @@ func resolveCosignAttestTimeout(logger *slog.Logger) time.Duration {
 //
 // --new-bundle-format defaults to true: cosign v3 writes Sigstore protobuf bundles, which
 // the generated Kyverno ImageValidatingPolicy verifies. Registries without the OCI referrers
-// API get a sha256-<digest> fallback tag instead. Set ATTESTATION_NEW_BUNDLE_FORMAT=false to
-// write classic sha256-<digest>.att tags.
+// API get a sha256-<digest> fallback tag instead. attestation.newBundleFormat: false in
+// suppline.yml writes classic sha256-<digest>.att tags.
 func (a *SigstoreAttestor) attestArgs(predicateType, predicatePath, imageRef string) []string {
 	return []string{
 		"attest",
@@ -68,7 +60,7 @@ func (a *SigstoreAttestor) attestArgs(predicateType, predicatePath, imageRef str
 		"--yes",
 		"--tlog-upload=false",
 		"--use-signing-config=false",
-		"--new-bundle-format=" + boolString(useNewBundleFormat()),
+		"--new-bundle-format=" + boolString(a.newBundleFormat),
 		imageRef,
 	}
 }
@@ -102,7 +94,7 @@ func (a *SigstoreAttestor) runCosignAttest(ctx context.Context, operation string
 	attestCtx, cancel := context.WithTimeout(ctx, a.attestTimeout)
 	defer cancel()
 
-	if allowHTTPRegistry() && len(args) > 0 {
+	if a.allowHTTP && len(args) > 0 {
 		// Insert after the subcommand (e.g. "attest").
 		args = append([]string{args[0], "--allow-http-registry"}, args[1:]...)
 	}
@@ -125,23 +117,6 @@ func (a *SigstoreAttestor) runCosignAttest(ctx context.Context, operation string
 	}
 
 	return output, nil
-}
-
-func allowHTTPRegistry() bool {
-	v := strings.ToLower(strings.TrimSpace(os.Getenv("ATTESTATION_ALLOW_HTTP_REGISTRY")))
-	return v == "1" || v == "true" || v == "yes"
-}
-
-// useNewBundleFormat reports whether cosign should write Sigstore protobuf bundles.
-// Unset or empty means true; only an explicit 0/false/no opts out to classic .att tags.
-func useNewBundleFormat() bool {
-	v := strings.ToLower(strings.TrimSpace(os.Getenv("ATTESTATION_NEW_BUNDLE_FORMAT")))
-	switch v {
-	case "0", "false", "no":
-		return false
-	default:
-		return true
-	}
 }
 
 func boolString(v bool) string {
@@ -222,9 +197,11 @@ func NewSigstoreAttestor(config AttestationConfig, logger *slog.Logger) (*Sigsto
 	logger.Debug("created temporary key file", "path", tmpFile.Name())
 
 	return &SigstoreAttestor{
-		keyPath:       tmpFile.Name(),
-		logger:        logger,
-		attestTimeout: resolveCosignAttestTimeout(logger),
+		keyPath:         tmpFile.Name(),
+		logger:          logger,
+		attestTimeout:   resolveCosignAttestTimeout(config.CommandTimeout),
+		allowHTTP:       config.AllowHTTPRegistry,
+		newBundleFormat: config.NewBundleFormat,
 		cleanup: func() {
 			os.Remove(tmpFile.Name())
 		},

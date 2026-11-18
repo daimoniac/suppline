@@ -1,7 +1,10 @@
 package config
 
 import (
+	"bytes"
+	stderrors "errors"
 	"fmt"
+	"io"
 	"os"
 	"strings"
 	"time"
@@ -32,9 +35,9 @@ func ParseRegsync(path string) (*RegsyncConfig, error) {
 		return nil, errors.NewTransientf("failed to read regsync file: %w", err)
 	}
 
-	var config RegsyncConfig
-	if err := yaml.Unmarshal(data, &config); err != nil {
-		return nil, errors.NewPermanentf("failed to parse regsync YAML: %w", err)
+	config, err := decodeStrict(data)
+	if err != nil {
+		return nil, errors.NewPermanentf("failed to parse %s: %w", path, err)
 	}
 
 	if err := normalizeRegsync(&config); err != nil {
@@ -56,6 +59,18 @@ func ParseRegsync(path string) (*RegsyncConfig, error) {
 	}
 
 	return &config, nil
+}
+
+// decodeStrict parses suppline.yml and rejects unknown keys, so a renamed or
+// misspelled setting fails loudly instead of being dropped.
+func decodeStrict(data []byte) (RegsyncConfig, error) {
+	var config RegsyncConfig
+	dec := yaml.NewDecoder(bytes.NewReader(data))
+	dec.KnownFields(true)
+	if err := dec.Decode(&config); err != nil && !stderrors.Is(err, io.EOF) {
+		return RegsyncConfig{}, err
+	}
+	return config, nil
 }
 
 // Active returns sync entries suppline itself processes.
@@ -297,7 +312,7 @@ func (c *RegsyncConfig) GetCredentialForRegistry(registry string) *RegistryCrede
 	return nil
 }
 
-// IsIgnored returns true if the sync entry has x-suppline-ignore set to true.
+// IsIgnored returns true if the sync entry has suppline-ignore set to true.
 func (s *SyncEntry) IsIgnored() bool {
 	return s.Ignore
 }
@@ -326,7 +341,7 @@ func SyncTargetMatches(target, kind, wanted string) (bool, error) {
 
 // GetTargetRepositories returns all target repositories from sync entries
 // For type=image entries, strips the tag to return just the repository name
-// Entries with x-suppline-ignore: true are excluded.
+// Entries with suppline-ignore: true are excluded.
 func (c *RegsyncConfig) GetTargetRepositories() []string {
 	seen := make(map[string]bool)
 	targets := make([]string, 0, len(c.Sync))
@@ -383,7 +398,7 @@ func (c *RegsyncConfig) GetRescanInterval(target string) (time.Duration, error) 
 }
 
 // GetCooldown returns the cooldown for a target repository: the sync entry's
-// x-cooldown when set, otherwise defaults.x-cooldown, otherwise zero (off).
+// cooldown when set, otherwise defaults.cooldown, otherwise zero (off).
 // "0" switches the cooldown off for an entry even when defaults set one.
 func (c *RegsyncConfig) GetCooldown(target string) (time.Duration, error) {
 	for _, sync := range c.Active() {
@@ -413,18 +428,18 @@ func (c *RegsyncConfig) CooldownReleased(target, digest string) bool {
 	return false
 }
 
-// ValidateCooldowns checks every configured x-cooldown and x-cooldown-release.
+// ValidateCooldowns checks every configured cooldown and cooldown-release.
 func (c *RegsyncConfig) ValidateCooldowns() error {
 	if _, err := parseCooldown(c.Defaults.Cooldown); err != nil {
-		return fmt.Errorf("defaults.x-cooldown: %w", err)
+		return fmt.Errorf("defaults.cooldown: %w", err)
 	}
 	for _, sync := range c.Sync {
 		if _, err := parseCooldown(sync.Cooldown); err != nil {
-			return fmt.Errorf("sync %s: x-cooldown: %w", sync.Target, err)
+			return fmt.Errorf("sync %s: cooldown: %w", sync.Target, err)
 		}
 		for _, release := range sync.CooldownReleases {
 			if !strings.HasPrefix(release.Digest, "sha256:") {
-				return fmt.Errorf("sync %s: x-cooldown-release digest %q must be a sha256 digest", sync.Target, release.Digest)
+				return fmt.Errorf("sync %s: cooldown-release digest %q must be a sha256 digest", sync.Target, release.Digest)
 			}
 		}
 	}
@@ -508,7 +523,7 @@ func (c *RegsyncConfig) GetTagsForRepository(repo string) []string {
 // Returns the default if specified, otherwise 5 seconds
 func (c *RegsyncConfig) GetWorkerPollInterval() (time.Duration, error) {
 	if c.Defaults.WorkerPollInterval != "" {
-		return parseInterval(c.Defaults.WorkerPollInterval)
+		return parseDurationSetting("defaults.worker-poll-interval", c.Defaults.WorkerPollInterval, 0)
 	}
 
 	// Fall back to hardcoded default
@@ -537,7 +552,7 @@ func (c *RegsyncConfig) GetWorkerRetryAttempts() int {
 // Returns the default if specified, otherwise 10 seconds
 func (c *RegsyncConfig) GetWorkerRetryBackoff() (time.Duration, error) {
 	if c.Defaults.WorkerRetryBackoff != "" {
-		return parseInterval(c.Defaults.WorkerRetryBackoff)
+		return parseDurationSetting("defaults.worker-retry-backoff", c.Defaults.WorkerRetryBackoff, 0)
 	}
 	return 10 * time.Second, nil // Default backoff
 }
@@ -574,18 +589,18 @@ func (c *RegsyncConfig) GetQueueBufferSize() int {
 func (c *RegsyncConfig) ValidateVEXStatements() error {
 	for i, stmt := range c.Defaults.VEX {
 		if err := validateStatement(stmt, false); err != nil {
-			return fmt.Errorf("defaults.x-vex[%d]: %w", i, err)
+			return fmt.Errorf("defaults.vex[%d]: %w", i, err)
 		}
 	}
 	for _, sync := range c.Active() {
 		for i, stmt := range sync.VEX {
 			if err := validateStatement(stmt, false); err != nil {
-				return fmt.Errorf("sync[%s].x-vex[%d]: %w", sync.Target, i, err)
+				return fmt.Errorf("sync[%s].vex[%d]: %w", sync.Target, i, err)
 			}
 		}
 		for i, stmt := range sync.VEXAuto {
 			if err := validateStatement(stmt, true); err != nil {
-				return fmt.Errorf("sync[%s].x-vex-auto[%d]: %w", sync.Target, i, err)
+				return fmt.Errorf("sync[%s].vex-auto[%d]: %w", sync.Target, i, err)
 			}
 		}
 	}

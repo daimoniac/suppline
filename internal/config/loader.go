@@ -2,116 +2,101 @@ package config
 
 import (
 	"fmt"
-	"log/slog"
 	"os"
 	"strings"
-	"time"
 
 	"github.com/daimoniac/suppline/internal/errors"
 )
 
-// Load loads configuration from environment variables and suppline.yml defaults
+// Load reads suppline.yml (path from SUPPLINE_CONFIG) for runtime settings
+// and the environment for secrets. Only these environment variables are read:
+// SUPPLINE_CONFIG, SUPPLINE_API_KEY, POSTGRES_URL, TRIVY_TOKEN,
+// ATTESTATION_KEY and ATTESTATION_KEY_PASSWORD. suppline.yml can pull further
+// secrets in with {{ env "NAME" }}.
 func Load() (*Config, error) {
 	regsyncPath := getEnv("SUPPLINE_CONFIG", "suppline.yml")
 
-	// Parse regsync config to get defaults
-	var workerPollInterval time.Duration
-	var rescanInterval time.Duration
-	var workerConcurrency int
-	var workerRetryAttempts int
-	var workerRetryBackoff time.Duration
-	var queueBufferSize int
+	regsyncCfg, err := ParseRegsync(regsyncPath)
+	if err != nil {
+		return nil, fmt.Errorf("load %s: %w", regsyncPath, err)
+	}
+	return fromFile(regsyncPath, regsyncCfg)
+}
 
-	// Try to load regsync config for defaults
-	if regsyncCfg, err := ParseRegsync(regsyncPath); err == nil {
-		if interval, err := regsyncCfg.GetWorkerPollInterval(); err == nil {
-			workerPollInterval = interval
-		}
-		if interval, err := regsyncCfg.GetRescanInterval(""); err == nil {
-			rescanInterval = interval
-		}
-		workerConcurrency = regsyncCfg.GetWorkerConcurrency()
-		workerRetryAttempts = regsyncCfg.GetWorkerRetryAttempts()
-		if backoff, err := regsyncCfg.GetWorkerRetryBackoff(); err == nil {
-			workerRetryBackoff = backoff
-		}
-		queueBufferSize = regsyncCfg.GetQueueBufferSize()
-		if regsyncCfg.Defaults.RuntimeInUseWindow != "" {
-			slog.Warn("x-runtimeInUseWindow is ignored: an image is in use while its cluster's latest inventory report contains it; set IMAGE_STALE_AFTER on the cluster agent to keep short-lived pods longer",
-				"value", regsyncCfg.Defaults.RuntimeInUseWindow)
-		}
+// fromFile builds the runtime configuration from a parsed suppline.yml and
+// the secret environment variables.
+func fromFile(regsyncPath string, file *RegsyncConfig) (*Config, error) {
+	workerPollInterval, err := file.GetWorkerPollInterval()
+	if err != nil {
+		return nil, errors.NewPermanentf("%s", err)
+	}
+	rescanInterval, err := file.GetRescanInterval("")
+	if err != nil {
+		return nil, errors.NewPermanentf("defaults.rescanInterval: %s", err)
+	}
+	workerRetryBackoff, err := file.GetWorkerRetryBackoff()
+	if err != nil {
+		return nil, errors.NewPermanentf("%s", err)
 	}
 
-	// Use defaults from suppline.yml, or fall back to hardcoded defaults
-	if workerPollInterval == 0 {
-		workerPollInterval = 5 * time.Second
+	trivyTimeout, err := parseDurationSetting("scanner.timeout", file.Scanner.Timeout, defaultTrivyTimeout)
+	if err != nil {
+		return nil, errors.NewPermanentf("%s", err)
 	}
-	if rescanInterval == 0 {
-		rescanInterval = 24 * time.Hour
+	attestTimeout, err := parseDurationSetting("attestation.commandTimeout", file.Attestation.CommandTimeout, defaultAttestCommandTimeout)
+	if err != nil {
+		return nil, errors.NewPermanentf("%s", err)
 	}
-	if workerConcurrency == 0 {
-		workerConcurrency = 3
-	}
-	if workerRetryAttempts == 0 {
-		workerRetryAttempts = 3
-	}
-	if workerRetryBackoff == 0 {
-		workerRetryBackoff = 10 * time.Second
-	}
-	if queueBufferSize == 0 {
-		queueBufferSize = 1000
+
+	postgresURL := getEnv("POSTGRES_URL", "")
+	storeType := "sqlite"
+	if postgresURL != "" {
+		storeType = "postgres"
 	}
 
 	cfg := &Config{
 		RegsyncPath:   regsyncPath,
-		MirrorEnabled: getEnvBool("SUPPLINE_MIRROR_ENABLED", true),
+		MirrorEnabled: boolOr(file.Mirror.Enabled, true),
 		Queue: QueueConfig{
-			BufferSize: queueBufferSize,
+			BufferSize: intOr(file.GetQueueBufferSize(), 1000),
 		},
 		Worker: WorkerConfig{
 			PollInterval:  workerPollInterval,
-			RetryAttempts: workerRetryAttempts,
+			RetryAttempts: intOr(file.GetWorkerRetryAttempts(), 3),
 			RetryBackoff:  workerRetryBackoff,
-			Concurrency:   workerConcurrency,
+			Concurrency:   intOr(file.GetWorkerConcurrency(), 3),
 		},
 		Scanner: ScannerConfig{
-			ServerAddr:    getEnv("TRIVY_SERVER_ADDR", "localhost:4954"),
+			ServerAddr:    stringOr(file.Scanner.Server, defaultTrivyServer),
 			Token:         getEnv("TRIVY_TOKEN", ""),
 			CustomHeaders: make(map[string]string),
-			Timeout:       getEnvDuration("TRIVY_TIMEOUT", 5*time.Minute),
-			Insecure:      getEnvBool("TRIVY_INSECURE", false),
-			LocalFallback: getEnvBool("TRIVY_LOCAL_FALLBACK", true),
-			RegsyncPath:   getEnv("SUPPLINE_CONFIG", "suppline.yml"),
+			Timeout:       trivyTimeout,
+			Insecure:      file.Scanner.Insecure,
+			LocalFallback: boolOr(file.Scanner.LocalFallback, true),
+			RegsyncPath:   regsyncPath,
 		},
 		Attestation: AttestationConfig{
-			KeyBased: struct {
-				Key string
-			}{
-				Key: getEnv("ATTESTATION_KEY", ""),
-			},
-			RekorURL:     getEnv("REKOR_URL", "https://rekor.sigstore.dev"),
-			FulcioURL:    getEnv("FULCIO_URL", "https://fulcio.sigstore.dev"),
-			UseKeyless:   getEnvBool("ATTESTATION_USE_KEYLESS", false),
-			OIDCIssuer:   getEnv("OIDC_ISSUER", ""),
-			OIDCClientID: getEnv("OIDC_CLIENT_ID", ""),
+			Key:               getEnv("ATTESTATION_KEY", ""),
+			CommandTimeout:    attestTimeout,
+			AllowHTTPRegistry: file.Attestation.AllowHTTPRegistry,
+			NewBundleFormat:   boolOr(file.Attestation.NewBundleFormat, true),
 		},
 		StateStore: StateStoreConfig{
-			Type:           getEnv("STATE_STORE_TYPE", "sqlite"),
-			PostgresURL:    getEnv("POSTGRES_URL", ""),
-			SQLitePath:     getEnv("SQLITE_PATH", "suppline.db"),
+			Type:           storeType,
+			PostgresURL:    postgresURL,
+			SQLitePath:     stringOr(file.Store.SQLitePath, defaultSQLitePath),
 			RescanInterval: rescanInterval,
 		},
 		API: APIConfig{
-			Enabled:     getEnvBool("API_ENABLED", true),
-			Port:        getEnvInt("API_PORT", 8080),
+			Port:        intOr(file.Server.Port, defaultAPIPort),
 			APIKey:      getEnv("SUPPLINE_API_KEY", ""),
-			ReadOnly:    getEnvBool("API_READ_ONLY", false),
-			AllowNoAuth: getEnvBool("SUPPLINE_ALLOW_NO_AUTH", false),
+			ReadOnly:    file.Server.ReadOnly,
+			AllowNoAuth: file.Server.AllowNoAuth,
+			BasePath:    file.Server.BasePath,
 		},
 		Observability: ObservabilityConfig{
-			LogLevel:        getEnv("LOG_LEVEL", "info"),
-			MetricsPort:     getEnvInt("METRICS_PORT", 9090),
-			HealthCheckPort: getEnvInt("HEALTH_CHECK_PORT", 8081),
+			LogLevel: stringOr(file.Observability.LogLevel, defaultLogLevel),
+			Port:     intOr(file.Observability.Port, defaultObservabilityPort),
 		},
 	}
 
@@ -128,32 +113,18 @@ func (c *Config) Validate() error {
 		return errors.NewPermanentf("regsync file not found: %s", c.RegsyncPath)
 	}
 
-	if c.Scanner.ServerAddr == "" {
-		return errors.NewPermanentf("TRIVY_SERVER_ADDR environment variable is required (e.g., localhost:4954 or trivy:4954)")
+	if c.Attestation.Key == "" {
+		return errors.NewPermanentf("ATTESTATION_KEY is required (base64-encoded cosign private key)")
 	}
 
-	if c.StateStore.Type != "sqlite" && c.StateStore.Type != "postgres" && c.StateStore.Type != "memory" {
-		return errors.NewPermanentf("invalid state store type: %s (must be sqlite, postgres, or memory)", c.StateStore.Type)
+	basePath, err := NormalizeBasePath(c.API.BasePath)
+	if err != nil {
+		return err
 	}
+	c.API.BasePath = basePath
 
-	if c.StateStore.Type == "postgres" && c.StateStore.PostgresURL == "" {
-		return errors.NewPermanentf("postgres URL is required when using postgres state store")
-	}
-
-	if c.StateStore.Type == "sqlite" && c.StateStore.SQLitePath == "" {
-		return errors.NewPermanentf("sqlite path is required when using sqlite state store")
-	}
-
-	if !c.Attestation.UseKeyless && c.Attestation.KeyBased.Key == "" {
-		return errors.NewPermanentf("attestation key is required when not using keyless mode")
-	}
-
-	if c.Attestation.UseKeyless && (c.Attestation.OIDCIssuer == "" || c.Attestation.OIDCClientID == "") {
-		return errors.NewPermanentf("OIDC issuer and client ID are required when using keyless mode")
-	}
-
-	if c.API.Enabled && strings.TrimSpace(c.API.APIKey) == "" && !c.API.AllowNoAuth {
-		return errors.NewPermanentf("SUPPLINE_API_KEY is required when the API is enabled (authentication would otherwise be disabled for every route). Set SUPPLINE_ALLOW_NO_AUTH=1 only for isolated evaluation")
+	if strings.TrimSpace(c.API.APIKey) == "" && !c.API.AllowNoAuth {
+		return errors.NewPermanentf("SUPPLINE_API_KEY is required (authentication would otherwise be disabled for every route). Set server.allowNoAuth: true in suppline.yml only for isolated evaluation")
 	}
 
 	return nil
@@ -163,32 +134,6 @@ func (c *Config) Validate() error {
 func getEnv(key, defaultValue string) string {
 	if value := os.Getenv(key); value != "" {
 		return value
-	}
-	return defaultValue
-}
-
-func getEnvInt(key string, defaultValue int) int {
-	if value := os.Getenv(key); value != "" {
-		var intValue int
-		if _, err := fmt.Sscanf(value, "%d", &intValue); err == nil {
-			return intValue
-		}
-	}
-	return defaultValue
-}
-
-func getEnvBool(key string, defaultValue bool) bool {
-	if value := os.Getenv(key); value != "" {
-		return value == "true" || value == "1" || value == "yes"
-	}
-	return defaultValue
-}
-
-func getEnvDuration(key string, defaultValue time.Duration) time.Duration {
-	if value := os.Getenv(key); value != "" {
-		if duration, err := time.ParseDuration(value); err == nil {
-			return duration
-		}
 	}
 	return defaultValue
 }

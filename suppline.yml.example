@@ -1,5 +1,31 @@
 version: 1
 
+# Runtime settings (read at startup; all optional, defaults shown).
+# Secrets stay in environment variables: SUPPLINE_API_KEY, ATTESTATION_KEY,
+# ATTESTATION_KEY_PASSWORD, POSTGRES_URL, TRIVY_TOKEN, SUPPLINE_LLM_API_KEY,
+# SUPPLINE_GITHUB_TOKEN. See docs/CONFIGURATION.md.
+server:
+  port: 8080            # web UI, REST API, Swagger
+  basePath: ""          # e.g. /suppline
+  readOnly: false
+  allowNoAuth: false    # isolated evaluation only
+observability:
+  logLevel: info
+  port: 9090            # /metrics, /health, /ready
+mirror:
+  enabled: true
+scanner:
+  server: localhost:4954
+  timeout: 5m
+  insecure: false
+  localFallback: true
+store:
+  sqlitePath: suppline.db   # used when POSTGRES_URL is unset
+attestation:
+  commandTimeout: 2m
+  allowHttpRegistry: false
+  newBundleFormat: true
+
 creds:
   - registry: registry-1.docker.io
     user: '{{ env "DOCKER_USERNAME" }}'
@@ -21,26 +47,26 @@ defaults:
   cleanupTagsExclude:
   - ".*\\.sig$"
   - ".*\\.att$"
-  x-rescanInterval: 1d
-  x-worker-poll-interval: 5m
-  x-worker-concurrency: 3
-  x-worker-retry-attempts: 3
-  x-worker-retry-backoff: 10s
-  x-queue-buffer-size: 1000
-  x-scaiValidityExtension: 7d
-  x-policy:                   # Default policy for all sync entries (optional)
+  rescanInterval: 1d
+  worker-poll-interval: 5m
+  worker-concurrency: 3
+  worker-retry-attempts: 3
+  worker-retry-backoff: 10s
+  queue-buffer-size: 1000
+  scaiValidityExtension: 7d
+  policy:                   # Default policy for all sync entries (optional)
     expression: "criticalCount == 0"
     failureMessage: "critical vulnerabilities found"
-  x-cooldown: 7d              # Hold new digests until 7 days after suppline first saw them upstream (optional, off when unset)
-  x-vex-repo: true            # Apply Aqua VEX Hub to all scans by default (optional)
+  cooldown: 7d              # Hold new digests until 7 days after suppline first saw them upstream (optional, off when unset)
+  vex-repo: true            # Apply Aqua VEX Hub to all scans by default (optional)
 
 sync:
   - source: nginx
     target: myprivateregistry/nginx
     type: repository
     schedule: "0 */6 * * *"
-    x-rescanInterval: 3d      # Override default rescan interval for this entry (optional)
-    x-vex:                     # VEX (Vulnerability Exploitability Exchange) statements
+    rescanInterval: 3d      # Override default rescan interval for this entry (optional)
+    vex:                     # VEX (Vulnerability Exploitability Exchange) statements
       - id: CVE-2024-56171
         state: not_affected
         justification: vulnerable_code_not_present
@@ -59,15 +85,15 @@ sync:
         - ">=3.18.0"
       deny:
         - "latest"
-    x-policy:                 # Override default policy for this entry (optional)
+    policy:                 # Override default policy for this entry (optional)
       expression: "criticalCount == 0 && highCount == 0"
       failureMessage: "critical or high vulnerabilities found"
-    x-cooldown: 14d           # Override the default cooldown for this entry; "0" turns it off (optional)
-    x-cooldown-release:       # Written by "Release now" on the Mirror page: skips the rest of one digest's cooldown
+    cooldown: 14d           # Override the default cooldown for this entry; "0" turns it off (optional)
+    cooldown-release:       # Written by "Release now" on the Mirror page: skips the rest of one digest's cooldown
       - digest: sha256:0000000000000000000000000000000000000000000000000000000000000000
         reason: "CVE-2026-1234 hotfix"
         at: "2026-11-18T10:00:00Z"
-    x-vex:
+    vex:
       - id: CVE-2024-12345
         state: false_positive
         detail: not applicable to our use case
@@ -76,9 +102,9 @@ sync:
   - source: internal-tool
     target: myprivateregistry/internal-tool
     type: repository
-    x-vex-repo: false         # Disable VEX for images with no upstream OSS VEX data (optional)
+    vex-repo: false         # Disable VEX for images with no upstream OSS VEX data (optional)
 
   - source: legacy-app
     target: myprivateregistry/legacy-app
     type: repository
-    x-suppline-ignore: true   # true = mirror only, no scan or attestation (default: false)
+    suppline-ignore: true   # true = mirror only, no scan or attestation (default: false)

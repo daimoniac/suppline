@@ -45,20 +45,12 @@ func TestNewSigstoreAttestor_MissingKeyPath(t *testing.T) {
 	}
 }
 
-func TestResolveCosignAttestTimeout_DefaultAndInvalid(t *testing.T) {
-	t.Setenv("ATTESTATION_COMMAND_TIMEOUT", "")
-	if timeout := resolveCosignAttestTimeout(testLogger()); timeout != defaultCosignAttestTimeout {
+func TestResolveCosignAttestTimeout(t *testing.T) {
+	if timeout := resolveCosignAttestTimeout(0); timeout != defaultCosignAttestTimeout {
 		t.Fatalf("expected default timeout %s, got %s", defaultCosignAttestTimeout, timeout)
 	}
-
-	t.Setenv("ATTESTATION_COMMAND_TIMEOUT", "not-a-duration")
-	if timeout := resolveCosignAttestTimeout(testLogger()); timeout != defaultCosignAttestTimeout {
-		t.Fatalf("expected default timeout for invalid value, got %s", timeout)
-	}
-
-	t.Setenv("ATTESTATION_COMMAND_TIMEOUT", "250ms")
-	if timeout := resolveCosignAttestTimeout(testLogger()); timeout != 250*time.Millisecond {
-		t.Fatalf("expected parsed timeout 250ms, got %s", timeout)
+	if timeout := resolveCosignAttestTimeout(250 * time.Millisecond); timeout != 250*time.Millisecond {
+		t.Fatalf("expected configured timeout 250ms, got %s", timeout)
 	}
 }
 
@@ -257,11 +249,17 @@ func testSBOM(t *testing.T) *scanner.SBOM {
 func testAttestor(t *testing.T) *SigstoreAttestor {
 	t.Helper()
 
-	attestor, err := NewSigstoreAttestor(AttestationConfig{
-		KeyBased: KeyBasedConfig{
-			Key: base64.StdEncoding.EncodeToString([]byte("test-key-content")),
-		},
-	}, testLogger())
+	return testAttestorWith(t, AttestationConfig{NewBundleFormat: true})
+}
+
+// testAttestorWith builds an attestor with a throwaway key and the given settings.
+func testAttestorWith(t *testing.T, cfg AttestationConfig) *SigstoreAttestor {
+	t.Helper()
+
+	cfg.KeyBased = KeyBasedConfig{
+		Key: base64.StdEncoding.EncodeToString([]byte("test-key-content")),
+	}
+	attestor, err := NewSigstoreAttestor(cfg, testLogger())
 	if err != nil {
 		t.Fatalf("failed to create attestor: %v", err)
 	}
@@ -293,17 +291,14 @@ func TestAttestSBOM_DisablesSigningConfigAndTlogUpload(t *testing.T) {
 	}
 }
 
-func TestAttestSBOM_NewBundleFormatEnv(t *testing.T) {
+func TestAttestSBOM_NewBundleFormat(t *testing.T) {
 	tests := []struct {
-		name string
-		env  string
-		want string
+		name    string
+		enabled bool
+		want    string
 	}{
-		{name: "unset defaults to protobuf bundles", env: "", want: "--new-bundle-format=true"},
-		{name: "explicit true", env: "true", want: "--new-bundle-format=true"},
-		{name: "explicit false opts out to classic att tags", env: "false", want: "--new-bundle-format=false"},
-		{name: "explicit 0 opts out", env: "0", want: "--new-bundle-format=false"},
-		{name: "explicit no opts out", env: "no", want: "--new-bundle-format=false"},
+		{name: "protobuf bundles", enabled: true, want: "--new-bundle-format=true"},
+		{name: "classic att tags", enabled: false, want: "--new-bundle-format=false"},
 	}
 
 	for _, tt := range tests {
@@ -311,13 +306,8 @@ func TestAttestSBOM_NewBundleFormatEnv(t *testing.T) {
 			argsFile := filepath.Join(t.TempDir(), "args.txt")
 			fakeBinDir := writeFakeCosign(t, "#!/bin/sh\necho \"$@\" > "+argsFile+"\n")
 			t.Setenv("PATH", fakeBinDir+string(os.PathListSeparator)+os.Getenv("PATH"))
-			if tt.env == "" {
-				t.Setenv("ATTESTATION_NEW_BUNDLE_FORMAT", "")
-			} else {
-				t.Setenv("ATTESTATION_NEW_BUNDLE_FORMAT", tt.env)
-			}
-
-			if err := testAttestor(t).AttestSBOM(context.Background(), "test-image:latest", testSBOM(t)); err != nil {
+			attestor := testAttestorWith(t, AttestationConfig{NewBundleFormat: tt.enabled})
+			if err := attestor.AttestSBOM(context.Background(), "test-image:latest", testSBOM(t)); err != nil {
 				t.Fatalf("AttestSBOM: %v", err)
 			}
 
@@ -372,7 +362,6 @@ func TestAttestSBOM_RuntimeFailureStaysTransient(t *testing.T) {
 func TestAttestSBOM_TimesOutCosignCommand(t *testing.T) {
 	fakeBinDir := writeFakeCosign(t, "#!/bin/sh\nsleep 5\n")
 	t.Setenv("PATH", fakeBinDir+string(os.PathListSeparator)+os.Getenv("PATH"))
-	t.Setenv("ATTESTATION_COMMAND_TIMEOUT", "20ms")
 
 	sbomJSON, err := json.Marshal(map[string]any{
 		"bomFormat":   "CycloneDX",
@@ -383,14 +372,7 @@ func TestAttestSBOM_TimesOutCosignCommand(t *testing.T) {
 		t.Fatalf("failed to marshal test SBOM: %v", err)
 	}
 
-	attestor, err := NewSigstoreAttestor(AttestationConfig{
-		KeyBased: KeyBasedConfig{
-			Key: base64.StdEncoding.EncodeToString([]byte("test-key-content")),
-		},
-	}, testLogger())
-	if err != nil {
-		t.Fatalf("failed to create attestor: %v", err)
-	}
+	attestor := testAttestorWith(t, AttestationConfig{CommandTimeout: 20 * time.Millisecond, NewBundleFormat: true})
 
 	err = attestor.AttestSBOM(context.Background(), "test-image:latest", &scanner.SBOM{
 		Format:  "cyclonedx",
