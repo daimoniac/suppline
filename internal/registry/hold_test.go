@@ -114,3 +114,18 @@ func TestHoldTagDigest(t *testing.T) {
 		}
 	}
 }
+
+// A target repository the mirror has not created yet has no hold tags; the
+// registry answers NAME_UNKNOWN, which is not an error.
+func TestListHoldsOfMissingRepository(t *testing.T) {
+	client, repo, _ := holdFixture(t)
+	missing := strings.TrimSuffix(repo, "/app") + "/not-yet-mirrored"
+
+	holds, err := client.ListHolds(context.Background(), missing)
+	if err != nil {
+		t.Fatalf("ListHolds() error = %v, want none for a missing repository", err)
+	}
+	if len(holds) != 0 {
+		t.Fatalf("ListHolds() = %v, want none", holds)
+	}
+}
