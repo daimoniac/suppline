@@ -75,6 +75,8 @@ type runner struct {
 	journal    *journal
 	manifestMu sync.Mutex
 	manifests  map[string]manifest.Manifest
+	created    *createdCache
+	inventory  ClusterInventory
 }
 
 // WithReload follows the running configuration. When a newly published
@@ -104,6 +106,7 @@ func Run(ctx context.Context, cfg *config.RegsyncConfig, logger *slog.Logger, op
 	m := &runner{
 		log:       logger,
 		manifests: map[string]manifest.Manifest{},
+		created:   newCreatedCache(),
 	}
 	for _, opt := range opts {
 		opt(m)

@@ -149,6 +149,12 @@ sync:
     target: string            # Target repository
     type: string              # Type: "image" or "repository"
     schedule: string          # Cron schedule (optional)
+    tags:                     # Tag filters (optional)
+      allow: [string]           # Anchored regexes a tag must match
+      deny: [string]            # Anchored regexes that drop a tag
+      semverRange: [string]     # Semver ranges; several are OR
+      newest: int               # Keep only the N tags built last (optional)
+    cleanupKeepRunning: bool  # Cleanup keeps tags a cluster runs (default: false)
     suppline-ignore: bool   # If true, the entry is only mirrored: no scan, policy, or attestation (default: false)
     rescanInterval: string  # Rescan interval override (optional)
     policy:                 # Policy override (optional)
@@ -232,12 +238,39 @@ sync:
       deny:
         - "latest"
   
+  # Keep only the newest builds of a CI-tagged repository
+  - source: registry.example.com/team/app
+    target: myregistry.example.com/app
+    type: repository
+    tags:
+      allow:
+        - 'sha[0-9a-f]{8,}'
+      newest: 30
+  
   # Temporarily skip an entry without removing it
   - source: legacy-app
     target: myregistry.example.com/legacy-app
     type: repository
     suppline-ignore: true
 ```
+
+### Newest tags
+
+`tags.newest: N` keeps only the N tags whose images were built last. Use it for repositories that CI tags with commit hashes or build numbers, where tag names have no version order and the repository holds hundreds of builds.
+
+- **It runs after `allow`, `deny` and `semverRange`.** Those filters pick the candidates. `newest` keeps the N built last. In `tagSets`, each set has its own window.
+- **Build time is the image config's `created` field**, read for the entry's `platform` (or the first of `platforms`). Ties, including images whose `created` is unset or fixed by a reproducible build, go to the higher tag name.
+- **Cleanup trims the window.** With `cleanupTags`, a target tag that falls out of the newest N is deleted, because the target's copies sort the same way as the source.
+- **Build times are cached in memory** for 24 hours per tag, so a pass only reads the build time of new tags. After a restart, the first pass reads every candidate tag again: about two registry requests per tag.
+- The publisher sets `created`, so `newest` only decides which tags are copied. Every copied image is still scanned and gated. See [ADR 0002](adr/0002-newest-tags-by-build-time.md).
+
+### Keeping running tags
+
+`cleanupKeepRunning: true` (on `defaults` or a sync entry) stops cleanup from deleting a target tag that the latest report of any [clusterstate-agent](../clusterstate-agent/) cluster runs. Use it with `newest` or with source repositories whose own cleanup deletes tags still deployed.
+
+- A cluster that stopped reporting still counts: its last report keeps its tags.
+- **Without any cluster report**, for example right after the database is rebuilt, cleanup deletes none of the tags it would otherwise delete for that target, apart from cosign `.sig`/`.att` tags whose subject is gone. It deletes them on a later pass once a cluster has reported.
+- Tags are matched by repository and tag name. A pod that pulls only by digest does not keep a tag.
 
 ### Ignoring Sync Entries
 
