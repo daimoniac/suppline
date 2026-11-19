@@ -494,13 +494,52 @@ func (s *SQLiteStore) queryRuntimeUsageByRepoTags(ctx context.Context, pairs []r
 	return result, nil
 }
 
-// RepositoryInUse reports whether any current cluster observation matches the repository.
+// RepositoryInUse reports whether any current cluster observation matches the
+// repository by name, or runs a digest stored for it. The digest match covers
+// clusters that pull a mirrored image from its source registry.
 func (s *SQLiteStore) RepositoryInUse(ctx context.Context, repository string) (bool, error) {
 	usage, err := s.queryRuntimeUsageByRepository(ctx, repository)
 	if err != nil {
 		return false, err
 	}
-	return usage.RuntimeUsed, nil
+	if usage.RuntimeUsed {
+		return true, nil
+	}
+	return s.runsStoredDigest(ctx, repository)
+}
+
+// runsStoredDigest reports whether a current cluster observation reports a
+// digest stored for repository.
+func (s *SQLiteStore) runsStoredDigest(ctx context.Context, repository string) (bool, error) {
+	repository = normalizeRepositoryRef(repository)
+	if repository == "" {
+		return false, nil
+	}
+	rows, err := s.db.QueryContext(ctx, `
+		SELECT DISTINCT r.name
+		FROM cluster_images_seen ci
+		JOIN clusters c ON c.id = ci.cluster_id
+		JOIN artifacts a ON a.digest = ci.digest
+		JOIN repositories r ON r.id = a.repository_id
+		WHERE ci.digest != '' AND ci.last_seen_at >= COALESCE(c.last_reported_at, 0)
+	`)
+	if err != nil {
+		return false, errors.NewTransientf("failed to query running stored digests: %w", err)
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var name string
+		if err := rows.Scan(&name); err != nil {
+			return false, errors.NewTransientf("failed to scan running stored digest row: %w", err)
+		}
+		if normalizeRepositoryRef(name) == repository {
+			return true, nil
+		}
+	}
+	if err := rows.Err(); err != nil {
+		return false, errors.NewTransientf("error iterating running stored digest rows: %w", err)
+	}
+	return false, nil
 }
 
 // GetRuntimeUsageForScan returns runtime usage for one scan detail response.
