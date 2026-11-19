@@ -113,6 +113,10 @@ func (c *clientImpl) ListHolds(ctx context.Context, repo string) ([]Hold, error)
 		return nil, err
 	}
 	tags, err := remote.List(repoRef, opts...)
+	if isNotFound(err) {
+		// The mirror has not created the repository yet, so nothing is held.
+		return nil, nil
+	}
 	if err != nil {
 		return nil, errors.ClassifyRegistryError(fmt.Errorf("failed to list tags for %s: %w", repo, err))
 	}
@@ -169,8 +173,7 @@ func (c *clientImpl) DeleteHold(ctx context.Context, repo, digest string) error 
 	tagRef := repoRef.Tag(HoldTag(digest))
 	desc, err := remote.Head(tagRef, opts...)
 	if err != nil {
-		var terr *transport.Error
-		if stderrors.As(err, &terr) && terr.StatusCode == http.StatusNotFound {
+		if isNotFound(err) {
 			return nil
 		}
 		return errors.ClassifyRegistryError(fmt.Errorf("failed to read hold tag of %s@%s: %w", repo, digest, err))
@@ -207,4 +210,11 @@ func (c *clientImpl) holdRef(ctx context.Context, repo, digest string) (name.Dig
 		return name.Digest{}, nil, err
 	}
 	return repoRef.Digest(digest), opts, nil
+}
+
+// isNotFound reports whether err is the registry saying the repository or
+// tag does not exist.
+func isNotFound(err error) bool {
+	var terr *transport.Error
+	return stderrors.As(err, &terr) && terr.StatusCode == http.StatusNotFound
 }
