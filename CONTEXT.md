@@ -32,6 +32,10 @@ _Avoid_: pending image, quarantined image, staged digest
 A recorded decision to skip the rest of one Held digest's Cooldown. It never skips the scan or the attestation.
 _Avoid_: bypass, override, fast-track
 
+**Newest window**:
+The N tags of a sync entry's tag set whose images were built last, by the image's `created` field. The mirror copies only these, and cleanup deletes target tags that fall out of it unless a cluster runs them (Runtime usage).
+_Avoid_: tag limit, retention count, latest N
+
 **Scan request**:
 An expressed intent to scan a specific container image, whether discovered automatically or initiated as a rescan.
 _Avoid_: queue task, worker job

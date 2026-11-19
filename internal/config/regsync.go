@@ -57,6 +57,9 @@ func ParseRegsync(path string) (*RegsyncConfig, error) {
 	if err := config.ValidateCooldowns(); err != nil {
 		return nil, errors.NewPermanentf("invalid cooldown configuration: %w", err)
 	}
+	if err := config.ValidateTagFilters(); err != nil {
+		return nil, errors.NewPermanentf("invalid tag filter configuration: %w", err)
+	}
 
 	return &config, nil
 }
@@ -218,6 +221,7 @@ func applySyncDefaults(s *SyncEntry, d Defaults) {
 		s.Hooks.Unchanged = d.Hooks.Unchanged
 	}
 	s.CleanupTags = boolDefault(s.CleanupTags, d.CleanupTags)
+	s.CleanupKeepRunning = boolDefault(s.CleanupKeepRunning, d.CleanupKeepRunning)
 	if s.CleanupTagsExclude == nil && d.CleanupTagsExclude != nil {
 		s.CleanupTagsExclude = d.CleanupTagsExclude
 	}
@@ -440,6 +444,23 @@ func (c *RegsyncConfig) ValidateCooldowns() error {
 		for _, release := range sync.CooldownReleases {
 			if !strings.HasPrefix(release.Digest, "sha256:") {
 				return fmt.Errorf("sync %s: cooldown-release digest %q must be a sha256 digest", sync.Target, release.Digest)
+			}
+		}
+	}
+	return nil
+}
+
+// ValidateTagFilters checks the tag filter settings that regex and semver
+// parsing do not cover.
+func (c *RegsyncConfig) ValidateTagFilters() error {
+	for _, sync := range c.Sync {
+		sets := append([]TagFilter{}, sync.TagSets...)
+		if sync.Tags != nil {
+			sets = append(sets, *sync.Tags)
+		}
+		for _, set := range sets {
+			if set.Newest < 0 {
+				return fmt.Errorf("sync %s: tags newest must not be negative, got %d", sync.Target, set.Newest)
 			}
 		}
 	}

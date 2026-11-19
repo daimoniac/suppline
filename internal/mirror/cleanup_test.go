@@ -76,7 +76,7 @@ func TestWantedTags_TwoEntries(t *testing.T) {
 		{Tags: &config.TagFilter{Allow: []string{"keep-a"}}},
 		{Tags: &config.TagFilter{Allow: []string{"keep-b"}}, CleanupTagsExclude: []string{`.*\.att$`}},
 	}
-	wanted, excludes, err := wantedTags(entries, []string{"keep-a", "keep-b", "drop", "note.att"})
+	wanted, excludes, err := (&runner{created: newCreatedCache()}).wantedTags(context.Background(), entries, "reg.example/x", []string{"keep-a", "keep-b", "drop", "note.att"})
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -107,23 +107,11 @@ func (m *runner) processRepo(ctx context.Context, s config.SyncEntry, src, tgt s
 	if m.runway != nil && !s.IsIgnored() {
 		m.runway.Retain(ctx, tgt, sTagsList)
 	}
-	sets := entryTagSets(s)
-	sTagsFiltered := []string{}
-	if len(sets) == 0 {
-		sTagsFiltered = sTagsList
-	}
-	for _, set := range sets {
-		filtered, ferr := filterTagList(set, sTagsList)
-		if ferr != nil {
-			m.failListing(ctx)
-			m.log.Error("failed processing tag filters", "source", sRepoRef.CommonName(), "error", ferr.Error())
-			return ferr
-		}
-		for _, tag := range filtered {
-			if !slices.Contains(sTagsFiltered, tag) {
-				sTagsFiltered = append(sTagsFiltered, tag)
-			}
-		}
+	sTagsFiltered, err := m.selectTags(ctx, s, src, sTagsList)
+	if err != nil {
+		m.failListing(ctx)
+		m.log.Error("failed processing tag filters", "source", sRepoRef.CommonName(), "error", err.Error())
+		return err
 	}
 	if len(sTagsFiltered) == 0 {
 		m.log.Warn("no matching tags found", "source", sRepoRef.CommonName())

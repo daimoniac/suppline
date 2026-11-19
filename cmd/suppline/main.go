@@ -461,10 +461,14 @@ func run() error {
 			mirrorLog := logger.With("module", "regsync")
 			mirrorLog.Info("starting in-process mirror")
 			mirrorStore, _ := store.(statestore.MirrorStore)
-			if err := mirror.Run(ctx, regsyncCfg, logger, mirror.WithStore(mirrorStore), mirror.WithActivity(mirrorActivity), mirror.WithReady(func() {
+			opts := []mirror.Option{mirror.WithStore(mirrorStore), mirror.WithActivity(mirrorActivity)}
+			if inventory, ok := store.(mirror.ClusterInventory); ok {
+				opts = append(opts, mirror.WithInventory(inventory))
+			}
+			if err := mirror.Run(ctx, regsyncCfg, logger, append(opts, mirror.WithReady(func() {
 				healthChecker.UpdateComponentHealth("mirror", observability.StatusHealthy, "")
 			}), mirror.WithRunway(tagRunway),
-				mirror.WithReload(repositoryPolicies.Current, repositoryPolicies.Changed)); err != nil && err != context.Canceled {
+				mirror.WithReload(repositoryPolicies.Current, repositoryPolicies.Changed))...); err != nil && err != context.Canceled {
 				mirrorLog.Error("mirror error", "error", err.Error())
 				healthChecker.UpdateComponentHealth("mirror", observability.StatusUnhealthy, err.Error())
 			}
