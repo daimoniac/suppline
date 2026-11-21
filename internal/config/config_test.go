@@ -416,3 +416,19 @@ func TestValidateCooldowns(t *testing.T) {
 		t.Errorf("ValidateCooldowns() = %v", err)
 	}
 }
+
+func TestValidateTagFilters(t *testing.T) {
+	bad := []*RegsyncConfig{
+		{Sync: []SyncEntry{{Target: "r", Tags: &TagFilter{Newest: -1}}}},
+		{Sync: []SyncEntry{{Target: "r", TagSets: []TagFilter{{Newest: 3}, {Newest: -2}}}}},
+	}
+	for i, cfg := range bad {
+		if err := cfg.ValidateTagFilters(); err == nil {
+			t.Errorf("config %d: ValidateTagFilters() = nil, want error", i)
+		}
+	}
+	good := &RegsyncConfig{Sync: []SyncEntry{{Target: "r", Tags: &TagFilter{Allow: []string{"sha.*"}, Newest: 30}}}}
+	if err := good.ValidateTagFilters(); err != nil {
+		t.Errorf("ValidateTagFilters() = %v", err)
+	}
+}

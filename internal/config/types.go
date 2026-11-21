@@ -140,6 +140,7 @@ type Defaults struct {
 	Hooks                Hooks            `yaml:"hooks,omitempty"`
 	CleanupTags          *bool            `yaml:"cleanupTags,omitempty"`
 	CleanupTagsExclude   []string         `yaml:"cleanupTagsExclude,omitempty"`
+	CleanupKeepRunning   *bool            `yaml:"cleanupKeepRunning,omitempty"`
 	CleanupRepos         *bool            `yaml:"cleanupRepos,omitempty"`
 	CleanupReposExclude  []string         `yaml:"cleanupReposExclude,omitempty"`
 	CleanupReposSchedule string           `yaml:"cleanupReposSchedule,omitempty"`
@@ -198,8 +199,9 @@ type SyncEntry struct {
 	Hooks                 Hooks                `yaml:"hooks,omitempty"`
 	CleanupTags           *bool                `yaml:"cleanupTags,omitempty"`
 	CleanupTagsExclude    []string             `yaml:"cleanupTagsExclude,omitempty"`
-	VEX                   []types.VEXStatement `yaml:"vex,omitempty"`      // CycloneDX VEX statements authored by people
-	VEXAuto               []types.VEXStatement `yaml:"vex-auto,omitempty"` // Triage-owned statements; never written into vex
+	CleanupKeepRunning    *bool                `yaml:"cleanupKeepRunning,omitempty"` // keep tags a cluster reports running
+	VEX                   []types.VEXStatement `yaml:"vex,omitempty"`                // CycloneDX VEX statements authored by people
+	VEXAuto               []types.VEXStatement `yaml:"vex-auto,omitempty"`           // Triage-owned statements; never written into vex
 	RescanInterval        string               `yaml:"rescanInterval,omitempty"`
 	SCAIValidityExtension string               `yaml:"scaiValidityExtension,omitempty"`
 	Policy                *PolicyConfig        `yaml:"policy,omitempty"`
@@ -217,6 +219,10 @@ type TagFilter struct {
 	Allow       []string `yaml:"allow,omitempty"`
 	Deny        []string `yaml:"deny,omitempty"`
 	SemverRange []string `yaml:"semverRange,omitempty"`
+	// Newest keeps only the N tags whose images were built last, after
+	// Allow, Deny and SemverRange. Build time is the image config's created
+	// field; ties go to the higher tag name. 0 keeps every tag.
+	Newest int `yaml:"newest,omitempty"`
 }
 
 // RepoFilter is an allow and deny list of repository names for a registry sync.

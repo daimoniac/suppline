@@ -162,16 +162,21 @@ func (m *runner) cleanupTags(ctx context.Context, tgt string) error {
 	}
 
 	syncEntries := m.findSyncEntriesForTarget(tgt)
-	wanted, excludes, err := wantedTags(syncEntries, tTagsList)
+	tTagsList, holdTags := splitHoldTags(tTagsList)
+	wanted, excludes, err := m.wantedTags(ctx, syncEntries, tgt, tTagsList)
 	if err != nil {
 		return err
 	}
-	tTagsList, holdTags := splitHoldTags(tTagsList)
 	toDelete, err := tagsToDelete(tTagsList, wanted, excludes, func(tag string) (bool, error) {
 		return isOrphanedDigestTag(ctx, m.rc, tgtRef, tag)
 	})
 	if err != nil {
 		return err
+	}
+	if keepRunningFor(syncEntries) {
+		if toDelete, err = m.keepRunning(ctx, tgt, toDelete); err != nil {
+			return err
+		}
 	}
 	toDelete = append(toDelete, m.staleHoldTags(ctx, tgt, holdTags)...)
 
@@ -193,21 +198,21 @@ func (m *runner) cleanupTags(ctx context.Context, tgt string) error {
 	return errors.Join(errs...)
 }
 
-func wantedTags(entries []config.SyncEntry, present []string) (wanted, excludes []string, err error) {
+// wantedTags returns the tags of target that a sync entry selects. A newest
+// window is applied to the target's tags: they are copies of the source's, so
+// they sort the same way, and tags that fell out of the window are not wanted.
+func (m *runner) wantedTags(ctx context.Context, entries []config.SyncEntry, target string, present []string) (wanted, excludes []string, err error) {
 	allSetsEmpty := true
 	for _, syncEntry := range entries {
-		sets := entryTagSets(syncEntry)
-		if len(sets) > 0 {
+		if len(entryTagSets(syncEntry)) > 0 {
 			allSetsEmpty = false
-			for _, set := range sets {
-				filtered, ferr := filterTagList(set, present)
-				if ferr != nil {
-					return nil, nil, ferr
-				}
-				for _, tag := range filtered {
-					if !slices.Contains(wanted, tag) {
-						wanted = append(wanted, tag)
-					}
+			selected, serr := m.selectTags(ctx, syncEntry, target, present)
+			if serr != nil {
+				return nil, nil, serr
+			}
+			for _, tag := range selected {
+				if !slices.Contains(wanted, tag) {
+					wanted = append(wanted, tag)
 				}
 			}
 		}
@@ -246,4 +251,13 @@ func (m *runner) runCleanupForAllTargets(ctx context.Context) error {
 		}
 	}
 	return errors.Join(errs...)
+}
+
+func keepRunningFor(entries []config.SyncEntry) bool {
+	for _, entry := range entries {
+		if entry.CleanupKeepRunning != nil && *entry.CleanupKeepRunning {
+			return true
+		}
+	}
+	return false
 }

@@ -14,7 +14,7 @@ func entryTagSets(s config.SyncEntry) []config.TagFilter {
 	if s.Tags != nil {
 		tags = *s.Tags
 	}
-	if len(tags.Allow) > 0 || len(tags.Deny) > 0 || len(tags.SemverRange) > 0 {
+	if len(tags.Allow) > 0 || len(tags.Deny) > 0 || len(tags.SemverRange) > 0 || tags.Newest > 0 {
 		sets = append(sets, tags)
 	}
 	return sets
