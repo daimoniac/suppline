@@ -28,6 +28,16 @@ var validVEXStates = map[VEXAnalysisState]bool{
 	VEXStateResolvedWithPedigree: true,
 }
 
+// ExemptsVulnerability reports whether a statement in this state removes a
+// vulnerability finding from policy counts. not_affected (the vulnerable code
+// does not apply here) and false_positive (the scanner misidentified the
+// finding) do. The resolved states do not: a sync-entry statement covers every
+// tag of a repository, and a build that really carries the fix no longer
+// reports the CVE, so the exemption would only ever hit the unfixed tags.
+func (s VEXAnalysisState) ExemptsVulnerability() bool {
+	return s == VEXStateNotAffected || s == VEXStateFalsePositive
+}
+
 // VEXJustification represents the CycloneDX VEX justification for a not_affected state.
 type VEXJustification string
 

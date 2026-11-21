@@ -138,7 +138,7 @@ func (c *MemoryCatalog) UsesVEXRepo() bool {
 func findExemption(statements []types.VEXStatement, statementID string, at time.Time) (bool, *types.VEXStatement) {
 	for index := range statements {
 		statement := statements[index]
-		if statement.ID != statementID || statement.State != types.VEXStateNotAffected {
+		if statement.ID != statementID || !statement.State.ExemptsVulnerability() {
 			continue
 		}
 		if statement.ExpiresAt != nil && *statement.ExpiresAt < at.Unix() {

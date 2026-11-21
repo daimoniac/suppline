@@ -1040,3 +1040,37 @@ func TestEngine_Evaluate_CooldownFailureIsNotPending(t *testing.T) {
 		t.Fatalf("status = %s, want failed", decision.Status)
 	}
 }
+
+func TestEngine_Evaluate_ExemptingVEXStates(t *testing.T) {
+	engine, err := NewEngine(slog.Default(), PolicyConfig{Expression: "criticalCount == 0"})
+	if err != nil {
+		t.Fatalf("failed to create engine: %v", err)
+	}
+	tests := []struct {
+		state  types.VEXAnalysisState
+		exempt bool
+	}{
+		{types.VEXStateNotAffected, true},
+		{types.VEXStateFalsePositive, true},
+		{types.VEXStateResolved, false},
+		{types.VEXStateResolvedWithPedigree, false},
+		{types.VEXStateAffected, false},
+		{types.VEXStateInTriage, false},
+	}
+	for _, tt := range tests {
+		t.Run(string(tt.state), func(t *testing.T) {
+			result := &scanner.ScanResult{
+				ImageRef:        "test/image:v1",
+				Vulnerabilities: []types.Vulnerability{{ID: "CVE-2024-0001", Severity: "CRITICAL", PackageName: "nginx"}},
+			}
+			statements := []types.VEXStatement{{ID: "CVE-2024-0001", State: tt.state, Detail: "reason"}}
+			decision, err := engine.Evaluate(context.Background(), "test/image:v1", result, statements)
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+			if decision.Passed != tt.exempt {
+				t.Errorf("state %s: passed = %v, want %v", tt.state, decision.Passed, tt.exempt)
+			}
+		})
+	}
+}

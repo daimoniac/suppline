@@ -4,7 +4,7 @@ import { formatDate } from '../lib/utils';
 import { SeverityBadge } from './ui';
 import { ExternalLink, Skull } from 'lucide-react';
 import { scheduleEffectLoad } from '../lib/scheduleEffectLoad';
-import { STATUS_LABELS, VEX_JUSTIFICATIONS, VEX_STATES, fromLocalInput, isMaliciousID, toLocalInput, type StatementRow } from '../lib/triageRows';
+import { STATUS_LABELS, VEX_JUSTIFICATIONS, VEX_STATES, fromLocalInput, isMaliciousID, toLocalInput, vexStateExempts, type StatementRow } from '../lib/triageRows';
 import type { TriageAccept, VulnerabilityGroup } from '../lib/api';
 
 export function EditModal({
@@ -54,6 +54,10 @@ export function EditModal({
   const save = async () => {
     if (malicious && !detail.trim()) {
       setError('Say why this is not the malicious package, e.g. where the image gets it from.');
+      return;
+    }
+    if (state === 'false_positive' && !detail.trim()) {
+      setError('Say why the scanner is wrong, e.g. the package carries a backported fix or is not the one the advisory names.');
       return;
     }
     setSaving(true);
@@ -145,12 +149,38 @@ export function EditModal({
                 Outcome
                 <select value={state} onChange={e => setState(e.target.value)} disabled={malicious}
                   className="mt-1 w-full px-3 py-2 bg-bg-primary border border-border rounded-lg text-sm text-text-primary focus:outline-none focus:border-accent/50 disabled:opacity-70">
-                  {(malicious ? VEX_STATES.filter(([value]) => value === 'false_positive') : VEX_STATES)
-                    .map(([value, label]) => <option key={value} value={value}>{label}</option>)}
+                  {malicious
+                    ? VEX_STATES.filter(([value]) => value === 'false_positive')
+                      .map(([value, label]) => <option key={value} value={value}>{label}</option>)
+                    : (
+                      <>
+                        <optgroup label="Exempts the finding">
+                          {VEX_STATES.filter(([value]) => vexStateExempts(value))
+                            .map(([value, label]) => <option key={value} value={value}>{label}</option>)}
+                        </optgroup>
+                        <optgroup label="Record only, the finding still counts">
+                          {VEX_STATES.filter(([value]) => !vexStateExempts(value))
+                            .map(([value, label]) => <option key={value} value={value}>{label}</option>)}
+                        </optgroup>
+                      </>
+                    )}
                 </select>
               </label>
               {malicious && (
                 <p className="text-xs text-text-muted">Only false positive can exempt a malicious package: the image does not contain the malicious one.</p>
+              )}
+              {!malicious && state === 'not_affected' && (
+                <p className="text-xs text-text-muted">The image has the vulnerable package, but the vulnerability cannot be exploited here. Pick the reason below.</p>
+              )}
+              {!malicious && state === 'false_positive' && (
+                <p className="text-xs text-text-muted">The scanner is wrong: the image does not have the vulnerable code, for example because the package carries a backported fix. Say why in Detail.</p>
+              )}
+              {!malicious && !vexStateExempts(state) && (
+                <p className="text-xs text-warning" role="alert">
+                  {state === 'resolved' || state === 'resolved_with_pedigree'
+                    ? 'This does not clear the policy gate. A statement covers every tag, and a build with the fix no longer reports the CVE, so rebuild or upgrade instead. Use not affected or false positive to exempt.'
+                    : 'This does not clear the policy gate. The finding keeps counting. Use not affected or false positive to exempt.'}
+                </p>
               )}
               {state === 'not_affected' && (
                 <label className="block text-xs text-text-secondary">

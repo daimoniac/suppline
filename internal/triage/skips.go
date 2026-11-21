@@ -4,7 +4,7 @@ import "time"
 
 // Skip codes say why a policy-failing CVE was not sent to the model.
 const (
-	// SkipExempt: an active not_affected statement already covers the CVE.
+	// SkipExempt: an active not_affected or false_positive statement already covers the CVE.
 	SkipExempt = "exempt"
 	// SkipNotInUse: only_in_use is on and the repository is not running anywhere.
 	SkipNotInUse = "not_in_use"

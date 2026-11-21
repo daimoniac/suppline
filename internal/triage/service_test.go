@@ -587,3 +587,11 @@ func TestResolveKeepsConfigRepoWhenDisabled(t *testing.T) {
 		t.Fatalf("settings = %+v", settings)
 	}
 }
+
+func TestPromoteManualRequiresDetailForFalsePositive(t *testing.T) {
+	svc := &Service{settings: Settings{Enabled: true}, logger: slog.Default()}
+	_, err := svc.PromoteManual(context.Background(), "example/app", types.VEXStatement{ID: "CVE-2026-1", State: types.VEXStateFalsePositive, Detail: "  "})
+	if err == nil || !strings.Contains(err.Error(), "needs a detail") {
+		t.Fatalf("PromoteManual() error = %v, want detail required", err)
+	}
+}

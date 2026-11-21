@@ -235,10 +235,10 @@ sync:
 ```
 
 **Behavior:**
-- VEX-exempted CVEs (state `not_affected` and not expired) are excluded from `criticalCount`, `highCount`, etc.
+- VEX-exempted CVEs (state `not_affected` or `false_positive`, not expired) are excluded from `criticalCount`, `highCount`, etc.
 - Exempted CVEs have `exempted: true` in the `vulnerabilities` list
 - Expired VEX statements are ignored (CVE counts as normal)
-- Only `not_affected` state exempts CVEs from policy counts; other states (e.g. `in_triage`, `affected`) are informational
+- Only `not_affected` and `false_positive` exempt CVEs from policy counts; other states (`affected`, `in_triage`, `resolved`, `resolved_with_pedigree`) are informational. A resolved build no longer reports the CVE, so a repository-wide `resolved` statement would only ever exempt the unfixed tags
 
 ### `vex-auto`
 

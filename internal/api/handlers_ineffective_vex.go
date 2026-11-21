@@ -44,7 +44,7 @@ type IneffectiveVEXRemovalRequest struct {
 // handleGetIneffectiveVEX lists sync-entry VEX statements with no policy effect.
 //
 // @Summary     Get ineffective VEX statements
-// @Description Lists sync-entry not_affected statements whose removal leaves the pass/fail result of every latest scan unchanged. Results come from a background audit that runs hourly.
+// @Description Lists sync-entry not_affected and false_positive statements whose removal leaves the pass/fail result of every latest scan unchanged. Results come from a background audit that runs hourly.
 // @Tags        Tasks
 // @Produce     json
 // @Success     200  {object}  IneffectiveVEXResponse
