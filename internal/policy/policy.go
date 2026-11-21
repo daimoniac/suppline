@@ -16,7 +16,7 @@ import (
 type PolicyEngine interface {
 	// Evaluate determines if an image passes security policy
 	// Applies VEX statements from regsync config for the target repository;
-	// only not_affected (and not expired) statements exempt CVEs from counts.
+	// only not_affected and false_positive (not expired) statements exempt CVEs from counts.
 	Evaluate(ctx context.Context, imageRef string, result *scanner.ScanResult, vexStatements []types.VEXStatement) (*PolicyDecision, error)
 }
 
@@ -172,8 +172,9 @@ func (e *Engine) Evaluate(ctx context.Context, imageRef string, result *scanner.
 	activeVEX := make(map[string]types.VEXStatement)
 
 	for _, stmt := range vexStatements {
-		// Only not_affected statements can exempt CVEs from severity counts
-		if stmt.State != types.VEXStateNotAffected {
+		// Only not_affected and false_positive statements exempt CVEs from
+		// severity counts. Malicious-package ids are handled by splitMalicious.
+		if !stmt.State.ExemptsVulnerability() || types.IsMaliciousID(stmt.ID) {
 			continue
 		}
 

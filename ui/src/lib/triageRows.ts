@@ -18,6 +18,14 @@ export const VEX_STATES = [
   ['resolved_with_pedigree', 'Resolved with pedigree'],
 ] as const;
 
+// States whose statements take a finding out of policy counts. Must match
+// VEXAnalysisState.ExemptsVulnerability in internal/types/vex.go.
+export const EXEMPTING_VEX_STATES: readonly string[] = ['not_affected', 'false_positive'];
+
+export function vexStateExempts(state: string): boolean {
+  return EXEMPTING_VEX_STATES.includes(state);
+}
+
 export const VEX_STATE_LABELS: Record<string, string> = {
   not_affected: 'Not affected',
   affected: 'Affected',

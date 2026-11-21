@@ -351,12 +351,13 @@ func cveIDsWithUnrecordedSeverity(scans []*statestore.ScanRecord) map[string]str
 }
 
 // candidateStatements keeps statements that could exempt a CVE right now:
-// not_affected and not yet expired. Other states never exempt, and expired
+// not_affected or false_positive and not yet expired. Other states never
+// exempt, malicious-package statements are audited separately, and expired
 // statements are already reported by the expiry task.
 func candidateStatements(statements []types.VEXStatement, now time.Time) []types.VEXStatement {
 	var out []types.VEXStatement
 	for _, statement := range statements {
-		if statement.State != types.VEXStateNotAffected {
+		if !statement.State.ExemptsVulnerability() || types.IsMaliciousID(statement.ID) {
 			continue
 		}
 		if statement.ExpiresAt != nil && *statement.ExpiresAt <= now.Unix() {

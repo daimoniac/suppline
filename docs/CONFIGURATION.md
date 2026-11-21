@@ -452,7 +452,7 @@ sync:
   - `not_affected` - The vulnerability does not affect this component (exempts from policy counts)
   - `affected` - The vulnerability affects this component
   - `in_triage` - Under investigation
-  - `false_positive` - Incorrectly identified as vulnerable
+  - `false_positive` - Incorrectly identified as vulnerable, e.g. a backported fix the scanner does not see (exempts from policy counts; the triage dialog requires a detail)
   - `resolved` - The vulnerability has been remediated
   - `resolved_with_pedigree` - Resolved and provenance is tracked
 - `justification` (required when state is `not_affected`): Canonical values:
@@ -479,7 +479,7 @@ sync:
   - Date validation ensures valid dates (e.g., Feb 29 only in leap years)
 
 **Behavior:**
-- Only VEX statements with state `not_affected` and that are not expired exempt CVEs from policy evaluation
+- Only VEX statements with state `not_affected` or `false_positive` that are not expired exempt CVEs from policy evaluation. `resolved` and `resolved_with_pedigree` do not: a statement covers every tag of the repository, and a build that really carries the fix no longer reports the CVE, so the exemption would only ever apply to unfixed tags. Rebuild or upgrade instead
 - Default VEX statements are merged with sync-specific statements
 - Expired statements are ignored (CVE counts normally)
 - Warnings logged for statements expiring within 7 days

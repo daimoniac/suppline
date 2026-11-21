@@ -378,7 +378,7 @@ func (s *Service) exempt(repository, cve string) bool {
 	}
 	now := s.now()
 	for _, statement := range s.catalog.ResolveEvidence(repository).VEXStatements {
-		if statement.ID != cve || statement.State != types.VEXStateNotAffected {
+		if statement.ID != cve || !statement.State.ExemptsVulnerability() {
 			continue
 		}
 		if statement.ExpiresAt != nil && time.Unix(*statement.ExpiresAt, 0).Before(now) {
@@ -1124,6 +1124,10 @@ func (s *Service) PromoteManual(ctx context.Context, repository string, statemen
 	}
 	if err := types.ValidateMaliciousVEXStatement(statement, false); err != nil {
 		return "", err
+	}
+	statement.Detail = strings.TrimSpace(statement.Detail)
+	if statement.State == types.VEXStateFalsePositive && statement.Detail == "" {
+		return "", fmt.Errorf("a false_positive statement for %s needs a detail saying why the scanner is wrong", statement.ID)
 	}
 	message := fmt.Sprintf("chore(vex): accept %s for %s\n\nhuman override of triage", statement.ID, repository)
 	result, err := s.editor.Apply(ctx, configedit.Change{
