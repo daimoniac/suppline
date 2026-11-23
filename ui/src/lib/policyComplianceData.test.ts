@@ -19,6 +19,8 @@ function scan(overrides: Partial<Scan>): Scan {
     LowVulnCount: 0,
     SBOMAttested: true,
     VulnAttested: true,
+    SCAIAttested: true,
+    VEXAttested: false,
     ...overrides,
   };
 }

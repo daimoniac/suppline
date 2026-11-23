@@ -489,6 +489,10 @@ export interface Scan {
   LowVulnCount: number;
   SBOMAttested: boolean;
   VulnAttested: boolean;
+  /** The SCAI attestation admission control (Kyverno/OPA) verifies. */
+  SCAIAttested: boolean;
+  /** Published only when the scan applied VEX exemptions. */
+  VEXAttested: boolean;
   RuntimeUsed?: boolean;
   Runtime?: RuntimeInventory;
   PolicyFailureFindings?: PolicyFailureFinding[];
