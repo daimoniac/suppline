@@ -37,8 +37,11 @@ func mirrorView(cfg *config.RegsyncConfig) mirrorSettings {
 	d.Policy = nil
 	d.VEXRepo = nil
 	d.VEX = nil
-	view.sync = make([]config.SyncEntry, len(cfg.Sync))
-	for i, entry := range cfg.Sync {
+	// In-place entries are never copied, so adding or editing one does not
+	// restart the mirror.
+	entries := cfg.MirrorEntries()
+	view.sync = make([]config.SyncEntry, len(entries))
+	for i, entry := range entries {
 		entry.VEX = nil
 		entry.VEXAuto = nil
 		entry.RescanInterval = ""
@@ -46,6 +49,8 @@ func mirrorView(cfg *config.RegsyncConfig) mirrorSettings {
 		entry.Policy = nil
 		entry.VEXRepo = nil
 		entry.Ignore = false
+		entry.CreateVulnerabilityAttestation = nil
+		entry.CreateSBOMAttestation = nil
 		view.sync[i] = entry
 	}
 	return view

@@ -83,7 +83,7 @@ func newJournal(store statestore.MirrorStore, activity *Activity, cfg *config.Re
 	}
 	entries := []keyedSync{}
 	if cfg != nil {
-		entries = assignSyncKeys(cfg.Sync)
+		entries = assignSyncKeys(cfg.MirrorEntries())
 	}
 	return &journal{
 		store:      store,

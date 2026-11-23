@@ -310,9 +310,13 @@ func (p *Pipeline) attestationPhase(ctx context.Context, task *queue.ScanTask, i
 		return durations, result, nil
 	}
 
-	if cfg := p.worker.runningConfig(); cfg != nil && !cfg.CreateSBOMAttestation() {
+	cfg := p.worker.runningConfig()
+	// An in-place repository is shared with whoever builds it, so attestations
+	// suppline did not write are never swept there.
+	sweep := cfg == nil || !cfg.IsInPlace(task.Repository)
+	if cfg != nil && !cfg.CreateSBOMAttestation(task.Repository) {
 		p.logger.Info("skipping SBOM attestation", "image_ref", imageRef)
-		if cleaner, ok := p.worker.attestor.(referrerCleaner); ok {
+		if cleaner, ok := p.worker.attestor.(referrerCleaner); ok && sweep {
 			if err := cleaner.DeleteReferrers(ctx, imageRef, attestation.PredicateBOM); err != nil {
 				p.logger.Warn("failed to delete SBOM attestations", "image_ref", imageRef, "error", err)
 			}
@@ -330,9 +334,9 @@ func (p *Pipeline) attestationPhase(ctx context.Context, task *queue.ScanTask, i
 		p.logger.Info("SBOM attestation created", "image_ref", imageRef, "duration", durations["sbom_attest"])
 	}
 
-	if cfg := p.worker.runningConfig(); cfg != nil && !cfg.CreateVulnerabilityAttestation() {
+	if cfg != nil && !cfg.CreateVulnerabilityAttestation(task.Repository) {
 		p.logger.Info("skipping vulnerability attestation", "image_ref", imageRef)
-		if cleaner, ok := p.worker.attestor.(referrerCleaner); ok {
+		if cleaner, ok := p.worker.attestor.(referrerCleaner); ok && sweep {
 			if err := cleaner.DeleteReferrers(ctx, imageRef, attestation.PredicateVuln); err != nil {
 				p.logger.Warn("failed to delete vulnerability attestations", "image_ref", imageRef, "error", err)
 			}
@@ -942,6 +946,11 @@ func (p *Pipeline) getPolicyEngineForRepository(repository string) (policy.Polic
 // the cooldown counts from the artifact's first scan, which starts now when
 // the digest was never scanned. A Cooldown release stops either clock.
 func (p *Pipeline) cooldownFirstSeen(ctx context.Context, task *queue.ScanTask, scannedAt time.Time) (*time.Time, error) {
+	// In-place repositories have no cooldown and no runway; asking the runway
+	// would list hold tags in a registry suppline does not own.
+	if cfg := p.worker.runningConfig(); cfg != nil && cfg.IsInPlace(task.Repository) {
+		return nil, nil
+	}
 	if p.worker.cooldownClock != nil {
 		return p.worker.cooldownClock.FirstSeen(ctx, task.Repository, task.Digest)
 	}

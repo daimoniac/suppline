@@ -175,6 +175,10 @@ func run() error {
 	if err != nil {
 		return fmt.Errorf("failed to initialize attestor: %w", err)
 	}
+	attestor.SetSharedRepositories(func(repository string) bool {
+		running := repositoryPolicies.Current()
+		return running != nil && running.IsInPlace(repository)
+	})
 	logger.Debug("attestor initialized")
 
 	logger.Debug("authenticating cosign with registries")
@@ -236,6 +240,7 @@ func run() error {
 	watcherConfig := watcher.Config{
 		PollInterval:   cfg.Worker.PollInterval,
 		RescanInterval: cfg.StateStore.RescanInterval,
+		ConfigChanged:  repositoryPolicies.Changed,
 	}
 	if tagRunway != nil {
 		watcherConfig.HeldDigests = tagRunway.HeldDigests

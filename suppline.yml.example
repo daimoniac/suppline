@@ -108,3 +108,13 @@ sync:
     target: myprivateregistry/legacy-app
     type: repository
     suppline-ignore: true   # true = mirror only, no scan or attestation (default: false)
+
+# In-place repositories are scanned and attested where they live, never copied.
+# Use them for images your CI builds and pushes to its own registry.
+in-place:
+  - repository: registry.example.com/team/app
+    scan-requesters: [team/app]   # CI identities allowed to request scans (optional)
+    createSBOMAttestation: true   # Override defaults for this repository (optional)
+    tags:
+      allow: ['sha[0-9a-f]{8,}']
+      newest: 30

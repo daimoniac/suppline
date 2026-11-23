@@ -60,6 +60,9 @@ func ParseRegsync(path string) (*RegsyncConfig, error) {
 	if err := config.ValidateTagFilters(); err != nil {
 		return nil, errors.NewPermanentf("invalid tag filter configuration: %w", err)
 	}
+	if err := config.ValidateInPlace(); err != nil {
+		return nil, errors.NewPermanentf("invalid in-place configuration: %w", err)
+	}
 
 	return &config, nil
 }
@@ -166,6 +169,83 @@ func normalizeRegsync(c *RegsyncConfig) error {
 	}
 	for i := range c.Sync {
 		applySyncDefaults(&c.Sync[i], c.Defaults)
+	}
+	// In-place entries join Sync after the mirror defaults were applied, so
+	// they never inherit schedules, cleanup or other copy settings.
+	for _, entry := range c.InPlace {
+		c.Sync = append(c.Sync, entry.syncEntry())
+	}
+	c.InPlace = nil
+	return nil
+}
+
+// MirrorEntries returns the sync entries the mirror copies, in order. In-place
+// entries are never copied, so they are left out.
+func (c *RegsyncConfig) MirrorEntries() []SyncEntry {
+	if c == nil {
+		return nil
+	}
+	out := make([]SyncEntry, 0, len(c.Sync))
+	for _, entry := range c.Sync {
+		if !entry.InPlace {
+			out = append(out, entry)
+		}
+	}
+	return out
+}
+
+// InPlaceEntryFor returns the in-place entry of a repository.
+func (c *RegsyncConfig) InPlaceEntryFor(repository string) (SyncEntry, bool) {
+	if c == nil {
+		return SyncEntry{}, false
+	}
+	for _, entry := range c.Active() {
+		if entry.InPlace && entry.Target == repository {
+			return entry, true
+		}
+	}
+	return SyncEntry{}, false
+}
+
+// IsInPlace reports whether repository is scanned and attested where it lives.
+func (c *RegsyncConfig) IsInPlace(repository string) bool {
+	_, ok := c.InPlaceEntryFor(repository)
+	return ok
+}
+
+// ValidateInPlace checks the in-place entries: a bare repository name, listed
+// once, and never also the target of a mirrored entry.
+func (c *RegsyncConfig) ValidateInPlace() error {
+	mirrored := make(map[string]bool)
+	for _, entry := range c.Sync {
+		if !entry.InPlace {
+			mirrored[syncTargetRepository(entry)] = true
+		}
+	}
+	seen := make(map[string]bool)
+	for _, entry := range c.Sync {
+		if !entry.InPlace {
+			continue
+		}
+		repository := entry.Target
+		if strings.TrimSpace(repository) == "" {
+			return fmt.Errorf("in-place entry needs a repository")
+		}
+		if strings.Contains(repository, "@") || strings.LastIndex(repository, ":") > strings.LastIndex(repository, "/") {
+			return fmt.Errorf("in-place repository %s must not name a tag or digest", repository)
+		}
+		if seen[repository] {
+			return fmt.Errorf("in-place repository %s is listed twice", repository)
+		}
+		seen[repository] = true
+		if mirrored[repository] {
+			return fmt.Errorf("repository %s is both a sync target and in-place", repository)
+		}
+		for _, requester := range entry.ScanRequesters {
+			if strings.TrimSpace(requester) == "" {
+				return fmt.Errorf("in-place repository %s: scan-requesters must not be empty", repository)
+			}
+		}
 	}
 	return nil
 }
@@ -405,6 +485,11 @@ func (c *RegsyncConfig) GetRescanInterval(target string) (time.Duration, error) 
 // cooldown when set, otherwise defaults.cooldown, otherwise zero (off).
 // "0" switches the cooldown off for an entry even when defaults set one.
 func (c *RegsyncConfig) GetCooldown(target string) (time.Duration, error) {
+	// A cooldown holds a digest before it is published on a tag. In-place
+	// repositories publish nothing, so none runs there.
+	if c.IsInPlace(target) {
+		return 0, nil
+	}
 	for _, sync := range c.Active() {
 		if syncTargetRepository(sync) == target && sync.Cooldown != "" {
 			return parseCooldown(sync.Cooldown)
@@ -578,22 +663,38 @@ func (c *RegsyncConfig) GetWorkerRetryBackoff() (time.Duration, error) {
 	return 10 * time.Second, nil // Default backoff
 }
 
-// CreateVulnerabilityAttestation reports whether scans publish a cosign vulnerability attestation.
+// CreateVulnerabilityAttestation reports whether scans of a repository publish
+// a cosign vulnerability attestation: the entry's setting, then defaults.
 // Unset means yes, so existing configs keep the previous behavior.
-func (c *RegsyncConfig) CreateVulnerabilityAttestation() bool {
-	if c == nil || c.Defaults.CreateVulnerabilityAttestation == nil {
+func (c *RegsyncConfig) CreateVulnerabilityAttestation(repository string) bool {
+	if c == nil {
 		return true
 	}
-	return *c.Defaults.CreateVulnerabilityAttestation
+	return c.attestationToggle(repository, c.Defaults.CreateVulnerabilityAttestation, func(s SyncEntry) *bool { return s.CreateVulnerabilityAttestation })
 }
 
-// CreateSBOMAttestation reports whether scans publish a cosign SBOM attestation.
-// Unset means yes, so existing configs keep the previous behavior.
-func (c *RegsyncConfig) CreateSBOMAttestation() bool {
-	if c == nil || c.Defaults.CreateSBOMAttestation == nil {
+// CreateSBOMAttestation reports whether scans of a repository publish a cosign
+// SBOM attestation: the entry's setting, then defaults. Unset means yes.
+func (c *RegsyncConfig) CreateSBOMAttestation(repository string) bool {
+	if c == nil {
 		return true
 	}
-	return *c.Defaults.CreateSBOMAttestation
+	return c.attestationToggle(repository, c.Defaults.CreateSBOMAttestation, func(s SyncEntry) *bool { return s.CreateSBOMAttestation })
+}
+
+func (c *RegsyncConfig) attestationToggle(repository string, fallback *bool, field func(SyncEntry) *bool) bool {
+	for _, sync := range c.Active() {
+		if syncTargetRepository(sync) != repository {
+			continue
+		}
+		if value := field(sync); value != nil {
+			return *value
+		}
+	}
+	if fallback == nil {
+		return true
+	}
+	return *fallback
 }
 
 // GetQueueBufferSize returns the queue buffer size from defaults

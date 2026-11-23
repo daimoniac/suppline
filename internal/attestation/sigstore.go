@@ -32,6 +32,28 @@ type SigstoreAttestor struct {
 	cleaner sameKindCleaner
 	// deferred holds the image+predicate pairs with a retry collapse in flight.
 	deferred sync.Map
+	// shared reports repositories suppline does not own, such as in-place
+	// repositories CI pushes to. Cleanup there never touches attestations of
+	// other kinds than the one just written.
+	shared func(repository string) bool
+}
+
+// SetSharedRepositories tells the attestor which repositories it shares with
+// someone else. The function is asked on every attestation, so it can follow
+// the running configuration.
+func (a *SigstoreAttestor) SetSharedRepositories(shared func(repository string) bool) {
+	a.shared = shared
+}
+
+func (a *SigstoreAttestor) isShared(imageRef string) bool {
+	if a.shared == nil {
+		return false
+	}
+	repository := imageRef
+	if at := strings.Index(repository, "@"); at >= 0 {
+		repository = repository[:at]
+	}
+	return a.shared(repository)
 }
 
 func resolveCosignAttestTimeout(configured time.Duration) time.Duration {

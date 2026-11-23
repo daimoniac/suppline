@@ -84,7 +84,11 @@ type RegsyncConfig struct {
 	Creds    []RegistryCredential `yaml:"creds"`
 	Defaults Defaults             `yaml:"defaults"`
 	Sync     []SyncEntry          `yaml:"sync"`
-	Triage   *TriageConfig        `yaml:"triage,omitempty"`
+	// InPlace lists repositories scanned and attested where they live, never
+	// copied. ParseRegsync appends them to Sync as entries with InPlace set and
+	// clears this list, so every per-repository lookup sees one list.
+	InPlace []InPlaceEntry `yaml:"in-place,omitempty"`
+	Triage  *TriageConfig  `yaml:"triage,omitempty"`
 
 	// Runtime settings, read once at startup (see runtime.go).
 	Server        ServerSettings        `yaml:"server,omitempty"`
@@ -211,6 +215,59 @@ type SyncEntry struct {
 	// CooldownReleases skip the rest of the cooldown for single digests.
 	CooldownReleases []CooldownRelease `yaml:"cooldown-release,omitempty"`
 	Ignore           bool              `yaml:"suppline-ignore,omitempty"` // suppline skips scanning this entry; the mirror still copies it
+	// CreateVulnerabilityAttestation and CreateSBOMAttestation override the
+	// defaults of the same name for this repository. Nil inherits.
+	CreateVulnerabilityAttestation *bool `yaml:"createVulnerabilityAttestation,omitempty"`
+	CreateSBOMAttestation          *bool `yaml:"createSBOMAttestation,omitempty"`
+
+	// InPlace marks an entry built from the in-place section: its repository
+	// is scanned and attested where it lives and the mirror never touches it.
+	InPlace bool `yaml:"-"`
+	// ScanRequesters are the CI identities allowed to request scans of an
+	// in-place repository.
+	ScanRequesters []string `yaml:"-"`
+}
+
+// InPlaceEntry is one repository of the in-place section: scanned and
+// attested where it lives, never copied. It carries only per-repository
+// settings; mirror settings are rejected by strict decoding.
+type InPlaceEntry struct {
+	Repository                     string               `yaml:"repository"`
+	Tags                           *TagFilter           `yaml:"tags,omitempty"`
+	TagSets                        []TagFilter          `yaml:"tagSets,omitempty"`
+	Policy                         *PolicyConfig        `yaml:"policy,omitempty"`
+	VEX                            []types.VEXStatement `yaml:"vex,omitempty"`
+	VEXAuto                        []types.VEXStatement `yaml:"vex-auto,omitempty"`
+	VEXRepo                        *bool                `yaml:"vex-repo,omitempty"`
+	RescanInterval                 string               `yaml:"rescanInterval,omitempty"`
+	SCAIValidityExtension          string               `yaml:"scaiValidityExtension,omitempty"`
+	ScanRequesters                 []string             `yaml:"scan-requesters,omitempty"`
+	CreateVulnerabilityAttestation *bool                `yaml:"createVulnerabilityAttestation,omitempty"`
+	CreateSBOMAttestation          *bool                `yaml:"createSBOMAttestation,omitempty"`
+}
+
+// syncEntry converts an in-place entry to the internal per-repository record.
+func (e InPlaceEntry) syncEntry() SyncEntry {
+	disabled := false
+	return SyncEntry{
+		Source:                         e.Repository,
+		Target:                         e.Repository,
+		Type:                           "repository",
+		Tags:                           e.Tags,
+		TagSets:                        e.TagSets,
+		Policy:                         e.Policy,
+		VEX:                            e.VEX,
+		VEXAuto:                        e.VEXAuto,
+		VEXRepo:                        e.VEXRepo,
+		RescanInterval:                 e.RescanInterval,
+		SCAIValidityExtension:          e.SCAIValidityExtension,
+		CreateVulnerabilityAttestation: e.CreateVulnerabilityAttestation,
+		CreateSBOMAttestation:          e.CreateSBOMAttestation,
+		CleanupTags:                    &disabled,
+		CleanupKeepRunning:             &disabled,
+		InPlace:                        true,
+		ScanRequesters:                 append([]string(nil), e.ScanRequesters...),
+	}
 }
 
 // TagFilter defines tag filtering rules.

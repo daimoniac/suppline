@@ -476,7 +476,8 @@ func (c *ConfigCatalog) Upstream(repository string) (source, platform string, ok
 		if ok || targetRepository(sync) != repository {
 			return nil
 		}
-		if strings.TrimSpace(sync.Source) == "" {
+		// An in-place repository has no upstream: it is the image itself.
+		if sync.InPlace || strings.TrimSpace(sync.Source) == "" {
 			return nil
 		}
 		source = strings.TrimSpace(sync.Source)

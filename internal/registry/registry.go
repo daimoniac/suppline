@@ -393,6 +393,32 @@ func (c *clientImpl) GetManifest(ctx context.Context, repo, digest string) (*Man
 
 // ImageLabels returns OCI config labels for an image digest. Manifest annotations
 // fill keys that the config does not set.
+// ImageCreated returns when the image a tag names was built, from its config's
+// created field, in one manifest and one config request. A multi-platform
+// index resolves to the default platform. The zero time means unset.
+func (c *clientImpl) ImageCreated(ctx context.Context, repo, tag string) (time.Time, error) {
+	registry, repository, err := parseImageRef(repo)
+	if err != nil {
+		return time.Time{}, errors.NewPermanentf("failed to parse repository: %w", err)
+	}
+	imageRef := fmt.Sprintf("%s/%s:%s", registry, repository, tag)
+	ref, err := name.ParseReference(imageRef, c.nameOptions(registry)...)
+	if err != nil {
+		return time.Time{}, errors.NewPermanentf("failed to parse image reference: %w", err)
+	}
+	auth := c.getAuthForRegistry(registry)
+	opts := append([]remote.Option{remote.WithAuth(auth), remote.WithContext(ctx)}, c.remoteOpts...)
+	img, err := remote.Image(ref, opts...)
+	if err != nil {
+		return time.Time{}, errors.ClassifyRegistryError(fmt.Errorf("failed to get image %s: %w", imageRef, err))
+	}
+	configFile, err := img.ConfigFile()
+	if err != nil {
+		return time.Time{}, errors.ClassifyRegistryError(fmt.Errorf("failed to get config file of %s: %w", imageRef, err))
+	}
+	return configFile.Created.UTC(), nil
+}
+
 func (c *clientImpl) ImageLabels(ctx context.Context, repo, digest string) (map[string]string, error) {
 	registry, repository, err := parseImageRef(repo)
 	if err != nil {

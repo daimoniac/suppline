@@ -139,7 +139,7 @@ func (m *runner) staleHoldTags(ctx context.Context, tgt string, holdTags []strin
 
 func (m *runner) findSyncEntriesForTarget(tgt string) []config.SyncEntry {
 	var entries []config.SyncEntry
-	for _, sync := range m.cfg.Sync {
+	for _, sync := range m.cfg.MirrorEntries() {
 		if sync.Target == tgt {
 			entries = append(entries, sync)
 		}
@@ -226,7 +226,7 @@ func (m *runner) wantedTags(ctx context.Context, entries []config.SyncEntry, tar
 
 func (m *runner) runCleanupForAllTargets(ctx context.Context) error {
 	targetMap := map[string]struct{}{}
-	for _, s := range m.cfg.Sync {
+	for _, s := range m.cfg.MirrorEntries() {
 		if s.Target == "" || s.CleanupTags == nil || !*s.CleanupTags {
 			continue
 		}

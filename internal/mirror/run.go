@@ -211,7 +211,7 @@ func (m *runner) runSchedule(ctx context.Context, cfg *config.RegsyncConfig) err
 	}
 	var started []startedSync
 	c := cron.New(cron.WithChain(cron.SkipIfStillRunning(cron.DefaultLogger)))
-	for i, s := range cfg.Sync {
+	for i, s := range cfg.MirrorEntries() {
 		key := ""
 		if m.journal != nil && i < len(m.journal.entries) {
 			key = m.journal.entries[i].key
