@@ -12,9 +12,10 @@ import (
 type matchedEntry struct {
 	node  *yaml.Node
 	limit int
+	delta int // indentation of the entry's list items below its list key
 }
 
-func sequenceDelta(text string, root, sync *yaml.Node) int {
+func sequenceDelta(text string, root *yaml.Node, listKey string, sync *yaml.Node) int {
 	lines := strings.Split(text, "\n")
 	if len(sync.Content) == 0 || sync.Content[0].Line < 1 {
 		return 2
@@ -24,7 +25,7 @@ func sequenceDelta(text string, root, sync *yaml.Node) int {
 		return 2
 	}
 	keyIndent := 0
-	if key := mappingKey(root, "sync"); key != nil {
+	if key := mappingKey(root, listKey); key != nil {
 		keyIndent = len(leadingSpaces(lineAt(lines, key.Line)))
 	}
 	if dash < keyIndent {

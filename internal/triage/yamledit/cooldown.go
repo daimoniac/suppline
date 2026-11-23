@@ -9,6 +9,7 @@ import (
 
 // AddCooldownRelease writes release into cooldown-release of every sync
 // entry for repository, replacing an earlier release of the same digest.
+// In-place entries have no cooldown, so they are never matched.
 func AddCooldownRelease(document []byte, repository string, release config.CooldownRelease) ([]byte, error) {
 	if strings.TrimSpace(repository) == "" {
 		return nil, fmt.Errorf("repository is required")
@@ -17,7 +18,7 @@ func AddCooldownRelease(document []byte, repository string, release config.Coold
 		return nil, fmt.Errorf("cooldown release needs a sha256 digest, got %q", release.Digest)
 	}
 	const key = "cooldown-release"
-	return spliceMatching(document, repository, key, func(text string, entry matchedEntry, delta int) (string, error) {
+	return spliceMatchingIn(document, repository, key, []string{"sync"}, func(text string, entry matchedEntry, delta int) (string, error) {
 		return spliceItem(text, entry, key, "digest", release.Digest, func(dashPrefix string) string {
 			return formatCooldownRelease(dashPrefix, release)
 		}, delta)

@@ -110,7 +110,7 @@ succeeds.
 
 ## Sync configuration
 
-Besides the runtime settings, `suppline.yml` defines registry credentials, sync entries, and VEX (Vulnerability Exploitability Exchange) statements. The `creds`, `defaults` and `sync` fields follow regsync's names; suppline copies those entries in-process. `suppline-ignore` does not stop copying.
+Besides the runtime settings, `suppline.yml` defines registry credentials, sync entries, in-place entries, and VEX (Vulnerability Exploitability Exchange) statements. The `creds`, `defaults` and `sync` fields follow regsync's names; suppline copies those entries in-process. `suppline-ignore` does not stop copying. `in-place` entries are never copied: suppline scans and attests them in the registry they were pushed to (see [In-place entries](#in-place-entries)).
 
 ### File Structure
 
@@ -157,6 +157,8 @@ sync:
     cleanupKeepRunning: bool  # Cleanup keeps tags a cluster runs (default: false)
     suppline-ignore: bool   # If true, the entry is only mirrored: no scan, policy, or attestation (default: false)
     rescanInterval: string  # Rescan interval override (optional)
+    createVulnerabilityAttestation: bool  # Override the default for this entry (optional)
+    createSBOMAttestation: bool           # Override the default for this entry (optional)
     policy:                 # Policy override (optional)
       expression: string
       failureMessage: string
@@ -166,6 +168,24 @@ sync:
         justification: string # Justification (for not_affected state)
         detail: string        # Explanation / reason
         expires_at: string    # RFC3339 timestamp or date (YYYY-MM-DD) (optional)
+
+# In-place entries: scanned and attested where they live, never copied
+in-place:
+  - repository: string        # Repository, e.g. registry.gitlab.com/group/app (no tag or digest)
+    tags:                     # Same tag filters as sync entries (optional)
+      allow: [string]
+      deny: [string]
+      semverRange: [string]
+      newest: int
+    scan-requesters: [string] # CI identities allowed to request scans (optional)
+    rescanInterval: string
+    scaiValidityExtension: string
+    createVulnerabilityAttestation: bool
+    createSBOMAttestation: bool
+    policy: {expression: string, failureMessage: string}
+    vex-repo: bool
+    vex: [...]                # Same statements as on sync entries
+    vex-auto: [...]           # Written by triage
 ```
 
 ### Credentials Section
@@ -302,6 +322,27 @@ sync:
     type: repository
     suppline-ignore: false
 ```
+
+### In-place entries
+
+An `in-place` entry names a repository suppline scans and attests where it lives, without copying it. Use it for images you build yourself and push to your own registry, such as CI builds in a GitLab project's container registry. Clusters pull those images from that registry, and Kyverno or OPA verifies the SCAI attestation suppline writes next to each digest.
+
+```yaml
+in-place:
+  - repository: registry.gitlab.com/group/app
+    scan-requesters: [group/app]
+    createSBOMAttestation: true
+    tags:
+      allow: ['sha[0-9a-f]{8,}']
+      newest: 30
+```
+
+- **What the entry takes:** only per-repository settings (tag filters, policy, VEX, rescan and attestation settings). Mirror settings such as `source`, `target`, `type`, `schedule`, `cleanupTags` or `cooldown` are rejected. Shared defaults (policy, `defaults.vex`, `rescanInterval`, the attestation toggles) apply; mirror defaults never do.
+- **One owner per repository:** a repository is either a `sync` target or `in-place`, never both. The repository must not name a tag or a digest.
+- **Which tags are scanned:** the watcher lists the repository and applies the entry's tag filters itself, `newest` included, because no mirror filtered the repository first. Tags a cluster runs are always scanned as well, so a running image keeps getting rescanned and its attestation renewed after newer builds push it out of the `newest` window.
+- **No cooldown:** a cooldown holds a digest before it is published on a tag, and an in-place repository publishes nothing. Its scans are never `pending`, whatever `defaults.cooldown` says.
+- **Nothing is deleted from the repository** except older suppline attestations of the kind just written. suppline owns the SCAI, SBOM, vulnerability and VEX attestation kinds on an in-place digest; cosign signatures and attestations of other kinds stay. The registry credentials for the repository therefore need write access (and delete access for replacing attestations).
+- **`scan-requesters`** lists the CI identities allowed to request a scan of the repository through the scan-request API. See [Scan requests from CI](#scan-requests-from-ci).
 
 ### Rescan Interval Configuration
 

@@ -175,6 +175,10 @@ func run() error {
 	if err != nil {
 		return fmt.Errorf("failed to initialize attestor: %w", err)
 	}
+	attestor.SetSharedRepositories(func(repository string) bool {
+		running := repositoryPolicies.Current()
+		return running != nil && running.IsInPlace(repository)
+	})
 	logger.Debug("attestor initialized")
 
 	logger.Debug("authenticating cosign with registries")

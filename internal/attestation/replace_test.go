@@ -331,6 +331,24 @@ func TestAttestSBOMDeletesPreviousSameKind(t *testing.T) {
 	}
 }
 
+func TestAttestInSharedRepositoryKeepsSignatures(t *testing.T) {
+	fakeBinDir := writeFakeCosign(t, "#!/bin/sh\nexit 0\n")
+	t.Setenv("PATH", fakeBinDir+string(os.PathListSeparator)+os.Getenv("PATH"))
+
+	cleaner := &recordingCleaner{}
+	attestor := testAttestor(t)
+	attestor.cleaner = cleaner
+	attestor.SetSharedRepositories(func(repository string) bool { return repository == "ci.example.com/app" })
+
+	imageRef := "ci.example.com/app@sha256:" + repeatHex('a')
+	if err := attestor.AttestSBOM(context.Background(), imageRef, testSBOM(t)); err != nil {
+		t.Fatalf("AttestSBOM: %v", err)
+	}
+	if len(cleaner.calls) != 1 || cleaner.calls[0].predicate != "https://cyclonedx.org/bom" {
+		t.Fatalf("shared repository collapses = %#v, want only the same kind", cleaner.calls)
+	}
+}
+
 func TestAttestSBOMSkipsCleanupWithoutDigest(t *testing.T) {
 	fakeBinDir := writeFakeCosign(t, "#!/bin/sh\nexit 0\n")
 	t.Setenv("PATH", fakeBinDir+string(os.PathListSeparator)+os.Getenv("PATH"))

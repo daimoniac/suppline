@@ -37,6 +37,7 @@ type watcherImpl struct {
 	rescanInterval time.Duration
 	heldDigests    func(repository string) []string
 	logger         *slog.Logger
+	built          builtCache
 }
 
 // Config contains configuration for the watcher
@@ -188,7 +189,15 @@ func (w *watcherImpl) processRepository(ctx context.Context, repo string) error 
 	var tags []string
 	var err error
 
-	if len(specificTags) > 0 {
+	if entry, inPlace := w.currentConfig().InPlaceEntryFor(repo); inPlace {
+		// Nothing filtered an in-place repository before it reached the
+		// registry, so the watcher applies the entry's tag sets itself.
+		tags, err = w.inPlaceTags(ctx, repo, entry)
+		if err != nil {
+			return err
+		}
+		w.logger.Debug("in-place tags selected", "repo", repo, "tag_count", len(tags))
+	} else if len(specificTags) > 0 {
 		// For type=image entries, use the specific tags
 		tags = specificTags
 		w.logger.Debug("using specific tags for repository",

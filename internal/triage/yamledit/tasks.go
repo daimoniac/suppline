@@ -53,38 +53,41 @@ func SetSemverRanges(document []byte, updates []SemverRangeUpdate) ([]byte, int,
 	if err != nil {
 		return nil, 0, err
 	}
-	sync := mappingChild(root, "sync")
-	if sync == nil || sync.Kind != yaml.SequenceNode {
-		return nil, 0, fmt.Errorf("suppline document has no sync list")
+	lists := repositoryLists(root)
+	if len(lists) == 0 {
+		return nil, 0, errNoRepositoryLists
 	}
 	var edits []spanEdit
-	for i, entry := range sync.Content {
-		if entry.Kind != yaml.MappingNode {
-			continue
+	for _, list := range lists {
+		for i, entry := range list.seq.Content {
+			if entry.Kind != yaml.MappingNode {
+				continue
+			}
+			target, kind := list.entryTarget(entry)
+			ranges, ok, err := lastMatchingRanges(target, kind, updates)
+			if err != nil {
+				return nil, 0, err
+			}
+			if !ok {
+				continue
+			}
+			tags := mappingChild(entry, "tags")
+			if tags == nil || tags.Kind != yaml.MappingNode {
+				return nil, 0, fmt.Errorf("%s entry %s has no tags block", list.key, target)
+			}
+			key := mappingKey(tags, "semverRange")
+			seq := mappingChild(tags, "semverRange")
+			if key == nil || key.Line < 1 || seq == nil || seq.Kind != yaml.SequenceNode {
+				return nil, 0, fmt.Errorf("%s entry %s has no tags.semverRange list", list.key, target)
+			}
+			bound := entryLimit(root, list.seq, i, entry)
+			limit := boundedLimit(nextKeyLine(tags, key.Line, bound), bound)
+			edits = append(edits, spanEdit{
+				start: key.Line,
+				end:   nodeEnd(lines, key.Line, seq, limit),
+				block: formatSemverRange(leadingSpaces(lineAt(lines, key.Line)), ranges),
+			})
 		}
-		ranges, ok, err := lastMatchingRanges(mappingScalar(entry, "target"), mappingScalar(entry, "type"), updates)
-		if err != nil {
-			return nil, 0, err
-		}
-		if !ok {
-			continue
-		}
-		tags := mappingChild(entry, "tags")
-		if tags == nil || tags.Kind != yaml.MappingNode {
-			return nil, 0, fmt.Errorf("sync entry %s has no tags block", mappingScalar(entry, "target"))
-		}
-		key := mappingKey(tags, "semverRange")
-		seq := mappingChild(tags, "semverRange")
-		if key == nil || key.Line < 1 || seq == nil || seq.Kind != yaml.SequenceNode {
-			return nil, 0, fmt.Errorf("sync entry %s has no tags.semverRange list", mappingScalar(entry, "target"))
-		}
-		bound := entryLimit(root, sync, i, entry)
-		limit := boundedLimit(nextKeyLine(tags, key.Line, bound), bound)
-		edits = append(edits, spanEdit{
-			start: key.Line,
-			end:   nodeEnd(lines, key.Line, seq, limit),
-			block: formatSemverRange(leadingSpaces(lineAt(lines, key.Line)), ranges),
-		})
 	}
 	text, err := applySpans(lines, edits)
 	if err != nil {
@@ -103,27 +106,30 @@ func RemoveSyncTargets(document []byte, targets []string) ([]byte, int, error) {
 	if err != nil {
 		return nil, 0, err
 	}
-	sync := mappingChild(root, "sync")
-	if sync == nil || sync.Kind != yaml.SequenceNode {
-		return nil, 0, fmt.Errorf("suppline document has no sync list")
+	lists := repositoryLists(root)
+	if len(lists) == 0 {
+		return nil, 0, errNoRepositoryLists
 	}
 	var edits []spanEdit
-	for i, entry := range sync.Content {
-		if entry.Kind != yaml.MappingNode || entry.Line < 1 {
-			continue
+	for _, list := range lists {
+		for i, entry := range list.seq.Content {
+			if entry.Kind != yaml.MappingNode || entry.Line < 1 {
+				continue
+			}
+			target, kind := list.entryTarget(entry)
+			matched, err := matchesAnyTarget(target, kind, wanted)
+			if err != nil {
+				return nil, 0, err
+			}
+			if !matched {
+				continue
+			}
+			limit := entryLimit(root, list.seq, i, entry)
+			edits = append(edits, spanEdit{
+				start: entry.Line,
+				end:   entryLastLine(lines, entry.Line, limit),
+			})
 		}
-		matched, err := matchesAnyTarget(mappingScalar(entry, "target"), mappingScalar(entry, "type"), wanted)
-		if err != nil {
-			return nil, 0, err
-		}
-		if !matched {
-			continue
-		}
-		limit := entryLimit(root, sync, i, entry)
-		edits = append(edits, spanEdit{
-			start: entry.Line,
-			end:   entryLastLine(lines, entry.Line, limit),
-		})
 	}
 	text, err := applySpans(lines, edits)
 	if err != nil {
@@ -149,12 +155,12 @@ func RemoveVEXStatements(document []byte, ids []string) ([]byte, int, error) {
 		limit := nextRootLine(root, defaults.Line)
 		edits = append(edits, vexSpans(lines, defaults, wanted, limit)...)
 	}
-	if sync := mappingChild(root, "sync"); sync != nil && sync.Kind == yaml.SequenceNode {
-		for i, entry := range sync.Content {
+	for _, list := range repositoryLists(root) {
+		for i, entry := range list.seq.Content {
 			if entry.Kind != yaml.MappingNode {
 				continue
 			}
-			edits = append(edits, vexSpans(lines, entry, wanted, entryLimit(root, sync, i, entry))...)
+			edits = append(edits, vexSpans(lines, entry, wanted, entryLimit(root, list.seq, i, entry))...)
 		}
 	}
 	text, err := applySpans(lines, edits)
@@ -199,23 +205,26 @@ func RemoveSyncVEXStatements(document []byte, refs []SyncVEXRef) ([]byte, int, e
 	if err != nil {
 		return nil, 0, err
 	}
-	sync := mappingChild(root, "sync")
-	if sync == nil || sync.Kind != yaml.SequenceNode {
-		return nil, 0, fmt.Errorf("suppline document has no sync list")
+	lists := repositoryLists(root)
+	if len(lists) == 0 {
+		return nil, 0, errNoRepositoryLists
 	}
 	var edits []spanEdit
-	for i, entry := range sync.Content {
-		if entry.Kind != yaml.MappingNode {
-			continue
+	for _, list := range lists {
+		for i, entry := range list.seq.Content {
+			if entry.Kind != yaml.MappingNode {
+				continue
+			}
+			target, kind := list.entryTarget(entry)
+			byKey, err := matchedVEXKeys(target, kind, wanted)
+			if err != nil {
+				return nil, 0, err
+			}
+			if len(byKey) == 0 {
+				continue
+			}
+			edits = append(edits, vexSpansByKey(lines, entry, byKey, entryLimit(root, list.seq, i, entry))...)
 		}
-		byKey, err := matchedVEXKeys(mappingScalar(entry, "target"), mappingScalar(entry, "type"), wanted)
-		if err != nil {
-			return nil, 0, err
-		}
-		if len(byKey) == 0 {
-			continue
-		}
-		edits = append(edits, vexSpansByKey(lines, entry, byKey, entryLimit(root, sync, i, entry))...)
 	}
 	text, err := applySpans(lines, edits)
 	if err != nil {

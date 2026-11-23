@@ -4,6 +4,7 @@ package yamledit
 
 import (
 	"fmt"
+	"slices"
 	"sort"
 	"strings"
 
@@ -55,6 +56,12 @@ func upsertList(document []byte, repository, key string, statement types.VEXStat
 // repository, last entry first so earlier line numbers stay valid. key must
 // be a list or missing on each matched entry.
 func spliceMatching(document []byte, repository, key string, splice func(text string, entry matchedEntry, delta int) (string, error)) ([]byte, error) {
+	return spliceMatchingIn(document, repository, key, nil, splice)
+}
+
+// spliceMatchingIn is spliceMatching limited to the named top-level lists.
+// No names means every list.
+func spliceMatchingIn(document []byte, repository, key string, listKeys []string, splice func(text string, entry matchedEntry, delta int) (string, error)) ([]byte, error) {
 	var doc yaml.Node
 	if err := yaml.Unmarshal(document, &doc); err != nil {
 		return nil, fmt.Errorf("parse suppline yaml: %w", err)
@@ -63,50 +70,77 @@ func spliceMatching(document []byte, repository, key string, splice func(text st
 		return nil, fmt.Errorf("suppline document must be a mapping")
 	}
 	root := doc.Content[0]
-	sync := mappingChild(root, "sync")
-	if sync == nil || sync.Kind != yaml.SequenceNode {
-		return nil, fmt.Errorf("suppline document has no sync list")
+	lists := repositoryLists(root)
+	if len(lists) == 0 {
+		return nil, errNoRepositoryLists
 	}
 
+	text := string(document)
 	matched := make([]matchedEntry, 0, 1)
-	for i, entry := range sync.Content {
-		if entry.Kind != yaml.MappingNode {
+	for _, list := range lists {
+		if len(listKeys) > 0 && !slices.Contains(listKeys, list.key) {
 			continue
 		}
-		target, err := targetRepository(mappingScalar(entry, "target"), mappingScalar(entry, "type"))
-		if err != nil {
-			return nil, err
-		}
-		if target != repository {
-			continue
-		}
-		seq := mappingChild(entry, key)
-		if seq != nil && !isVEXList(seq) {
-			return nil, fmt.Errorf("%s must be a list", key)
-		}
-		limit := nextRootLine(root, entry.Line)
-		for j := i + 1; j < len(sync.Content); j++ {
-			if sync.Content[j].Line > entry.Line {
-				limit = sync.Content[j].Line
-				break
+		delta := sequenceDelta(text, root, list.key, list.seq)
+		for i, entry := range list.seq.Content {
+			if entry.Kind != yaml.MappingNode {
+				continue
 			}
+			target, err := targetRepository(list.entryTarget(entry))
+			if err != nil {
+				return nil, err
+			}
+			if target != repository {
+				continue
+			}
+			seq := mappingChild(entry, key)
+			if seq != nil && !isVEXList(seq) {
+				return nil, fmt.Errorf("%s must be a list", key)
+			}
+			matched = append(matched, matchedEntry{node: entry, limit: entryLimit(root, list.seq, i, entry), delta: delta})
 		}
-		matched = append(matched, matchedEntry{node: entry, limit: limit})
 	}
 	if len(matched) == 0 {
-		return nil, fmt.Errorf("no sync entry for repository %s", repository)
+		return nil, fmt.Errorf("no sync or in-place entry for repository %s", repository)
 	}
 	sort.Slice(matched, func(i, j int) bool { return matched[i].node.Line > matched[j].node.Line })
-	text := string(document)
-	delta := sequenceDelta(text, root, sync)
 	for _, entry := range matched {
 		var err error
-		text, err = splice(text, entry, delta)
+		text, err = splice(text, entry, entry.delta)
 		if err != nil {
 			return nil, err
 		}
 	}
 	return []byte(text), nil
+}
+
+// errNoRepositoryLists means the document has neither a sync nor an in-place list.
+var errNoRepositoryLists = fmt.Errorf("suppline document has no sync or in-place list")
+
+// repositoryList is one top-level list of per-repository entries: sync,
+// keyed by target and type, or in-place, keyed by repository.
+type repositoryList struct {
+	key string
+	seq *yaml.Node
+}
+
+func repositoryLists(root *yaml.Node) []repositoryList {
+	var lists []repositoryList
+	for _, key := range []string{"sync", "in-place"} {
+		if seq := mappingChild(root, key); seq != nil && seq.Kind == yaml.SequenceNode {
+			lists = append(lists, repositoryList{key: key, seq: seq})
+		}
+	}
+	return lists
+}
+
+// entryTarget returns an entry's target and type as config.SyncTargetMatches
+// expects them. An in-place entry names its repository and has no type.
+func (l repositoryList) entryTarget(entry *yaml.Node) (string, string) {
+	if l.key == "in-place" {
+		return mappingScalar(entry, "repository"), ""
+	}
+	return mappingScalar(entry, "target"), mappingScalar(entry, "type")
 }
 
 // isVEXList reports a sequence, or a null left after every entry was removed.

@@ -36,6 +36,13 @@ func TestMirrorSettingsChanged(t *testing.T) {
 		{"new sync entry", func(c *config.RegsyncConfig) {
 			c.Sync = append(c.Sync, config.SyncEntry{Source: "upstream/b", Target: "registry.local/b", Type: "repository"})
 		}, true},
+		{"per-entry attestation toggle", func(c *config.RegsyncConfig) {
+			off := false
+			c.Sync[0].CreateSBOMAttestation = &off
+		}, false},
+		{"new in-place entry", func(c *config.RegsyncConfig) {
+			c.Sync = append(c.Sync, config.SyncEntry{Source: "ci.local/app", Target: "ci.local/app", Type: "repository", InPlace: true})
+		}, false},
 		{"credentials", func(c *config.RegsyncConfig) { c.Creds[0].User = "robot" }, true},
 		{"parallel", func(c *config.RegsyncConfig) { c.Defaults.Parallel = 4 }, true},
 	}
@@ -81,5 +88,19 @@ func TestWaitForChangeRestartsOnlyForMirrorSettings(t *testing.T) {
 		}
 	case <-time.After(2 * time.Second):
 		t.Fatal("waitForChange did not return after a semver edit")
+	}
+}
+
+// The mirror never schedules, journals or cleans an in-place repository.
+func TestJournalLeavesOutInPlaceEntries(t *testing.T) {
+	cfg := reloadConfig()
+	cfg.Sync = append(cfg.Sync, config.SyncEntry{Source: "ci.local/app", Target: "ci.local/app", Type: "repository", InPlace: true})
+	j := newJournal(nil, nil, cfg, nil)
+	if len(j.entries) != 1 {
+		t.Fatalf("journal entries = %d, want 1", len(j.entries))
+	}
+	m := &runner{cfg: cfg}
+	if got := m.findSyncEntriesForTarget("ci.local/app"); len(got) != 0 {
+		t.Fatalf("findSyncEntriesForTarget returned in-place entry: %#v", got)
 	}
 }

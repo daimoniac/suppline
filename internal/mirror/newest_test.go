@@ -3,7 +3,6 @@ package mirror
 import (
 	"bytes"
 	"context"
-	"errors"
 	"fmt"
 	"io"
 	"log/slog"
@@ -25,42 +24,6 @@ import (
 	"github.com/daimoniac/suppline/internal/config"
 	"github.com/daimoniac/suppline/internal/statestore"
 )
-
-func TestSelectNewest(t *testing.T) {
-	day := func(d int) time.Time { return time.Date(2026, 11, d, 0, 0, 0, 0, time.UTC) }
-	created := map[string]time.Time{
-		"shaaaa": day(3),
-		"shabbb": day(1),
-		"shaccc": day(5),
-		"shaddd": day(5), // same time as shaccc: higher name wins
-		"shaeee": {},     // unset created sorts last
-	}
-	lookup := func(tag string) (time.Time, error) { return created[tag], nil }
-	tags := []string{"shaaaa", "shabbb", "shaccc", "shaddd", "shaeee"}
-
-	got, err := selectNewest(tags, 3, lookup)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if want := []string{"shaddd", "shaccc", "shaaaa"}; !slices.Equal(got, want) {
-		t.Fatalf("newest 3 = %#v, want %#v", got, want)
-	}
-
-	for _, n := range []int{0, 5, 9} {
-		got, err := selectNewest(tags, n, func(string) (time.Time, error) {
-			t.Fatalf("n=%d must not read build times", n)
-			return time.Time{}, nil
-		})
-		if err != nil || !slices.Equal(got, tags) {
-			t.Fatalf("n=%d: got %#v, %v", n, got, err)
-		}
-	}
-
-	boom := errors.New("registry down")
-	if _, err := selectNewest(tags, 2, func(string) (time.Time, error) { return time.Time{}, boom }); !errors.Is(err, boom) {
-		t.Fatalf("err = %v, want %v", err, boom)
-	}
-}
 
 func TestCreatedCache_TTLAndRetain(t *testing.T) {
 	now := time.Date(2026, 11, 19, 12, 0, 0, 0, time.UTC)

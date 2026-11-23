@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"slices"
-	"strings"
 	"sync"
 	"time"
 
@@ -12,44 +11,13 @@ import (
 	"github.com/regclient/regclient/types/ref"
 
 	"github.com/daimoniac/suppline/internal/config"
+	"github.com/daimoniac/suppline/internal/tagselect"
 )
 
 // createdTTL is how long a tag's build time is trusted before it is read
 // again. Only a re-pushed tag changes it, and a stale value can only shift
 // which tags fall inside a newest window, never what is copied for a tag.
 const createdTTL = 24 * time.Hour
-
-// selectNewest keeps the n tags built last. Ties, including images whose
-// created field is unset or fixed by a reproducible build, go to the higher
-// tag name. n <= 0 keeps every tag. The result is newest first.
-func selectNewest(tags []string, n int, created func(tag string) (time.Time, error)) ([]string, error) {
-	if n <= 0 || len(tags) <= n {
-		return tags, nil
-	}
-	type dated struct {
-		tag     string
-		created time.Time
-	}
-	all := make([]dated, 0, len(tags))
-	for _, tag := range tags {
-		at, err := created(tag)
-		if err != nil {
-			return nil, err
-		}
-		all = append(all, dated{tag: tag, created: at})
-	}
-	slices.SortFunc(all, func(a, b dated) int {
-		if c := b.created.Compare(a.created); c != 0 {
-			return c
-		}
-		return strings.Compare(b.tag, a.tag)
-	})
-	out := make([]string, 0, n)
-	for _, d := range all[:n] {
-		out = append(out, d.tag)
-	}
-	return out, nil
-}
 
 // createdCache remembers when the image behind each tag was built, per
 // repository. It lives in memory only: after a restart the times are read
@@ -124,7 +92,7 @@ func (m *runner) newestTags(ctx context.Context, s config.SyncEntry, set config.
 	case len(s.Platforms) > 0:
 		opts = append(opts, regclient.ImageWithPlatform(s.Platforms[0]))
 	}
-	return selectNewest(tags, set.Newest, func(tag string) (time.Time, error) {
+	return tagselect.Newest(tags, set.Newest, func(tag string) (time.Time, error) {
 		if at, ok := cache.get(repo, tag); ok {
 			return at, nil
 		}

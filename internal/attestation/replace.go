@@ -161,7 +161,8 @@ func (a *SigstoreAttestor) attestReplacingSameKind(ctx context.Context, operatio
 	a.collapseSameKind(ctx, digest, predicate, true, started)
 	// Referrers annotated as cosign signatures are historical attestations stored under the
 	// wrong predicate. None of them is the attestation just written, so delete every one.
-	if predicate != predicateCosignSign {
+	// In a shared repository they may be the owner's own signatures, so they stay.
+	if predicate != predicateCosignSign && !a.isShared(imageRef) {
 		a.collapseSameKind(ctx, digest, predicateCosignSign, false, time.Time{})
 	}
 	return nil
