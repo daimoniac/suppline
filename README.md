@@ -180,6 +180,22 @@ cosign verify-attestation \
 
 suppline also publishes `cyclonedx` (SBOM) and `vuln` attestations for every digest.
 
+## Gate your own builds in CI
+
+Images you build yourself don't need a mirror. List the repository CI pushes to under `in-place:` and suppline scans and attests each build where it lives:
+
+```yaml
+server:
+  oidc: { issuer: https://gitlab.com, audience: https://suppline.example.com }
+
+in-place:
+  - repository: registry.gitlab.com/group/app
+    scan-requesters: [group/app]          # GitLab projects allowed to request scans
+    tags: { allow: ['sha[0-9a-f]{8,}'], newest: 30 }
+```
+
+Right after the image push, the pipeline calls `POST /api/v1/scan-requests` with its GitLab `id_token` and waits for the verdict. The scan jumps the queue, the SCAI attestation is written next to the image, and the deploy job runs only on `passed`. Kyverno then verifies that attestation at admission, as for mirrored images. suppline keeps rescanning the builds a cluster runs, so their attestations stay fresh. Details and a ready-to-use job: [docs/CONFIGURATION.md](docs/CONFIGURATION.md#scan-requests-from-ci).
+
 ## Know what's actually running
 
 A failing image nobody deployed is a backlog item. A failing image in production is an incident. The optional [clusterstate-agent](clusterstate-agent/) reports pod and workload image inventory from each cluster to suppline, so scans, repositories, and the UI can be filtered by real runtime usage — and `suppline_policy_failed_current{source="runtime"}` tells you how many failures are live.

@@ -68,6 +68,7 @@ type APIServer struct {
 	heldDigests       HeldDigestLister
 	digestResolver    DigestResolver
 	scanWaiter        *ScanRequestWaiter
+	oidc              *oidcVerifier
 	router            *http.ServeMux
 	ui                http.Handler
 	server            *http.Server
@@ -114,6 +115,10 @@ func NewAPIServerWithCatalogAndEnqueuer(cfg *config.APIConfig, attestationCfg *c
 		policyCatalog:     policyCatalog,
 		router:            http.NewServeMux(),
 		logger:            logger,
+	}
+
+	if cfg != nil && cfg.OIDC != nil {
+		api.oidc = newOIDCVerifier(*cfg.OIDC, nil)
 	}
 
 	if cfg != nil && strings.TrimSpace(cfg.APIKey) == "" && logger != nil {

@@ -41,7 +41,7 @@ A repository suppline scans and attests in the registry it was pushed to, withou
 _Avoid_: unmirrored sync, local repository, own image
 
 **Scan request**:
-An expressed intent to scan a specific container image, whether discovered automatically or initiated as a rescan.
+An expressed intent to scan a specific container image, whether discovered automatically, initiated as a rescan, or asked for by a CI job that waits for the verdict of an In-place entry's new build.
 _Avoid_: queue task, worker job
 
 **Repository policy**:

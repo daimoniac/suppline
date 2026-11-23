@@ -94,6 +94,7 @@ func fromFile(regsyncPath string, file *RegsyncConfig) (*Config, error) {
 			ReadOnly:    file.Server.ReadOnly,
 			AllowNoAuth: file.Server.AllowNoAuth,
 			BasePath:    file.Server.BasePath,
+			OIDC:        file.Server.OIDC,
 		},
 		Observability: ObservabilityConfig{
 			LogLevel: stringOr(file.Observability.LogLevel, defaultLogLevel),
@@ -123,6 +124,18 @@ func (c *Config) Validate() error {
 		return err
 	}
 	c.API.BasePath = basePath
+
+	if oidc := c.API.OIDC; oidc != nil {
+		if !strings.HasPrefix(oidc.Issuer, "https://") {
+			return errors.NewPermanentf("server.oidc.issuer must be an https URL, got %q", oidc.Issuer)
+		}
+		if strings.TrimSpace(oidc.Audience) == "" {
+			return errors.NewPermanentf("server.oidc.audience is required")
+		}
+		if strings.TrimSpace(oidc.Claim) == "" {
+			oidc.Claim = DefaultOIDCClaim
+		}
+	}
 
 	if strings.TrimSpace(c.API.APIKey) == "" && !c.API.AllowNoAuth {
 		return errors.NewPermanentf("SUPPLINE_API_KEY is required (authentication would otherwise be disabled for every route). Set server.allowNoAuth: true in suppline.yml only for isolated evaluation")

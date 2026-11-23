@@ -17,7 +17,24 @@ type ServerSettings struct {
 	ReadOnly bool   `yaml:"readOnly,omitempty"`
 	// AllowNoAuth starts the API without SUPPLINE_API_KEY. Isolated evaluation only.
 	AllowNoAuth bool `yaml:"allowNoAuth,omitempty"`
+	// OIDC lets CI jobs authenticate scan requests with an OIDC ID token,
+	// such as a GitLab CI id_token, instead of the API key.
+	OIDC *OIDCSettings `yaml:"oidc,omitempty"`
 }
+
+// OIDCSettings configures the OIDC issuer whose ID tokens may request scans.
+type OIDCSettings struct {
+	// Issuer is the token issuer, e.g. https://gitlab.com.
+	Issuer string `yaml:"issuer"`
+	// Audience is the aud the CI job requests for its token.
+	Audience string `yaml:"audience"`
+	// Claim names the token claim matched against an in-place entry's
+	// scan-requesters. Default: project_path (GitLab).
+	Claim string `yaml:"claim,omitempty"`
+}
+
+// DefaultOIDCClaim is the GitLab CI claim naming the project that ran the job.
+const DefaultOIDCClaim = "project_path"
 
 // ObservabilitySettings configures logging and the operations port.
 type ObservabilitySettings struct {

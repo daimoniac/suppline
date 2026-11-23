@@ -48,6 +48,10 @@ server:
   basePath: ""          # serve everything under a prefix, e.g. /suppline (see below)
   readOnly: false       # disable write operations, including rescans
   allowNoAuth: false    # start without SUPPLINE_API_KEY; isolated evaluation only
+  oidc:                 # accept CI ID tokens on the scan-request endpoints (optional, off when unset)
+    issuer: https://gitlab.com
+    audience: https://suppline.example.com
+    claim: project_path # token claim matched against an in-place entry's scan-requesters
 
 observability:
   logLevel: info        # debug, info, warn, error
@@ -71,7 +75,9 @@ attestation:
   newBundleFormat: true # Cosign v3 protobuf bundles via OCI referrers; false writes classic sha256-<digest>.att tags
 ```
 
-Queue and worker tuning stays under `defaults` (`rescanInterval`, `worker-poll-interval`, `worker-concurrency`, `worker-retry-attempts`, `worker-retry-backoff`, `queue-buffer-size`).
+Queue and worker tuning stays under `defaults` (`rescanInterval`, `worker-poll-interval`, `worker-concurrency`, `worker-urgent-concurrency`, `worker-retry-attempts`, `worker-retry-backoff`, `queue-buffer-size`).
+
+`worker-urgent-concurrency` (default 3) starts workers that take only scan requests, on top of `worker-concurrency`, so a CI job never waits for discovery scans or rescans to finish. `0` reserves none; scan requests then still go first, but wait for a regular worker.
 
 **`server.basePath`** must start with `/`; a trailing `/` is ignored. suppline serves the UI, API and Swagger under it and expects proxies to forward paths unchanged (no prefix stripping); requests outside the prefix get 404. The Helm chart uses it as the ingress path.
 
@@ -343,6 +349,47 @@ in-place:
 - **No cooldown:** a cooldown holds a digest before it is published on a tag, and an in-place repository publishes nothing. Its scans are never `pending`, whatever `defaults.cooldown` says.
 - **Nothing is deleted from the repository** except older suppline attestations of the kind just written. suppline owns the SCAI, SBOM, vulnerability and VEX attestation kinds on an in-place digest; cosign signatures and attestations of other kinds stay. The registry credentials for the repository therefore need write access (and delete access for replacing attestations).
 - **`scan-requesters`** lists the CI identities allowed to request a scan of the repository through the scan-request API. See [Scan requests from CI](#scan-requests-from-ci).
+
+### Scan requests from CI
+
+A CI job can ask suppline to scan an image of an in-place repository right after pushing it, and wait for the verdict, instead of waiting for the next watcher poll:
+
+```bash
+curl -sS -X POST "$SUPPLINE_URL/api/v1/scan-requests?wait=55s" \
+  -H "Authorization: Bearer $TOKEN" \
+  -d '{"image":"registry.gitlab.com/group/app:sha1a2b3c4d"}'
+```
+
+- **200** returns the verdict once a scan newer than the request finished: `state` (`done` or `error`), `verdict.status` (`passed`, `failed`, `pending`), `verdict.findings`, the vulnerability counts and `verdict.attested.scai`. Gate a deploy on `state == "done" && verdict.status == "passed" && verdict.attested.scai`.
+- **202** means the scan is still queued or running when `wait` ran out. Poll the returned `poll` path (`GET /api/v1/scan-requests/<digest>?repository=…&after=…&wait=55s`) until it answers 200. Waiting in slices below 60 seconds keeps the request under the default read timeout of most ingress controllers; the server caps `wait` at 10 minutes.
+- **The image must be in an in-place repository** (404 for an unknown repository, 422 for a mirrored one), and the tag must pass the entry's tag filters (422) and resolve in the registry (404). A digest after the tag (`repo:tag@sha256:…`) must be the one the tag names (409).
+- **Scan requests run first.** They use their own queue tier ahead of discovery and rescans, and `worker-urgent-concurrency` workers (default 3) take nothing else. Attestations are pushed in parallel, and older ones are replaced in the background, so a request answers as soon as the new attestations are published.
+- **Read-only mode** refuses new scan requests.
+
+**Authentication.** The API key may request scans of every in-place repository. With `server.oidc` set, a CI job can instead send an OIDC ID token, such as a GitLab CI `id_token` whose `aud` is `server.oidc.audience`. suppline verifies it against the issuer's published keys and accepts it only when the token's `claim` (default `project_path`) is listed in the repository's `scan-requesters`. ID tokens open the scan-request endpoints only; every other route still needs the API key. The issuer is discovered on the first ID token, so suppline starts even when it is unreachable; until it is reachable, ID tokens get 503.
+
+```yaml
+# .gitlab-ci.yml
+suppline_scan:
+  stage: build
+  needs: [image]
+  image: alpine:3.22
+  id_tokens:
+    SUPPLINE_ID_TOKEN:
+      aud: https://suppline.example.com
+  script:
+    - apk add --no-cache curl jq
+    - |
+      out=$(curl -sS -X POST "$SUPPLINE_URL/api/v1/scan-requests?wait=55s" \
+        -H "Authorization: Bearer $SUPPLINE_ID_TOKEN" \
+        -d "{\"image\":\"$CI_REGISTRY_IMAGE:sha$CI_COMMIT_SHORT_SHA\"}")
+      while [ "$(echo "$out" | jq -r .state)" = queued ]; do
+        out=$(curl -sS "$SUPPLINE_URL$(echo "$out" | jq -r .poll)&wait=55s" \
+          -H "Authorization: Bearer $SUPPLINE_ID_TOKEN")
+      done
+      echo "$out" | jq .
+      echo "$out" | jq -e '.state == "done" and .verdict.status == "passed" and .verdict.attested.scai'
+```
 
 ### Rescan Interval Configuration
 
