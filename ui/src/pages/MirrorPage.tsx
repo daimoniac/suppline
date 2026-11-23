@@ -335,8 +335,8 @@ function DeletionTable({ rows, showTag }: { rows: MirrorDeletion[]; showTag: boo
 function HeldTable({ rows, onRelease }: { rows: HeldDigest[]; onRelease: (row: HeldDigest) => void }) {
   return (
     <>
-      {/* Phones: one card per held digest, no sideways scrolling. */}
-      <ul className="md:hidden divide-y divide-border">
+      {/* Below xl the seven columns don't fit next to the sidebar: one card per held digest, no sideways scrolling. */}
+      <ul className="xl:hidden divide-y divide-border">
         {rows.map(row => (
           <li key={`${row.Repository}@${row.Digest}`} className="px-4 py-3 space-y-2">
             <div className="min-w-0">
@@ -344,7 +344,7 @@ function HeldTable({ rows, onRelease }: { rows: HeldDigest[]; onRelease: (row: H
               {row.Source && <div className="text-xs text-text-muted break-all">from {row.Source}</div>}
             </div>
             <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs">
-              <span className="text-text-secondary">{(row.Tags ?? []).join(', ')}</span>
+              <span className="text-text-secondary wrap-anywhere">{(row.Tags ?? []).join(', ')}</span>
               <DigestLinkWithCopy digest={row.Digest} to={heldDigestLink(row)} />
             </div>
             <dl className="grid grid-cols-3 gap-2 text-xs">
@@ -374,7 +374,7 @@ function HeldTable({ rows, onRelease }: { rows: HeldDigest[]; onRelease: (row: H
         ))}
       </ul>
 
-      <div className="hidden md:block overflow-x-auto">
+      <div className="hidden xl:block overflow-x-auto">
         <table className="w-full text-sm">
           <thead className="text-left text-xs text-text-muted">
             <tr className="border-b border-border">
@@ -391,12 +391,12 @@ function HeldTable({ rows, onRelease }: { rows: HeldDigest[]; onRelease: (row: H
             {rows.map(row => (
               <tr key={`${row.Repository}@${row.Digest}`} className="border-b border-border last:border-0 align-top">
                 <td className="px-5 py-2 text-text-primary">
-                  <div>{row.Repository}</div>
-                  {row.Source && <div className="text-xs text-text-muted">from {row.Source}</div>}
+                  <div className="wrap-anywhere">{row.Repository}</div>
+                  {row.Source && <div className="text-xs text-text-muted wrap-anywhere">from {row.Source}</div>}
                 </td>
-                <td className="px-5 py-2 text-text-secondary">{(row.Tags ?? []).join(', ')}</td>
+                <td className="px-5 py-2 text-text-secondary wrap-anywhere">{(row.Tags ?? []).join(', ')}</td>
                 <td className="px-5 py-2"><DigestLinkWithCopy digest={row.Digest} to={heldDigestLink(row)} /></td>
-                <td className="px-5 py-2 text-text-muted" title={formatDate(row.FirstSeen)}>{formatRelativeTime(row.FirstSeen)}</td>
+                <td className="px-5 py-2 text-text-muted whitespace-nowrap" title={formatDate(row.FirstSeen)}>{formatRelativeTime(row.FirstSeen)}</td>
                 <td className="px-5 py-2"><CooldownCell row={row} /></td>
                 <td className="px-5 py-2"><ScanCell row={row} /></td>
                 <td className="px-5 py-2 text-right">
