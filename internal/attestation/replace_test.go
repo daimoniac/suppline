@@ -428,3 +428,48 @@ func repeatHex(b byte) string {
 	}
 	return string(out)
 }
+
+type blockingCleaner struct {
+	release chan struct{}
+	done    chan string
+}
+
+func (b *blockingCleaner) collapse(_ context.Context, _ name.Digest, predicate string, _ bool, _ time.Time) error {
+	<-b.release
+	b.done <- predicate
+	return nil
+}
+
+// Cleanup waits for the registry to list the new attestation; the attest call,
+// and the scan waiting on it, must not.
+func TestAttestDoesNotWaitForCleanup(t *testing.T) {
+	fakeBinDir := writeFakeCosign(t, "#!/bin/sh\nexit 0\n")
+	t.Setenv("PATH", fakeBinDir+string(os.PathListSeparator)+os.Getenv("PATH"))
+
+	cleaner := &blockingCleaner{release: make(chan struct{}), done: make(chan string, 4)}
+	attestor := testAttestor(t)
+	attestor.inlineCleanup = false
+	attestor.cleaner = cleaner
+
+	imageRef := "example.com/app@sha256:" + repeatHex('a')
+	returned := make(chan error, 1)
+	go func() { returned <- attestor.AttestSBOM(context.Background(), imageRef, testSBOM(t)) }()
+	select {
+	case err := <-returned:
+		if err != nil {
+			t.Fatalf("AttestSBOM: %v", err)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("AttestSBOM waited for cleanup")
+	}
+
+	close(cleaner.release)
+	select {
+	case predicate := <-cleaner.done:
+		if predicate != "https://cyclonedx.org/bom" {
+			t.Fatalf("first background collapse = %s", predicate)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("cleanup never ran")
+	}
+}

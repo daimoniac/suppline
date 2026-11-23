@@ -61,10 +61,11 @@ func fromFile(regsyncPath string, file *RegsyncConfig) (*Config, error) {
 			BufferSize: intOr(file.GetQueueBufferSize(), 1000),
 		},
 		Worker: WorkerConfig{
-			PollInterval:  workerPollInterval,
-			RetryAttempts: intOr(file.GetWorkerRetryAttempts(), 3),
-			RetryBackoff:  workerRetryBackoff,
-			Concurrency:   intOr(file.GetWorkerConcurrency(), 3),
+			PollInterval:      workerPollInterval,
+			RetryAttempts:     intOr(file.GetWorkerRetryAttempts(), 3),
+			RetryBackoff:      workerRetryBackoff,
+			Concurrency:       intOr(file.GetWorkerConcurrency(), 3),
+			UrgentConcurrency: file.GetWorkerUrgentConcurrency(),
 		},
 		Scanner: ScannerConfig{
 			ServerAddr:    stringOr(file.Scanner.Server, defaultTrivyServer),

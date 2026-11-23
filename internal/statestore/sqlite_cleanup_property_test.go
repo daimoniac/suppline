@@ -29,18 +29,18 @@ func TestCleanupArtifactScansProperty(t *testing.T) {
 			// Create a scan record for the digest
 			record := &ScanRecord{
 				Repository:        repoName,
-				Digest:           digest,
-				Tag:              tag,
-				ScanDurationMs:   1000,
+				Digest:            digest,
+				Tag:               tag,
+				ScanDurationMs:    1000,
 				CriticalVulnCount: vulnCount,
-				HighVulnCount:    vulnCount,
-				MediumVulnCount:  vulnCount,
-				LowVulnCount:     vulnCount,
-				PolicyPassed:     true,
-				SBOMAttested:     true,
-				VulnAttested:     true,
-				SCAIAttested:     true,
-				Vulnerabilities:  generateVulnerabilities(vulnCount),
+				HighVulnCount:     vulnCount,
+				MediumVulnCount:   vulnCount,
+				LowVulnCount:      vulnCount,
+				PolicyPassed:      true,
+				SBOMAttested:      true,
+				VulnAttested:      true,
+				SCAIAttested:      true,
+				Vulnerabilities:   generateVulnerabilities(vulnCount),
 			}
 
 			// Record the scan
@@ -94,18 +94,18 @@ func TestVulnerabilityCascadeDeletionProperty(t *testing.T) {
 			// Create a scan record with vulnerabilities
 			record := &ScanRecord{
 				Repository:        repoName,
-				Digest:           digest,
-				Tag:              tag,
-				ScanDurationMs:   1000,
+				Digest:            digest,
+				Tag:               tag,
+				ScanDurationMs:    1000,
 				CriticalVulnCount: vulnCount,
-				HighVulnCount:    vulnCount,
-				MediumVulnCount:  vulnCount,
-				LowVulnCount:     vulnCount,
-				PolicyPassed:     true,
-				SBOMAttested:     true,
-				VulnAttested:     true,
-				SCAIAttested:     true,
-				Vulnerabilities:  generateVulnerabilities(vulnCount),
+				HighVulnCount:     vulnCount,
+				MediumVulnCount:   vulnCount,
+				LowVulnCount:      vulnCount,
+				PolicyPassed:      true,
+				SBOMAttested:      true,
+				VulnAttested:      true,
+				SCAIAttested:      true,
+				Vulnerabilities:   generateVulnerabilities(vulnCount),
 			}
 
 			// Record the scan
@@ -254,18 +254,18 @@ func TestExcessScanCleanupProperty(t *testing.T) {
 			for i := 0; i < scanCount; i++ {
 				record := &ScanRecord{
 					Repository:        repoName,
-					Digest:           digest,
-					Tag:              tag,
-					ScanDurationMs:   1000 + i*100,
+					Digest:            digest,
+					Tag:               tag,
+					ScanDurationMs:    1000 + i*100,
 					CriticalVulnCount: i,
-					HighVulnCount:    i,
-					MediumVulnCount:  i,
-					LowVulnCount:     i,
-					PolicyPassed:     true,
-					SBOMAttested:     true,
-					VulnAttested:     true,
-					SCAIAttested:     true,
-					Vulnerabilities:  generateVulnerabilities(1),
+					HighVulnCount:     i,
+					MediumVulnCount:   i,
+					LowVulnCount:      i,
+					PolicyPassed:      true,
+					SBOMAttested:      true,
+					VulnAttested:      true,
+					SCAIAttested:      true,
+					Vulnerabilities:   generateVulnerabilities(1),
 				}
 
 				err := store.RecordScan(ctx, record)
@@ -326,18 +326,18 @@ func TestArtifactReferenceConsistencyProperty(t *testing.T) {
 			for i := 0; i < scanCount; i++ {
 				record := &ScanRecord{
 					Repository:        repoName,
-					Digest:           digest,
-					Tag:              tag,
-					ScanDurationMs:   1000 + i*100,
+					Digest:            digest,
+					Tag:               tag,
+					ScanDurationMs:    1000 + i*100,
 					CriticalVulnCount: i,
-					HighVulnCount:    i,
-					MediumVulnCount:  i,
-					LowVulnCount:     i,
-					PolicyPassed:     true,
-					SBOMAttested:     true,
-					VulnAttested:     true,
-					SCAIAttested:     true,
-					Vulnerabilities:  generateVulnerabilities(1),
+					HighVulnCount:     i,
+					MediumVulnCount:   i,
+					LowVulnCount:      i,
+					PolicyPassed:      true,
+					SBOMAttested:      true,
+					VulnAttested:      true,
+					SCAIAttested:      true,
+					Vulnerabilities:   generateVulnerabilities(1),
 				}
 
 				err := store.RecordScan(ctx, record)
@@ -427,18 +427,18 @@ func TestEmptyArtifactCleanupProperty(t *testing.T) {
 			// Create a scan record for the digest
 			record := &ScanRecord{
 				Repository:        repoName,
-				Digest:           digest,
-				Tag:              tag,
-				ScanDurationMs:   1000,
+				Digest:            digest,
+				Tag:               tag,
+				ScanDurationMs:    1000,
 				CriticalVulnCount: 1,
-				HighVulnCount:    1,
-				MediumVulnCount:  1,
-				LowVulnCount:     1,
-				PolicyPassed:     true,
-				SBOMAttested:     true,
-				VulnAttested:     true,
-				SCAIAttested:     true,
-				Vulnerabilities:  generateVulnerabilities(1),
+				HighVulnCount:     1,
+				MediumVulnCount:   1,
+				LowVulnCount:      1,
+				PolicyPassed:      true,
+				SBOMAttested:      true,
+				VulnAttested:      true,
+				SCAIAttested:      true,
+				Vulnerabilities:   generateVulnerabilities(1),
 			}
 
 			// Record the scan
@@ -491,18 +491,18 @@ func TestEmptyRepositoryCleanupProperty(t *testing.T) {
 			// Create a scan record for the digest (this creates repository and artifact)
 			record := &ScanRecord{
 				Repository:        repoName,
-				Digest:           digest,
-				Tag:              tag,
-				ScanDurationMs:   1000,
+				Digest:            digest,
+				Tag:               tag,
+				ScanDurationMs:    1000,
 				CriticalVulnCount: 1,
-				HighVulnCount:    1,
-				MediumVulnCount:  1,
-				LowVulnCount:     1,
-				PolicyPassed:     true,
-				SBOMAttested:     true,
-				VulnAttested:     true,
-				SCAIAttested:     true,
-				Vulnerabilities:  generateVulnerabilities(1),
+				HighVulnCount:     1,
+				MediumVulnCount:   1,
+				LowVulnCount:      1,
+				PolicyPassed:      true,
+				SBOMAttested:      true,
+				VulnAttested:      true,
+				SCAIAttested:      true,
+				Vulnerabilities:   generateVulnerabilities(1),
 			}
 
 			// Record the scan
@@ -568,18 +568,18 @@ func TestTransactionAtomicityProperty(t *testing.T) {
 			// Create a scan record for the digest
 			record := &ScanRecord{
 				Repository:        repoName,
-				Digest:           digest,
-				Tag:              tag,
-				ScanDurationMs:   1000,
+				Digest:            digest,
+				Tag:               tag,
+				ScanDurationMs:    1000,
 				CriticalVulnCount: vulnCount,
-				HighVulnCount:    vulnCount,
-				MediumVulnCount:  vulnCount,
-				LowVulnCount:     vulnCount,
-				PolicyPassed:     true,
-				SBOMAttested:     true,
-				VulnAttested:     true,
-				SCAIAttested:     true,
-				Vulnerabilities:  generateVulnerabilities(vulnCount),
+				HighVulnCount:     vulnCount,
+				MediumVulnCount:   vulnCount,
+				LowVulnCount:      vulnCount,
+				PolicyPassed:      true,
+				SBOMAttested:      true,
+				VulnAttested:      true,
+				SCAIAttested:      true,
+				Vulnerabilities:   generateVulnerabilities(vulnCount),
 			}
 
 			// Record the scan
@@ -597,7 +597,7 @@ func TestTransactionAtomicityProperty(t *testing.T) {
 			// Test transaction atomicity by simulating a failure scenario
 			// We'll create a custom operation that should fail partway through
 			sqliteStore := store.(*SQLiteStore)
-			
+
 			// Try to execute a cleanup operation that will fail due to constraint violation
 			// We'll attempt to delete from a non-existent table to force a failure
 			err = sqliteStore.executeCleanup(ctx, func(tx *Tx) error {
@@ -665,18 +665,18 @@ func TestCleanupIdempotencyProperty(t *testing.T) {
 			// Create a scan record for the digest
 			record := &ScanRecord{
 				Repository:        repoName,
-				Digest:           digest,
-				Tag:              tag,
-				ScanDurationMs:   1000,
+				Digest:            digest,
+				Tag:               tag,
+				ScanDurationMs:    1000,
 				CriticalVulnCount: vulnCount,
-				HighVulnCount:    vulnCount,
-				MediumVulnCount:  vulnCount,
-				LowVulnCount:     vulnCount,
-				PolicyPassed:     true,
-				SBOMAttested:     true,
-				VulnAttested:     true,
-				SCAIAttested:     true,
-				Vulnerabilities:  generateVulnerabilities(vulnCount),
+				HighVulnCount:     vulnCount,
+				MediumVulnCount:   vulnCount,
+				LowVulnCount:      vulnCount,
+				PolicyPassed:      true,
+				SBOMAttested:      true,
+				VulnAttested:      true,
+				SCAIAttested:      true,
+				Vulnerabilities:   generateVulnerabilities(vulnCount),
 			}
 
 			// Record the scan
@@ -709,8 +709,6 @@ func TestCleanupIdempotencyProperty(t *testing.T) {
 		gen.IntRange(1, 5),
 		gen.IntRange(2, 5),
 	))
-
-
 
 	properties.TestingRun(t, gopter.ConsoleReporter(false))
 }

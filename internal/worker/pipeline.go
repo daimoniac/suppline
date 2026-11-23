@@ -6,6 +6,7 @@ import (
 	"log/slog"
 	"slices"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/daimoniac/suppline/internal/attestation"
@@ -296,7 +297,11 @@ type attestationResult struct {
 	VEXAttested  bool
 }
 
-// attestationPhase creates all attestations (SBOM, vulnerabilities, VEX, SCAI)
+// attestationPhase creates all attestations (SBOM, vulnerabilities, VEX, SCAI).
+// They are independent, so they are pushed concurrently: each cosign push
+// talks to the registry, and one after the other they dominate a scan.
+// An SBOM or vulnerability attestation failure fails the task; VEX and SCAI
+// failures are only logged, as before.
 func (p *Pipeline) attestationPhase(ctx context.Context, task *queue.ScanTask, imageRef string, sbom *scanner.SBOM, scanResult *scanner.ScanResult, policyDecision *policy.PolicyDecision, evidence catalog.Evidence) (map[string]time.Duration, *attestationResult, error) {
 	durations := make(map[string]time.Duration)
 	metrics := observability.GetMetrics()
@@ -314,52 +319,78 @@ func (p *Pipeline) attestationPhase(ctx context.Context, task *queue.ScanTask, i
 	// An in-place repository is shared with whoever builds it, so attestations
 	// suppline did not write are never swept there.
 	sweep := cfg == nil || !cfg.IsInPlace(task.Repository)
+	cleaner, canClean := p.worker.attestor.(referrerCleaner)
+
+	var (
+		mu       sync.Mutex
+		wg       sync.WaitGroup
+		sbomErr  error
+		vulnErr  error
+		recorded = func(kind string, started time.Time, set func()) {
+			mu.Lock()
+			defer mu.Unlock()
+			set()
+			durations[kind] = time.Since(started)
+		}
+	)
+	run := func(fn func()) {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			fn()
+		}()
+	}
+
 	if cfg != nil && !cfg.CreateSBOMAttestation(task.Repository) {
 		p.logger.Info("skipping SBOM attestation", "image_ref", imageRef)
-		if cleaner, ok := p.worker.attestor.(referrerCleaner); ok && sweep {
-			if err := cleaner.DeleteReferrers(ctx, imageRef, attestation.PredicateBOM); err != nil {
-				p.logger.Warn("failed to delete SBOM attestations", "image_ref", imageRef, "error", err)
-			}
+		if canClean && sweep {
+			run(func() {
+				if err := cleaner.DeleteReferrers(ctx, imageRef, attestation.PredicateBOM); err != nil {
+					p.logger.Warn("failed to delete SBOM attestations", "image_ref", imageRef, "error", err)
+				}
+			})
 		}
 	} else {
-		sbomStart := time.Now()
-		p.logger.Debug("creating SBOM attestation", "image_ref", imageRef)
-		if err := p.worker.attestor.AttestSBOM(ctx, imageRef, sbom); err != nil {
-			metrics.AttestationsFailed.WithLabelValues("sbom").Inc()
-			return nil, nil, fmt.Errorf("failed to create SBOM attestation: %w", err)
-		}
-		result.SBOMAttested = true
-		durations["sbom_attest"] = time.Since(sbomStart)
-		metrics.AttestationsCreated.WithLabelValues("sbom").Inc()
-		p.logger.Info("SBOM attestation created", "image_ref", imageRef, "duration", durations["sbom_attest"])
+		run(func() {
+			started := time.Now()
+			p.logger.Debug("creating SBOM attestation", "image_ref", imageRef)
+			if err := p.worker.attestor.AttestSBOM(ctx, imageRef, sbom); err != nil {
+				metrics.AttestationsFailed.WithLabelValues("sbom").Inc()
+				sbomErr = fmt.Errorf("failed to create SBOM attestation: %w", err)
+				return
+			}
+			recorded("sbom_attest", started, func() { result.SBOMAttested = true })
+			metrics.AttestationsCreated.WithLabelValues("sbom").Inc()
+			p.logger.Info("SBOM attestation created", "image_ref", imageRef, "duration", time.Since(started))
+		})
 	}
 
 	if cfg != nil && !cfg.CreateVulnerabilityAttestation(task.Repository) {
 		p.logger.Info("skipping vulnerability attestation", "image_ref", imageRef)
-		if cleaner, ok := p.worker.attestor.(referrerCleaner); ok && sweep {
-			if err := cleaner.DeleteReferrers(ctx, imageRef, attestation.PredicateVuln); err != nil {
-				p.logger.Warn("failed to delete vulnerability attestations", "image_ref", imageRef, "error", err)
-			}
+		if canClean && sweep {
+			run(func() {
+				if err := cleaner.DeleteReferrers(ctx, imageRef, attestation.PredicateVuln); err != nil {
+					p.logger.Warn("failed to delete vulnerability attestations", "image_ref", imageRef, "error", err)
+				}
+			})
 		}
 	} else {
-		vulnStart := time.Now()
-		p.logger.Debug("creating vulnerability attestation", "image_ref", imageRef)
-		if err := p.worker.attestor.AttestVulnerabilities(ctx, imageRef, scanResult); err != nil {
-			metrics.AttestationsFailed.WithLabelValues("vulnerability").Inc()
-			return nil, nil, fmt.Errorf("failed to create vulnerability attestation: %w", err)
-		}
-		result.VulnAttested = true
-		durations["vuln_attest"] = time.Since(vulnStart)
-		metrics.AttestationsCreated.WithLabelValues("vulnerability").Inc()
-		p.logger.Info("vulnerability attestation created", "image_ref", imageRef, "duration", durations["vuln_attest"])
+		run(func() {
+			started := time.Now()
+			p.logger.Debug("creating vulnerability attestation", "image_ref", imageRef)
+			if err := p.worker.attestor.AttestVulnerabilities(ctx, imageRef, scanResult); err != nil {
+				metrics.AttestationsFailed.WithLabelValues("vulnerability").Inc()
+				vulnErr = fmt.Errorf("failed to create vulnerability attestation: %w", err)
+				return
+			}
+			recorded("vuln_attest", started, func() { result.VulnAttested = true })
+			metrics.AttestationsCreated.WithLabelValues("vulnerability").Inc()
+			p.logger.Info("vulnerability attestation created", "image_ref", imageRef, "duration", time.Since(started))
+		})
 	}
 
 	// VEX attestation (if there are applied VEX statements)
 	if policyDecision != nil && len(policyDecision.ExemptedCVEs) > 0 {
-		vexStart := time.Now()
-		p.logger.Debug("creating VEX attestation", "image_ref", imageRef, "exempted_cves", len(policyDecision.ExemptedCVEs))
-
-		// Build applied VEX statements for attestation
 		var appliedStatements []types.AppliedVEXStatement
 		for _, cve := range policyDecision.ExemptedCVEs {
 			for _, stmt := range evidence.VEXStatements {
@@ -376,42 +407,51 @@ func (p *Pipeline) attestationPhase(ctx context.Context, task *queue.ScanTask, i
 				}
 			}
 		}
-
-		if err := p.worker.attestor.AttestVEX(ctx, imageRef, appliedStatements); err != nil {
-			p.logger.Error("failed to create VEX attestation", "image_ref", imageRef, "error", err)
-			metrics.AttestationsFailed.WithLabelValues("vex").Inc()
-		} else {
-			result.VEXAttested = true
-			durations["vex_attest"] = time.Since(vexStart)
+		run(func() {
+			started := time.Now()
+			p.logger.Debug("creating VEX attestation", "image_ref", imageRef, "exempted_cves", len(policyDecision.ExemptedCVEs))
+			if err := p.worker.attestor.AttestVEX(ctx, imageRef, appliedStatements); err != nil {
+				p.logger.Error("failed to create VEX attestation", "image_ref", imageRef, "error", err)
+				metrics.AttestationsFailed.WithLabelValues("vex").Inc()
+				return
+			}
+			recorded("vex_attest", started, func() { result.VEXAttested = true })
 			metrics.AttestationsCreated.WithLabelValues("vex").Inc()
-			p.logger.Info("VEX attestation created", "image_ref", imageRef, "duration", durations["vex_attest"])
-		}
+			p.logger.Info("VEX attestation created", "image_ref", imageRef, "duration", time.Since(started))
+		})
 	}
 
 	// SCAI attestation (optional)
 	if p.worker.scaiGenerator != nil {
-		scaiStart := time.Now()
-		p.logger.Debug("generating SCAI attestation", "image_ref", imageRef)
-
-		scai, err := p.worker.scaiGenerator.GenerateSCAI(ctx, imageRef, scanResult, task.Repository, policyDecision)
-		if err != nil {
-			p.logger.Error("failed to generate SCAI attestation", "image_ref", imageRef, "error", err)
-			metrics.AttestationsFailed.WithLabelValues("scai").Inc()
-		} else {
+		run(func() {
+			started := time.Now()
+			p.logger.Debug("generating SCAI attestation", "image_ref", imageRef)
+			scai, err := p.worker.scaiGenerator.GenerateSCAI(ctx, imageRef, scanResult, task.Repository, policyDecision)
+			if err != nil {
+				p.logger.Error("failed to generate SCAI attestation", "image_ref", imageRef, "error", err)
+				metrics.AttestationsFailed.WithLabelValues("scai").Inc()
+				return
+			}
 			if err := p.worker.attestor.AttestSCAI(ctx, imageRef, scai); err != nil {
 				p.logger.Error("failed to attest SCAI", "image_ref", imageRef, "error", err)
 				metrics.AttestationsFailed.WithLabelValues("scai").Inc()
-			} else {
-				result.SCAIAttested = true
-				durations["scai_attest"] = time.Since(scaiStart)
-				metrics.AttestationsCreated.WithLabelValues("scai").Inc()
-				p.logger.Info("SCAI attestation created", "image_ref", imageRef, "duration", durations["scai_attest"])
+				return
 			}
-		}
+			recorded("scai_attest", started, func() { result.SCAIAttested = true })
+			metrics.AttestationsCreated.WithLabelValues("scai").Inc()
+			p.logger.Info("SCAI attestation created", "image_ref", imageRef, "duration", time.Since(started))
+		})
 	} else {
 		p.logger.Debug("SCAI generator not configured, skipping SCAI attestation", "image_ref", imageRef)
 	}
 
+	wg.Wait()
+	if sbomErr != nil {
+		return nil, nil, sbomErr
+	}
+	if vulnErr != nil {
+		return nil, nil, vulnErr
+	}
 	return durations, result, nil
 }
 

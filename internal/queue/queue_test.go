@@ -4,7 +4,6 @@ import (
 	"context"
 	"testing"
 	"time"
-
 )
 
 func TestNewInMemoryQueue(t *testing.T) {
@@ -319,7 +318,7 @@ func TestContextCancellation(t *testing.T) {
 
 	// Verify task2 was not added to pending map
 	q.pendingMu.RLock()
-	if q.pending[taskPendingKey("test/repo", "sha256:second")] {
+	if _, ok := q.pending[taskPendingKey("test/repo", "sha256:second")]; ok {
 		t.Error("expected task2 to not be in pending map")
 	}
 	q.pendingMu.RUnlock()
@@ -776,5 +775,67 @@ func TestExplicitPriorityOverridesTaskType(t *testing.T) {
 	}
 	if second.Priority != PriorityNormal {
 		t.Errorf("expected explicit normal priority to survive, got %v", second.Priority)
+	}
+}
+
+func TestUrgentTasksRunBeforeTheBacklog(t *testing.T) {
+	q := NewInMemoryQueue(20)
+	defer q.Close()
+	ctx := context.Background()
+
+	for _, task := range []*ScanTask{
+		{ID: "normal", Repository: "repo", Digest: "sha256:n", Priority: PriorityNormal},
+		{ID: "high", Repository: "repo", Digest: "sha256:h", Priority: PriorityHigh},
+		{ID: "queued-normal", Repository: "repo", Digest: "sha256:u", Priority: PriorityNormal},
+		// Same digest as queued-normal: a waiting caller must not sit behind it.
+		{ID: "urgent", Repository: "repo", Digest: "sha256:u", Priority: PriorityUrgent},
+		// Already queued urgently: dropped.
+		{ID: "urgent-again", Repository: "repo", Digest: "sha256:u", Priority: PriorityUrgent},
+	} {
+		if err := q.Enqueue(ctx, task); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	var order []string
+	for range 4 {
+		task, err := q.Dequeue(ctx)
+		if err != nil {
+			t.Fatal(err)
+		}
+		order = append(order, task.ID)
+	}
+	want := []string{"urgent", "high", "normal", "queued-normal"}
+	for i := range want {
+		if order[i] != want[i] {
+			t.Fatalf("dequeue order = %v, want %v", order, want)
+		}
+	}
+	if depth, _ := q.GetQueueDepth(ctx); depth != 0 {
+		t.Fatalf("depth = %d, want 0 (urgent-again must be dropped)", depth)
+	}
+}
+
+func TestDequeueUrgentIgnoresTheBacklog(t *testing.T) {
+	q := NewInMemoryQueue(20)
+	defer q.Close()
+	ctx := context.Background()
+	if err := q.Enqueue(ctx, &ScanTask{ID: "high", Repository: "repo", Digest: "sha256:h", Priority: PriorityHigh}); err != nil {
+		t.Fatal(err)
+	}
+	short, cancel := context.WithTimeout(ctx, 50*time.Millisecond)
+	defer cancel()
+	if task, err := q.DequeueUrgent(short); err == nil {
+		t.Fatalf("urgent worker took %s", task.ID)
+	}
+	if err := q.Enqueue(ctx, &ScanTask{ID: "urgent", Repository: "repo", Digest: "sha256:u", Priority: PriorityUrgent}); err != nil {
+		t.Fatal(err)
+	}
+	task, err := q.DequeueUrgent(ctx)
+	if err != nil || task.ID != "urgent" {
+		t.Fatalf("DequeueUrgent = %v, %v", task, err)
+	}
+	if pending, _ := q.HasPendingTask(ctx, "repo", "sha256:u"); pending {
+		t.Fatal("urgent task still marked pending")
 	}
 }

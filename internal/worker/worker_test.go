@@ -290,3 +290,70 @@ func TestDefaultConfig(t *testing.T) {
 		t.Errorf("expected retry backoff 10s, got %v", config.RetryBackoff)
 	}
 }
+
+type recordingTaskObserver struct {
+	finished chan error
+}
+
+func (r *recordingTaskObserver) Finished(_ context.Context, _ *queue.ScanTask, err error) {
+	r.finished <- err
+}
+
+// A task that fails before any scan record exists must still be reported,
+// or a scan request waiting on its digest would hang.
+func TestWorker_TaskObserverHearsFailedTask(t *testing.T) {
+	mockQ := newMockQueue(10)
+	worker := NewImageWorker(mockQ, nil, nil, nil, nil, nil, DefaultConfig(), slog.Default(), nil)
+	observer := &recordingTaskObserver{finished: make(chan error, 1)}
+	worker.SetTaskObserver(observer)
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	if err := mockQ.Enqueue(ctx, &queue.ScanTask{ID: "t", Repository: "test/repo", Digest: "sha256:abc", Tag: "v1"}); err != nil {
+		t.Fatal(err)
+	}
+	go func() { _ = worker.Start(ctx) }()
+
+	select {
+	case err := <-observer.finished:
+		if err == nil {
+			t.Fatal("expected the task to finish with an error (no scanner configured)")
+		}
+	case <-ctx.Done():
+		t.Fatal("task observer was never called")
+	}
+}
+
+// stuckQueue hands its regular workers nothing, as if every one of them were
+// busy with a long scan; only urgent dequeues get tasks.
+type stuckQueue struct {
+	*queue.InMemoryQueue
+}
+
+func (s stuckQueue) Dequeue(ctx context.Context) (*queue.ScanTask, error) {
+	<-ctx.Done()
+	return nil, ctx.Err()
+}
+
+func TestWorker_ReservedUrgentWorkersTakeScanRequests(t *testing.T) {
+	q := stuckQueue{queue.NewInMemoryQueue(10)}
+	cfg := DefaultConfig()
+	cfg.Concurrency = 1
+	cfg.UrgentConcurrency = 1
+	worker := NewImageWorker(q, nil, nil, nil, nil, nil, cfg, slog.Default(), nil)
+	observer := &recordingTaskObserver{finished: make(chan error, 1)}
+	worker.SetTaskObserver(observer)
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	go func() { _ = worker.Start(ctx) }()
+	if err := q.Enqueue(ctx, &queue.ScanTask{ID: "ci", Repository: "test/repo", Digest: "sha256:ci", Tag: "v1", Priority: queue.PriorityUrgent}); err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case err := <-observer.finished:
+		t.Logf("urgent task finished: %v", err)
+	case <-ctx.Done():
+		t.Fatal("no reserved worker took the urgent task")
+	}
+}

@@ -48,6 +48,13 @@ type Config struct {
 	RetryAttempts int
 	RetryBackoff  time.Duration
 	Concurrency   int // Number of concurrent workers
+	// UrgentConcurrency workers take only urgent tasks, on top of Concurrency.
+	UrgentConcurrency int
+}
+
+// urgentQueue is a queue that can hand out urgent tasks only.
+type urgentQueue interface {
+	DequeueUrgent(ctx context.Context) (*queue.ScanTask, error)
 }
 
 // DefaultConfig returns default worker configuration
@@ -76,6 +83,7 @@ type ImageWorker struct {
 	pipeline        *Pipeline
 	failureNotifier PolicyFailureNotifier
 	scanObserver    ScanObserver
+	taskObserver    TaskObserver
 	malicious       MaliciousChecker
 	maliciousGate   bool
 	cooldownClock   CooldownClock
@@ -136,6 +144,21 @@ type ScanObserver interface {
 func (w *ImageWorker) SetScanObserver(observer ScanObserver) {
 	if w != nil {
 		w.scanObserver = observer
+	}
+}
+
+// TaskObserver hears about every task once it is finished, after its last
+// retry, whatever happened: persisted, failed, or dropped. err is nil when
+// the task succeeded. A scan request waiting on a digest uses it, because
+// several failure paths never persist a scan record.
+type TaskObserver interface {
+	Finished(ctx context.Context, task *queue.ScanTask, err error)
+}
+
+// SetTaskObserver registers the observer of finished tasks.
+func (w *ImageWorker) SetTaskObserver(observer TaskObserver) {
+	if w != nil {
+		w.taskObserver = observer
 	}
 }
 
@@ -219,7 +242,13 @@ func (w *ImageWorker) Start(ctx context.Context) error {
 		concurrency = 1
 	}
 
-	w.logger.Info("worker starting", "concurrency", concurrency)
+	urgent := max(w.config.UrgentConcurrency, 0)
+	urgentSource, canReserve := w.queue.(urgentQueue)
+	if !canReserve {
+		urgent = 0
+	}
+
+	w.logger.Info("worker starting", "concurrency", concurrency, "urgent_concurrency", urgent)
 
 	// Register metrics collectors (once across all worker instances)
 	observability.RegisterConfigCollectorWithCatalog(w.policyCatalog, w.stateStore, w.logger)
@@ -234,8 +263,17 @@ func (w *ImageWorker) Start(ctx context.Context) error {
 		w.wg.Add(1)
 		go func(workerID int) {
 			defer w.wg.Done()
-			w.processLoop(workerCtx, workerID)
+			w.processLoop(workerCtx, workerID, w.queue.Dequeue)
 		}(i)
+	}
+	// Reserved workers: a CI job waiting on its scan never waits for a
+	// discovery scan or rescan to finish first.
+	for i := 0; i < urgent; i++ {
+		w.wg.Add(1)
+		go func(workerID int) {
+			defer w.wg.Done()
+			w.processLoop(workerCtx, workerID, urgentSource.DequeueUrgent)
+		}(concurrency + i)
 	}
 
 	// Wait for context cancellation
@@ -261,7 +299,7 @@ func (w *ImageWorker) Start(ctx context.Context) error {
 }
 
 // processLoop is the main task processing loop
-func (w *ImageWorker) processLoop(ctx context.Context, workerID int) {
+func (w *ImageWorker) processLoop(ctx context.Context, workerID int, dequeue func(context.Context) (*queue.ScanTask, error)) {
 	w.logger.Info("worker processing loop started", "worker_id", workerID)
 
 	for {
@@ -271,7 +309,7 @@ func (w *ImageWorker) processLoop(ctx context.Context, workerID int) {
 			return
 		default:
 			// Dequeue a task (blocking with context)
-			task, err := w.queue.Dequeue(ctx)
+			task, err := dequeue(ctx)
 			if err != nil {
 				if ctx.Err() != nil {
 					// Context cancelled, exit gracefully
@@ -293,7 +331,11 @@ func (w *ImageWorker) processLoop(ctx context.Context, workerID int) {
 				"tag", task.Tag,
 				"is_rescan", task.IsRescan)
 
-			if err := w.ProcessTask(ctx, task); err != nil {
+			err = w.ProcessTask(ctx, task)
+			if w.taskObserver != nil {
+				w.taskObserver.Finished(ctx, task, err)
+			}
+			if err != nil {
 				// Log once here with full context
 				w.logger.Error("task processing failed",
 					"worker_id", workerID,

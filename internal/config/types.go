@@ -31,6 +31,9 @@ type WorkerConfig struct {
 	RetryAttempts int
 	RetryBackoff  time.Duration
 	Concurrency   int
+	// UrgentConcurrency workers take only urgent tasks (CI scan requests),
+	// on top of Concurrency.
+	UrgentConcurrency int
 }
 
 // ScannerConfig configures the Trivy scanner connection
@@ -157,13 +160,16 @@ type Defaults struct {
 	RescanInterval string `yaml:"rescanInterval,omitempty"`
 	// Cooldown is the default minimum time between suppline first seeing a
 	// digest upstream and publishing it on a tag. Empty or "0" disables it.
-	Cooldown              string `yaml:"cooldown,omitempty"`
-	WorkerPollInterval    string `yaml:"worker-poll-interval,omitempty"`
-	WorkerConcurrency     int    `yaml:"worker-concurrency,omitempty"`
-	WorkerRetryAttempts   int    `yaml:"worker-retry-attempts,omitempty"`
-	WorkerRetryBackoff    string `yaml:"worker-retry-backoff,omitempty"`
-	QueueBufferSize       int    `yaml:"queue-buffer-size,omitempty"`
-	SCAIValidityExtension string `yaml:"scaiValidityExtension,omitempty"`
+	Cooldown           string `yaml:"cooldown,omitempty"`
+	WorkerPollInterval string `yaml:"worker-poll-interval,omitempty"`
+	WorkerConcurrency  int    `yaml:"worker-concurrency,omitempty"`
+	// WorkerUrgentConcurrency reserves workers for urgent tasks, on top of
+	// worker-concurrency. Nil means DefaultWorkerUrgentConcurrency; 0 reserves none.
+	WorkerUrgentConcurrency *int   `yaml:"worker-urgent-concurrency,omitempty"`
+	WorkerRetryAttempts     int    `yaml:"worker-retry-attempts,omitempty"`
+	WorkerRetryBackoff      string `yaml:"worker-retry-backoff,omitempty"`
+	QueueBufferSize         int    `yaml:"queue-buffer-size,omitempty"`
+	SCAIValidityExtension   string `yaml:"scaiValidityExtension,omitempty"`
 	// CreateVulnerabilityAttestation reports whether a cosign vulnerability attestation is published.
 	// Nil means yes. Kyverno loads every referrer while checking SCAI, and vulnerability bundles are
 	// the large ones, so production sets this false.

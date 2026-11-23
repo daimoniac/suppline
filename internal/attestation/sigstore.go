@@ -36,6 +36,10 @@ type SigstoreAttestor struct {
 	// repositories CI pushes to. Cleanup there never touches attestations of
 	// other kinds than the one just written.
 	shared func(repository string) bool
+	// cleanups holds the image+predicate pairs with a background cleanup in flight.
+	cleanups sync.Map
+	// inlineCleanup runs cleanup before the attest call returns. Tests set it.
+	inlineCleanup bool
 }
 
 // SetSharedRepositories tells the attestor which repositories it shares with
