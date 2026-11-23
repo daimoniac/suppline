@@ -30,7 +30,7 @@ That triggers [`.github/workflows/release.yml`](../.github/workflows/release.yml
 
 | Artifact | Location |
 |----------|----------|
-| suppline (backend + embedded web UI) | `ghcr.io/daimoniac/suppline:<version>` and `daimon666/suppline:<version>` (+ `X.Y`, `X`, `latest`) |
+| suppline (backend + embedded web UI) | `ghcr.io/daimoniac/suppline:<version>` (+ `X.Y`, `X`, `latest`) |
 | Trivy | upstream `aquasec/trivy` (Compose + Helm) — not rebuilt |
 | Helm chart | `oci://ghcr.io/daimoniac/charts/suppline` (version = release) |
 
