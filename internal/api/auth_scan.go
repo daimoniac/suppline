@@ -3,6 +3,7 @@ package api
 import (
 	"context"
 	"crypto/subtle"
+	"errors"
 	"net/http"
 	"strings"
 )
@@ -54,6 +55,22 @@ func (s *APIServer) scanRequestAuth(next http.HandlerFunc, requireWrite bool) ht
 		}
 		if s.validAPIKey(token) {
 			next(w, r.WithContext(context.WithValue(r.Context(), callerKey{}, caller{admin: true})))
+			return
+		}
+		if s.oidc != nil && looksLikeJWT(token) {
+			subject, err := s.oidc.subject(r.Context(), token)
+			var unavailable errIssuerUnavailable
+			switch {
+			case errors.As(err, &unavailable):
+				s.logger.Warn("OIDC issuer unavailable", "error", err)
+				s.respondError(w, http.StatusServiceUnavailable, "OIDC issuer unavailable")
+				return
+			case err != nil:
+				s.logger.Info("rejected OIDC token", "error", err)
+				s.respondError(w, http.StatusUnauthorized, "Invalid ID token")
+				return
+			}
+			next(w, r.WithContext(context.WithValue(r.Context(), callerKey{}, caller{subject: subject})))
 			return
 		}
 		s.respondError(w, http.StatusUnauthorized, "Invalid API key")

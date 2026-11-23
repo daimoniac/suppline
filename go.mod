@@ -7,7 +7,9 @@ toolchain go1.27.4
 require (
 	cel.dev/cel-go v0.33.2
 	github.com/Masterminds/semver/v3 v3.5.0
+	github.com/coreos/go-oidc/v3 v3.17.0
 	github.com/go-git/go-git/v5 v5.19.3
+	github.com/go-jose/go-jose/v4 v4.1.3
 	github.com/google/go-containerregistry v0.22.1
 	github.com/google/osv-scalibr v0.5.3
 	github.com/jackc/pgx/v5 v5.13.0
@@ -136,6 +138,7 @@ require (
 	golang.org/x/exp v0.0.0-20261113113407-e3970619a1a4 // indirect
 	golang.org/x/mod v0.43.0 // indirect
 	golang.org/x/net v0.62.0 // indirect
+	golang.org/x/oauth2 v0.38.0 // indirect
 	golang.org/x/sync v0.25.0 // indirect
 	golang.org/x/sys v0.50.0 // indirect
 	golang.org/x/text v0.44.0 // indirect

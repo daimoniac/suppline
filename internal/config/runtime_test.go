@@ -188,6 +188,8 @@ func TestValidate(t *testing.T) {
 		"missing api key":         func(c *Config) { c.API.APIKey = "" },
 		"bad base path":           func(c *Config) { c.API.BasePath = "suppline" },
 		"missing config file":     func(c *Config) { c.RegsyncPath = filepath.Join(t.TempDir(), "nope.yml") },
+		"oidc issuer not https":   func(c *Config) { c.API.OIDC = &OIDCSettings{Issuer: "http://gitlab.com", Audience: "a"} },
+		"oidc without audience":   func(c *Config) { c.API.OIDC = &OIDCSettings{Issuer: "https://gitlab.com"} },
 	}
 	for name, mutate := range cases {
 		t.Run(name, func(t *testing.T) {
@@ -198,6 +200,17 @@ func TestValidate(t *testing.T) {
 			}
 		})
 	}
+
+	t.Run("oidc claim defaults to project_path", func(t *testing.T) {
+		c := valid()
+		c.API.OIDC = &OIDCSettings{Issuer: "https://gitlab.com", Audience: "https://suppline.example"}
+		if err := c.Validate(); err != nil {
+			t.Fatalf("Validate: %v", err)
+		}
+		if c.API.OIDC.Claim != DefaultOIDCClaim {
+			t.Fatalf("claim = %q", c.API.OIDC.Claim)
+		}
+	})
 
 	t.Run("allowNoAuth permits an empty api key", func(t *testing.T) {
 		c := valid()

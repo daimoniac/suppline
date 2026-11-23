@@ -2,6 +2,8 @@
 
 How a single image digest moves through suppline, from upstream registry to a policy verdict the cluster can enforce.
 
+An in-place repository (`in-place:` in `suppline.yml`) skips the mirror: the watcher reads the repository CI pushed to, choosing tags with the entry's tag filters plus the tags a cluster runs, and a CI scan request (`POST /api/v1/scan-requests`) queues a digest directly, ahead of discovery. From **Queued** on the lifecycle is the same, except that there is no cooldown and no tag runway: attestations are written next to the digest where it lives, and nothing is ever `pending`.
+
 ## Full lifecycle
 
 ```mermaid

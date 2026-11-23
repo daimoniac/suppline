@@ -73,6 +73,9 @@ type APIConfig struct {
 	// BasePath is the URL prefix the UI and API are served under, e.g. "/suppline".
 	// Empty means the root. Set via server.basePath; normalized by NormalizeBasePath.
 	BasePath string
+	// OIDC, when set, accepts ID tokens of this issuer on the scan-request
+	// endpoints.
+	OIDC *OIDCSettings
 }
 
 // ObservabilityConfig configures logging and the operations port
