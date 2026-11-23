@@ -27,6 +27,9 @@ func (w *watcherImpl) inPlaceTags(ctx context.Context, repo string, entry config
 		return nil, fmt.Errorf("failed to list tags: %w", err)
 	}
 	w.built.retain(repo, all)
+	if err := w.prefetchBuilt(ctx, repo, entry, all); err != nil {
+		return nil, err
+	}
 	selected, err := tagselect.Select(entry, all, func(tag string) (time.Time, error) {
 		return w.builtAt(ctx, repo, tag)
 	})
@@ -47,10 +50,76 @@ func (w *watcherImpl) inPlaceTags(ctx context.Context, repo string, entry config
 	return selected, nil
 }
 
+// builtFetchers bounds concurrent build-time reads. After a restart a CI
+// repository with hundreds of tags is read once; one tag at a time that takes
+// minutes.
+const builtFetchers = 8
+
+// buildTimeReader reads a tag's build time in one manifest and one config
+// request. The registry client implements it; test fakes may not.
+type buildTimeReader interface {
+	ImageCreated(ctx context.Context, repo, tag string) (time.Time, error)
+}
+
+// prefetchBuilt reads, concurrently, the build times a newest window will ask
+// for and the cache does not hold yet.
+func (w *watcherImpl) prefetchBuilt(ctx context.Context, repo string, entry config.SyncEntry, all []string) error {
+	var missing []string
+	for _, set := range tagselect.Sets(entry) {
+		if set.Newest <= 0 {
+			continue
+		}
+		candidates, err := tagselect.Filter(set, all)
+		if err != nil {
+			return fmt.Errorf("select tags: %w", err)
+		}
+		if len(candidates) <= set.Newest {
+			continue
+		}
+		for _, tag := range candidates {
+			if _, ok := w.built.get(repo, tag); !ok && !slices.Contains(missing, tag) {
+				missing = append(missing, tag)
+			}
+		}
+	}
+	if len(missing) == 0 {
+		return nil
+	}
+	work := make(chan string)
+	errs := make(chan error, len(missing))
+	var wg sync.WaitGroup
+	for range min(builtFetchers, len(missing)) {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			for tag := range work {
+				if _, err := w.builtAt(ctx, repo, tag); err != nil {
+					errs <- err
+				}
+			}
+		}()
+	}
+	for _, tag := range missing {
+		work <- tag
+	}
+	close(work)
+	wg.Wait()
+	close(errs)
+	return <-errs
+}
+
 // builtAt returns when the image behind tag was built. Unknown build times
 // are the zero time, which sorts oldest.
 func (w *watcherImpl) builtAt(ctx context.Context, repo, tag string) (time.Time, error) {
 	if at, ok := w.built.get(repo, tag); ok {
+		return at, nil
+	}
+	if reader, ok := w.registryClient.(buildTimeReader); ok {
+		at, err := reader.ImageCreated(ctx, repo, tag)
+		if err != nil {
+			return time.Time{}, fmt.Errorf("read build time of %s:%s: %w", repo, tag, err)
+		}
+		w.built.put(repo, tag, at)
 		return at, nil
 	}
 	digest, err := w.registryClient.GetDigest(ctx, repo, tag)

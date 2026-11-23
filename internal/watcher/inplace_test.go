@@ -3,6 +3,7 @@ package watcher
 import (
 	"context"
 	"slices"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -15,11 +16,11 @@ import (
 type builtRegistry struct {
 	mockRegistryClient
 	built         map[string]time.Time // digest -> build time
-	manifestReads int
+	manifestReads atomic.Int64
 }
 
 func (r *builtRegistry) GetManifest(_ context.Context, _ string, digest string) (*registry.Manifest, error) {
-	r.manifestReads++
+	r.manifestReads.Add(1)
 	at := r.built[digest]
 	return &registry.Manifest{Digest: digest, CreatedAt: &at}, nil
 }
@@ -74,11 +75,11 @@ func TestInPlaceTags_WindowPlusRunningTags(t *testing.T) {
 		t.Fatalf("inPlaceTags = %#v, want %#v", got, want)
 	}
 
-	reads := reg.manifestReads
+	reads := reg.manifestReads.Load()
 	if _, err := w.inPlaceTags(context.Background(), repo, entry); err != nil {
 		t.Fatal(err)
 	}
-	if reg.manifestReads != reads {
-		t.Fatalf("build times were read again: %d -> %d", reads, reg.manifestReads)
+	if now := reg.manifestReads.Load(); now != reads {
+		t.Fatalf("build times were read again: %d -> %d", reads, now)
 	}
 }
