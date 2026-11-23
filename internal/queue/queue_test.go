@@ -4,7 +4,6 @@ import (
 	"context"
 	"testing"
 	"time"
-
 )
 
 func TestNewInMemoryQueue(t *testing.T) {
@@ -814,5 +813,29 @@ func TestUrgentTasksRunBeforeTheBacklog(t *testing.T) {
 	}
 	if depth, _ := q.GetQueueDepth(ctx); depth != 0 {
 		t.Fatalf("depth = %d, want 0 (urgent-again must be dropped)", depth)
+	}
+}
+
+func TestDequeueUrgentIgnoresTheBacklog(t *testing.T) {
+	q := NewInMemoryQueue(20)
+	defer q.Close()
+	ctx := context.Background()
+	if err := q.Enqueue(ctx, &ScanTask{ID: "high", Repository: "repo", Digest: "sha256:h", Priority: PriorityHigh}); err != nil {
+		t.Fatal(err)
+	}
+	short, cancel := context.WithTimeout(ctx, 50*time.Millisecond)
+	defer cancel()
+	if task, err := q.DequeueUrgent(short); err == nil {
+		t.Fatalf("urgent worker took %s", task.ID)
+	}
+	if err := q.Enqueue(ctx, &ScanTask{ID: "urgent", Repository: "repo", Digest: "sha256:u", Priority: PriorityUrgent}); err != nil {
+		t.Fatal(err)
+	}
+	task, err := q.DequeueUrgent(ctx)
+	if err != nil || task.ID != "urgent" {
+		t.Fatalf("DequeueUrgent = %v, %v", task, err)
+	}
+	if pending, _ := q.HasPendingTask(ctx, "repo", "sha256:u"); pending {
+		t.Fatal("urgent task still marked pending")
 	}
 }

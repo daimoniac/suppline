@@ -12,7 +12,7 @@ func TestGenerateDockerConfigFromRegsync(t *testing.T) {
 	// Create a temporary suppline.yml file
 	tmpDir := t.TempDir()
 	regsyncPath := filepath.Join(tmpDir, "suppline.yml")
-	
+
 	regsyncContent := `version: 1
 creds:
 - registry: docker.io
@@ -22,34 +22,34 @@ creds:
   user: ghuser
   pass: ghpass
 `
-	
+
 	if err := os.WriteFile(regsyncPath, []byte(regsyncContent), 0600); err != nil {
 		t.Fatalf("failed to create test regsync file: %v", err)
 	}
-	
+
 	// Generate Docker config
 	configDir, err := GenerateDockerConfigFromRegsync(regsyncPath)
 	if err != nil {
 		t.Fatalf("GenerateDockerConfigFromRegsync failed: %v", err)
 	}
-	
+
 	// Verify config directory exists
 	if _, err := os.Stat(configDir); os.IsNotExist(err) {
 		t.Fatalf("config directory does not exist: %s", configDir)
 	}
-	
+
 	// Read and parse the generated config.json
 	configPath := filepath.Join(configDir, "config.json")
 	configData, err := os.ReadFile(configPath)
 	if err != nil {
 		t.Fatalf("failed to read config.json: %v", err)
 	}
-	
+
 	var dockerConfig DockerConfig
 	if err := json.Unmarshal(configData, &dockerConfig); err != nil {
 		t.Fatalf("failed to parse config.json: %v", err)
 	}
-	
+
 	// Verify docker.io credentials (should be mapped to https://index.docker.io/v1/)
 	dockerAuth, ok := dockerConfig.Auths["https://index.docker.io/v1/"]
 	if !ok {
@@ -65,7 +65,7 @@ creds:
 			t.Errorf("docker.io auth mismatch: got %s, want %s", string(decoded), expected)
 		}
 	}
-	
+
 	// Verify ghcr.io credentials
 	ghcrAuth, ok := dockerConfig.Auths["ghcr.io"]
 	if !ok {
@@ -80,7 +80,7 @@ creds:
 			t.Errorf("ghcr.io auth mismatch: got %s, want %s", string(decoded), expected)
 		}
 	}
-	
+
 	t.Logf("Generated Docker config at: %s", configPath)
 	t.Logf("Config content: %s", string(configData))
 }
@@ -95,12 +95,12 @@ func TestGenerateDockerConfigFromRegsync_InvalidFile(t *testing.T) {
 func TestGenerateDockerConfigFromRegsync_InvalidYAML(t *testing.T) {
 	tmpDir := t.TempDir()
 	regsyncPath := filepath.Join(tmpDir, "suppline.yml")
-	
+
 	// Write invalid YAML
 	if err := os.WriteFile(regsyncPath, []byte("invalid: yaml: content: ["), 0600); err != nil {
 		t.Fatalf("failed to create test file: %v", err)
 	}
-	
+
 	_, err := GenerateDockerConfigFromRegsync(regsyncPath)
 	if err == nil {
 		t.Error("expected error for invalid YAML, got nil")
@@ -111,7 +111,7 @@ func TestGenerateDockerConfigFromRegsync_WithTemplates(t *testing.T) {
 	// Create a temporary suppline.yml file with Go templates
 	tmpDir := t.TempDir()
 	regsyncPath := filepath.Join(tmpDir, "suppline.yml")
-	
+
 	regsyncContent := `version: 1
 creds:
 - registry: docker.io
@@ -121,11 +121,11 @@ creds:
   user: plainuser
   pass: plainpass
 `
-	
+
 	if err := os.WriteFile(regsyncPath, []byte(regsyncContent), 0600); err != nil {
 		t.Fatalf("failed to create test regsync file: %v", err)
 	}
-	
+
 	// Set environment variables for template expansion
 	os.Setenv("TEST_DOCKER_USER", "envuser")
 	os.Setenv("TEST_DOCKER_PASS", "envpass")
@@ -133,25 +133,25 @@ creds:
 		os.Unsetenv("TEST_DOCKER_USER")
 		os.Unsetenv("TEST_DOCKER_PASS")
 	}()
-	
+
 	// Generate Docker config
 	configDir, err := GenerateDockerConfigFromRegsync(regsyncPath)
 	if err != nil {
 		t.Fatalf("GenerateDockerConfigFromRegsync failed: %v", err)
 	}
-	
+
 	// Read and parse the generated config.json
 	configPath := filepath.Join(configDir, "config.json")
 	configData, err := os.ReadFile(configPath)
 	if err != nil {
 		t.Fatalf("failed to read config.json: %v", err)
 	}
-	
+
 	var dockerConfig DockerConfig
 	if err := json.Unmarshal(configData, &dockerConfig); err != nil {
 		t.Fatalf("failed to parse config.json: %v", err)
 	}
-	
+
 	// Verify docker.io credentials were expanded from environment
 	dockerAuth, ok := dockerConfig.Auths["https://index.docker.io/v1/"]
 	if !ok {
@@ -166,7 +166,7 @@ creds:
 			t.Errorf("docker.io auth mismatch: got %s, want %s", string(decoded), expected)
 		}
 	}
-	
+
 	// Verify ghcr.io credentials (plain text, no template)
 	ghcrAuth, ok := dockerConfig.Auths["ghcr.io"]
 	if !ok {

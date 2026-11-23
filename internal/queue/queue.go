@@ -213,6 +213,24 @@ func (q *InMemoryQueue) Dequeue(ctx context.Context) (*ScanTask, error) {
 	}
 }
 
+// DequeueUrgent retrieves only urgent tasks (blocking). Workers reserved for
+// callers waiting on a result use it, so they never pick up the backlog.
+func (q *InMemoryQueue) DequeueUrgent(ctx context.Context) (*ScanTask, error) {
+	q.closedMu.RLock()
+	if q.closed {
+		q.closedMu.RUnlock()
+		return nil, errors.NewPermanentf("queue is closed")
+	}
+	q.closedMu.RUnlock()
+
+	select {
+	case task, ok := <-q.urgentTasks:
+		return q.taken(task, ok)
+	case <-ctx.Done():
+		return nil, ctx.Err()
+	}
+}
+
 // taken finishes a receive: it clears the dedup entry the task held and
 // counts the dequeue. A closed channel means the queue is closed.
 func (q *InMemoryQueue) taken(task *ScanTask, ok bool) (*ScanTask, error) {

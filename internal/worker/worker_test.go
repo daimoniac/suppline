@@ -323,3 +323,37 @@ func TestWorker_TaskObserverHearsFailedTask(t *testing.T) {
 		t.Fatal("task observer was never called")
 	}
 }
+
+// stuckQueue hands its regular workers nothing, as if every one of them were
+// busy with a long scan; only urgent dequeues get tasks.
+type stuckQueue struct {
+	*queue.InMemoryQueue
+}
+
+func (s stuckQueue) Dequeue(ctx context.Context) (*queue.ScanTask, error) {
+	<-ctx.Done()
+	return nil, ctx.Err()
+}
+
+func TestWorker_ReservedUrgentWorkersTakeScanRequests(t *testing.T) {
+	q := stuckQueue{queue.NewInMemoryQueue(10)}
+	cfg := DefaultConfig()
+	cfg.Concurrency = 1
+	cfg.UrgentConcurrency = 1
+	worker := NewImageWorker(q, nil, nil, nil, nil, nil, cfg, slog.Default(), nil)
+	observer := &recordingTaskObserver{finished: make(chan error, 1)}
+	worker.SetTaskObserver(observer)
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	go func() { _ = worker.Start(ctx) }()
+	if err := q.Enqueue(ctx, &queue.ScanTask{ID: "ci", Repository: "test/repo", Digest: "sha256:ci", Tag: "v1", Priority: queue.PriorityUrgent}); err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case err := <-observer.finished:
+		t.Logf("urgent task finished: %v", err)
+	case <-ctx.Done():
+		t.Fatal("no reserved worker took the urgent task")
+	}
+}

@@ -282,6 +282,8 @@ func run() error {
 		RetryAttempts: cfg.Worker.RetryAttempts,
 		RetryBackoff:  cfg.Worker.RetryBackoff,
 		Concurrency:   cfg.Worker.Concurrency,
+		// Reserved for CI scan requests and single-digest rescans.
+		UrgentConcurrency: cfg.Worker.UrgentConcurrency,
 	}
 	workerInstance := worker.NewImageWorkerWithCatalog(
 		taskQueue,

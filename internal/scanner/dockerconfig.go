@@ -40,17 +40,17 @@ func GenerateDockerConfigFromRegsync(regsyncPath string) (string, error) {
 		if cred.User == "" || cred.Pass == "" {
 			continue
 		}
-		
+
 		// Docker uses base64(username:password) for auth
 		auth := base64.StdEncoding.EncodeToString([]byte(fmt.Sprintf("%s:%s", cred.User, cred.Pass)))
-		
+
 		// Normalize registry name (docker.io is the default)
 		registry := cred.Registry
 		if registry == "docker.io" {
 			// Docker config uses the full URL format for docker.io
 			registry = "https://index.docker.io/v1/"
 		}
-		
+
 		dockerConfig.Auths[registry] = DockerAuth{
 			Auth: auth,
 		}

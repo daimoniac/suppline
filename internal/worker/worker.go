@@ -48,6 +48,13 @@ type Config struct {
 	RetryAttempts int
 	RetryBackoff  time.Duration
 	Concurrency   int // Number of concurrent workers
+	// UrgentConcurrency workers take only urgent tasks, on top of Concurrency.
+	UrgentConcurrency int
+}
+
+// urgentQueue is a queue that can hand out urgent tasks only.
+type urgentQueue interface {
+	DequeueUrgent(ctx context.Context) (*queue.ScanTask, error)
 }
 
 // DefaultConfig returns default worker configuration
@@ -235,7 +242,13 @@ func (w *ImageWorker) Start(ctx context.Context) error {
 		concurrency = 1
 	}
 
-	w.logger.Info("worker starting", "concurrency", concurrency)
+	urgent := max(w.config.UrgentConcurrency, 0)
+	urgentSource, canReserve := w.queue.(urgentQueue)
+	if !canReserve {
+		urgent = 0
+	}
+
+	w.logger.Info("worker starting", "concurrency", concurrency, "urgent_concurrency", urgent)
 
 	// Register metrics collectors (once across all worker instances)
 	observability.RegisterConfigCollectorWithCatalog(w.policyCatalog, w.stateStore, w.logger)
@@ -250,8 +263,17 @@ func (w *ImageWorker) Start(ctx context.Context) error {
 		w.wg.Add(1)
 		go func(workerID int) {
 			defer w.wg.Done()
-			w.processLoop(workerCtx, workerID)
+			w.processLoop(workerCtx, workerID, w.queue.Dequeue)
 		}(i)
+	}
+	// Reserved workers: a CI job waiting on its scan never waits for a
+	// discovery scan or rescan to finish first.
+	for i := 0; i < urgent; i++ {
+		w.wg.Add(1)
+		go func(workerID int) {
+			defer w.wg.Done()
+			w.processLoop(workerCtx, workerID, urgentSource.DequeueUrgent)
+		}(concurrency + i)
 	}
 
 	// Wait for context cancellation
@@ -277,7 +299,7 @@ func (w *ImageWorker) Start(ctx context.Context) error {
 }
 
 // processLoop is the main task processing loop
-func (w *ImageWorker) processLoop(ctx context.Context, workerID int) {
+func (w *ImageWorker) processLoop(ctx context.Context, workerID int, dequeue func(context.Context) (*queue.ScanTask, error)) {
 	w.logger.Info("worker processing loop started", "worker_id", workerID)
 
 	for {
@@ -287,7 +309,7 @@ func (w *ImageWorker) processLoop(ctx context.Context, workerID int) {
 			return
 		default:
 			// Dequeue a task (blocking with context)
-			task, err := w.queue.Dequeue(ctx)
+			task, err := dequeue(ctx)
 			if err != nil {
 				if ctx.Err() != nil {
 					// Context cancelled, exit gracefully

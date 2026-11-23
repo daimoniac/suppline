@@ -264,6 +264,7 @@ func testAttestorWith(t *testing.T, cfg AttestationConfig) *SigstoreAttestor {
 		t.Fatalf("failed to create attestor: %v", err)
 	}
 	t.Cleanup(func() { _ = attestor.Close() })
+	attestor.inlineCleanup = true
 
 	return attestor
 }

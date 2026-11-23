@@ -146,6 +146,10 @@ func createdOf(desc v1.Descriptor) string {
 // predicate for the image. Cosign signature referrers are collapsed the same way. Other
 // predicates are left alone. Cleanup failure does not fail the attest: the new attestation
 // is already published, and failing here would retry and publish another one.
+//
+// Cleanup runs in the background. It first waits for the registry to list the new
+// attestation, which takes seconds; the scan, and a CI job waiting on it, need not.
+// Until it finishes, the newest attestation is already the one admission reads.
 func (a *SigstoreAttestor) attestReplacingSameKind(ctx context.Context, operation, cosignType, predicatePath, imageRef string) error {
 	predicate := canonicalPredicate(cosignType)
 	digest, digestErr := a.parseImageDigest(imageRef)
@@ -158,14 +162,34 @@ func (a *SigstoreAttestor) attestReplacingSameKind(ctx context.Context, operatio
 		a.logger.Debug("skipping attestation cleanup; image ref has no digest", "image_ref", imageRef)
 		return nil
 	}
-	a.collapseSameKind(ctx, digest, predicate, true, started)
-	// Referrers annotated as cosign signatures are historical attestations stored under the
-	// wrong predicate. None of them is the attestation just written, so delete every one.
-	// In a shared repository they may be the owner's own signatures, so they stay.
-	if predicate != predicateCosignSign && !a.isShared(imageRef) {
-		a.collapseSameKind(ctx, digest, predicateCosignSign, false, time.Time{})
-	}
+	sweepSignatures := predicate != predicateCosignSign && !a.isShared(imageRef)
+	a.cleanupLater(ctx, digest.String()+"|"+predicate, func(ctx context.Context) {
+		a.collapseSameKind(ctx, digest, predicate, true, started)
+		// Referrers annotated as cosign signatures are historical attestations stored under
+		// the wrong predicate. None of them is the attestation just written, so delete every
+		// one. In a shared repository they may be the owner's own signatures, so they stay.
+		if sweepSignatures {
+			a.collapseSameKind(ctx, digest, predicateCosignSign, false, time.Time{})
+		}
+	})
 	return nil
+}
+
+// cleanupLater runs fn in the background, once at a time per key; a cleanup that
+// finds one in flight for its key leaves the work to it. A restart drops it,
+// and the next scan of the image cleans up again.
+func (a *SigstoreAttestor) cleanupLater(ctx context.Context, key string, fn func(context.Context)) {
+	if a.inlineCleanup {
+		fn(ctx)
+		return
+	}
+	if _, running := a.cleanups.LoadOrStore(key, struct{}{}); running {
+		return
+	}
+	go func() {
+		defer a.cleanups.Delete(key)
+		fn(context.WithoutCancel(ctx))
+	}()
 }
 
 // DeleteReferrers removes every referrer of one predicate. A scan that no longer publishes

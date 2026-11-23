@@ -326,11 +326,11 @@ func TestIsManifestNotFound(t *testing.T) {
 
 func TestClassifyRegistryError(t *testing.T) {
 	tests := []struct {
-		name           string
-		err            error
-		wantType       string
-		wantManifest   bool
-		wantTransient  bool
+		name          string
+		err           error
+		wantType      string
+		wantManifest  bool
+		wantTransient bool
 	}{
 		{
 			name:          "nil error",
@@ -379,7 +379,7 @@ func TestClassifyRegistryError(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			result := ClassifyRegistryError(tt.err)
-			
+
 			if tt.wantType == "nil" {
 				if result != nil {
 					t.Errorf("ClassifyRegistryError() = %v, want nil", result)

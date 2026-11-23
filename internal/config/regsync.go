@@ -645,6 +645,19 @@ func (c *RegsyncConfig) GetWorkerConcurrency() int {
 	return 3 // Default concurrency
 }
 
+// DefaultWorkerUrgentConcurrency is how many workers wait for urgent tasks
+// when worker-urgent-concurrency is unset.
+const DefaultWorkerUrgentConcurrency = 3
+
+// GetWorkerUrgentConcurrency returns how many workers take only urgent tasks,
+// such as CI scan requests, so they never wait behind discovery or rescans.
+func (c *RegsyncConfig) GetWorkerUrgentConcurrency() int {
+	if c.Defaults.WorkerUrgentConcurrency == nil {
+		return DefaultWorkerUrgentConcurrency
+	}
+	return max(*c.Defaults.WorkerUrgentConcurrency, 0)
+}
+
 // GetWorkerRetryAttempts returns the worker retry attempts from defaults
 // Returns the default if specified, otherwise 3
 func (c *RegsyncConfig) GetWorkerRetryAttempts() int {

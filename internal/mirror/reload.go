@@ -28,6 +28,7 @@ func mirrorView(cfg *config.RegsyncConfig) mirrorSettings {
 	d.RescanInterval = ""
 	d.WorkerPollInterval = ""
 	d.WorkerConcurrency = 0
+	d.WorkerUrgentConcurrency = nil
 	d.WorkerRetryAttempts = 0
 	d.WorkerRetryBackoff = ""
 	d.QueueBufferSize = 0

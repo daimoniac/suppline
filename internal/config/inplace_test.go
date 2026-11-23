@@ -143,3 +143,20 @@ func TestInPlace_RegistryPortIsNotATag(t *testing.T) {
 		t.Fatal("repository with a registry port should be accepted")
 	}
 }
+
+func TestWorkerUrgentConcurrency(t *testing.T) {
+	var cfg RegsyncConfig
+	if got := cfg.GetWorkerUrgentConcurrency(); got != DefaultWorkerUrgentConcurrency {
+		t.Fatalf("unset = %d, want %d", got, DefaultWorkerUrgentConcurrency)
+	}
+	none := 0
+	cfg.Defaults.WorkerUrgentConcurrency = &none
+	if got := cfg.GetWorkerUrgentConcurrency(); got != 0 {
+		t.Fatalf("explicit 0 = %d", got)
+	}
+	five := 5
+	cfg.Defaults.WorkerUrgentConcurrency = &five
+	if got := cfg.GetWorkerUrgentConcurrency(); got != 5 {
+		t.Fatalf("5 = %d", got)
+	}
+}
