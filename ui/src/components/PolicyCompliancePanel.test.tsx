@@ -23,6 +23,8 @@ const superseded: Scan = {
   LowVulnCount: 0,
   SBOMAttested: true,
   VulnAttested: true,
+  SCAIAttested: true,
+  VEXAttested: false,
   RuntimeUsed: true,
   Superseded: true,
   CurrentDigest: 'sha256:b09d8056',

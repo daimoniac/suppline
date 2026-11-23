@@ -152,9 +152,17 @@ export default function ScanDetailPage() {
             </div>
           } />
           <InfoItem label="Attestation" value={
-            <div className="flex items-center gap-2">
-              <AttestBadge label="SBOM" attested={scan.SBOMAttested} />
-              <AttestBadge label="Vuln" attested={scan.VulnAttested} />
+            <div className="flex flex-wrap items-center gap-2">
+              <AttestBadge label="SCAI" attested={scan.SCAIAttested}
+                title="Policy verdict signed for admission control (Kyverno/OPA)" />
+              {(scan.VEXAttested || vexStatements.length > 0) && (
+                <AttestBadge label="VEX" attested={scan.VEXAttested}
+                  title="Applied VEX exemptions" />
+              )}
+              <AttestBadge label="SBOM" attested={scan.SBOMAttested}
+                title="Not published when createSBOMAttestation is false" />
+              <AttestBadge label="Vuln" attested={scan.VulnAttested}
+                title="Not published when createVulnerabilityAttestation is false" />
             </div>
           } />
           <InfoItem label="Malicious packages" value={
@@ -303,9 +311,9 @@ function InfoItem({ label, value }: { label: string; value: React.ReactNode }) {
   );
 }
 
-function AttestBadge({ label, attested }: { label: string; attested: boolean }) {
+function AttestBadge({ label, attested, title }: { label: string; attested: boolean; title?: string }) {
   return (
-    <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded text-xs font-medium ${attested ? 'bg-success-bg text-success' : 'bg-danger-bg text-danger'}`}>
+    <span title={title} className={`inline-flex items-center gap-1 px-2 py-0.5 rounded text-xs font-medium ${attested ? 'bg-success-bg text-success' : 'bg-danger-bg text-danger'}`}>
       {attested ? <CheckCircle className="w-3 h-3" /> : <XCircle className="w-3 h-3" />}
       {label}
     </span>
