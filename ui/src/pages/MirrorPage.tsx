@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react';
+import { Fragment, useCallback, useEffect, useState } from 'react';
 import { Navigate, useSearchParams } from 'react-router';
 import { useAuth } from '../lib/auth';
 import { useToast } from '../lib/toast';
@@ -379,7 +379,7 @@ function HeldTable({ rows, onRelease }: { rows: HeldDigest[]; onRelease: (row: H
           <thead className="text-left text-xs text-text-muted">
             <tr className="border-b border-border">
               <th className="px-5 py-2 font-medium">Repository</th>
-              <th className="px-5 py-2 font-medium">Tags</th>
+              <th className="px-5 py-2 font-medium min-w-32">Tags</th>
               <th className="px-5 py-2 font-medium">Digest</th>
               <th className="px-5 py-2 font-medium">First seen</th>
               <th className="px-5 py-2 font-medium">Cooldown</th>
@@ -391,8 +391,8 @@ function HeldTable({ rows, onRelease }: { rows: HeldDigest[]; onRelease: (row: H
             {rows.map(row => (
               <tr key={`${row.Repository}@${row.Digest}`} className="border-b border-border last:border-0 align-top">
                 <td className="px-5 py-2 text-text-primary">
-                  <div className="wrap-anywhere">{row.Repository}</div>
-                  {row.Source && <div className="text-xs text-text-muted wrap-anywhere">from {row.Source}</div>}
+                  <div className="break-words">{breakAfterSlashes(row.Repository)}</div>
+                  {row.Source && <div className="text-xs text-text-muted break-words">from {breakAfterSlashes(row.Source)}</div>}
                 </td>
                 <td className="px-5 py-2 text-text-secondary wrap-anywhere">{(row.Tags ?? []).join(', ')}</td>
                 <td className="px-5 py-2"><DigestLinkWithCopy digest={row.Digest} to={heldDigestLink(row)} /></td>
@@ -446,4 +446,11 @@ function CooldownCell({ row }: { row: HeldDigest }) {
       {formatCooldown(row.RemainingSeconds)} left
     </span>
   );
+}
+
+// Lets repository paths wrap at "/" instead of mid-word, so the column stays narrow without splitting names.
+function breakAfterSlashes(path: string) {
+  return path.split('/').map((part, i, parts) => (
+    <Fragment key={i}>{part}{i < parts.length - 1 && <>/<wbr /></>}</Fragment>
+  ));
 }
