@@ -90,7 +90,8 @@ type ScanAttestations struct {
 	VEX  bool `json:"vex"`
 }
 
-// ScanCounts are the vulnerability counts after VEX exemptions.
+// ScanCounts are the vulnerability counts as found, exempted ones included.
+// The verdict's status and reason already account for VEX exemptions.
 type ScanCounts struct {
 	Critical int `json:"critical"`
 	High     int `json:"high"`
