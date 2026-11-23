@@ -76,6 +76,7 @@ type ImageWorker struct {
 	pipeline        *Pipeline
 	failureNotifier PolicyFailureNotifier
 	scanObserver    ScanObserver
+	taskObserver    TaskObserver
 	malicious       MaliciousChecker
 	maliciousGate   bool
 	cooldownClock   CooldownClock
@@ -136,6 +137,21 @@ type ScanObserver interface {
 func (w *ImageWorker) SetScanObserver(observer ScanObserver) {
 	if w != nil {
 		w.scanObserver = observer
+	}
+}
+
+// TaskObserver hears about every task once it is finished, after its last
+// retry, whatever happened: persisted, failed, or dropped. err is nil when
+// the task succeeded. A scan request waiting on a digest uses it, because
+// several failure paths never persist a scan record.
+type TaskObserver interface {
+	Finished(ctx context.Context, task *queue.ScanTask, err error)
+}
+
+// SetTaskObserver registers the observer of finished tasks.
+func (w *ImageWorker) SetTaskObserver(observer TaskObserver) {
+	if w != nil {
+		w.taskObserver = observer
 	}
 }
 
@@ -293,7 +309,11 @@ func (w *ImageWorker) processLoop(ctx context.Context, workerID int) {
 				"tag", task.Tag,
 				"is_rescan", task.IsRescan)
 
-			if err := w.ProcessTask(ctx, task); err != nil {
+			err = w.ProcessTask(ctx, task)
+			if w.taskObserver != nil {
+				w.taskObserver.Finished(ctx, task, err)
+			}
+			if err != nil {
 				// Log once here with full context
 				w.logger.Error("task processing failed",
 					"worker_id", workerID,

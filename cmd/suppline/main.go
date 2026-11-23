@@ -365,6 +365,10 @@ func run() error {
 	logger.Debug("API server initialized")
 	mirrorActivity := mirror.NewActivity()
 	apiServer.SetMirror(cfg.MirrorEnabled, mirrorActivity)
+	// CI scan requests wait on finished tasks of the digest they queued.
+	scanRequests := api.NewScanRequestWaiter()
+	workerInstance.SetTaskObserver(scanRequests)
+	apiServer.SetScanRequests(registryClient, scanRequests)
 	if tagRunway != nil {
 		apiServer.SetHeldDigests(tagRunway)
 	}

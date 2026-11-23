@@ -66,6 +66,8 @@ type APIServer struct {
 	malicious         MaliciousFeed
 	maliciousInfo     MaliciousSettings
 	heldDigests       HeldDigestLister
+	digestResolver    DigestResolver
+	scanWaiter        *ScanRequestWaiter
 	router            *http.ServeMux
 	ui                http.Handler
 	server            *http.Server
@@ -220,6 +222,9 @@ func (s *APIServer) setupRoutes() {
 
 	// Action endpoints (POST)
 	s.router.HandleFunc("/api/v1/scans/trigger", s.authMiddleware(s.handleTriggerScan, true))
+	// Scan requests are the only endpoints CI identities may call.
+	s.router.HandleFunc("POST /api/v1/scan-requests", s.scanRequestAuth(s.handleCreateScanRequest, true))
+	s.router.HandleFunc("GET /api/v1/scan-requests/", s.scanRequestAuth(s.handleGetScanRequest, false))
 	s.router.HandleFunc("/api/v1/policy/reevaluate", s.authMiddleware(s.handleReevaluatePolicy, true))
 	s.router.HandleFunc("/api/v1/webhook/cluster-inventory", s.handleClusterInventory)
 
@@ -278,13 +283,8 @@ func (s *APIServer) authMiddleware(next http.HandlerFunc, requireWrite bool) htt
 				return
 			}
 
-			// Extract token - accept both "Bearer <token>" and just "<token>"
-			token := authHeader
-			if strings.HasPrefix(authHeader, "Bearer ") {
-				token = strings.TrimPrefix(authHeader, "Bearer ")
-			}
-
-			if token != s.config.APIKey {
+			// Accept both "Bearer <token>" and just "<token>".
+			if !s.validAPIKey(bearerToken(r)) {
 				s.respondError(w, http.StatusUnauthorized, "Invalid API key")
 				return
 			}

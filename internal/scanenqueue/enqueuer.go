@@ -76,6 +76,13 @@ func (e *Enqueuer) EnqueueUrgentRescan(ctx context.Context, image Image) (*queue
 	return e.enqueue(ctx, image, true, false, queue.PriorityHigh)
 }
 
+// EnqueueScanRequest submits a scan a caller is waiting on, such as a CI job
+// that requested it right after pushing the image. It runs before discovery
+// and rescans.
+func (e *Enqueuer) EnqueueScanRequest(ctx context.Context, image Image) (*queue.ScanTask, error) {
+	return e.enqueue(ctx, image, true, false, queue.PriorityUrgent)
+}
+
 func (e *Enqueuer) enqueue(ctx context.Context, image Image, isRescan, isFirstScan bool, priority queue.TaskPriority) (*queue.ScanTask, error) {
 	idTime := e.now()
 	enqueuedAt := e.now()

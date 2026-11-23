@@ -290,3 +290,36 @@ func TestDefaultConfig(t *testing.T) {
 		t.Errorf("expected retry backoff 10s, got %v", config.RetryBackoff)
 	}
 }
+
+type recordingTaskObserver struct {
+	finished chan error
+}
+
+func (r *recordingTaskObserver) Finished(_ context.Context, _ *queue.ScanTask, err error) {
+	r.finished <- err
+}
+
+// A task that fails before any scan record exists must still be reported,
+// or a scan request waiting on its digest would hang.
+func TestWorker_TaskObserverHearsFailedTask(t *testing.T) {
+	mockQ := newMockQueue(10)
+	worker := NewImageWorker(mockQ, nil, nil, nil, nil, nil, DefaultConfig(), slog.Default(), nil)
+	observer := &recordingTaskObserver{finished: make(chan error, 1)}
+	worker.SetTaskObserver(observer)
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	if err := mockQ.Enqueue(ctx, &queue.ScanTask{ID: "t", Repository: "test/repo", Digest: "sha256:abc", Tag: "v1"}); err != nil {
+		t.Fatal(err)
+	}
+	go func() { _ = worker.Start(ctx) }()
+
+	select {
+	case err := <-observer.finished:
+		if err == nil {
+			t.Fatal("expected the task to finish with an error (no scanner configured)")
+		}
+	case <-ctx.Done():
+		t.Fatal("task observer was never called")
+	}
+}
