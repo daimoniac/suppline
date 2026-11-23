@@ -36,6 +36,7 @@ type watcherImpl struct {
 	pollInterval   time.Duration
 	rescanInterval time.Duration
 	heldDigests    func(repository string) []string
+	configChanged  func() <-chan struct{}
 	logger         *slog.Logger
 	built          builtCache
 }
@@ -47,6 +48,10 @@ type Config struct {
 	// HeldDigests lists digests the tag runway holds off a tag. Their scans
 	// are kept like current digests so the runway can publish them.
 	HeldDigests func(repository string) []string
+	// ConfigChanged returns a channel that is closed when the running
+	// configuration is replaced. Repositories a reload adds are discovered at
+	// once instead of on the next full pass. Nil turns this off.
+	ConfigChanged func() <-chan struct{}
 }
 
 // NewWatcher creates a new registry watcher
@@ -108,6 +113,7 @@ func NewWatcherWithCatalogAndEnqueuer(
 		pollInterval:   config.PollInterval,
 		rescanInterval: config.RescanInterval,
 		heldDigests:    config.HeldDigests,
+		configChanged:  config.ConfigChanged,
 		logger:         logger,
 	}
 }
@@ -117,6 +123,17 @@ func (w *watcherImpl) Start(ctx context.Context) error {
 	w.logger.Info("starting registry watcher",
 		"poll_interval", w.pollInterval.String(),
 		"rescan_interval", w.rescanInterval.String())
+
+	if w.configChanged != nil {
+		// Take the signal and the repositories now, so a reload published
+		// before the goroutine runs is still seen as a change.
+		changed := w.configChanged()
+		known := make(map[string]struct{})
+		for _, repo := range w.currentConfig().GetTargetRepositories() {
+			known[repo] = struct{}{}
+		}
+		go w.discoverAddedRepositories(ctx, changed, known)
+	}
 
 	// Perform initial discovery
 	if err := w.Discover(ctx); err != nil {
@@ -134,6 +151,40 @@ func (w *watcherImpl) Start(ctx context.Context) error {
 			if err := w.Discover(ctx); err != nil {
 				w.logger.Error("discovery cycle failed",
 					"error", err.Error())
+			}
+		}
+	}
+}
+
+// discoverAddedRepositories processes the repositories a configuration reload
+// adds as soon as the reload is published. A full pass over every repository
+// takes long enough that a new in-place repository would otherwise wait for
+// the pass after the running one. Removed repositories are left to the next
+// pass, which reconciles them.
+func (w *watcherImpl) discoverAddedRepositories(ctx context.Context, changed <-chan struct{}, known map[string]struct{}) {
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-changed:
+		}
+		changed = w.configChanged()
+		targets := w.currentConfig().GetTargetRepositories()
+		var added []string
+		next := make(map[string]struct{}, len(targets))
+		for _, repo := range targets {
+			next[repo] = struct{}{}
+			if _, ok := known[repo]; !ok {
+				added = append(added, repo)
+			}
+		}
+		known = next
+		for _, repo := range added {
+			w.logger.Info("discovering repository added by a configuration reload", "repo", repo)
+			if err := w.processRepository(ctx, repo); err != nil {
+				// A new mirror target may not be copied yet; the next pass retries.
+				w.logger.Warn("failed to discover added repository; the next pass retries",
+					"repo", repo, "error", err.Error())
 			}
 		}
 	}

@@ -240,6 +240,7 @@ func run() error {
 	watcherConfig := watcher.Config{
 		PollInterval:   cfg.Worker.PollInterval,
 		RescanInterval: cfg.StateStore.RescanInterval,
+		ConfigChanged:  repositoryPolicies.Changed,
 	}
 	if tagRunway != nil {
 		watcherConfig.HeldDigests = tagRunway.HeldDigests
