@@ -667,6 +667,55 @@ func (c *ConfigCatalog) SyncVEX(repository string) []types.VEXStatement {
 	return out
 }
 
+// ShadowedSyncVEX returns the statements written on the sync entries for
+// repository whose id is also in defaults.vex. Defaults come first and the
+// first statement for an id wins, so these copies never apply. Each id and
+// source is returned once: removing that copy cannot change the effective
+// statement, which stays in defaults.
+func (c *ConfigCatalog) ShadowedSyncVEX(repository string) []types.VEXStatement {
+	if c == nil || c.config == nil {
+		return nil
+	}
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+
+	defaults := make(map[string]struct{}, len(c.config.Defaults.VEX))
+	for _, statement := range c.config.Defaults.VEX {
+		defaults[statement.ID] = struct{}{}
+	}
+	if len(defaults) == 0 {
+		return nil
+	}
+	seen := make(map[string]struct{})
+	var out []types.VEXStatement
+	add := func(statement types.VEXStatement, source string) {
+		if _, shadowed := defaults[statement.ID]; !shadowed {
+			return
+		}
+		key := source + "\x00" + statement.ID
+		if _, dup := seen[key]; dup {
+			return
+		}
+		seen[key] = struct{}{}
+		statement.Source = source
+		out = append(out, statement)
+	}
+	_ = c.config.ForEachActive(func(i int) error {
+		sync := c.config.Sync[i]
+		if targetRepository(sync) != repository {
+			return nil
+		}
+		for _, statement := range sync.VEX {
+			add(statement, types.VEXSourceManual)
+		}
+		for _, statement := range sync.VEXAuto {
+			add(statement, types.VEXSourceAuto)
+		}
+		return nil
+	})
+	return out
+}
+
 // EntryVEXRef names one statement stored on the sync entries of a repository.
 // Source is types.VEXSourceManual or types.VEXSourceAuto.
 type EntryVEXRef struct {

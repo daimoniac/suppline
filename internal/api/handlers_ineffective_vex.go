@@ -20,6 +20,9 @@ type IneffectiveVEXStatement struct {
 	Justification string `json:"justification,omitempty"`
 	Detail        string `json:"detail,omitempty"`
 	ExpiresAt     *int64 `json:"expires_at,omitempty"`
+	// Reason is "no_effect" (removal changes no latest scan's result) or
+	// "shadowed_by_defaults" (defaults.vex has the same id and wins).
+	Reason string `json:"reason"`
 }
 
 // IneffectiveVEXResponse is returned by GET /api/v1/tasks/ineffective-vex.
@@ -44,7 +47,7 @@ type IneffectiveVEXRemovalRequest struct {
 // handleGetIneffectiveVEX lists sync-entry VEX statements with no policy effect.
 //
 // @Summary     Get ineffective VEX statements
-// @Description Lists sync-entry not_affected and false_positive statements whose removal leaves the pass/fail result of every latest scan unchanged. Results come from a background audit that runs hourly.
+// @Description Lists sync-entry not_affected and false_positive statements whose removal leaves the pass/fail result of every latest scan unchanged, and sync-entry statements of any state or expiry that defaults.vex overrides with the same id. Results come from a background audit that runs hourly.
 // @Tags        Tasks
 // @Produce     json
 // @Success     200  {object}  IneffectiveVEXResponse
@@ -68,6 +71,7 @@ func (s *APIServer) handleGetIneffectiveVEX(w http.ResponseWriter, r *http.Reque
 				Justification: finding.Justification,
 				Detail:        finding.Detail,
 				ExpiresAt:     finding.ExpiresAt,
+				Reason:        finding.Reason,
 			})
 		}
 		if !computedAt.IsZero() {
