@@ -257,6 +257,7 @@ func (s *SQLiteStore) initSchema() error {
 		status TEXT NOT NULL,
 		session_id TEXT NOT NULL DEFAULT '',
 		commit_sha TEXT NOT NULL DEFAULT '',
+		written_state TEXT NOT NULL DEFAULT '',
 		created_at INTEGER NOT NULL
 	);
 	CREATE INDEX IF NOT EXISTS idx_triage_runs_repo_cve ON triage_runs(repository, cve_id, created_at);
@@ -347,6 +348,7 @@ func (s *SQLiteStore) ensureSchemaColumns() error {
 		{table: "scan_records", column: "malicious_check_json", definition: "TEXT"},
 		{table: "artifacts", column: "superseded", definition: "INTEGER NOT NULL DEFAULT 0"},
 		{table: "triage_runs", column: "session_id", definition: "TEXT NOT NULL DEFAULT ''"},
+		{table: "triage_runs", column: "written_state", definition: "TEXT NOT NULL DEFAULT ''"},
 		{table: "scan_findings", column: "severity", definition: "TEXT"},
 		{table: "cluster_images_seen", column: "workloads", definition: "TEXT NOT NULL DEFAULT ''"},
 	}

@@ -10,7 +10,7 @@ import { ErrorState, LoadingState, PageFiltersBar, RepoName } from './ui';
 import { EditModal } from './TriageEditModal';
 import { ExpirationBadge } from './TriagePills';
 import { TriageBudgetBanner, type TriageBudgetState } from './TriageBudgetBanner';
-import { STATUS_LABELS, VEX_STATES, type StatementRow } from '../lib/triageRows';
+import { VEX_STATES, runSummary, type StatementRow } from '../lib/triageRows';
 import type { TriagePhase, TriageRepository, TriageRepositoryCVE, TriageRun } from '../lib/api';
 
 const PHASE_LABELS: Record<TriagePhase, string> = {
@@ -51,13 +51,14 @@ function isBusy(cve: TriageRepositoryCVE) {
 
 function modalRow(repository: string, cve: TriageRepositoryCVE): StatementRow {
   const run = cve.Run;
-  const verdictIsState = !!run && VEX_STATES.some(([value]) => value === run.Verdict);
+  const runState = run?.WrittenState || run?.Verdict || '';
+  const verdictIsState = VEX_STATES.some(([value]) => value === runState);
   return {
     key: pairKey(repository, cve.CVEID),
     cve: cve.CVEID,
     repository,
     packages: cve.Packages,
-    state: cve.State || (verdictIsState && run ? run.Verdict : ''),
+    state: cve.State || (verdictIsState ? runState : ''),
     justification: cve.Justification || run?.Justification || '',
     detail: cve.Detail || run?.Reasoning || '',
     expiresAt: cve.ExpiresAt || 0,
@@ -94,10 +95,9 @@ function CountChip({ count, label, tone }: { count: number; label: string; tone:
 }
 
 function RunLine({ run }: { run: TriageRun }) {
-  const confidence = run.Confidence > 0 ? ` · ${run.Confidence.toFixed(2)} confidence` : '';
   return (
     <span>
-      Last run: {STATUS_LABELS[run.Status] || run.Status}{confidence} · {formatRelativeTime(run.CreatedAt)}
+      Last run: {runSummary(run)} · {formatRelativeTime(run.CreatedAt)}
     </span>
   );
 }

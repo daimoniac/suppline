@@ -765,6 +765,7 @@ func (s *Service) executeSession(ctx context.Context, jobs []Job, checkouts []gi
 			}
 		}
 	}
+	tools.prior = loadPriorEvidence(ctx, s.runs, runnable[0].Repository, existing)
 
 	// Run: one conversation gathers context, then asks for a verdict per CVE.
 	result := runSession(ctx, s.llm, tools, allowedNames(s.settings), s.settings.Prompt, s.settings.MinConfidence, runnable, names, existing, s.settings.MaxSteps, func() bool {
@@ -835,7 +836,7 @@ func (s *Service) writeVerdicts(ctx context.Context, repository string, writing 
 	}
 	if s.settings.Mode == config.TriageModeDryRun {
 		for _, row := range writing {
-			s.record(ctx, row.turn.Job, row.turn.Verdict, row.tokens, StatusDryRun, sessionID, "", shas, row.decision.Statement.Detail)
+			s.recordRun(ctx, row.turn.Job, row.turn.Verdict, row.tokens, StatusDryRun, sessionID, "", shas, row.decision.Statement.Detail, row.decision.Statement.State)
 		}
 		return
 	}
@@ -864,7 +865,7 @@ func (s *Service) writeVerdicts(ctx context.Context, repository string, writing 
 		status = StatusCommitted
 	}
 	for _, row := range writing {
-		s.record(ctx, row.turn.Job, row.turn.Verdict, row.tokens, status, sessionID, commit, shas, row.decision.Statement.Detail)
+		s.recordRun(ctx, row.turn.Job, row.turn.Verdict, row.tokens, status, sessionID, commit, shas, row.decision.Statement.Detail, row.decision.Statement.State)
 	}
 }
 
@@ -877,6 +878,12 @@ func errorTurns(jobs []Job, err error) []sessionTurn {
 }
 
 func (s *Service) record(ctx context.Context, job Job, verdict modelVerdict, tokens int, status, sessionID, commit, shas, reasoning string) {
+	s.recordRun(ctx, job, verdict, tokens, status, sessionID, commit, shas, reasoning, "")
+}
+
+// recordRun stores one run. written is the state of the statement the run
+// wrote, or would write in dry-run mode.
+func (s *Service) recordRun(ctx context.Context, job Job, verdict modelVerdict, tokens int, status, sessionID, commit, shas, reasoning string, written types.VEXAnalysisState) {
 	if tokens > 0 {
 		observability.GetMetrics().TriageTokens.Add(float64(tokens))
 	}
@@ -908,6 +915,7 @@ func (s *Service) record(ctx context.Context, job Job, verdict modelVerdict, tok
 		Status:        status,
 		SessionID:     sessionID,
 		CommitSHA:     commit,
+		WrittenState:  string(written),
 		CreatedAt:     s.now(),
 	})
 	if err != nil {

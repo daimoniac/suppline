@@ -150,7 +150,7 @@ sync:
 		t.Fatalf("statement = %+v", got)
 	}
 	run, err := store.LatestTriageRun(context.Background(), job.Repository, job.CVEID)
-	if err != nil || run == nil || run.Status != StatusWritten || run.Tokens != 0 || run.Justification != string(types.VEXJustCodeNotPresent) {
+	if err != nil || run == nil || run.Status != StatusWritten || run.Tokens != 0 || run.Justification != string(types.VEXJustCodeNotPresent) || run.WrittenState != string(types.VEXStateNotAffected) {
 		t.Fatalf("run = %+v err=%v", run, err)
 	}
 }

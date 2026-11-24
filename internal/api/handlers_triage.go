@@ -26,8 +26,12 @@ type TriageRunResponse struct {
 	Status        string          `json:"Status"`
 	CommitSHA     string          `json:"CommitSHA,omitempty"`
 	SessionID     string          `json:"SessionID,omitempty"`
-	CreatedAt     int64           `json:"CreatedAt"`
-	Superseded    bool            `json:"Superseded"`
+	// WrittenState is the state of the statement the run wrote, or would write
+	// in dry-run mode. Empty when the run wrote nothing. It differs from
+	// Verdict when the guard, not the model, decided the state.
+	WrittenState string `json:"WrittenState,omitempty"`
+	CreatedAt    int64  `json:"CreatedAt"`
+	Superseded   bool   `json:"Superseded"`
 }
 
 // handleListTriage lists automated triage decisions.
@@ -149,6 +153,7 @@ func triageRunResponses(runs []statestore.TriageRun) []TriageRunResponse {
 			Status:        run.Status,
 			CommitSHA:     run.CommitSHA,
 			SessionID:     run.SessionID,
+			WrittenState:  run.WrittenState,
 			CreatedAt:     run.CreatedAt.Unix(),
 			Superseded:    latest[run.Repository+"\n"+run.CVEID] != run.ID,
 		}

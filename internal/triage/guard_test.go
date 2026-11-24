@@ -1,6 +1,7 @@
 package triage
 
 import (
+	"errors"
 	"os"
 	"path/filepath"
 	"strings"
@@ -99,9 +100,14 @@ func TestDecideFlipsExistingAutoStatement(t *testing.T) {
 	}
 	job := Job{CVEID: "CVE-1", Repository: "app"}
 	existing := &types.VEXStatement{ID: "CVE-1", State: types.VEXStateNotAffected}
-	decision := decide(settings, job, modelVerdict{Verdict: "uncertain", Reasoning: "not enough"}, "", false, nil, existing, nil, "tr-1", now)
-	if decision.Action != outcomeAffected || decision.Statement.State != types.VEXStateAffected || decision.Statement.Justification != "" {
-		t.Fatalf("decision = %+v", decision)
+	affected := decide(settings, job, modelVerdict{Verdict: "affected", Confidence: 0.9, Reasoning: "the route is public"}, "", false, nil, existing, nil, "tr-1", now)
+	if affected.Action != outcomeAffected || affected.Statement.State != types.VEXStateAffected || affected.Statement.Justification != "" {
+		t.Fatalf("affected = %+v", affected)
+	}
+	for _, want := range []string{"state: affected", "model_verdict: affected", "confidence: 0.90", "evidence: none", "reasoning: the route is public"} {
+		if !strings.Contains(affected.Statement.Detail, want) {
+			t.Errorf("detail lacks %q:\n%s", want, affected.Statement.Detail)
+		}
 	}
 	accepted := decide(settings, job, modelVerdict{
 		Verdict: "not_affected", Justification: "requires_configuration", Confidence: 0.9, Reasoning: "ingress blocks it",
@@ -110,9 +116,50 @@ func TestDecideFlipsExistingAutoStatement(t *testing.T) {
 	if accepted.Action != outcomeNotAffected || accepted.Statement.ExpiresAt == nil {
 		t.Fatalf("accepted = %+v", accepted)
 	}
+	if strings.Contains(accepted.Statement.Detail, "guard:") || !strings.Contains(accepted.Statement.Detail, "evidence: infra:app.yaml:2") {
+		t.Errorf("accepted detail:\n%s", accepted.Statement.Detail)
+	}
 	kev := decide(settings, job, modelVerdict{Verdict: "not_affected", Confidence: 1, Reasoning: "no"}, "", true, nil, nil, nil, "tr-3", now)
 	if kev.Action != outcomeReject {
 		t.Fatalf("kev without an existing statement = %+v", kev)
+	}
+	kevFlip := decide(settings, job, modelVerdict{Verdict: "not_affected", Confidence: 1, Reasoning: "no"}, "", true, nil, existing, nil, "tr-4", now)
+	if kevFlip.Action != outcomeAffected || !strings.Contains(kevFlip.Statement.Detail, "guard: CVE is listed in the CISA") || !strings.Contains(kevFlip.Statement.Detail, "model_verdict: not_affected") {
+		t.Fatalf("kev with an existing statement = %+v", kevFlip)
+	}
+}
+
+// A session that could not prove its case again leaves the existing
+// statement alone: a failed tool is not evidence that the image is affected.
+func TestDecideKeepsExistingStatementWhenUnproven(t *testing.T) {
+	now := time.Date(2026, 10, 23, 12, 0, 0, 0, time.UTC)
+	settings := Settings{
+		MinConfidence: 0.8,
+		Expiry:        30 * 24 * time.Hour,
+		Allowed:       justificationSet([]string{string(types.VEXJustRequiresConfiguration)}),
+		BlockKEV:      true,
+		Model:         "test",
+	}
+	job := Job{CVEID: "CVE-1", Repository: "app"}
+	existing := &types.VEXStatement{ID: "CVE-1", State: types.VEXStateNotAffected}
+	tests := []struct {
+		name        string
+		verdict     modelVerdict
+		evidenceErr string
+		kevErr      error
+	}{
+		{name: "uncertain", verdict: modelVerdict{Verdict: "uncertain", Confidence: 0.5, Reasoning: "image grep exceeded the unpack limit"}},
+		{name: "low confidence", verdict: modelVerdict{Verdict: "not_affected", Justification: "requires_configuration", Confidence: 0.5, Reasoning: "probably"}},
+		{name: "evidence fails", verdict: modelVerdict{Verdict: "not_affected", Justification: "requires_configuration", Confidence: 0.9, Reasoning: "x"}, evidenceErr: "evidence[0] quote does not match"},
+		{name: "KEV feed down", verdict: modelVerdict{Verdict: "not_affected", Confidence: 1, Reasoning: "x"}, kevErr: errors.New("timeout")},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := decide(settings, job, tt.verdict, tt.evidenceErr, false, tt.kevErr, existing, nil, "tr", now)
+			if got.Action != outcomeReject || got.Statement.ID != "" {
+				t.Fatalf("decision = %+v, want a rejection that writes nothing", got)
+			}
+		})
 	}
 }
 

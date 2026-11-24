@@ -517,7 +517,10 @@ type TriageRun struct {
 	Status        string
 	SessionID     string
 	CommitSHA     string
-	CreatedAt     time.Time
+	// WrittenState is the state of the statement the run wrote, or would
+	// write in dry-run mode. It is empty when the run wrote nothing.
+	WrittenState string
+	CreatedAt    time.Time
 }
 
 // TriageFilter selects stored triage runs.

@@ -8,8 +8,11 @@ import (
 	"path"
 	"path/filepath"
 	"regexp"
+	"strconv"
 	"strings"
 	"sync"
+
+	"github.com/daimoniac/suppline/internal/registry"
 )
 
 const imageCheckoutName = "image"
@@ -105,7 +108,7 @@ func (r *Roots) mountImage(ctx context.Context) error {
 	r.Checkouts = append(r.Checkouts, CheckoutRoot{
 		Name:    imageCheckoutName,
 		Dir:     dir,
-		Exclude: []string{".extracted"},
+		Exclude: []string{".extracted", registry.SkippedFilesManifest},
 		Paths:   []string{"."},
 	})
 	return nil
@@ -163,7 +166,7 @@ func grepImageDir(dir, pattern, rel, packageName string) (rows string, absence b
 			return nil
 		}
 		relPath = filepath.ToSlash(relPath)
-		if relPath == ".extracted" || deniedName(relPath) {
+		if imageMarker(relPath) || deniedName(relPath) {
 			return nil
 		}
 		info, err := d.Info()
@@ -208,8 +211,142 @@ func grepImageDir(dir, pattern, rel, packageName string) (rows string, absence b
 	if walkErr != nil {
 		return "", false, nil, "", walkErr
 	}
+	// Files the unpack left out were never searched. A native one blocks
+	// absence the same way an oversized file on disk does.
+	for _, file := range readSkipped(dir) {
+		if !file.ELF || !underRel(file.Path, rel) {
+			continue
+		}
+		native = append(native, file.Path)
+		oversized = true
+	}
 	absence, note = imageAbsence(packageName, matches, native, oversized)
 	return strings.Join(matches, "\n"), absence, native, note, nil
+}
+
+// imageMarker reports the bookkeeping files suppline writes next to an unpacked image.
+func imageMarker(rel string) bool {
+	return rel == ".extracted" || rel == registry.SkippedFilesManifest
+}
+
+// skippedImageFile is one regular file the unpack left out for size.
+type skippedImageFile struct {
+	Path string
+	Size int64
+	ELF  bool
+}
+
+func readSkipped(dir string) []skippedImageFile {
+	raw, err := os.ReadFile(filepath.Join(dir, registry.SkippedFilesManifest))
+	if err != nil {
+		return nil
+	}
+	var out []skippedImageFile
+	for _, line := range strings.Split(string(raw), "\n") {
+		parts := strings.Split(line, "\t")
+		if len(parts) != 3 || strings.TrimSpace(parts[0]) == "" {
+			continue
+		}
+		size, _ := strconv.ParseInt(parts[1], 10, 64)
+		out = append(out, skippedImageFile{Path: parts[0], Size: size, ELF: parts[2] == "1"})
+	}
+	return out
+}
+
+func underRel(file, rel string) bool {
+	rel = cleanRel(rel)
+	return rel == "." || file == rel || strings.HasPrefix(file, rel+"/")
+}
+
+// imageFiles searches the paths of the scanned image, including files the
+// unpack left out for size. An empty search is citable absence for the
+// searched directory: a file name does not depend on what could be read.
+func imageFiles(ctx context.Context, roots *Roots, pub *publicSource, job Job, pattern, rel string) (string, error) {
+	if roots == nil {
+		return "", fmt.Errorf("image checkout is unavailable")
+	}
+	re, err := regexp.Compile(pattern)
+	if err != nil {
+		return "", fmt.Errorf("invalid pattern: %w", err)
+	}
+	if err := roots.mountImage(ctx); err != nil {
+		return "", err
+	}
+	root, err := roots.checkout(imageCheckoutName)
+	if err != nil {
+		return "", err
+	}
+	rows, err := imageFileRows(root.Dir, re, rel)
+	if err != nil {
+		return "", err
+	}
+	id := pub.recordImageGrep(imageCheckoutName, imageNamePattern(pattern), rel, job.Digest, strings.Join(rows, "\n"), true)
+	if id == "" {
+		return "", fmt.Errorf("file search was not recorded")
+	}
+	var b strings.Builder
+	fmt.Fprintf(&b, "grep_id: %s\nrepo: %s\ncommit: %s\npattern: %s\npath: %s\nmatches: %d\nsearched: file paths, including files not unpacked\n%s\n",
+		id, imageCheckoutName, strings.TrimSpace(job.Digest), pattern, cleanRel(rel), len(rows), cite(len(rows) == 0, true).line())
+	for _, row := range rows {
+		b.WriteString(row)
+		b.WriteByte('\n')
+	}
+	return b.String(), nil
+}
+
+// imageNamePattern marks a recorded file-name search, so provenance and
+// recheck_evidence can tell it from a content grep.
+const imageNamePrefix = "name:"
+
+func imageNamePattern(pattern string) string {
+	return imageNamePrefix + pattern
+}
+
+func imageFileRows(dir string, re *regexp.Regexp, rel string) ([]string, error) {
+	start := dir
+	if cleanRel(rel) != "." {
+		var err error
+		start, err = safePath(dir, rel)
+		if err != nil {
+			return nil, err
+		}
+	}
+	var rows []string
+	err := filepath.WalkDir(start, func(full string, d os.DirEntry, walkErr error) error {
+		if walkErr != nil || len(rows) >= maxToolMatches {
+			return nil
+		}
+		if d.IsDir() {
+			return nil
+		}
+		relPath, err := filepath.Rel(dir, full)
+		if err != nil {
+			return nil
+		}
+		relPath = filepath.ToSlash(relPath)
+		if imageMarker(relPath) || deniedName(relPath) || !re.MatchString(relPath) {
+			return nil
+		}
+		kind := "file"
+		if d.Type()&os.ModeSymlink != 0 {
+			kind = "symlink"
+		}
+		rows = append(rows, fmt.Sprintf("%s:1:%s", relPath, kind))
+		return nil
+	})
+	if err != nil {
+		return nil, err
+	}
+	for _, file := range readSkipped(dir) {
+		if len(rows) >= maxToolMatches {
+			break
+		}
+		if !underRel(file.Path, rel) || deniedName(file.Path) || !re.MatchString(file.Path) {
+			continue
+		}
+		rows = append(rows, fmt.Sprintf("%s:1:file not unpacked, %d bytes", file.Path, file.Size))
+	}
+	return rows, nil
 }
 
 func imageAbsence(packageName string, matches, native []string, oversized bool) (bool, string) {

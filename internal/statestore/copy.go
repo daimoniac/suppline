@@ -187,9 +187,17 @@ func CopySQLiteToPostgres(ctx context.Context, sqlitePath, postgresURL string, l
 		}
 		query := `SELECT id, repository, cve_id, verdict, justification, confidence, evidence_json, reasoning, model, repo_shas_json, cve_hash, tokens, status, commit_sha, created_at FROM triage_runs`
 		insert := `INSERT INTO triage_runs (id, repository, cve_id, verdict, justification, confidence, evidence_json, reasoning, model, repo_shas_json, cve_hash, tokens, status, commit_sha, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+		hasWritten, err := sqliteHasColumn(ctx, src, "triage_runs", "written_state")
+		if err != nil {
+			return err
+		}
 		if hasSession {
 			query = `SELECT id, repository, cve_id, verdict, justification, confidence, evidence_json, reasoning, model, repo_shas_json, cve_hash, tokens, status, session_id, commit_sha, created_at FROM triage_runs`
 			insert = `INSERT INTO triage_runs (id, repository, cve_id, verdict, justification, confidence, evidence_json, reasoning, model, repo_shas_json, cve_hash, tokens, status, session_id, commit_sha, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+		}
+		if hasSession && hasWritten {
+			query = `SELECT id, repository, cve_id, verdict, justification, confidence, evidence_json, reasoning, model, repo_shas_json, cve_hash, tokens, status, session_id, commit_sha, written_state, created_at FROM triage_runs`
+			insert = `INSERT INTO triage_runs (id, repository, cve_id, verdict, justification, confidence, evidence_json, reasoning, model, repo_shas_json, cve_hash, tokens, status, session_id, commit_sha, written_state, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
 		}
 		copies = append(copies, struct {
 			name   string

@@ -70,18 +70,21 @@ type commitHit struct {
 }
 
 // explainImageSource resolves the GitHub revision for the image being triaged.
-// OCI labels win. Otherwise the upstream tag's SLSA provenance is read. A unique
-// commit search of a -sha- tag is the last fallback.
+// OCI labels win. Otherwise the upstream tag's SLSA provenance is read, then a
+// unique commit search of a -sha- tag. Last, a version tag is looked up in the
+// GitHub repository the source label names.
 func explainImageSource(ctx context.Context, images imageLabeler, pub *publicSource, manifests manifestSource, job Job) (string, error) {
 	var b strings.Builder
+	var labels map[string]string
 	if images != nil && strings.TrimSpace(job.Repository) != "" && strings.TrimSpace(job.Digest) != "" {
-		labels, err := images.ImageLabels(ctx, job.Repository, job.Digest)
+		found, err := images.ImageLabels(ctx, job.Repository, job.Digest)
 		if err != nil {
 			fmt.Fprintf(&b, "labels: %s\n", oneLine(err.Error(), 300))
-		} else if _, _, _, ok := labeledRevision(labels); ok {
-			return formatImageLabels(labels), nil
+		} else if _, _, _, ok := labeledRevision(found); ok {
+			return formatImageLabels(found), nil
 		} else {
-			b.WriteString(formatImageLabels(labels))
+			labels = found
+			b.WriteString(formatImageLabels(found))
 		}
 	}
 	if strings.TrimSpace(job.Upstream) != "" && strings.TrimSpace(job.Tag) != "" {
@@ -106,10 +109,93 @@ func explainImageSource(ctx context.Context, images imageLabeler, pub *publicSou
 			fmt.Fprintf(&b, "commit_search: ambiguous\ncandidates: %s\n", strings.Join(ambiguous, ", "))
 		}
 	}
+	if owner, repo, ok := parseGitHubSource(labels[ociImageSource]); ok && pub != nil && versionTag.MatchString(strings.TrimSpace(job.Tag)) {
+		ref, sha, err := pub.resolveVersionTag(ctx, owner, repo, job.Tag)
+		if err != nil {
+			fmt.Fprintf(&b, "tag_lookup: %s\n", oneLine(err.Error(), 300))
+		} else {
+			fmt.Fprintf(&b, "tag_lookup: %s/%s@%s is %s; this assumes the image was built from that tag\nowner: %s\nrepo: %s\nrevision: %s\n", owner, repo, ref, sha, owner, repo, sha)
+			return b.String(), nil
+		}
+	}
 	if b.Len() == 0 {
 		return "", fmt.Errorf("image source is unavailable")
 	}
 	return b.String(), nil
+}
+
+// tagCommit resolves a git tag to its commit, following an annotated tag.
+func (p *publicSource) tagCommit(ctx context.Context, owner, repo, tag string) (string, error) {
+	if !githubNamePattern.MatchString(owner) || !githubNamePattern.MatchString(repo) || !githubRefPattern.MatchString(tag) || strings.Contains(tag, "..") {
+		return "", fmt.Errorf("tag %s is not a valid ref", tag)
+	}
+	if p == nil {
+		p = newPublicSource()
+	}
+	base := strings.TrimRight(p.github, "/") + "/repos/" + url.PathEscape(owner) + "/" + url.PathEscape(repo) + "/git/"
+	rawURL := base + "ref/tags/" + pathEscapeSlash(tag)
+	for range 3 {
+		body, status, err := p.getAccept(ctx, rawURL, "application/vnd.github+json")
+		if err != nil {
+			return "", err
+		}
+		if status != 200 {
+			return "", fmt.Errorf("tag %s status %d", tag, status)
+		}
+		var payload struct {
+			Object struct {
+				SHA  string `json:"sha"`
+				Type string `json:"type"`
+			} `json:"object"`
+		}
+		if err := json.Unmarshal(body, &payload); err != nil {
+			return "", fmt.Errorf("decode tag %s: %w", tag, err)
+		}
+		if !fullCommit.MatchString(payload.Object.SHA) {
+			return "", fmt.Errorf("tag %s did not resolve", tag)
+		}
+		switch payload.Object.Type {
+		case "commit":
+			return strings.ToLower(payload.Object.SHA), nil
+		case "tag":
+			rawURL = base + "tags/" + url.PathEscape(payload.Object.SHA)
+		default:
+			return "", fmt.Errorf("tag %s points at a %s", tag, payload.Object.Type)
+		}
+	}
+	return "", fmt.Errorf("tag %s is nested too deeply", tag)
+}
+
+// versionTag is a release tag such as 3.5.0, v3.5.0, or 3.5.0-rc.1.
+var versionTag = regexp.MustCompile(`^v?[0-9]+(\.[0-9]+){1,3}([-+][0-9A-Za-z.-]+)?$`)
+
+// resolveVersionTag looks up an image tag as a git tag, with and without a
+// leading v. Two spellings that name different commits stay unresolved.
+func (p *publicSource) resolveVersionTag(ctx context.Context, owner, repo, tag string) (string, string, error) {
+	tag = strings.TrimSpace(tag)
+	candidates := []string{tag, "v" + tag}
+	if strings.HasPrefix(tag, "v") {
+		candidates = []string{tag, strings.TrimPrefix(tag, "v")}
+	}
+	found := map[string]string{}
+	var order []string
+	var lastErr error
+	for _, ref := range candidates {
+		sha, err := p.tagCommit(ctx, owner, repo, ref)
+		if err != nil {
+			lastErr = err
+			continue
+		}
+		found[ref] = sha
+		order = append(order, ref)
+	}
+	switch {
+	case len(order) == 0:
+		return "", "", fmt.Errorf("no git tag %s in %s/%s: %w", strings.Join(candidates, " or "), owner, repo, lastErr)
+	case len(order) == 2 && found[order[0]] != found[order[1]]:
+		return "", "", fmt.Errorf("git tags %s and %s name different commits", order[0], order[1])
+	}
+	return order[0], found[order[0]], nil
 }
 
 func labeledRevision(labels map[string]string) (owner, repo, rev string, ok bool) {
@@ -179,6 +265,12 @@ func attestationPointer(index []byte, platform, imageDigest string) (string, err
 	var doc ociDescriptor
 	if err := json.Unmarshal(index, &doc); err != nil {
 		return "", fmt.Errorf("decode image index: %w", err)
+	}
+	if len(doc.Manifests) == 0 {
+		if len(doc.Layers) > 0 || strings.Contains(doc.MediaType, "image.manifest") || strings.Contains(doc.MediaType, "distribution.manifest.v2") {
+			return "", fmt.Errorf("upstream tag is a single-platform image, not an index, so it has no provenance attestation")
+		}
+		return "", fmt.Errorf("upstream index lists no manifests")
 	}
 	osName, arch := splitPlatform(platform)
 	imageDigest = strings.TrimSpace(imageDigest)
