@@ -27,6 +27,7 @@ type Catalog interface {
 	ResolvePolicy(repository string) (policy.PolicyConfig, error)
 	ResolveEvidence(repository string) catalog.Evidence
 	SyncVEX(repository string) []types.VEXStatement
+	ShadowedSyncVEX(repository string) []types.VEXStatement
 }
 
 // ScanStore is the scan read model the audit reads.
@@ -38,8 +39,18 @@ type ScanStore interface {
 // EngineFactory returns the policy engine for an effective repository policy.
 type EngineFactory func(cfg policy.PolicyConfig) (policy.PolicyEngine, error)
 
-// Finding is a sync-entry statement whose removal leaves every latest scan's
-// policy outcome unchanged.
+// Reasons a sync-entry statement has no effect.
+const (
+	// ReasonNoEffect: removing the statement leaves every latest scan's
+	// policy outcome unchanged.
+	ReasonNoEffect = "no_effect"
+	// ReasonShadowedByDefaults: defaults.vex has the same id, and defaults
+	// win, so the statement never applies.
+	ReasonShadowedByDefaults = "shadowed_by_defaults"
+)
+
+// Finding is a sync-entry statement that can be removed without changing any
+// policy outcome. Reason says why.
 type Finding struct {
 	Repository    string
 	CVEID         string
@@ -48,6 +59,7 @@ type Finding struct {
 	Justification string
 	Detail        string
 	ExpiresAt     *int64
+	Reason        string
 }
 
 // Auditor computes findings and keeps the last result for readers.
@@ -144,8 +156,9 @@ func (a *Auditor) Audit(ctx context.Context) ([]Finding, error) {
 		}
 		found, err := a.auditRepository(ctx, repository, byRepository[repository], now)
 		if err != nil {
+			// Statements shadowed by defaults do not depend on the policy
+			// check, so they are still reported.
 			a.logger.Warn("skipped repository in vex audit", "repository", repository, "error", err)
-			continue
 		}
 		findings = append(findings, found...)
 	}
@@ -159,12 +172,33 @@ func (a *Auditor) Audit(ctx context.Context) ([]Finding, error) {
 }
 
 func (a *Auditor) auditRepository(ctx context.Context, repository string, records []*statestore.ScanRecord, now time.Time) ([]Finding, error) {
+	shadowed := shadowedStatements(repository, a.catalog.ShadowedSyncVEX(repository))
 	malicious := unusedMaliciousStatements(repository, a.catalog.SyncVEX(repository), completedScans(records), now)
 	findings, err := a.auditCVEStatements(ctx, repository, records, now)
 	if err != nil {
-		return nil, err
+		return shadowed, err
 	}
-	return append(findings, malicious...), nil
+	findings = append(findings, malicious...)
+	return append(findings, shadowed...), nil
+}
+
+// shadowedStatements reports sync-entry statements that defaults.vex
+// overrides. They never apply, so state, expiry and scans do not matter.
+func shadowedStatements(repository string, statements []types.VEXStatement) []Finding {
+	out := make([]Finding, 0, len(statements))
+	for _, statement := range statements {
+		out = append(out, Finding{
+			Repository:    repository,
+			CVEID:         statement.ID,
+			Source:        statement.Source,
+			State:         string(statement.State),
+			Justification: string(statement.Justification),
+			Detail:        statement.Detail,
+			ExpiresAt:     statement.ExpiresAt,
+			Reason:        ReasonShadowedByDefaults,
+		})
+	}
+	return out
 }
 
 // unusedMaliciousStatements reports false_positive statements for
@@ -205,6 +239,7 @@ func unusedMaliciousStatements(repository string, statements []types.VEXStatemen
 			State:      string(statement.State),
 			Detail:     statement.Detail,
 			ExpiresAt:  statement.ExpiresAt,
+			Reason:     ReasonNoEffect,
 		})
 	}
 	return out
@@ -271,6 +306,7 @@ func (a *Auditor) auditCVEStatements(ctx context.Context, repository string, rec
 			Justification: string(candidate.Justification),
 			Detail:        candidate.Detail,
 			ExpiresAt:     candidate.ExpiresAt,
+			Reason:        ReasonNoEffect,
 		})
 	}
 	return findings, nil
@@ -329,6 +365,7 @@ func findingsForUnseen(repository string, candidates []types.VEXStatement, skip 
 			Justification: string(candidate.Justification),
 			Detail:        candidate.Detail,
 			ExpiresAt:     candidate.ExpiresAt,
+			Reason:        ReasonNoEffect,
 		})
 	}
 	return out

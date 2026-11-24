@@ -242,7 +242,7 @@ sync:
 
 ### `vex-auto`
 
-Triage writes exemptions into `vex-auto` on the sync entry. Effective statements are `defaults.vex`, then the sync entry's `vex`, then `vex-auto`. The first statement for an id wins, so a hand-written `vex` id is never replaced by an auto statement. An auto statement with `state: affected` stays in the file as the decision record and does not exempt the CVE, so the gate fails.
+Triage writes exemptions into `vex-auto` on the sync entry. Effective statements are `defaults.vex`, then the sync entry's `vex`, then `vex-auto`. The first statement for an id wins, so a hand-written `vex` id is never replaced by an auto statement. A sync-entry statement whose id is also in `defaults.vex` never applies, whatever its expiry; Tasks lists it under VEX statements without effect as overridden by `defaults.vex`. An auto statement with `state: affected` stays in the file as the decision record and does not exempt the CVE, so the gate fails.
 
 ## Testing Policies
 

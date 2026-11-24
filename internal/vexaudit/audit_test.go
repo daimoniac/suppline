@@ -18,6 +18,7 @@ const testRepository = "registry.local/app"
 
 type fakeCatalog struct {
 	statements []types.VEXStatement
+	shadowed   []types.VEXStatement
 	policy     policy.PolicyConfig
 }
 
@@ -30,6 +31,8 @@ func (f fakeCatalog) ResolveEvidence(string) catalog.Evidence {
 }
 
 func (f fakeCatalog) SyncVEX(string) []types.VEXStatement { return f.statements }
+
+func (f fakeCatalog) ShadowedSyncVEX(string) []types.VEXStatement { return f.shadowed }
 
 type fakeScans struct {
 	records []*statestore.ScanRecord
@@ -292,5 +295,29 @@ func TestAuditKeepsStatementMaskedByAnotherBlockingCVE(t *testing.T) {
 	}
 	if len(findings) != 1 || findings[0].CVEID != "CVE-UNFIXED" {
 		t.Fatalf("findings = %+v, want only CVE-UNFIXED", findings)
+	}
+}
+
+// A sync-entry statement whose id is also in defaults.vex never applies, so it
+// is reported whatever its state, expiry, or the scans say.
+func TestAuditReportsStatementsShadowedByDefaults(t *testing.T) {
+	shadowed := []types.VEXStatement{
+		{ID: "CVE-SHADOWED", State: types.VEXStateNotAffected, Source: types.VEXSourceManual, ExpiresAt: expiredAt(time.Now())},
+	}
+	auditor := New(slog.New(slog.NewTextHandler(io.Discard, nil)),
+		fakeCatalog{shadowed: shadowed, policy: policy.PolicyConfig{Expression: "criticalCount == 0"}},
+		fakeScans{},
+		engineFor,
+	)
+	findings, err := auditor.Audit(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(findings) != 1 {
+		t.Fatalf("findings = %+v, want CVE-SHADOWED", findings)
+	}
+	got := findings[0]
+	if got.CVEID != "CVE-SHADOWED" || got.Source != types.VEXSourceManual || got.Reason != ReasonShadowedByDefaults || got.ExpiresAt == nil {
+		t.Fatalf("finding = %+v", got)
 	}
 }

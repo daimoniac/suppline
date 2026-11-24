@@ -87,3 +87,16 @@ func TestRemoveEntryVEXRemovesOnlyTheNamedCopy(t *testing.T) {
 		t.Fatal("defaults must stay in effect")
 	}
 }
+
+func TestShadowedSyncVEXListsEntryCopiesOfDefaultIDs(t *testing.T) {
+	cat := newSyncVEXCatalog(t)
+	got := cat.ShadowedSyncVEX("registry.local/app")
+
+	// CVE-DEFAULT is stored under vex-auto and also in defaults, so defaults win.
+	if len(got) != 1 || got[0].ID != "CVE-DEFAULT" || got[0].Source != types.VEXSourceAuto {
+		t.Fatalf("ShadowedSyncVEX = %+v, want CVE-DEFAULT from vex-auto", got)
+	}
+	if got := cat.ShadowedSyncVEX("registry.local/other"); len(got) != 0 {
+		t.Fatalf("other repository = %+v, want none", got)
+	}
+}
