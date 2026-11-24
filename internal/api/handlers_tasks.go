@@ -33,9 +33,13 @@ type SemverUpdateTasksResponse struct {
 	NoRuntimeData bool                `json:"no_runtime_data"`
 }
 
-// VEXExpiryTaskEntry describes VEX statements that are expired or near expiry.
+// VEXExpiryTaskEntry is one repository's VEX statement that is expired or
+// near expiry, with the facts that decide what can be done about it.
 type VEXExpiryTaskEntry struct {
-	CVEID         string   `json:"cve_id"`
+	CVEID string `json:"cve_id"`
+	// Repository is the repository this statement belongs to.
+	Repository string `json:"repository"`
+	// Repositories holds Repository alone. Kept for older clients.
 	Repositories  []string `json:"repositories"`
 	ExpiresAt     int64    `json:"expires_at"`
 	State         string   `json:"state"`
@@ -43,12 +47,32 @@ type VEXExpiryTaskEntry struct {
 	Detail        string   `json:"detail,omitempty"`
 	// Status is one of "expired" or "expiring_soon".
 	Status string `json:"status"`
+	// Source is "vex" (hand-written) or "vex-auto" (written by triage).
+	Source string `json:"source"`
+	// Editable is true when the statement is the one sync-entry copy for this
+	// id, so it can be extended or removed on its own. It is false for a
+	// defaults.vex statement or an id stored on more than one entry.
+	Editable bool `json:"editable"`
+	// InScans is true when a current scan of the repository still reports the CVE.
+	InScans bool `json:"in_scans"`
+	// AffectedTags are the scanned tags that still report the CVE.
+	AffectedTags []string `json:"affected_tags,omitempty"`
+	// FixedTag is the newest scanned tag that no longer reports the CVE, set
+	// only when it is newer than every tag that still does.
+	FixedTag string `json:"fixed_tag,omitempty"`
+	// KEV is true when triage refuses to exempt the CVE because it is in the
+	// CISA KEV catalog, so a re-triage cannot renew the statement.
+	KEV bool `json:"kev,omitempty"`
+	// LastRun is the latest triage run for this repository and CVE.
+	LastRun *TriageRunResponse `json:"last_run,omitempty"`
 }
 
 // VEXExpiryTasksResponse is returned by GET /api/v1/tasks/vex-expiry.
 type VEXExpiryTasksResponse struct {
 	Entries       []VEXExpiryTaskEntry `json:"entries"`
 	AIAgentPrompt string               `json:"ai_agent_prompt"`
+	// TriageEnabled says whether a re-triage can be queued.
+	TriageEnabled bool `json:"triage_enabled"`
 }
 
 type RuntimeUnusedWhitelistResponse struct {
@@ -280,36 +304,30 @@ func (s *APIServer) handleGetVEXExpiryTasks(w http.ResponseWriter, r *http.Reque
 	expiringSoon := true
 	expired := true
 	vexInfos := s.getConfiguredVEXStatements("", "", &expiringSoon, &expired)
-	grouped := s.groupVEXByCVE(vexInfos)
 
 	now := time.Now().Unix()
-	entries := make([]VEXExpiryTaskEntry, 0, len(grouped))
-	for _, summary := range grouped {
-		if summary.ExpiresAt == nil || *summary.ExpiresAt == 0 {
+	entries := make([]VEXExpiryTaskEntry, 0, len(vexInfos))
+	for _, info := range vexInfos {
+		if info == nil || info.ExpiresAt == nil || *info.ExpiresAt == 0 {
 			continue
 		}
-
 		status := "expiring_soon"
-		if *summary.ExpiresAt <= now {
+		if *info.ExpiresAt <= now {
 			status = "expired"
 		}
-
-		repos := make([]string, 0, len(summary.Repositories))
-		for _, repo := range summary.Repositories {
-			repos = append(repos, repo.Repository)
-		}
-		sort.Strings(repos)
-
 		entries = append(entries, VEXExpiryTaskEntry{
-			CVEID:         summary.CVEID,
-			Repositories:  repos,
-			ExpiresAt:     *summary.ExpiresAt,
-			State:         string(summary.State),
-			Justification: string(summary.Justification),
-			Detail:        summary.Detail,
+			CVEID:         info.CVEID,
+			Repository:    info.Repository,
+			Repositories:  []string{info.Repository},
+			ExpiresAt:     *info.ExpiresAt,
+			State:         string(info.State),
+			Justification: string(info.Justification),
+			Detail:        info.Detail,
 			Status:        status,
+			Source:        info.Source,
 		})
 	}
+	s.addVEXExpiryFacts(r.Context(), entries)
 
 	sort.Slice(entries, func(i, j int) bool {
 		if entries[i].Status != entries[j].Status {
@@ -318,12 +336,16 @@ func (s *APIServer) handleGetVEXExpiryTasks(w http.ResponseWriter, r *http.Reque
 		if entries[i].ExpiresAt != entries[j].ExpiresAt {
 			return entries[i].ExpiresAt < entries[j].ExpiresAt
 		}
-		return entries[i].CVEID < entries[j].CVEID
+		if entries[i].CVEID != entries[j].CVEID {
+			return entries[i].CVEID < entries[j].CVEID
+		}
+		return entries[i].Repository < entries[j].Repository
 	})
 
 	s.respondJSON(w, http.StatusOK, VEXExpiryTasksResponse{
 		Entries:       entries,
 		AIAgentPrompt: buildVEXExpiryPrompt(entries),
+		TriageEnabled: s.triageService != nil && s.triageService.Enabled(),
 	})
 }
 

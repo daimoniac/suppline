@@ -861,8 +861,11 @@ export interface SemverUpdateTasksResponse {
   no_runtime_data: boolean;
 }
 
+/** One repository's statement that is expired or expiring, with the facts that decide its actions. */
 export interface VEXExpiryTaskEntry {
   cve_id: string;
+  repository: string;
+  /** Holds repository alone; kept for older clients. */
   repositories: string[];
   expires_at: number;
   state: string;
@@ -870,11 +873,24 @@ export interface VEXExpiryTaskEntry {
   detail: string;
   /** "expired" | "expiring_soon" */
   status: string;
+  /** "vex" (hand-written) | "vex-auto" (written by triage) */
+  source: string;
+  /** The one sync-entry copy of this id, so it can be extended or removed alone. False for defaults.vex. */
+  editable: boolean;
+  /** A scanned tag of the repository still reports the CVE. */
+  in_scans: boolean;
+  affected_tags?: string[];
+  /** Newest scanned tag that no longer reports the CVE, when newer than every tag that does. */
+  fixed_tag?: string;
+  /** Triage refuses to exempt the CVE because it is in the CISA KEV catalog. */
+  kev?: boolean;
+  last_run?: TriageRun;
 }
 
 export interface VEXExpiryTasksResponse {
   entries: VEXExpiryTaskEntry[];
   ai_agent_prompt: string;
+  triage_enabled: boolean;
 }
 
 /** A sync-entry VEX statement that no current policy decision depends on. */
