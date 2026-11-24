@@ -3,7 +3,7 @@ import { Link, useSearchParams } from 'react-router';
 import { useAuth } from '../lib/auth';
 import { formatRelativeTime, formatDate } from '../lib/utils';
 import { useImageUsageFilter } from '../lib/imageUsageFilter';
-import { LoadingState, ErrorState, PageHeader, StatusBadge, VulnCounts, SortHeader, Pagination, DigestLinkWithCopy, RuntimeUsageBadge, PageFiltersBar, FilterActionButton, PolicyStatusSelect } from '../components/ui';
+import { LoadingState, ErrorState, PageHeader, StatusBadge, VulnCounts, SortHeader, Pagination, DigestLinkWithCopy, RuntimeUsageBadge, PageFiltersBar, FilterActionButton, PolicyStatusSelect, RepoName } from '../components/ui';
 import type { Scan } from '../lib/api';
 import { useSortablePaginationState, type SortDirection } from '../lib/useSortablePaginationState';
 import { useScanPageFilters } from '../lib/useScanPageFilters';
@@ -113,7 +113,7 @@ export default function ScansPage() {
             {scans.map((s, idx) => (
               <tr key={`${s.Repository}:${s.Tag}:${s.Digest}:${idx}`} className="border-b border-border/50 hover:bg-bg-secondary transition-colors">
                 <td className="px-4 py-3 text-sm text-text-primary">
-                  <Link to={`/repositories/${encodeURIComponent(s.Repository)}`} className="text-accent hover:underline">{s.Repository || 'N/A'}</Link>
+                  <Link to={`/repositories/${encodeURIComponent(s.Repository)}`} className="text-accent hover:underline">{s.Repository ? <RepoName repo={s.Repository} /> : 'N/A'}</Link>
                 </td>
                 <td className="px-4 py-3 text-sm text-text-secondary">{s.Tag || 'N/A'}</td>
                 <td className="px-4 py-3 text-sm">

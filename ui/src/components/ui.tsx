@@ -1,6 +1,8 @@
 import { cn, severityColor, copyToClipboard, truncateDigest, getRuntimeClusterCount, getRuntimeClusterNames } from '../lib/utils';
-import { Loader2, AlertCircle, Search, ChevronUp, ChevronDown, Copy } from 'lucide-react';
-import type { ReactNode } from 'react';
+import { Loader2, AlertCircle, Search, ChevronUp, ChevronDown, Copy, Server } from 'lucide-react';
+import { Fragment, type ReactNode } from 'react';
+import { siCodeberg, siDigitalocean, siDocker, siGitea, siGithub, siGitlab, siGooglecloud, siJfrog, siRedhat } from 'simple-icons';
+import { parseImageRef, type RegistryInfo, type RegistryKind } from '../lib/registry';
 import type { RuntimeInventory } from '../lib/api';
 import { Link } from 'react-router';
 import { useImageUsageFilter } from '../lib/imageUsageFilter';
@@ -226,5 +228,81 @@ export function MaliciousCheckBadge({ status, findings = 0 }: { status?: string 
     )}>
       {maliciousCheckLabels[status] ?? status}
     </span>
+  );
+}
+
+const REGISTRY_ICONS: Record<Exclude<RegistryKind, 'other'>, { path: string }> = {
+  dockerhub: siDocker,
+  gitlab: siGitlab,
+  github: siGithub,
+  redhat: siRedhat,
+  gcp: siGooglecloud,
+  jfrog: siJfrog,
+  gitea: siGitea,
+  codeberg: siCodeberg,
+  digitalocean: siDigitalocean,
+};
+
+// Literal class names so Tailwind picks them up.
+const REGISTRY_COLORS: Record<RegistryKind, string> = {
+  dockerhub: 'text-registry-dockerhub',
+  gitlab: 'text-registry-gitlab',
+  github: 'text-registry-github',
+  redhat: 'text-registry-redhat',
+  gcp: 'text-registry-gcp',
+  jfrog: 'text-registry-jfrog',
+  gitea: 'text-registry-gitea',
+  codeberg: 'text-registry-codeberg',
+  digitalocean: 'text-registry-digitalocean',
+  other: 'text-registry-other',
+};
+
+/** Brand icon for a registry; a generic server icon for unknown hosts. */
+export function RegistryIcon({ registry, className }: { registry: RegistryInfo; className?: string }) {
+  const classes = cn('w-3.5 h-3.5 shrink-0', REGISTRY_COLORS[registry.kind], className);
+  if (registry.kind === 'other') return <Server className={classes} aria-label={registry.label} role="img" />;
+  return (
+    <svg viewBox="0 0 24 24" fill="currentColor" className={classes} role="img" aria-label={registry.label}>
+      <path d={REGISTRY_ICONS[registry.kind].path} />
+    </svg>
+  );
+}
+
+/**
+ * Repository or image reference shown without its registry host, with a
+ * registry icon in front. The full reference is in the tooltip.
+ * truncate="start" keeps the end of the path visible ("…/dev/frontline").
+ */
+export function RepoName({ repo, suffix, truncate, className, iconClassName }: { repo: string; suffix?: ReactNode; truncate?: 'start' | 'end'; className?: string; iconClassName?: string }) {
+  const parsed = parseImageRef(repo);
+  const title = `${parsed.registry.label} · ${parsed.full}`;
+  return (
+    <span className={cn('inline-flex items-center gap-1.5 align-middle', truncate ? 'min-w-0 max-w-full' : 'break-words', className)} title={title}>
+      <RegistryIcon registry={parsed.registry} className={iconClassName} />
+      {truncate === 'start' ? (
+        // rtl puts the ellipsis on the left; the LRMs keep the path itself left-to-right.
+        <span className="truncate min-w-0" style={{ direction: 'rtl', textAlign: 'left' }}>{'‎'}{parsed.path}{suffix}{'‎'}</span>
+      ) : (
+        <span className={cn(truncate === 'end' && 'truncate min-w-0', !truncate && 'min-w-0')}>{truncate ? parsed.path : breakAfterSlashes(parsed.path)}{suffix}</span>
+      )}
+    </span>
+  );
+}
+
+// Lets paths wrap at "/" instead of mid-word.
+function breakAfterSlashes(path: string) {
+  return path.split('/').map((part, i, parts) => (
+    <Fragment key={i}>{part}{i < parts.length - 1 && <>/<wbr /></>}</Fragment>
+  ));
+}
+
+/** Full image reference with a copy button, for detail page headers. */
+export function FullRefWithCopy({ value }: { value: string }) {
+  const { toast } = useToast();
+  return (
+    <div className="flex items-center gap-1 text-xs text-text-muted font-mono break-all">
+      <span>{value}</span>
+      <button className="text-text-muted hover:text-text-primary p-0.5 shrink-0" title="Copy full reference" onClick={() => { copyToClipboard(value).then(ok => toast(ok ? 'Copied!' : 'Failed to copy', ok ? 'success' : 'error')); }}><Copy className="w-3 h-3" /></button>
+    </div>
   );
 }

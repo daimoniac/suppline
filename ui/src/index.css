@@ -25,7 +25,18 @@
   --color-severity-medium: #eab308;
   --color-severity-low: #6b7280;
   --color-severity-exempted: #8b5cf6;
-  --font-sans: 'Inter', ui-sans-serif, system-ui, sans-serif;
+  /* Registry icons: brand hues toned down for the dark theme, kept clear of status red/amber/green. */
+  --color-registry-dockerhub: #7aaee8;
+  --color-registry-gitlab: #e39a80;
+  --color-registry-github: #c4c4c4;
+  --color-registry-redhat: #d49a9a;
+  --color-registry-gcp: #8fb0e6;
+  --color-registry-jfrog: #9cc3a2;
+  --color-registry-gitea: #a8c28f;
+  --color-registry-codeberg: #80aed0;
+  --color-registry-digitalocean: #74a6e2;
+  --color-registry-other: #8a8a8a;
+  --font-sans:'Inter', ui-sans-serif, system-ui, sans-serif;
 }
 
 @layer base {

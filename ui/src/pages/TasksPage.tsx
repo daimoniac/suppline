@@ -6,7 +6,7 @@ import { loadAllRuntimeUnusedRepositories, summarizeRuntimeUnusedRepositories } 
 import { useImageUsageFilter } from '../lib/imageUsageFilter';
 import { fetchPolicyComplianceData, type PolicyComplianceSnapshot } from '../lib/policyComplianceData';
 import { scheduleEffectLoad } from '../lib/scheduleEffectLoad';
-import { LoadingState, ErrorState, PageHeader, EmptyState, ConfirmModal } from '../components/ui';
+import { LoadingState, ErrorState, PageHeader, EmptyState, ConfirmModal, RepoName } from '../components/ui';
 import { PolicyCompliancePanel } from '../components/PolicyCompliancePanel';
 import type {
   ConfigEditResult,
@@ -278,7 +278,7 @@ function SemverUpdateTask({
             {displayedEntries.map((entry, idx) => (
               <tr key={idx} className="border-b border-border/50 last:border-0">
                 <td className="px-3 py-3">
-                  <span className="text-xs font-mono text-text-primary max-w-[22rem] inline-block truncate" title={entry.target}>{entry.target}</span>
+                  <RepoName repo={entry.target} truncate="start" className="text-xs font-mono text-text-primary max-w-[22rem]" />
                 </td>
                 <td className="px-3 py-3">
                   <div className="flex flex-col gap-0.5">
@@ -521,10 +521,9 @@ function RuntimeUnusedRepositoryTask({
                 <td className="px-3 py-3">
                   <Link
                     to={`/repositories/${encodeURIComponent(entry.Name)}`}
-                    className="text-xs font-mono text-accent hover:underline max-w-[24rem] inline-block truncate"
-                    title={entry.Name}
+                    className="text-xs font-mono text-accent hover:underline max-w-[24rem] inline-flex min-w-0"
                   >
-                    {entry.Name}
+                    <RepoName repo={entry.Name} truncate="start" />
                   </Link>
                 </td>
                 <td className="px-3 py-3">
@@ -772,7 +771,7 @@ function VEXExpiryTask({
                 <tr key={entry.cve_id} className="border-b border-border/50 last:border-0">
                   <td className="px-3 py-3 text-xs font-mono text-text-primary">{entry.cve_id}</td>
                   <td className="px-3 py-3 text-xs text-text-secondary">
-                    <span className="max-w-[28rem] inline-block truncate" title={entry.repositories.join(', ')}>{entry.repositories.join(', ')}</span>
+                    <span className="max-w-[28rem] inline-flex flex-wrap gap-x-3 gap-y-1">{entry.repositories.map(repo => <RepoName key={repo} repo={repo} />)}</span>
                   </td>
                   <td className="px-3 py-3 text-xs text-text-secondary">{new Date(entry.expires_at * 1000).toISOString().slice(0, 10)}</td>
                   <td className="px-3 py-3">
@@ -809,8 +808,8 @@ function VEXExpiryTask({
                       <tr key={`inactive-${entry.CVEID}`} className="border-b border-border/50 last:border-0">
                         <td className="px-3 py-3 text-xs font-mono text-text-primary">{entry.CVEID}</td>
                         <td className="px-3 py-3 text-xs text-text-secondary">
-                          <span className="max-w-[28rem] inline-block truncate" title={repos.join(', ') || '(all repositories)'}>
-                            {repos.join(', ') || '(all repositories)'}
+                          <span className="max-w-[28rem] inline-flex flex-wrap gap-x-3 gap-y-1">
+                            {repos.length ? repos.map(repo => <RepoName key={repo} repo={repo} />) : '(all repositories)'}
                           </span>
                         </td>
                         <td className="px-3 py-3 text-xs text-text-secondary">{entry.State || 'unknown'}</td>
@@ -858,7 +857,7 @@ function VEXExpiryTask({
                 {ineffectiveRows.map(entry => (
                   <tr key={`ineffective-${entry.repository}-${entry.source}-${entry.cve_id}`} className="border-b border-border/50 last:border-0">
                     <td className="px-3 py-3 text-xs font-mono text-text-primary">{entry.cve_id}</td>
-                    <td className="px-3 py-3 text-xs text-text-secondary">{entry.repository}</td>
+                    <td className="px-3 py-3 text-xs text-text-secondary"><RepoName repo={entry.repository} /></td>
                     <td className="px-3 py-3 text-xs font-mono text-text-secondary">{entry.source}</td>
                     <td className="px-3 py-3 text-xs text-text-secondary">{entry.state || 'unknown'}</td>
                     <td className="px-3 py-3 text-xs text-text-secondary">

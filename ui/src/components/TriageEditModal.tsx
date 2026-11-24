@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { useAuth } from '../lib/auth';
 import { formatDate } from '../lib/utils';
-import { SeverityBadge } from './ui';
+import { SeverityBadge, RepoName } from './ui';
 import { ExternalLink, Skull } from 'lucide-react';
 import { scheduleEffectLoad } from '../lib/scheduleEffectLoad';
 import { STATUS_LABELS, VEX_JUSTIFICATIONS, VEX_STATES, fromLocalInput, isMaliciousID, toLocalInput, vexStateExempts, type StatementRow } from '../lib/triageRows';
@@ -84,7 +84,7 @@ export function EditModal({
           <h3 className="text-lg font-semibold font-mono">{row.cve}</h3>
           {malicious && <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-xs font-medium bg-danger-bg text-danger"><Skull className="w-3 h-3" /> Malicious package</span>}
           {vuln?.Severity && <SeverityBadge severity={vuln.Severity} />}
-          <p className="text-xs text-text-muted truncate ml-auto">{row.repository}</p>
+          <RepoName repo={row.repository} truncate="start" className="text-xs text-text-muted ml-auto" />
         </div>
         <div className="grid grid-cols-1 md:grid-cols-2 min-h-0 overflow-y-auto md:overflow-hidden md:flex-1">
           <div className="px-6 py-5 space-y-4 border-b md:border-b-0 md:border-r border-border md:overflow-y-auto">

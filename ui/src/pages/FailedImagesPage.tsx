@@ -11,7 +11,7 @@ import {
 } from '../lib/policyComplianceData';
 import { PolicyAgentPromptCard } from '../components/PolicyAgentPromptCard';
 import { SupersededRunningList } from '../components/PolicyCompliancePanel';
-import { LoadingState, ErrorState, PageHeader, StatusBadge, VulnCounts, SortHeader, Pagination, DigestLinkWithCopy, RuntimeUsageBadge, PageFiltersBar, FilterActionButton, PolicyStatusSelect } from '../components/ui';
+import { LoadingState, ErrorState, PageHeader, StatusBadge, VulnCounts, SortHeader, Pagination, DigestLinkWithCopy, RuntimeUsageBadge, PageFiltersBar, FilterActionButton, PolicyStatusSelect, RepoName } from '../components/ui';
 import type { Scan } from '../lib/api';
 import { AlertTriangle } from 'lucide-react';
 import { useSortablePaginationState, type SortDirection } from '../lib/useSortablePaginationState';
@@ -237,7 +237,7 @@ export default function FailedImagesPage() {
               <tr key={`${s.Repository}:${s.Tag}:${s.Digest}:${idx}`} className="border-b border-border/50 hover:bg-bg-secondary transition-colors">
                 <td className="px-4 py-3 text-sm">
                   <Link to={`/repositories/${encodeURIComponent(s.Repository)}`} className="text-accent hover:underline">
-                    {s.Repository || 'N/A'}
+                    {s.Repository ? <RepoName repo={s.Repository} /> : 'N/A'}
                   </Link>
                 </td>
                 <td className="px-4 py-3 text-sm text-text-secondary">{s.Tag || 'N/A'}</td>
