@@ -367,9 +367,10 @@ func (s *APIServer) inactiveVEXSummaries(ctx context.Context) ([]*types.VEXSumma
 					Justification: stmt.Justification,
 					Detail:        stmt.Detail,
 					ExpiresAt:     stmt.ExpiresAt,
-					Repositories: []types.RepositoryVEXInfo{
-						{Repository: repo, AppliedAt: 0, Source: stmt.Source},
-					},
+					Repositories: []types.RepositoryVEXInfo{{
+						Repository: repo, Source: stmt.Source,
+						State: stmt.State, Justification: stmt.Justification, ExpiresAt: stmt.ExpiresAt,
+					}},
 				}
 			}
 		}
@@ -401,60 +402,49 @@ func (s *APIServer) inactiveVEXSummaries(ctx context.Context) ([]*types.VEXSumma
 		appliedSet[cveID] = true
 	}
 
-	// Filter to only include inactive VEX statements and group by CVE ID
+	// Filter to only include inactive VEX statements and group by CVE ID.
+	// Each repository entry keeps its own statement.
 	grouped := make(map[string]*types.VEXSummary)
-	for repo, cveMap := range repoVEX {
+	for _, cveMap := range repoVEX {
 		for cveID, summary := range cveMap {
-			// Skip if this CVE has been applied
-			if appliedSet[cveID] {
+			if appliedSet[cveID] || len(summary.Repositories) == 0 {
 				continue
 			}
-
-			// Add to grouped result
-			if existing, exists := grouped[cveID]; exists {
-				// Add repository to existing entry
-				source := ""
-				if len(summary.Repositories) > 0 {
-					source = summary.Repositories[0].Source
-				}
-				existing.Repositories = append(existing.Repositories, types.RepositoryVEXInfo{
-					Repository: repo,
-					AppliedAt:  0,
-					Source:     source,
-				})
-			} else {
-				// Create new entry
-				source := ""
-				if len(summary.Repositories) > 0 {
-					source = summary.Repositories[0].Source
-				}
-				grouped[cveID] = &types.VEXSummary{
-					CVEID:         summary.CVEID,
-					State:         summary.State,
-					Justification: summary.Justification,
-					Detail:        summary.Detail,
-					ExpiresAt:     summary.ExpiresAt,
-					Repositories: []types.RepositoryVEXInfo{
-						{Repository: repo, AppliedAt: 0, Source: source},
-					},
-				}
+			existing, exists := grouped[cveID]
+			if !exists {
+				existing = &types.VEXSummary{CVEID: summary.CVEID}
+				grouped[cveID] = existing
 			}
+			existing.Repositories = append(existing.Repositories, summary.Repositories[0])
 		}
 	}
 
 	result := make([]*types.VEXSummary, 0, len(grouped))
 	for _, summary := range grouped {
-		result = append(result, summary)
+		result = append(result, finishVEXSummary(summary, repoVEX))
 	}
 	return result, nil
 }
 
-func (s *APIServer) activeVEXSummaries(ctx context.Context) []*types.VEXSummary {
-	infos := s.getConfiguredVEXStatements("", "", nil, nil)
-	s.enrichWithHistoricalVEXTimestamps(ctx, infos)
-	grouped := s.groupVEXByCVE(infos)
-	s.enrichVEXWithImageCounts(ctx, grouped)
-	return grouped
+// finishVEXSummary sorts the repositories by name and sets the summary's
+// top-level statement fields from the first one, so the choice is stable.
+func finishVEXSummary(summary *types.VEXSummary, byRepo map[string]map[string]*types.VEXSummary) *types.VEXSummary {
+	sort.Slice(summary.Repositories, func(i, j int) bool {
+		return summary.Repositories[i].Repository < summary.Repositories[j].Repository
+	})
+	if len(summary.Repositories) == 0 {
+		return summary
+	}
+	first := summary.Repositories[0]
+	summary.State = first.State
+	summary.Justification = first.Justification
+	summary.ExpiresAt = first.ExpiresAt
+	if statements, ok := byRepo[first.Repository]; ok {
+		if own, ok := statements[summary.CVEID]; ok {
+			summary.Detail = own.Detail
+		}
+	}
+	return summary
 }
 
 // handleListVEX lists VEX statements with optional filters
@@ -1481,37 +1471,32 @@ func (s *APIServer) enrichVEXWithImageCounts(ctx context.Context, summaries []*t
 
 // groupVEXByCVE groups VEX infos by CVE ID, collecting repositories into an array
 func (s *APIServer) groupVEXByCVE(vexInfos []*types.VEXInfo) []*types.VEXSummary {
-	// Group by CVE ID
 	grouped := make(map[string]*types.VEXSummary)
-
+	byRepo := make(map[string]map[string]*types.VEXSummary)
 	for _, info := range vexInfos {
 		summary, exists := grouped[info.CVEID]
 		if !exists {
-			summary = &types.VEXSummary{
-				CVEID:         info.CVEID,
-				State:         info.State,
-				Justification: info.Justification,
-				Detail:        info.Detail,
-				ExpiresAt:     info.ExpiresAt,
-				Repositories:  make([]types.RepositoryVEXInfo, 0),
-			}
+			summary = &types.VEXSummary{CVEID: info.CVEID, Repositories: make([]types.RepositoryVEXInfo, 0)}
 			grouped[info.CVEID] = summary
 		}
-
-		// Add repository info
 		summary.Repositories = append(summary.Repositories, types.RepositoryVEXInfo{
-			Repository: info.Repository,
-			AppliedAt:  info.AppliedAt,
-			Source:     info.Source,
+			Repository:    info.Repository,
+			AppliedAt:     info.AppliedAt,
+			Source:        info.Source,
+			State:         info.State,
+			Justification: info.Justification,
+			ExpiresAt:     info.ExpiresAt,
 		})
+		if byRepo[info.Repository] == nil {
+			byRepo[info.Repository] = make(map[string]*types.VEXSummary)
+		}
+		byRepo[info.Repository][info.CVEID] = &types.VEXSummary{Detail: info.Detail}
 	}
 
-	// Convert map to slice
 	result := make([]*types.VEXSummary, 0, len(grouped))
 	for _, summary := range grouped {
-		result = append(result, summary)
+		result = append(result, finishVEXSummary(summary, byRepo))
 	}
-
 	return result
 }
 

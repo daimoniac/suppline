@@ -198,6 +198,15 @@ func (s *Service) Mode() string {
 	return s.settings.Mode
 }
 
+// KEVBlocked reports whether triage refuses to exempt cve because it is in the
+// CISA KEV catalog. It is false when triage or the KEV rule is off.
+func (s *Service) KEVBlocked(ctx context.Context, cve string) (bool, error) {
+	if s == nil || !s.settings.Enabled || !s.settings.BlockKEV || s.kev == nil {
+		return false, nil
+	}
+	return s.kev.Contains(ctx, cve)
+}
+
 // OnlyInUse reports whether triage is limited to images running in a cluster.
 func (s *Service) OnlyInUse() bool {
 	return s == nil || s.settings.OnlyInUse

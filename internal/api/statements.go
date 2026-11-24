@@ -28,9 +28,9 @@ type TriageStatement struct {
 	Run                *TriageRunResponse `json:"Run,omitempty"`
 }
 
-func statementCVEIDs(active, inactive []*types.VEXSummary, runs []TriageRunResponse) []string {
+func statementCVEIDs(statements []*types.VEXInfo, runs []TriageRunResponse) []string {
 	seen := make(map[string]struct{})
-	ids := make([]string, 0, len(active)+len(inactive)+len(runs))
+	ids := make([]string, 0, len(statements)+len(runs))
 	add := func(raw string) {
 		cveID := strings.TrimSpace(raw)
 		if cveID == "" {
@@ -42,14 +42,9 @@ func statementCVEIDs(active, inactive []*types.VEXSummary, runs []TriageRunRespo
 		seen[cveID] = struct{}{}
 		ids = append(ids, cveID)
 	}
-	for _, summary := range active {
-		if summary != nil {
-			add(summary.CVEID)
-		}
-	}
-	for _, summary := range inactive {
-		if summary != nil {
-			add(summary.CVEID)
+	for _, statement := range statements {
+		if statement != nil {
+			add(statement.CVEID)
 		}
 	}
 	for _, run := range runs {
@@ -58,7 +53,11 @@ func statementCVEIDs(active, inactive []*types.VEXSummary, runs []TriageRunRespo
 	return ids
 }
 
-func statementList(active, inactive []*types.VEXSummary, runs []TriageRunResponse, findingImages map[string]int) []TriageStatement {
+// statementList builds one row per repository and CVE. statements holds one
+// entry per repository and CVE, so each row carries that repository's own
+// state, justification, detail, and expiry. Grouping by CVE first would give
+// every repository the statement of whichever one was seen first.
+func statementList(statements []*types.VEXInfo, runs []TriageRunResponse, findingImages map[string]int) []TriageStatement {
 	runsByPair := map[string]TriageRunResponse{}
 	for _, run := range runs {
 		key := run.Repository + "\n" + run.CVEID
@@ -70,48 +69,44 @@ func statementList(active, inactive []*types.VEXSummary, runs []TriageRunRespons
 
 	rows := []TriageStatement{}
 	seen := map[string]bool{}
-	for _, summary := range append(append([]*types.VEXSummary{}, active...), inactive...) {
-		if summary == nil {
+	for _, statement := range statements {
+		if statement == nil {
 			continue
 		}
-		expires := int64(0)
-		if summary.ExpiresAt != nil {
-			expires = *summary.ExpiresAt
+		key := statement.Repository + "\n" + statement.CVEID
+		if seen[key] {
+			continue
 		}
-		for _, repo := range summary.Repositories {
-			key := repo.Repository + "\n" + summary.CVEID
-			if seen[key] {
-				continue
-			}
-			seen[key] = true
-			run, hasRun := runsByPair[key]
-			created := repo.AppliedAt
-			if created == 0 && hasRun {
+		seen[key] = true
+		expires := int64(0)
+		if statement.ExpiresAt != nil {
+			expires = *statement.ExpiresAt
+		}
+		run, hasRun := runsByPair[key]
+		created := statement.AppliedAt
+		var attached *TriageRunResponse
+		triagedAt := int64(0)
+		if hasRun {
+			if created == 0 {
 				created = run.CreatedAt
 			}
-			var attached *TriageRunResponse
-			if hasRun {
-				attached = &run
-			}
-			triagedAt := int64(0)
-			if hasRun {
-				triagedAt = run.CreatedAt
-			}
-			rows = append(rows, TriageStatement{
-				CVEID:              summary.CVEID,
-				Repository:         repo.Repository,
-				State:              string(summary.State),
-				Justification:      string(summary.Justification),
-				Detail:             summary.Detail,
-				ExpiresAt:          expires,
-				CreatedAt:          created,
-				TriagedAt:          triagedAt,
-				AffectedImageCount: findingImages[summary.CVEID],
-				Source:             statementSource(repo.Source),
-				NeedsFix:           hasRun && runNeedsFix(run),
-				Run:                attached,
-			})
+			attached = &run
+			triagedAt = run.CreatedAt
 		}
+		rows = append(rows, TriageStatement{
+			CVEID:              statement.CVEID,
+			Repository:         statement.Repository,
+			State:              string(statement.State),
+			Justification:      string(statement.Justification),
+			Detail:             statement.Detail,
+			ExpiresAt:          expires,
+			CreatedAt:          created,
+			TriagedAt:          triagedAt,
+			AffectedImageCount: findingImages[statement.CVEID],
+			Source:             statementSource(statement.Source),
+			NeedsFix:           hasRun && runNeedsFix(run),
+			Run:                attached,
+		})
 	}
 	for key, run := range runsByPair {
 		if seen[key] || run.Superseded {

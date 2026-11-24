@@ -194,6 +194,9 @@ type VEXInfo struct {
 
 // VEXSummary groups VEX info by CVE ID with list of affected repositories.
 // Used by the API to provide a consolidated view of VEX statements across repositories.
+// Repositories can hold different statements for one CVE. State, Justification,
+// Detail, and ExpiresAt are those of the first repository by name; each entry in
+// Repositories carries its own.
 type VEXSummary struct {
 	CVEID              string              `json:"CVEID"`
 	State              VEXAnalysisState    `json:"State"`
@@ -206,9 +209,12 @@ type VEXSummary struct {
 
 // RepositoryVEXInfo contains repository-specific VEX metadata.
 type RepositoryVEXInfo struct {
-	Repository string `json:"Repository"`
-	AppliedAt  int64  `json:"AppliedAt"` // Unix timestamp when first applied, 0 if never applied
-	Source     string `json:"Source,omitempty"`
+	Repository    string           `json:"Repository"`
+	AppliedAt     int64            `json:"AppliedAt"` // Unix timestamp when first applied, 0 if never applied
+	Source        string           `json:"Source,omitempty"`
+	State         VEXAnalysisState `json:"State,omitempty"`
+	Justification VEXJustification `json:"Justification,omitempty"`
+	ExpiresAt     *int64           `json:"ExpiresAt,omitempty"`
 }
 
 // FilterAppliedVEXStatements filters VEX statements based on a set of exempted CVE IDs.

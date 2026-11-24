@@ -8,6 +8,8 @@ import { fetchPolicyComplianceData, type PolicyComplianceSnapshot } from '../lib
 import { scheduleEffectLoad } from '../lib/scheduleEffectLoad';
 import { LoadingState, ErrorState, PageHeader, EmptyState, ConfirmModal, RepoName } from '../components/ui';
 import { PolicyCompliancePanel } from '../components/PolicyCompliancePanel';
+import { EditModal } from '../components/TriageEditModal';
+import { runSummary, type StatementRow } from '../lib/triageRows';
 import type {
   ConfigEditResult,
   ConfigEditStatus,
@@ -624,6 +626,104 @@ interface PendingVEXRemoval {
 
 const noIneffectiveVEX: IneffectiveVEXResponse = { statements: [], computed_at: 0 };
 
+function expiryKey(entry: VEXExpiryTaskEntry) {
+  return `${entry.repository}\n${entry.cve_id}`;
+}
+
+/** The edit-modal row for extending one repository's hand-written statement. */
+function expiryRow(entry: VEXExpiryTaskEntry): StatementRow {
+  return {
+    key: expiryKey(entry),
+    cve: entry.cve_id,
+    repository: entry.repository,
+    state: entry.state,
+    justification: entry.justification || '',
+    detail: entry.detail || '',
+    expiresAt: entry.expires_at,
+    triagedAt: entry.last_run?.CreatedAt || 0,
+    affectedImages: entry.affected_tags?.length || 0,
+    source: 'manual',
+    needsFix: false,
+    run: entry.last_run,
+  };
+}
+
+/**
+ * What can be done about one expiring statement. Rescan does not help: the
+ * expiry is a date in the config. A re-triage cannot renew a hand-written
+ * statement (it wins over vex-auto on the same id, even once expired) or a
+ * KEV-listed CVE (triage never exempts those).
+ */
+function ExpiryActions({
+  entry,
+  triageEnabled,
+  editsAvailable,
+  busy,
+  onExtend,
+  onRetriage,
+  onRemove,
+}: {
+  entry: VEXExpiryTaskEntry;
+  triageEnabled: boolean;
+  editsAvailable: boolean;
+  busy: boolean;
+  onExtend: () => void;
+  onRetriage: () => void;
+  onRemove: () => void;
+}) {
+  const button = 'px-2.5 py-1 text-xs rounded-lg border transition-colors disabled:opacity-40';
+  const notes: ReactNode[] = [];
+  const buttons: ReactNode[] = [];
+  if (!entry.editable) {
+    notes.push(<>Set in <span className="font-mono">defaults.vex</span>; edit suppline.yml</>);
+  } else if (!entry.in_scans) {
+    notes.push('No scanned tag reports this CVE any more');
+    buttons.push(
+      <button key="remove" type="button" disabled={!editsAvailable || busy} onClick={onRemove}
+        className={`${button} border-danger/30 text-danger hover:bg-danger-bg`}>Remove</button>,
+    );
+  } else {
+    if (entry.fixed_tag) {
+      notes.push(
+        <>Fixed in <Link to={`/repositories/${encodeURIComponent(entry.repository)}`} className="font-mono text-accent hover:underline">{entry.fixed_tag}</Link>; deploy it</>,
+      );
+    }
+    if (entry.source === 'vex-auto') {
+      if (entry.kev) {
+        notes.push('KEV-listed: triage will not renew it');
+      } else if (triageEnabled) {
+        buttons.push(
+          <button key="retriage" type="button" disabled={busy} onClick={onRetriage}
+            className={`${button} border-border text-text-secondary hover:bg-bg-tertiary`}>{busy ? 'Queuing…' : 'Re-triage'}</button>,
+        );
+      }
+      if (entry.last_run) notes.push(`Last run: ${runSummary(entry.last_run)}`);
+    } else if (triageEnabled) {
+      buttons.push(
+        <button key="extend" type="button" disabled={busy} onClick={onExtend}
+          className={`${button} border-border text-text-secondary hover:bg-bg-tertiary`}>Extend…</button>,
+      );
+    } else {
+      notes.push('Edit expires_at in suppline.yml');
+    }
+  }
+  return (
+    <div className="flex flex-col items-end gap-1">
+      {buttons.length > 0 && <div className="flex gap-2">{buttons}</div>}
+      {notes.map((note, i) => <span key={i} className="text-xs text-text-muted text-right max-w-[22rem]">{note}</span>)}
+    </div>
+  );
+}
+
+function inactiveStateLabel(state?: string, justification?: string) {
+  if (!state) return 'unknown';
+  return justification ? `${state} · ${justification}` : state;
+}
+
+function expiryLabel(expiresAt?: number) {
+  return expiresAt ? new Date(expiresAt * 1000).toISOString().slice(0, 10) : 'No expiry';
+}
+
 function VEXExpiryTask({
   data,
   inactiveEntries,
@@ -642,6 +742,21 @@ function VEXExpiryTask({
   const [showAll, setShowAll] = useState(false);
   const [removing, setRemoving] = useState(false);
   const [pendingRemoval, setPendingRemoval] = useState<PendingVEXRemoval | null>(null);
+  const [extending, setExtending] = useState<StatementRow | null>(null);
+  const [retrying, setRetrying] = useState<string | null>(null);
+
+  const retriage = async (entry: VEXExpiryTaskEntry) => {
+    const key = expiryKey(entry);
+    setRetrying(key);
+    try {
+      const result = await apiClient.retryTriage({ Repository: entry.repository, CVEID: entry.cve_id });
+      toast(result.Queued > 0 ? `Re-triage queued for ${entry.cve_id}` : `${entry.cve_id} is already queued or not in use`, result.Queued > 0 ? 'success' : 'warning');
+    } catch (e: unknown) {
+      toast(e instanceof Error ? e.message : 'Failed to queue re-triage', 'error');
+    } finally {
+      setRetrying(null);
+    }
+  };
 
   const inactiveCount = inactiveEntries.length;
   const hasExpiryEntries = data.entries.length > 0;
@@ -761,21 +876,33 @@ function VEXExpiryTask({
             <thead>
               <tr className="border-b border-border">
                 <th className="px-3 py-2 text-left text-xs font-semibold text-text-muted uppercase tracking-wide">CVE</th>
-                <th className="px-3 py-2 text-left text-xs font-semibold text-text-muted uppercase tracking-wide">Repositories</th>
+                <th className="px-3 py-2 text-left text-xs font-semibold text-text-muted uppercase tracking-wide">Repository</th>
+                <th className="px-3 py-2 text-left text-xs font-semibold text-text-muted uppercase tracking-wide">Source</th>
                 <th className="px-3 py-2 text-left text-xs font-semibold text-text-muted uppercase tracking-wide">Expires</th>
                 <th className="px-3 py-2 text-left text-xs font-semibold text-text-muted uppercase tracking-wide">Status</th>
+                <th className="px-3 py-2 text-right text-xs font-semibold text-text-muted uppercase tracking-wide">Action</th>
               </tr>
             </thead>
             <tbody>
               {displayedEntries.map((entry: VEXExpiryTaskEntry) => (
-                <tr key={entry.cve_id} className="border-b border-border/50 last:border-0">
+                <tr key={expiryKey(entry)} className="border-b border-border/50 last:border-0 align-top">
                   <td className="px-3 py-3 text-xs font-mono text-text-primary">{entry.cve_id}</td>
-                  <td className="px-3 py-3 text-xs text-text-secondary">
-                    <span className="max-w-[28rem] inline-flex flex-wrap gap-x-3 gap-y-1">{entry.repositories.map(repo => <RepoName key={repo} repo={repo} />)}</span>
-                  </td>
-                  <td className="px-3 py-3 text-xs text-text-secondary">{new Date(entry.expires_at * 1000).toISOString().slice(0, 10)}</td>
+                  <td className="px-3 py-3 text-xs text-text-secondary"><RepoName repo={entry.repository} /></td>
+                  <td className="px-3 py-3 text-xs font-mono text-text-secondary">{entry.editable ? entry.source : 'defaults'}</td>
+                  <td className="px-3 py-3 text-xs text-text-secondary whitespace-nowrap">{new Date(entry.expires_at * 1000).toISOString().slice(0, 10)}</td>
                   <td className="px-3 py-3">
                     <VEXExpiryStatusBadge status={entry.status} />
+                  </td>
+                  <td className="px-3 py-3 text-right">
+                    <ExpiryActions
+                      entry={entry}
+                      triageEnabled={data.triage_enabled}
+                      editsAvailable={!!edits?.available}
+                      busy={removing || retrying === expiryKey(entry)}
+                      onExtend={() => setExtending(expiryRow(entry))}
+                      onRetriage={() => void retriage(entry)}
+                      onRemove={() => setPendingRemoval({ ids: [], ineffective: [{ repository: entry.repository, cve_id: entry.cve_id, source: entry.source }] })}
+                    />
                   </td>
                 </tr>
               ))}
@@ -792,7 +919,7 @@ function VEXExpiryTask({
               <thead>
                 <tr className="border-b border-border">
                   <th className="px-3 py-2 text-left text-xs font-semibold text-text-muted uppercase tracking-wide">CVE</th>
-                  <th className="px-3 py-2 text-left text-xs font-semibold text-text-muted uppercase tracking-wide">Repositories</th>
+                  <th className="px-3 py-2 text-left text-xs font-semibold text-text-muted uppercase tracking-wide">Repository</th>
                   <th className="px-3 py-2 text-left text-xs font-semibold text-text-muted uppercase tracking-wide">State</th>
                   <th className="px-3 py-2 text-left text-xs font-semibold text-text-muted uppercase tracking-wide">Expires</th>
                   <th className="px-3 py-2 text-right text-xs font-semibold text-text-muted uppercase tracking-wide">Action</th>
@@ -803,24 +930,32 @@ function VEXExpiryTask({
                   .slice()
                   .sort((a, b) => a.CVEID.localeCompare(b.CVEID))
                   .map(entry => {
-                    const repos = (entry.Repositories || []).map(r => r.Repository).filter(Boolean);
+                    // Each repository has its own statement for this CVE; Remove deletes all of them.
+                    const repos = (entry.Repositories || []).filter(r => r.Repository);
                     return (
-                      <tr key={`inactive-${entry.CVEID}`} className="border-b border-border/50 last:border-0">
+                      <tr key={`inactive-${entry.CVEID}`} className="border-b border-border/50 last:border-0 align-top">
                         <td className="px-3 py-3 text-xs font-mono text-text-primary">{entry.CVEID}</td>
                         <td className="px-3 py-3 text-xs text-text-secondary">
-                          <span className="max-w-[28rem] inline-flex flex-wrap gap-x-3 gap-y-1">
-                            {repos.length ? repos.map(repo => <RepoName key={repo} repo={repo} />) : '(all repositories)'}
-                          </span>
+                          {repos.length
+                            ? <ul className="space-y-1">{repos.map(repo => <li key={repo.Repository}><RepoName repo={repo.Repository} /></li>)}</ul>
+                            : '(all repositories)'}
                         </td>
-                        <td className="px-3 py-3 text-xs text-text-secondary">{entry.State || 'unknown'}</td>
                         <td className="px-3 py-3 text-xs text-text-secondary">
-                          {entry.ExpiresAt ? new Date(entry.ExpiresAt * 1000).toISOString().slice(0, 10) : 'No expiry'}
+                          {repos.length
+                            ? <ul className="space-y-1">{repos.map(repo => <li key={repo.Repository}>{inactiveStateLabel(repo.State, repo.Justification)}</li>)}</ul>
+                            : inactiveStateLabel(entry.State, entry.Justification)}
+                        </td>
+                        <td className="px-3 py-3 text-xs text-text-secondary whitespace-nowrap">
+                          {repos.length
+                            ? <ul className="space-y-1">{repos.map(repo => <li key={repo.Repository}>{expiryLabel(repo.ExpiresAt)}</li>)}</ul>
+                            : expiryLabel(entry.ExpiresAt)}
                         </td>
                         <td className="px-3 py-3 text-right">
                           <button
                             type="button"
                             disabled={!edits?.available || removing}
                             onClick={() => setPendingRemoval({ ids: [entry.CVEID], ineffective: [] })}
+                            title={repos.length > 1 ? `Removes the statement from all ${repos.length} repositories` : undefined}
                             className="px-2.5 py-1 text-xs rounded-lg border border-danger/30 text-danger hover:bg-danger-bg disabled:opacity-40 transition-colors"
                           >
                             Remove
@@ -874,6 +1009,20 @@ function VEXExpiryTask({
             </table>
           </div>
         </div>
+      )}
+      {extending && (
+        <EditModal
+          key={extending.key}
+          row={extending}
+          withCVEs={[]}
+          onClose={() => setExtending(null)}
+          onSave={async body => {
+            await apiClient.acceptTriage(body);
+            setExtending(null);
+            toast(`Saved ${body.CVEID} for ${body.Repository}`, 'success');
+            onChanged();
+          }}
+        />
       )}
       <ConfirmModal
         open={!!pendingRemoval}
@@ -1023,7 +1172,7 @@ export default function TasksPage() {
         active={activeAnchor === 'vex-review'}
         icon={<Clock3 className="w-4 h-4 text-danger" />}
         title="VEX Review"
-        subtitle={<>VEX statements from <code className="bg-bg-tertiary px-1 rounded">vex</code> that are inactive, expired, or expiring within 7 days</>}
+        subtitle={<>VEX statements in <code className="bg-bg-tertiary px-1 rounded">vex</code> and <code className="bg-bg-tertiary px-1 rounded">vex-auto</code> that are inactive, expired, or expiring within 7 days</>}
         loading={loading}
         loadingMessage="Checking VEX review tasks..."
         error={error}
