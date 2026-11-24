@@ -880,6 +880,8 @@ export interface IneffectiveVEXStatement {
   justification?: string;
   detail?: string;
   expires_at?: number;
+  /** "no_effect" (removal changes no latest scan's result) | "shadowed_by_defaults" (defaults.vex has the same id and wins) */
+  reason?: string;
 }
 
 export interface IneffectiveVEXResponse {

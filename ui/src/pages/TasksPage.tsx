@@ -840,7 +840,8 @@ function VEXExpiryTask({
         <div className="space-y-2">
           <p className="text-xs font-medium text-text-secondary uppercase tracking-wide">No effect on policy results</p>
           <p className="text-xs text-text-muted">
-            Removing these leaves the pass/fail result of every artifact&apos;s latest scan unchanged.
+            Removing these leaves the pass/fail result of every artifact&apos;s latest scan unchanged. A statement overridden by
+            <span className="font-mono"> defaults.vex</span> never applies, whatever its expiry; removing it keeps the default.
             {ineffective.computed_at > 0 && <> Checked {new Date(ineffective.computed_at * 1000).toISOString().slice(0, 10)}.</>}
           </p>
           <div className="overflow-x-auto">
@@ -852,6 +853,7 @@ function VEXExpiryTask({
                   <th className="px-3 py-2 text-left text-xs font-semibold text-text-muted uppercase tracking-wide">Source</th>
                   <th className="px-3 py-2 text-left text-xs font-semibold text-text-muted uppercase tracking-wide">State</th>
                   <th className="px-3 py-2 text-left text-xs font-semibold text-text-muted uppercase tracking-wide">Expires</th>
+                  <th className="px-3 py-2 text-left text-xs font-semibold text-text-muted uppercase tracking-wide">Reason</th>
                 </tr>
               </thead>
               <tbody>
@@ -863,6 +865,9 @@ function VEXExpiryTask({
                     <td className="px-3 py-3 text-xs text-text-secondary">{entry.state || 'unknown'}</td>
                     <td className="px-3 py-3 text-xs text-text-secondary">
                       {entry.expires_at ? new Date(entry.expires_at * 1000).toISOString().slice(0, 10) : 'No expiry'}
+                    </td>
+                    <td className="px-3 py-3 text-xs text-text-secondary">
+                      {entry.reason === 'shadowed_by_defaults' ? <>Overridden by <span className="font-mono">defaults.vex</span></> : 'No policy effect'}
                     </td>
                   </tr>
                 ))}
