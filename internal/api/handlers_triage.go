@@ -103,15 +103,12 @@ func (s *APIServer) handleListTriageStatements(w http.ResponseWriter, r *http.Re
 		s.logger.Error("list triage statements", "error", err)
 		return
 	}
-	inactive, err := s.inactiveVEXSummaries(r.Context())
-	if err != nil {
-		s.respondError(w, http.StatusInternalServerError, "Failed to list triage statements")
-		s.logger.Error("list inactive statements", "error", err)
-		return
-	}
-	active := s.activeVEXSummaries(r.Context())
+	// One entry per repository and CVE: every configured statement, applied
+	// or not, with the time it was first applied to a scan.
+	statements := s.getConfiguredVEXStatements("", "", nil, nil)
+	s.enrichWithHistoricalVEXTimestamps(r.Context(), statements)
 	runRows := triageRunResponses(runs)
-	findingImages, err := s.stateStore.CountFindingImagesByCVE(r.Context(), statementCVEIDs(active, inactive, runRows))
+	findingImages, err := s.stateStore.CountFindingImagesByCVE(r.Context(), statementCVEIDs(statements, runRows))
 	if err != nil {
 		s.respondError(w, http.StatusInternalServerError, "Failed to list triage statements")
 		s.logger.Error("count finding images", "error", err)
@@ -123,7 +120,7 @@ func (s *APIServer) handleListTriageStatements(w http.ResponseWriter, r *http.Re
 	if err := s.addMaliciousImageCounts(r.Context(), findingImages); err != nil {
 		s.logger.Error("count malicious finding images", "error", err)
 	}
-	rows := statementList(active, inactive, runRows, findingImages)
+	rows := statementList(statements, runRows, findingImages)
 	if rows == nil {
 		rows = []TriageStatement{}
 	}

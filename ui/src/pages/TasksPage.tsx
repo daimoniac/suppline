@@ -624,6 +624,15 @@ interface PendingVEXRemoval {
 
 const noIneffectiveVEX: IneffectiveVEXResponse = { statements: [], computed_at: 0 };
 
+function inactiveStateLabel(state?: string, justification?: string) {
+  if (!state) return 'unknown';
+  return justification ? `${state} · ${justification}` : state;
+}
+
+function expiryLabel(expiresAt?: number) {
+  return expiresAt ? new Date(expiresAt * 1000).toISOString().slice(0, 10) : 'No expiry';
+}
+
 function VEXExpiryTask({
   data,
   inactiveEntries,
@@ -792,7 +801,7 @@ function VEXExpiryTask({
               <thead>
                 <tr className="border-b border-border">
                   <th className="px-3 py-2 text-left text-xs font-semibold text-text-muted uppercase tracking-wide">CVE</th>
-                  <th className="px-3 py-2 text-left text-xs font-semibold text-text-muted uppercase tracking-wide">Repositories</th>
+                  <th className="px-3 py-2 text-left text-xs font-semibold text-text-muted uppercase tracking-wide">Repository</th>
                   <th className="px-3 py-2 text-left text-xs font-semibold text-text-muted uppercase tracking-wide">State</th>
                   <th className="px-3 py-2 text-left text-xs font-semibold text-text-muted uppercase tracking-wide">Expires</th>
                   <th className="px-3 py-2 text-right text-xs font-semibold text-text-muted uppercase tracking-wide">Action</th>
@@ -803,24 +812,32 @@ function VEXExpiryTask({
                   .slice()
                   .sort((a, b) => a.CVEID.localeCompare(b.CVEID))
                   .map(entry => {
-                    const repos = (entry.Repositories || []).map(r => r.Repository).filter(Boolean);
+                    // Each repository has its own statement for this CVE; Remove deletes all of them.
+                    const repos = (entry.Repositories || []).filter(r => r.Repository);
                     return (
-                      <tr key={`inactive-${entry.CVEID}`} className="border-b border-border/50 last:border-0">
+                      <tr key={`inactive-${entry.CVEID}`} className="border-b border-border/50 last:border-0 align-top">
                         <td className="px-3 py-3 text-xs font-mono text-text-primary">{entry.CVEID}</td>
                         <td className="px-3 py-3 text-xs text-text-secondary">
-                          <span className="max-w-[28rem] inline-flex flex-wrap gap-x-3 gap-y-1">
-                            {repos.length ? repos.map(repo => <RepoName key={repo} repo={repo} />) : '(all repositories)'}
-                          </span>
+                          {repos.length
+                            ? <ul className="space-y-1">{repos.map(repo => <li key={repo.Repository}><RepoName repo={repo.Repository} /></li>)}</ul>
+                            : '(all repositories)'}
                         </td>
-                        <td className="px-3 py-3 text-xs text-text-secondary">{entry.State || 'unknown'}</td>
                         <td className="px-3 py-3 text-xs text-text-secondary">
-                          {entry.ExpiresAt ? new Date(entry.ExpiresAt * 1000).toISOString().slice(0, 10) : 'No expiry'}
+                          {repos.length
+                            ? <ul className="space-y-1">{repos.map(repo => <li key={repo.Repository}>{inactiveStateLabel(repo.State, repo.Justification)}</li>)}</ul>
+                            : inactiveStateLabel(entry.State, entry.Justification)}
+                        </td>
+                        <td className="px-3 py-3 text-xs text-text-secondary whitespace-nowrap">
+                          {repos.length
+                            ? <ul className="space-y-1">{repos.map(repo => <li key={repo.Repository}>{expiryLabel(repo.ExpiresAt)}</li>)}</ul>
+                            : expiryLabel(entry.ExpiresAt)}
                         </td>
                         <td className="px-3 py-3 text-right">
                           <button
                             type="button"
                             disabled={!edits?.available || removing}
                             onClick={() => setPendingRemoval({ ids: [entry.CVEID], ineffective: [] })}
+                            title={repos.length > 1 ? `Removes the statement from all ${repos.length} repositories` : undefined}
                             className="px-2.5 py-1 text-xs rounded-lg border border-danger/30 text-danger hover:bg-danger-bg disabled:opacity-40 transition-colors"
                           >
                             Remove

@@ -617,6 +617,10 @@ export interface RepositoryVEXInfo {
   Repository: string;
   AppliedAt: number;
   Source?: string;
+  /** This repository's own statement. Repositories can differ for one CVE. */
+  State?: string;
+  Justification?: string;
+  ExpiresAt?: number;
 }
 
 export interface TriageEvidence {
@@ -792,6 +796,7 @@ export interface TriageRepository {
   CVEs: TriageRepositoryCVE[];
 }
 
+/** One CVE across repositories. The top-level statement fields are the first repository's by name; read each repository's own from Repositories. */
 export interface VEXSummary {
   CVEID: string;
   State: string;
