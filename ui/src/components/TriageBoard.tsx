@@ -5,7 +5,7 @@ import { useAuth } from '../lib/auth';
 import { useToast } from '../lib/toast';
 import { buildOpenTriagePrompt } from '../lib/policyComplianceData';
 import { copyToClipboard, formatDate, isPast, isWithinDays } from '../lib/utils';
-import { ErrorState, FilterActionButton, LoadingState, PageFiltersBar, Pagination } from './ui';
+import { ErrorState, FilterActionButton, LoadingState, PageFiltersBar, Pagination, RepoName } from './ui';
 import { scheduleEffectLoad } from '../lib/scheduleEffectLoad';
 import { usePageSizePreference } from '../lib/pageSizePreference';
 import { useSortablePaginationState } from '../lib/useSortablePaginationState';
@@ -225,7 +225,7 @@ export function TriageBoard() {
         <div key={session.SessionID} className="mb-4 bg-bg-primary border border-border rounded-xl overflow-hidden divide-y divide-border">
           <div className="px-4 py-2 text-xs font-medium text-text-secondary">
             {session.Phase === 'deciding' ? `Deciding ${session.CurrentCVE}` : 'Gathering image context'}
-            <span className="text-text-muted"> · {session.Image || session.Repository}</span>
+            <span className="text-text-muted"> · <RepoName repo={session.Image || session.Repository} /></span>
           </div>
           {session.CVEs.map(cve => (
             <div key={cve.CVEID} className="flex items-center gap-3 px-4 py-3">
@@ -245,7 +245,7 @@ export function TriageBoard() {
           <div className="px-4 py-2 text-xs font-medium text-text-secondary">Queued</div>
           {[...queuedByImage.entries()].map(([image, jobs]) => (
             <div key={image} className="px-4 py-3">
-              <div className="text-xs text-text-muted truncate mb-2">{image}</div>
+              <div className="text-xs text-text-muted mb-2 flex min-w-0"><RepoName repo={image} truncate="start" /></div>
               <div className="flex flex-wrap gap-2">
                 {jobs.map(job => (
                   <span key={pairKey(job.Repository, job.CVEID)} className="inline-flex items-center gap-1.5 text-sm font-mono">
@@ -327,7 +327,7 @@ export function TriageBoard() {
                     <span className="text-sm font-mono font-medium break-all">{row.cve}</span>
                   </div>
                   <div className="text-xs text-text-muted truncate mt-1">
-                    {row.repository}{row.justification ? ` · ${row.justification}` : ''}
+                    <RepoName repo={row.repository} truncate="end" suffix={row.justification ? ` · ${row.justification}` : undefined} />
                   </div>
                 </button>
                 <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 md:contents">

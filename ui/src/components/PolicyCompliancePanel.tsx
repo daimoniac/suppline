@@ -1,6 +1,6 @@
 import { Link } from 'react-router';
 import { PolicyAgentPromptCard } from './PolicyAgentPromptCard';
-import { PolicyDescriptionText } from './ui';
+import { PolicyDescriptionText, RepoName } from './ui';
 import type { PolicyInfo, Scan } from '../lib/api';
 import { runtimeWorkloadLocations, supersededRunningLabel } from '../lib/policyComplianceData';
 import { truncateDigest } from '../lib/utils';
@@ -109,7 +109,7 @@ function PolicyRepoBarsList({
         const pendingWidth = total > 0 ? (counts.pending / total) * 100 : 0;
         return (
           <Link key={repo} to={`/repositories/${encodeURIComponent(repo)}`} className="flex items-center gap-3 hover:bg-bg-secondary rounded px-2 py-1 transition-colors">
-            <span className="text-sm text-text-primary truncate w-48 flex-shrink-0">{repo}</span>
+            <RepoName repo={repo} truncate="start" className="text-sm text-text-primary w-48 flex-shrink-0" />
             <div className="flex-1 h-2 bg-bg-tertiary rounded-full overflow-hidden">
               <div className="h-full flex transition-all" style={{ width: `${max > 0 ? (total / max) * 100 : 0}%` }}>
                 {counts.failed > 0 && <div className="h-full bg-danger" style={{ width: `${failedWidth}%` }} />}
@@ -151,7 +151,7 @@ export function SupersededRunningList({ scans }: { scans: Scan[] }) {
         {scans.map(scan => (
           <li key={`${scan.Repository}:${scan.Tag}:${scan.Digest}`} className="flex flex-wrap items-center gap-x-2 gap-y-0.5 text-xs">
             <Link to={`/scans/${encodeURIComponent(scan.Digest)}`} className="text-accent hover:underline font-medium">
-              {scan.Repository}
+              <RepoName repo={scan.Repository} />
             </Link>
             <span className="text-text-secondary">{supersededRunningLabel(scan)}</span>
             <code className="text-text-muted" title={scan.Digest}>{truncateDigest(scan.Digest)}</code>

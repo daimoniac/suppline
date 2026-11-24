@@ -3,7 +3,7 @@ import { useAuth } from '../lib/auth';
 import { useToast } from '../lib/toast';
 import { copyToClipboard, formatDate, formatRelativeTime } from '../lib/utils';
 import { scheduleEffectLoad } from '../lib/scheduleEffectLoad';
-import { LoadingState, ErrorState, PageHeader } from '../components/ui';
+import { LoadingState, ErrorState, PageHeader, RepoName } from '../components/ui';
 import type { GitopsRepository, KubernetesClusterImageSummary, KubernetesClusterSummary } from '../lib/api';
 import { Boxes, ChevronDown, ChevronRight, Copy, Download, GitBranch, Key, Shield, Trash2 } from 'lucide-react';
 
@@ -244,7 +244,7 @@ export default function IntegrationsPage() {
                                 <ul className="divide-y divide-border/60">
                                   {(clusterImages[cluster.Name] || []).map((image, idx) => (
                                     <li key={`${image.Namespace}-${image.ImageRef}-${idx}`} className="px-4 py-3 text-xs">
-                                      <div className="text-text-primary break-all">{image.ImageRef}</div>
+                                      <div className="text-text-primary"><RepoName repo={image.ImageRef} /></div>
                                       <div className="mt-1 text-text-muted">
                                         Namespace: <span className="font-medium text-text-secondary">{image.Namespace || 'unknown'}</span>
                                         {image.Tag ? (

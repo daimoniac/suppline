@@ -1,11 +1,11 @@
-import { Fragment, useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { Navigate, useSearchParams } from 'react-router';
 import { useAuth } from '../lib/auth';
 import { useToast } from '../lib/toast';
 import { formatCooldown, formatDate, formatRelativeTime } from '../lib/utils';
 import { scheduleEffectLoad } from '../lib/scheduleEffectLoad';
 import { usePageSizePreference } from '../lib/pageSizePreference';
-import { ConfirmModal, DigestLinkWithCopy, EmptyState, ErrorState, LoadingState, PageHeader, Pagination, StatusBadge } from '../components/ui';
+import { ConfirmModal, DigestLinkWithCopy, EmptyState, ErrorState, LoadingState, PageHeader, Pagination, StatusBadge, RepoName } from '../components/ui';
 import type { HeldDigest, MirrorDeletion, MirrorImage, MirrorOverview, MirrorSync } from '../lib/api';
 import { Clock, FolderSync, TriangleAlert } from 'lucide-react';
 
@@ -223,7 +223,7 @@ export default function MirrorPage() {
                   <tbody>
                     {images.map(image => (
                       <tr key={`${image.Repository}:${image.Tag}`} className="border-b border-border last:border-0">
-                        <td className="px-5 py-2 text-text-primary">{image.Repository}</td>
+                        <td className="px-5 py-2 text-text-primary"><RepoName repo={image.Repository} /></td>
                         <td className="px-5 py-2 text-text-secondary">{image.Tag}</td>
                         <td className="px-5 py-2 text-text-muted">{formatRelativeTime(image.LastSeen)}</td>
                       </tr>
@@ -276,9 +276,9 @@ function SyncRow({ sync }: { sync: MirrorSync }) {
     <div className="flex flex-col gap-2 lg:flex-row lg:items-center lg:justify-between">
       <div className="min-w-0">
         <div className="flex flex-wrap items-center gap-2">
-          <span className="text-sm font-semibold text-text-primary truncate">{sync.Source}</span>
+          <RepoName repo={sync.Source} truncate="end" className="text-sm font-semibold text-text-primary" />
           <span className="text-xs text-text-muted">→</span>
-          <span className="text-sm text-text-secondary truncate">{sync.Target}</span>
+          <RepoName repo={sync.Target} truncate="end" className="text-sm text-text-secondary" />
           <span className="px-2 py-0.5 rounded text-xs bg-bg-tertiary text-text-secondary">{sync.Type}</span>
         </div>
         <div className="mt-1 text-xs text-text-muted">
@@ -321,7 +321,7 @@ function DeletionTable({ rows, showTag }: { rows: MirrorDeletion[]; showTag: boo
         <tbody>
           {rows.map(row => (
             <tr key={`${row.Repository}:${row.Tag}:${row.DeletedAt}`} className="border-b border-border last:border-0">
-              <td className="px-5 py-2 text-text-primary">{row.Repository}</td>
+              <td className="px-5 py-2 text-text-primary"><RepoName repo={row.Repository} /></td>
               {showTag && <td className="px-5 py-2 text-text-secondary">{row.Tag}</td>}
               <td className="px-5 py-2 text-text-muted">{formatRelativeTime(row.DeletedAt)}</td>
             </tr>
@@ -340,8 +340,8 @@ function HeldTable({ rows, onRelease }: { rows: HeldDigest[]; onRelease: (row: H
         {rows.map(row => (
           <li key={`${row.Repository}@${row.Digest}`} className="px-4 py-3 space-y-2">
             <div className="min-w-0">
-              <div className="text-sm text-text-primary break-all">{row.Repository}</div>
-              {row.Source && <div className="text-xs text-text-muted break-all">from {row.Source}</div>}
+              <div className="text-sm text-text-primary"><RepoName repo={row.Repository} /></div>
+              {row.Source && <div className="text-xs text-text-muted">from <RepoName repo={row.Source} /></div>}
             </div>
             <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs">
               <span className="text-text-secondary wrap-anywhere">{(row.Tags ?? []).join(', ')}</span>
@@ -391,8 +391,8 @@ function HeldTable({ rows, onRelease }: { rows: HeldDigest[]; onRelease: (row: H
             {rows.map(row => (
               <tr key={`${row.Repository}@${row.Digest}`} className="border-b border-border last:border-0 align-top">
                 <td className="px-5 py-2 text-text-primary">
-                  <div className="break-words">{breakAfterSlashes(row.Repository)}</div>
-                  {row.Source && <div className="text-xs text-text-muted break-words">from {breakAfterSlashes(row.Source)}</div>}
+                  <div><RepoName repo={row.Repository} /></div>
+                  {row.Source && <div className="text-xs text-text-muted">from <RepoName repo={row.Source} /></div>}
                 </td>
                 <td className="px-5 py-2 text-text-secondary wrap-anywhere">{(row.Tags ?? []).join(', ')}</td>
                 <td className="px-5 py-2"><DigestLinkWithCopy digest={row.Digest} to={heldDigestLink(row)} /></td>
@@ -446,11 +446,4 @@ function CooldownCell({ row }: { row: HeldDigest }) {
       {formatCooldown(row.RemainingSeconds)} left
     </span>
   );
-}
-
-// Lets repository paths wrap at "/" instead of mid-word, so the column stays narrow without splitting names.
-function breakAfterSlashes(path: string) {
-  return path.split('/').map((part, i, parts) => (
-    <Fragment key={i}>{part}{i < parts.length - 1 && <>/<wbr /></>}</Fragment>
-  ));
 }

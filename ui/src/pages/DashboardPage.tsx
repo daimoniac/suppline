@@ -5,7 +5,7 @@ import { formatRelativeTime, countActionableRuntimeUnusedRepositories } from '..
 import { useImageUsageFilter } from '../lib/imageUsageFilter';
 import { fetchPolicyComplianceData, type PolicyComplianceSnapshot } from '../lib/policyComplianceData';
 import { scheduleEffectLoad } from '../lib/scheduleEffectLoad';
-import { LoadingState, ErrorState, StatusBadge, VulnCounts, DigestLinkWithCopy } from '../components/ui';
+import { LoadingState, ErrorState, StatusBadge, VulnCounts, DigestLinkWithCopy, RepoName } from '../components/ui';
 import { PolicyCompliancePanel } from '../components/PolicyCompliancePanel';
 import type { CoverageResponse, PoliciesResponse, Scan, SemverUpdateTasksResponse, VEXExpiryTasksResponse } from '../lib/api';
 import { ShieldAlert, ShieldCheck, Clock, Clock3, ArrowRight, ClipboardList, Sparkles, Trash2, TriangleAlert, Radar, Server, Layers } from 'lucide-react';
@@ -361,7 +361,7 @@ export default function DashboardPage() {
                   <div className="min-w-0 flex-1">
                     <div className="flex flex-wrap items-center gap-2">
                       <Link className="text-sm font-semibold text-accent hover:underline" to={`/repositories/${encodeURIComponent(scan.Repository)}`}>
-                        {scan.Repository || 'N/A'}
+                        {scan.Repository ? <RepoName repo={scan.Repository} /> : 'N/A'}
                       </Link>
                       <span className="px-2 py-0.5 rounded text-xs bg-bg-tertiary text-text-secondary">{scan.Tag || 'untagged'}</span>
                     </div>

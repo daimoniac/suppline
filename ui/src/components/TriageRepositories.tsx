@@ -6,7 +6,7 @@ import { useToast } from '../lib/toast';
 import { buildOpenTriagePrompt } from '../lib/policyComplianceData';
 import { copyToClipboard, formatDate, formatRelativeTime } from '../lib/utils';
 import { scheduleEffectLoad } from '../lib/scheduleEffectLoad';
-import { ErrorState, LoadingState, PageFiltersBar } from './ui';
+import { ErrorState, LoadingState, PageFiltersBar, RepoName } from './ui';
 import { EditModal } from './TriageEditModal';
 import { ExpirationBadge } from './TriagePills';
 import { TriageBudgetBanner, type TriageBudgetState } from './TriageBudgetBanner';
@@ -255,7 +255,7 @@ export function TriageRepositories() {
                   <button type="button" onClick={() => setOpen(prev => ({ ...prev, [card.Repository]: !expanded }))}
                     className="flex items-center gap-2 min-w-0 text-left" aria-expanded={expanded}>
                     {expanded ? <ChevronDown className="w-4 h-4 shrink-0 text-text-muted" /> : <ChevronRight className="w-4 h-4 shrink-0 text-text-muted" />}
-                    <span className="text-sm font-medium break-all">{card.Repository}</span>
+                    <RepoName repo={card.Repository} className="text-sm font-medium" />
                   </button>
                   <Link to={`/repositories/${encodeURIComponent(card.Repository)}`} className="text-xs text-accent hover:text-accent-hover">Open</Link>
                   <div className="flex flex-wrap items-center gap-1.5">

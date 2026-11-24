@@ -2,7 +2,7 @@ import { useEffect, useState, useCallback } from 'react';
 import { Link, useSearchParams } from 'react-router';
 import { useAuth } from '../lib/auth';
 import { formatRelativeTime, truncateDigest } from '../lib/utils';
-import { LoadingState, ErrorState, PageHeader, SeverityBadge, Pagination, PageFiltersBar, FilterActionButton } from '../components/ui';
+import { LoadingState, ErrorState, PageHeader, SeverityBadge, Pagination, PageFiltersBar, FilterActionButton, RepoName } from '../components/ui';
 import type { VulnerabilityGroup } from '../lib/api';
 import { ChevronDown, ChevronRight, ExternalLink, ArrowUpDown, ArrowUp, ArrowDown } from 'lucide-react';
 import { useSortablePaginationState } from '../lib/useSortablePaginationState';
@@ -171,7 +171,7 @@ export default function VulnerabilitiesPage() {
                     )}
                     {(detailsByCVE[g.CVEID]?.affected || []).map((aff, ai) => (
                       <div key={ai} className="mb-3">
-                        <div className="text-xs font-medium text-text-secondary mb-1">{aff.repository}</div>
+                        <div className="text-xs font-medium text-text-secondary mb-1"><RepoName repo={aff.repository} /></div>
                         <div className="space-y-1">
                           {aff.digests.map((d, di) => (
                             <Link key={di} to={`/scans/${d.digest}`} className="flex items-center gap-3 text-xs px-3 py-2 rounded bg-bg-tertiary hover:bg-border transition-colors">

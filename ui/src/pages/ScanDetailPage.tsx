@@ -4,7 +4,7 @@ import { useAuth } from '../lib/auth';
 import { useToast } from '../lib/toast';
 import { formatRelativeTime, formatDate, truncateDigest, copyToClipboard, cooldownDaysLeft, formatHeld, getRuntimeClusterCount, getRuntimeNamespaceEntries, isPast } from '../lib/utils';
 import { scheduleEffectLoad } from '../lib/scheduleEffectLoad';
-import { LoadingState, ErrorState, StatusBadge, SeverityBadge, MaliciousCheckBadge } from '../components/ui';
+import { LoadingState, ErrorState, StatusBadge, SeverityBadge, MaliciousCheckBadge, RepoName } from '../components/ui';
 import type { AppliedVEXStatement, MaliciousCheck, ScanDetail, Vulnerability } from '../lib/api';
 import { ArrowLeft, RefreshCw, Copy, CheckCircle, XCircle, ChevronDown, ChevronRight, ExternalLink, Skull } from 'lucide-react';
 
@@ -86,7 +86,7 @@ export default function ScanDetailPage() {
         </Link>
         <div className="flex-1">
           <h1 className="text-2xl font-bold">Scan Detail</h1>
-          <p className="text-sm text-text-secondary">{scan.Repository}:{scan.Tag}</p>
+          <p className="text-sm text-text-secondary"><RepoName repo={scan.Repository} suffix={scan.Tag ? `:${scan.Tag}` : undefined} /></p>
         </div>
         <button onClick={handleRescan} disabled={rescanning} className="px-4 py-2 text-sm rounded-lg border border-warning/30 text-warning hover:bg-warning-bg flex items-center gap-2 disabled:opacity-50 transition-colors">
           <RefreshCw className={`w-4 h-4 ${rescanning ? 'animate-spin' : ''}`} /> {rescanning ? 'Rescanning…' : 'Trigger Rescan'}
@@ -98,7 +98,7 @@ export default function ScanDetailPage() {
         <h2 className="text-sm font-semibold mb-4">Image Information</h2>
         <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
           <InfoItem label="Repository" value={
-            <Link className="text-accent hover:underline" to={`/repositories/${encodeURIComponent(scan.Repository)}`}>{scan.Repository}</Link>
+            <Link className="text-accent hover:underline" to={`/repositories/${encodeURIComponent(scan.Repository)}`}><RepoName repo={scan.Repository} /></Link>
           } />
           <InfoItem label={scan.Tags && scan.Tags.length > 1 ? 'Tags' : 'Tag'} value={
             scan.Tags && scan.Tags.length > 0
@@ -126,7 +126,7 @@ export default function ScanDetailPage() {
                       <div className="mt-1 space-y-1">
                         {images.map((image, idx) => (
                           <div key={`${cluster}-${namespace}-${image.ImageRef}-${image.Tag}-${image.Digest}-${idx}`} className="font-mono text-[11px] text-text-secondary break-all">
-                            {image.ImageRef}{image.Tag ? `:${image.Tag}` : ''}{image.Digest ? ` @ ${truncateDigest(image.Digest)}` : ''}
+                            <RepoName repo={image.ImageRef} suffix={image.Tag ? `:${image.Tag}` : undefined} />{image.Digest ? ` @ ${truncateDigest(image.Digest)}` : ''}
                           </div>
                         ))}
                       </div>

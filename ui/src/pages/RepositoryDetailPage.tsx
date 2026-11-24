@@ -4,7 +4,7 @@ import { useAuth } from '../lib/auth';
 import { useToast } from '../lib/toast';
 import { formatRelativeTime, cooldownDaysLeft, formatHeld, compareTagNames } from '../lib/utils';
 import { useImageUsageFilter } from '../lib/imageUsageFilter';
-import { LoadingState, ErrorState, StatusBadge, VulnCounts, SortHeader, Pagination, ConfirmModal, RuntimeUsageBadge, PageFiltersBar, FilterActionButton, PolicyStatusSelect, PolicyDescriptionText } from '../components/ui';
+import { LoadingState, ErrorState, StatusBadge, VulnCounts, SortHeader, Pagination, ConfirmModal, RuntimeUsageBadge, PageFiltersBar, FilterActionButton, PolicyStatusSelect, PolicyDescriptionText, RepoName, FullRefWithCopy } from '../components/ui';
 import type { RepositoryTag } from '../lib/api';
 import { ArrowLeft, RefreshCw } from 'lucide-react';
 import { useSortablePaginationState } from '../lib/useSortablePaginationState';
@@ -143,7 +143,8 @@ export default function RepositoryDetailPage() {
           <ArrowLeft className="w-4 h-4" />
         </Link>
         <div className="flex-1">
-          <h1 className="text-2xl font-bold">{decodedName}</h1>
+          <h1 className="text-2xl font-bold"><RepoName repo={decodedName} iconClassName="w-5 h-5" /></h1>
+          <FullRefWithCopy value={decodedName} />
           <p className="text-sm text-text-secondary">{effectiveTotal} tag{effectiveTotal !== 1 ? 's' : ''}{policyFilter !== 'all' ? ` (filtered from ${total})` : ''}</p>
           <PolicyDescriptionText
             description={policyDescription}

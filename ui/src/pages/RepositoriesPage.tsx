@@ -4,7 +4,7 @@ import { useAuth } from '../lib/auth';
 import { useToast } from '../lib/toast';
 import { formatRelativeTime } from '../lib/utils';
 import { useImageUsageFilter } from '../lib/imageUsageFilter';
-import { LoadingState, ErrorState, PageHeader, StatusBadge, VulnCounts, SortHeader, Pagination, ConfirmModal, RuntimeUsageBadge, PageFiltersBar, FilterActionButton, PolicyStatusSelect, PolicyDescriptionText } from '../components/ui';
+import { LoadingState, ErrorState, PageHeader, StatusBadge, VulnCounts, SortHeader, Pagination, ConfirmModal, RuntimeUsageBadge, PageFiltersBar, FilterActionButton, PolicyStatusSelect, PolicyDescriptionText, RepoName } from '../components/ui';
 import type { Repository } from '../lib/api';
 import { RefreshCw } from 'lucide-react';
 import { useSortablePaginationState, type SortDirection } from '../lib/useSortablePaginationState';
@@ -150,7 +150,7 @@ export default function RepositoriesPage() {
               <tbody>
                 {repos.map(r => (
                   <tr key={r.Name} className="border-b border-border/50 hover:bg-bg-secondary transition-colors">
-                    <td className="px-4 py-3 text-sm"><Link className="text-accent hover:underline" to={`/repositories/${encodeURIComponent(r.Name)}`}>{r.Name}</Link></td>
+                    <td className="px-4 py-3 text-sm"><Link className="text-accent hover:underline" to={`/repositories/${encodeURIComponent(r.Name)}`}><RepoName repo={r.Name} /></Link></td>
                     <td className="px-4 py-3 text-sm text-text-secondary">{r.ArtifactCount || 0}</td>
                     <td className="px-4 py-3 text-sm text-text-secondary">{r.LastScanTime ? formatRelativeTime(r.LastScanTime) : 'Never'}</td>
                     <td className="px-4 py-3"><VulnCounts critical={r.VulnerabilityCount?.Critical} high={r.VulnerabilityCount?.High} medium={r.VulnerabilityCount?.Medium} low={r.VulnerabilityCount?.Low} exempted={r.VulnerabilityCount?.Exempted} /></td>

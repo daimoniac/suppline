@@ -12,10 +12,7 @@ import {
   activeFindings, feedCommitURL, formatSeconds, groupMaliciousByPackage, maliciousFeedWarning,
 } from '../lib/malicious';
 import type { MaliciousCoverage, MaliciousFeed, MaliciousImage, MaliciousOverview, MaliciousStatement } from '../lib/api';
-import {
-  DigestLinkWithCopy, EmptyState, ErrorState, LoadingState, MaliciousCheckBadge, PageHeader,
-  RuntimeUsageBadge, StatusBadge,
-} from '../components/ui';
+import { DigestLinkWithCopy, EmptyState, ErrorState, LoadingState, MaliciousCheckBadge, PageHeader, RuntimeUsageBadge, StatusBadge, RepoName } from '../components/ui';
 
 type View = 'packages' | 'images';
 
@@ -326,7 +323,7 @@ function ImageLine({ image, actions }: { image: MaliciousImage; actions?: React.
   return (
     <div>
       <div className="flex flex-wrap items-center gap-2 text-sm">
-        <Link to={to} className="text-text-primary hover:text-accent">{image.Repository}</Link>
+        <Link to={to} className="text-text-primary hover:text-accent"><RepoName repo={image.Repository} /></Link>
         {tags.length > 0 && <span className="text-xs text-text-secondary">{tags.join(', ')}</span>}
         <DigestLinkWithCopy digest={image.Digest} to={to} />
         <RuntimeUsageBadge inUse={image.RuntimeUsed} runtime={image.Runtime ?? undefined} />
