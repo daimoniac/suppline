@@ -25,7 +25,7 @@ You are suppline's Triage layer. A CEL policy exception exists for one or more C
 
 Workflow:
 1. Grep for the image name, the last path segment of the repository, before listing directories. Do not list the repository root. Do not invent files or lines.
-2. Call cve_advisory with the CVE or GHSA id. Call image_source. It resolves the GitHub repository and revision from OCI labels, otherwise from the upstream image's SLSA provenance, otherwise from a unique commit search of a -sha- tag. When it names an owner, repo, and revision, call public_checkout for that owner, repo, revision, and the directory that contains the application. Then grep and read_file that checkout. Call dependency_sources once with that owner, repo, and revision. When image_source names no commit, grep repo image. That checkout is the scanned image. It searches scripts, source files, and Go binaries, which keep function names, and it skips stripped native libraries. public_checkout fetches that commit, not the default branch. A later public_checkout of the same commit adds a directory instead of replacing the tree. public_code reads one file an advisory names. ` + evidenceContract() + `
+2. Call cve_advisory with the CVE or GHSA id. Call image_source. It resolves the GitHub repository and revision from OCI labels, otherwise from the upstream image's SLSA provenance, otherwise from a unique commit search of a -sha- tag. When it names an owner, repo, and revision, call public_checkout for that owner, repo, revision, and the directory that contains the application. Then grep and read_file that checkout. Call dependency_sources once with that owner, repo, and revision. When image_source names no commit, grep repo image. That checkout is the scanned image. It searches scripts, source files, and Go binaries, which keep function names, and it skips stripped native libraries. public_checkout fetches that commit, not the default branch. A later public_checkout of the same commit adds a directory instead of replacing the tree. public_code reads one file an advisory names. image_files finds files in the image by path, including files too large to unpack, so it can show that a runtime the advisory needs, such as a JVM, is not in the image. package_files reads what the package the scanner matched installs, from the image's package database. ` + evidenceContract() + `
 3. Map the finding to the release, the mirrored image, and the routes or features that are actually enabled. Stop searching once you have that evidence, or once a few searches show it is not in the checkout.` + runtime + `
 
 Decision:
@@ -43,6 +43,10 @@ When the decision message lists more than one in-use digest, covers_listed_diges
 func defaultDecisionPolicy() string {
 	return strings.TrimSpace(`
 Use requires_configuration when the lines you read show that the vulnerable behavior needs a setting this deployment does not have. Use requires_environment when they show that it needs an environment condition this deployment does not have. A residual risk that is low given that context is not_affected. Do not stay uncertain only because some later change could turn the feature on. Use code_not_reachable when a returned line shows the call and the vulnerable option is absent, or when a grep says citable: absence. Cite that grep_id.
+
+When the package the scanner matched cannot hold the vulnerable code, for example a certificate bundle matched to a Java runtime CVE, call package_files for it and image_files for the product the advisory names. Cite both grep_ids with code_not_present when it is allowed, otherwise code_not_reachable.
+
+When a tool fails, name the tool and its error in reasoning. A failed tool is not evidence either way.
 
 When Kernel package is yes, stay uncertain. Header-only kernel packages are decided before this session, so a kernel package here may ship a kernel image or modules that a person must review. Workload settings such as hostNetwork or privileged do not decide a kernel finding.
 
@@ -116,6 +120,7 @@ func cvePrompt(job Job, existing *types.VEXStatement) string {
 	}
 	if existing != nil {
 		fmt.Fprintf(&b, "Current auto statement state: %s\nCurrent detail:\n%s\n", existing.State, existing.Detail)
+		b.WriteString("Call recheck_evidence first. It replays that statement's citations against this image and returns grep_ids you can cite in this turn. The detail above is not evidence by itself.\n")
 	}
 	b.WriteString("\n")
 	b.WriteString(untrusted("vulnerability description", job.Description))

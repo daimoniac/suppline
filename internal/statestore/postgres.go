@@ -177,6 +177,7 @@ func (s *SQLiteStore) initPostgresSchema() error {
 			status TEXT NOT NULL,
 			session_id TEXT NOT NULL DEFAULT '',
 			commit_sha TEXT NOT NULL DEFAULT '',
+			written_state TEXT NOT NULL DEFAULT '',
 			created_at BIGINT NOT NULL
 		)`,
 		`CREATE INDEX IF NOT EXISTS idx_triage_runs_repo_cve ON triage_runs(repository, cve_id, created_at)`,
@@ -261,6 +262,11 @@ func (s *SQLiteStore) initPostgresSchema() error {
 		ALTER TABLE triage_runs ADD COLUMN IF NOT EXISTS session_id TEXT NOT NULL DEFAULT ''
 	`); err != nil {
 		return fmt.Errorf("add triage_runs.session_id: %w", err)
+	}
+	if _, err := s.db.Exec(`
+		ALTER TABLE triage_runs ADD COLUMN IF NOT EXISTS written_state TEXT NOT NULL DEFAULT ''
+	`); err != nil {
+		return fmt.Errorf("add triage_runs.written_state: %w", err)
 	}
 	if _, err := s.db.Exec(`
 		ALTER TABLE scan_findings ADD COLUMN IF NOT EXISTS severity TEXT

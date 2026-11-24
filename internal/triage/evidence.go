@@ -27,5 +27,5 @@ func (k citeKind) line() string {
 
 // evidenceContract is the only statement of how a grep may be cited.
 func evidenceContract() string {
-	return "Cite a grep by its grep_id and leave quote empty. The result line citable: rows means those lines. citable: absence is code_not_reachable for the files that were searched. citable: no stays uncertain. An empty grep is not proof unless its result says citable: absence. requires_configuration and requires_environment need citable: rows or a gitops or public line, not citable: absence. Other deployment justifications need a gitops line. A quote must match a line a tool returned. An absence claim without a grep_id is ignored."
+	return "Cite a grep by its grep_id and leave quote empty. The result line citable: rows means those lines. citable: absence is code_not_reachable, or code_not_present when it is allowed, for the files or paths that were searched. A package_files grep_id shows what the matched package installs. citable: no stays uncertain. An empty grep is not proof unless its result says citable: absence. requires_configuration and requires_environment need citable: rows or a gitops or public line, not citable: absence. Other deployment justifications need a gitops line. A quote must match a line a tool returned. An absence claim without a grep_id is ignored."
 }

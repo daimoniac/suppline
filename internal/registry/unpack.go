@@ -15,6 +15,11 @@ import (
 	"github.com/google/go-containerregistry/pkg/v1/remote"
 )
 
+// SkippedFilesManifest names the file, at the root of an unpacked image, that
+// lists the regular files left out because of the size limits. Each line is
+// "path<TAB>size<TAB>elf", where elf is 1 for an ELF file and 0 otherwise.
+const SkippedFilesManifest = ".suppline-skipped"
+
 const (
 	maxImageExtractBytes = 512 << 20
 	maxImageFileBytes    = 64 << 20
@@ -56,6 +61,9 @@ func (c *clientImpl) UnpackImage(ctx context.Context, repo, digest, dest string)
 	return nil
 }
 
+// untarLimited writes r into dest. A file over the per-file limit, or one that
+// would take the total past its limit, is left out and listed in
+// SkippedFilesManifest, so one large binary does not lose the rest of the image.
 func untarLimited(r io.Reader, dest string, limits extractLimits) error {
 	if limits.maxTotal <= 0 {
 		limits.maxTotal = maxImageExtractBytes
@@ -65,10 +73,12 @@ func untarLimited(r io.Reader, dest string, limits extractLimits) error {
 	}
 	tr := tar.NewReader(r)
 	var total int64
+	var skipped []skippedFile
+	skippedAt := map[string]int{}
 	for {
 		hdr, err := tr.Next()
 		if err == io.EOF {
-			return nil
+			return writeSkipped(dest, skipped)
 		}
 		if err != nil {
 			return fmt.Errorf("read tar: %w", err)
@@ -81,6 +91,7 @@ func untarLimited(r io.Reader, dest string, limits extractLimits) error {
 		if strings.HasPrefix(base, ".wh.") {
 			continue
 		}
+		rel := pathCleanSlash(hdr.Name)
 		switch hdr.Typeflag {
 		case tar.TypeDir:
 			if err := os.MkdirAll(target, 0o755); err != nil {
@@ -88,7 +99,12 @@ func untarLimited(r io.Reader, dest string, limits extractLimits) error {
 			}
 		case tar.TypeReg, legacyTypeReg:
 			if hdr.Size > limits.maxFile || total+hdr.Size > limits.maxTotal {
-				return fmt.Errorf("image file %s exceeds the unpack limit", hdr.Name)
+				var magic [4]byte
+				n, _ := io.ReadFull(tr, magic[:])
+				_ = os.Remove(target)
+				skippedAt[rel] = len(skipped)
+				skipped = append(skipped, skippedFile{Path: rel, Size: hdr.Size, ELF: isELFMagic(magic[:n])})
+				continue
 			}
 			if err := os.MkdirAll(filepath.Dir(target), 0o755); err != nil {
 				return err
@@ -103,11 +119,44 @@ func untarLimited(r io.Reader, dest string, limits extractLimits) error {
 				return err
 			}
 		case tar.TypeLink:
+			if at, ok := skippedAt[pathCleanSlash(hdr.Linkname)]; ok {
+				entry := skipped[at]
+				entry.Path = rel
+				skippedAt[rel] = len(skipped)
+				skipped = append(skipped, entry)
+				continue
+			}
 			if err := extractHardlink(dest, target, hdr.Linkname); err != nil {
 				return err
 			}
 		}
 	}
+}
+
+type skippedFile struct {
+	Path string
+	Size int64
+	ELF  bool
+}
+
+func isELFMagic(b []byte) bool {
+	return len(b) >= 4 && b[0] == 0x7f && b[1] == 'E' && b[2] == 'L' && b[3] == 'F'
+}
+
+func writeSkipped(dest string, files []skippedFile) error {
+	if len(files) == 0 {
+		return nil
+	}
+	var b strings.Builder
+	for _, file := range files {
+		elf := 0
+		if file.ELF {
+			elf = 1
+		}
+		name := strings.NewReplacer("\t", " ", "\n", " ").Replace(file.Path)
+		fmt.Fprintf(&b, "%s\t%d\t%d\n", name, file.Size, elf)
+	}
+	return os.WriteFile(filepath.Join(dest, SkippedFilesManifest), []byte(b.String()), 0o644)
 }
 
 func writeExtractFile(target string, r io.Reader) (int64, error) {

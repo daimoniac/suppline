@@ -1,4 +1,4 @@
-import type { TriageStatement } from './api';
+import type { TriageRun, TriageStatement } from './api';
 
 export const STATUS_LABELS: Record<string, string> = {
   dry_run: 'Dry run',
@@ -35,6 +35,29 @@ export const VEX_STATE_LABELS: Record<string, string> = {
   resolved: 'Resolved',
   resolved_with_pedigree: 'Resolved with pedigree',
 };
+
+const VERDICT_LABELS: Record<string, string> = {
+  ...VEX_STATE_LABELS,
+  uncertain: 'Uncertain',
+};
+
+/**
+ * One line for a triage run: how it ended, what it wrote, and what the model
+ * said when that differs. The confidence is the model's, in its own verdict.
+ */
+export function runSummary(run: Pick<TriageRun, 'Status' | 'Verdict' | 'WrittenState' | 'Confidence'>): string {
+  const parts = [STATUS_LABELS[run.Status] || run.Status];
+  const verdict = run.Verdict ? VERDICT_LABELS[run.Verdict] || run.Verdict : '';
+  if (run.WrittenState) {
+    const written = VEX_STATE_LABELS[run.WrittenState] || run.WrittenState;
+    const verb = run.Status === 'dry_run' ? 'would write' : 'wrote';
+    parts.push(run.WrittenState === run.Verdict || !verdict ? `${verb} ${written}` : `${verb} ${written}, model said ${verdict}`);
+  } else if (verdict) {
+    parts.push(`model said ${verdict}`);
+  }
+  if (run.Confidence > 0) parts.push(`model confidence ${run.Confidence.toFixed(2)}`);
+  return parts.join(' · ');
+}
 
 export const VEX_JUSTIFICATIONS = [
   'code_not_present',

@@ -4,7 +4,7 @@ import { formatDate } from '../lib/utils';
 import { SeverityBadge, RepoName } from './ui';
 import { ExternalLink, Skull } from 'lucide-react';
 import { scheduleEffectLoad } from '../lib/scheduleEffectLoad';
-import { STATUS_LABELS, VEX_JUSTIFICATIONS, VEX_STATES, fromLocalInput, isMaliciousID, toLocalInput, vexStateExempts, type StatementRow } from '../lib/triageRows';
+import { VEX_JUSTIFICATIONS, VEX_STATES, fromLocalInput, isMaliciousID, runSummary, toLocalInput, vexStateExempts, type StatementRow } from '../lib/triageRows';
 import type { TriageAccept, VulnerabilityGroup } from '../lib/api';
 
 export function EditModal({
@@ -22,9 +22,13 @@ export function EditModal({
   // Malicious-package advisories only accept a hand-written false_positive.
   const malicious = isMaliciousID(row.cve);
   const knownState = VEX_STATES.some(([value]) => value === row.state);
-  const [state, setState] = useState(malicious ? 'false_positive' : knownState ? row.state : 'not_affected');
-  const [justification, setJustification] = useState(row.justification || 'code_not_reachable');
-  const [detail, setDetail] = useState(row.detail);
+  // Nothing is pre-selected for a run without a known state: an uncertain run
+  // must not open as an exemption that one click on Save would write.
+  const [state, setState] = useState(malicious ? 'false_positive' : knownState ? row.state : '');
+  const [justification, setJustification] = useState(row.justification || '');
+  // Automated text stays on the left. A statement a person saves carries only
+  // what that person writes.
+  const [detail, setDetail] = useState(row.source === 'manual' ? row.detail : '');
   const [expires, setExpires] = useState(toLocalInput(row.expiresAt));
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -52,6 +56,14 @@ export function EditModal({
   )];
 
   const save = async () => {
+    if (!state) {
+      setError('Choose an outcome.');
+      return;
+    }
+    if (state === 'not_affected' && !justification) {
+      setError('Choose a justification.');
+      return;
+    }
     if (malicious && !detail.trim()) {
       setError('Say why this is not the malicious package, e.g. where the image gets it from.');
       return;
@@ -129,7 +141,7 @@ export function EditModal({
             <div className="text-sm border-t border-border pt-4">
               <p className="text-xs text-text-muted mb-2">
                 Automated triage
-                {row.run ? ` · ${STATUS_LABELS[row.run.Status] || row.run.Status} · ${row.run.Confidence.toFixed(2)} confidence` : ''}
+                {row.run ? ` · ${runSummary(row.run)}` : ''}
               </p>
               {withCVEs.length > 0 && (
                 <p className="text-xs text-text-muted mb-2">Triaged with {withCVEs.join(', ')}</p>
@@ -154,6 +166,7 @@ export function EditModal({
                       .map(([value, label]) => <option key={value} value={value}>{label}</option>)
                     : (
                       <>
+                        {!state && <option value="" disabled>Choose an outcome</option>}
                         <optgroup label="Exempts the finding">
                           {VEX_STATES.filter(([value]) => vexStateExempts(value))
                             .map(([value, label]) => <option key={value} value={value}>{label}</option>)}
@@ -175,7 +188,7 @@ export function EditModal({
               {!malicious && state === 'false_positive' && (
                 <p className="text-xs text-text-muted">The scanner is wrong: the image does not have the vulnerable code, for example because the package carries a backported fix. Say why in Detail.</p>
               )}
-              {!malicious && !vexStateExempts(state) && (
+              {!malicious && state && !vexStateExempts(state) && (
                 <p className="text-xs text-warning" role="alert">
                   {state === 'resolved' || state === 'resolved_with_pedigree'
                     ? 'This does not clear the policy gate. A statement covers every tag, and a build with the fix no longer reports the CVE, so rebuild or upgrade instead. Use not affected or false positive to exempt.'
@@ -187,6 +200,7 @@ export function EditModal({
                   Justification
                   <select value={justification} onChange={e => setJustification(e.target.value)}
                     className="mt-1 w-full px-3 py-2 bg-bg-primary border border-border rounded-lg text-sm text-text-primary focus:outline-none focus:border-accent/50">
+                    {!justification && <option value="" disabled>Choose a justification</option>}
                     {VEX_JUSTIFICATIONS.map(value => <option key={value} value={value}>{value}</option>)}
                   </select>
                 </label>

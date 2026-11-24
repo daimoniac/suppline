@@ -120,6 +120,9 @@ type toolbox struct {
 	upstream  *publicCheckouts
 	images    imageLabeler
 	manifests manifestSource
+	// prior holds, per CVE, the citations of the run that wrote the existing
+	// auto statement. recheck_evidence replays them.
+	prior map[string]priorEvidence
 }
 
 // ready returns a toolbox with an empty ledger and checkout set filled in.
@@ -154,6 +157,7 @@ func (t *toolbox) dispatch(ctx context.Context, job Job, call toolCall) string {
 		GitRepo   string `json:"git_repo"`
 		Ref       string `json:"ref"`
 		Query     string `json:"query"`
+		Package   string `json:"package"`
 	}
 	if err := json.Unmarshal([]byte(call.Function.Arguments), &args); err != nil {
 		return "invalid arguments: " + err.Error()
@@ -173,6 +177,16 @@ func (t *toolbox) dispatch(ctx context.Context, job Job, call toolCall) string {
 		out, err = files.Read(ctx, args.Repo, args.Path, args.StartLine, args.EndLine)
 	case "grep":
 		out, err = files.Grep(ctx, args.Repo, args.Pattern, args.Path)
+	case "image_files":
+		out, err = imageFiles(ctx, roots, pub, job, args.Pattern, args.Path)
+	case "package_files":
+		name := strings.TrimSpace(args.Package)
+		if name == "" {
+			name = job.PackageName
+		}
+		out, err = packageFiles(ctx, roots, pub, job, name)
+	case "recheck_evidence":
+		out, err = recheckEvidence(ctx, t, job)
 	case "cluster_runtime":
 		if runtime == nil {
 			err = fmt.Errorf("cluster runtime is unavailable")
@@ -294,6 +308,14 @@ func toolDefinitions(withRuntime bool) []toolDef {
 		{"grep", "Search file contents with a regular expression. A recorded search returns grep_id and a citable line. repo image searches the scanned image: scripts, source files, and Go binaries. A directory that was not fully fetched is not an empty result.", object(map[string]any{
 			"repo": repo, "pattern": map[string]any{"type": "string"}, "path": pathProp,
 		}, "repo", "pattern")},
+		{"image_files", "Find files in the scanned image whose path matches a regular expression, including files too large to unpack. Use it to check whether a runtime or library is present at all, for example libjvm\\.so or \\.jar$. An empty result says citable: absence for the searched directory.", object(map[string]any{
+			"pattern": map[string]any{"type": "string", "description": "Regular expression matched against the path relative to the image root"},
+			"path":    map[string]any{"type": "string", "description": "Directory to search. Omit for the whole image."},
+		}, "pattern")},
+		{"package_files", "Read the files one installed package owns from the scanned image's apk or dpkg database. Defaults to the package the scanner matched for this CVE. The rows are citable lines of that database.", object(map[string]any{
+			"package": map[string]any{"type": "string", "description": "Installed package name. Omit for the matched package."},
+		})},
+		{"recheck_evidence", "Replay the citations of the existing auto statement for this CVE against the current image and checkouts. Each replayed search gets a new grep_id you may cite. Fails when the CVE has no existing auto statement.", object(map[string]any{})},
 		{"read_file", "Read a line range of one file. Lines are numbered and redacted. At most 200 lines.", object(map[string]any{
 			"repo": repo, "path": pathProp,
 			"start_line": map[string]any{"type": "integer"},

@@ -722,6 +722,8 @@ export interface TriageRun {
   Status: string;
   CommitSHA?: string;
   SessionID?: string;
+  /** State of the statement the run wrote, or would write in dry-run mode. Empty when it wrote nothing. */
+  WrittenState?: string;
   CreatedAt: number;
   Superseded?: boolean;
 }

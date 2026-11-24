@@ -57,6 +57,15 @@ func (p *publicSource) setPhase(phase string) {
 	p.mu.Unlock()
 }
 
+func (p *publicSource) currentPhase() string {
+	if p == nil {
+		return ""
+	}
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	return p.phase
+}
+
 type grepRow struct {
 	Path string
 	Line int

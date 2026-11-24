@@ -118,7 +118,10 @@ func statementList(active, inactive []*types.VEXSummary, runs []TriageRunRespons
 			continue
 		}
 		state := ""
-		if knownStatementState(run.Verdict) {
+		switch {
+		case knownStatementState(run.WrittenState):
+			state = run.WrittenState
+		case knownStatementState(run.Verdict):
 			state = run.Verdict
 		}
 		rows = append(rows, TriageStatement{

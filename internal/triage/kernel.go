@@ -91,13 +91,13 @@ func headerVerdict(job Job) modelVerdict {
 
 // decideHeader applies the KEV rule, then accepts the fixed verdict.
 func decideHeader(settings Settings, job Job, kev bool, kevErr error, existing *types.VEXStatement, checkouts []gitops.Checkout, triageID string, now time.Time) verdictDecision {
+	verdict := headerVerdict(job)
 	if settings.BlockKEV && kevErr != nil {
-		return flipOrReject(existing, job, "CISA KEV feed unavailable: "+kevErr.Error(), settings, checkouts, triageID, now)
+		return verdictDecision{Action: outcomeReject, Reason: "CISA KEV feed unavailable: " + kevErr.Error()}
 	}
 	if settings.BlockKEV && kev {
-		return flipOrReject(existing, job, "CVE is listed in the CISA Known Exploited Vulnerabilities catalog", settings, checkouts, triageID, now)
+		return flipOrReject(existing, job, verdict, "CVE is listed in the CISA Known Exploited Vulnerabilities catalog", settings, checkouts, triageID, now)
 	}
-	verdict := headerVerdict(job)
 	expires := now.Add(settings.Expiry).Unix()
 	return verdictDecision{
 		Action: outcomeNotAffected,
@@ -105,7 +105,7 @@ func decideHeader(settings Settings, job Job, kev bool, kevErr error, existing *
 			ID:            job.CVEID,
 			State:         types.VEXStateNotAffected,
 			Justification: types.VEXJustCodeNotPresent,
-			Detail:        provenance(triageID, headerRule, checkouts, verdict, now),
+			Detail:        provenance(triageID, headerRule, checkouts, types.VEXStateNotAffected, verdict, "", now),
 			ExpiresAt:     &expires,
 			Source:        types.VEXSourceAuto,
 		},

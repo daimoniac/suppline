@@ -49,12 +49,12 @@ func TestTriageRunRoundTrip(t *testing.T) {
 		t.Fatalf("commit = %+v err=%v", commit, err)
 	}
 	if err := store.InsertTriageRun(ctx, &TriageRun{
-		Repository: "app", CVEID: "CVE-1", Status: "committed", CommitSHA: "abc123", CreatedAt: now.Add(time.Minute),
+		Repository: "app", CVEID: "CVE-1", Status: "committed", CommitSHA: "abc123", WrittenState: "affected", CreatedAt: now.Add(time.Minute),
 	}); err != nil {
 		t.Fatal(err)
 	}
 	commit, err := store.LatestTriageCommit(ctx)
-	if err != nil || commit == nil || commit.CommitSHA != "abc123" {
+	if err != nil || commit == nil || commit.CommitSHA != "abc123" || commit.WrittenState != "affected" {
 		t.Fatalf("commit = %+v err=%v", commit, err)
 	}
 }
