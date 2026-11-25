@@ -9,14 +9,20 @@ export class APIError extends Error {
   }
 }
 
+/** How long a GET keeps retrying 503 answers, e.g. during a PostgreSQL failover. */
+const UNAVAILABLE_RETRY_BUDGET_MS = 60_000;
+const UNAVAILABLE_RETRY_MAX_WAIT_MS = 15_000;
+
 export class APIClient {
   private baseURL: string;
   private apiKey: string | null;
   private unauthorizedHandlers: Array<() => void> = [];
+  private sleep: (ms: number) => Promise<void>;
 
-  constructor(baseURL: string = '') {
+  constructor(baseURL: string = '', sleep: (ms: number) => Promise<void> = ms => new Promise(r => setTimeout(r, ms))) {
     this.baseURL = baseURL;
     this.apiKey = null;
+    this.sleep = sleep;
   }
 
   setAPIKey(key: string) { this.apiKey = key; }
@@ -46,7 +52,7 @@ export class APIClient {
     return data;
   }
 
-  private async requestWithResponse<T>(endpoint: string, opts: RequestInit = {}, retryCount = 0): Promise<{ data: T; response: Response }> {
+  private async requestWithResponse<T>(endpoint: string, opts: RequestInit = {}, retryCount = 0, unavailableWaitedMs = 0): Promise<{ data: T; response: Response }> {
     const url = `${this.baseURL}${endpoint}`;
     try {
       const response = await fetch(url, {
@@ -58,6 +64,15 @@ export class APIClient {
       if (response.status === 401) {
         this.notifyUnauthorized();
         throw new APIError('Unauthorized', 401, 'Authentication required');
+      }
+      const method = (opts.method ?? 'GET').toUpperCase();
+      if (response.status === 503 && method === 'GET' && unavailableWaitedMs < UNAVAILABLE_RETRY_BUDGET_MS) {
+        // The server is briefly without its database or leader and says when
+        // to come back. Only reads are repeated: a write may have been applied.
+        const seconds = Number(response.headers.get('Retry-After'));
+        const wait = Math.min(Number.isFinite(seconds) && seconds > 0 ? seconds * 1000 : 5000, UNAVAILABLE_RETRY_MAX_WAIT_MS);
+        await this.sleep(wait);
+        return this.requestWithResponse<T>(endpoint, opts, retryCount, unavailableWaitedMs + wait);
       }
       if (!response.ok) {
         const err = await response.json().catch(() => ({}));
@@ -84,8 +99,8 @@ export class APIClient {
       return { data, response };
     } catch (error) {
       if (error instanceof TypeError && retryCount < 3) {
-        await new Promise(r => setTimeout(r, 1000 * (retryCount + 1)));
-        return this.requestWithResponse<T>(endpoint, opts, retryCount + 1);
+        await this.sleep(1000 * (retryCount + 1));
+        return this.requestWithResponse<T>(endpoint, opts, retryCount + 1, unavailableWaitedMs);
       }
       throw error;
     }
