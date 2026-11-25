@@ -358,6 +358,11 @@ func run() error {
 	}
 	healthChecker.SetRole(observability.RoleStandby)
 
+	// Until elected, this instance forwards every API and UI request to the
+	// leader. Set before the API server starts serving.
+	holder := leader.NewHolderID()
+	apiServer.SetLeaderProxy(observability.IsLeader, holder, scanReads)
+
 	if apiServer != nil {
 		wg.Add(1)
 		go func() {
@@ -498,7 +503,7 @@ func run() error {
 
 	elector, err := leader.New(leader.Config{
 		Lock:      scanReads.LeaderLock(),
-		Holder:    leader.NewHolderID(),
+		Holder:    holder,
 		Address:   cfg.API.AdvertiseAddress,
 		OnElected: startLeader,
 		Logger:    logger.With("module", "leader"),
