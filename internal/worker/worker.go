@@ -331,32 +331,49 @@ func (w *ImageWorker) processLoop(ctx context.Context, workerID int, dequeue fun
 				"tag", task.Tag,
 				"is_rescan", task.IsRescan)
 
-			err = w.ProcessTask(ctx, task)
-			if w.taskObserver != nil {
-				w.taskObserver.Finished(ctx, task, err)
-			}
-			if err != nil {
-				// Log once here with full context
-				w.logger.Error("task processing failed",
-					"worker_id", workerID,
-					"task_id", task.ID,
-					"digest", task.Digest,
-					"repository", task.Repository,
-					"error", err)
-				metrics := observability.GetMetrics()
-				metrics.WorkerErrors.Inc()
-				_ = w.queue.Fail(ctx, task.ID, err)
-			} else {
-				w.logger.Debug("task processing completed",
-					"worker_id", workerID,
-					"task_id", task.ID,
-					"digest", task.Digest,
-					"repository", task.Repository)
-				metrics := observability.GetMetrics()
-				metrics.WorkerTasksProcessed.Inc()
-				_ = w.queue.Complete(ctx, task.ID)
-			}
+			w.finishTask(ctx, workerID, task, w.ProcessTask(ctx, task))
 		}
+	}
+}
+
+// finishTask reports a processed task to the observer, the log, the
+// metrics and the queue.
+func (w *ImageWorker) finishTask(ctx context.Context, workerID int, task *queue.ScanTask, err error) {
+	if w.taskObserver != nil {
+		// Scan requests waiting on the digest hear about every outcome,
+		// including an image that is gone.
+		w.taskObserver.Finished(ctx, task, err)
+	}
+	metrics := observability.GetMetrics()
+	switch {
+	case err == nil:
+		w.logger.Debug("task processing completed",
+			"worker_id", workerID,
+			"task_id", task.ID,
+			"digest", task.Digest,
+			"repository", task.Repository)
+		metrics.WorkerTasksProcessed.Inc()
+		_ = w.queue.Complete(ctx, task.ID)
+	case errors.IsManifestNotFound(err):
+		// The manifest was deleted, or no tag names the digest any more. The
+		// pipeline already cleaned its state up; there is nothing to scan.
+		w.logger.Info("image is gone from the registry; task dropped",
+			"worker_id", workerID,
+			"task_id", task.ID,
+			"digest", task.Digest,
+			"repository", task.Repository,
+			"reason", err)
+		_ = w.queue.Fail(ctx, task.ID, err)
+	default:
+		// Log once here with full context
+		w.logger.Error("task processing failed",
+			"worker_id", workerID,
+			"task_id", task.ID,
+			"digest", task.Digest,
+			"repository", task.Repository,
+			"error", err)
+		metrics.WorkerErrors.Inc()
+		_ = w.queue.Fail(ctx, task.ID, err)
 	}
 }
 
