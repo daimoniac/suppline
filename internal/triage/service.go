@@ -13,6 +13,7 @@ import (
 
 	"github.com/daimoniac/suppline/internal/config"
 	"github.com/daimoniac/suppline/internal/configedit"
+	suppErrors "github.com/daimoniac/suppline/internal/errors"
 	"github.com/daimoniac/suppline/internal/gitops"
 	"github.com/daimoniac/suppline/internal/observability"
 	"github.com/daimoniac/suppline/internal/policy/catalog"
@@ -52,6 +53,10 @@ type Service struct {
 
 	budgetMu   sync.Mutex
 	budgetWait chan struct{}
+
+	// retryMin and retryMax bound the pause before jobs that hit a
+	// transient database error run again; the pause doubles per failure.
+	retryMin, retryMax time.Duration
 
 	// pullAll and apply are replaceable in tests.
 	pullAll func(ctx context.Context) ([]gitops.Checkout, Roots, error)
@@ -127,11 +132,13 @@ func New(cfg *config.TriageConfig, configPath string, cat *catalog.ConfigCatalog
 			Model:   settings.Model,
 			APIKey:  settings.APIKey,
 		},
-		git:     git,
-		kev:     &KEVCache{URL: settings.KEVFeedURL, TTL: settings.KEVCacheTTL},
-		now:     func() time.Time { return time.Now().UTC() },
-		jobs:    make(chan Job, 256),
-		pending: make(map[string]ActiveJob),
+		git:      git,
+		kev:      &KEVCache{URL: settings.KEVFeedURL, TTL: settings.KEVCacheTTL},
+		now:      func() time.Time { return time.Now().UTC() },
+		jobs:     make(chan Job, 256),
+		pending:  make(map[string]ActiveJob),
+		retryMin: 5 * time.Second,
+		retryMax: 2 * time.Minute,
 	}
 	svc.pullAll = svc.pullCheckouts
 	svc.apply = svc.applyStatements
@@ -165,6 +172,7 @@ func (s *Service) Start(ctx context.Context) error {
 		return nil
 	}
 	go s.sweepLoop(ctx)
+	var pause time.Duration
 	for {
 		select {
 		case <-ctx.Done():
@@ -180,7 +188,31 @@ func (s *Service) Start(ctx context.Context) error {
 					break drain
 				}
 			}
-			s.processBatch(ctx, batch)
+			retry := s.processBatch(ctx, batch)
+			if len(retry) == 0 {
+				pause = 0
+				continue
+			}
+			pause = min(max(pause*2, s.retryMin), s.retryMax)
+			s.logger.Warn("triage paused: database unavailable", "jobs", len(retry), "retry_in", pause)
+			select {
+			case <-ctx.Done():
+				return nil
+			case <-time.After(pause):
+			}
+			s.requeue(retry)
+		}
+	}
+}
+
+// requeue puts jobs that are still pending back on the queue.
+func (s *Service) requeue(jobs []Job) {
+	for _, job := range jobs {
+		select {
+		case s.jobs <- job:
+		default:
+			s.finish(job)
+			s.logger.Error("triage queue full", "repository", job.Repository, "cve", job.CVEID)
 		}
 	}
 }
@@ -543,10 +575,19 @@ func (s *Service) focusCVE(repository, cve string) {
 	}
 }
 
-func (s *Service) processBatch(ctx context.Context, batch []Job) {
+// processBatch triages a batch. When the database is unavailable it stops
+// and returns the jobs it has not handled; they stay pending and the caller
+// queues them again later.
+func (s *Service) processBatch(ctx context.Context, batch []Job) (retry []Job) {
 	defer func() {
+		kept := make(map[uint64]struct{}, len(retry))
+		for _, job := range retry {
+			kept[job.ticket] = struct{}{}
+		}
 		for _, job := range batch {
-			s.finish(job)
+			if _, ok := kept[job.ticket]; !ok {
+				s.finish(job)
+			}
 		}
 	}()
 	for s.overBudget(ctx) {
@@ -571,10 +612,11 @@ func (s *Service) processBatch(ctx context.Context, batch []Job) {
 	if maxGroup < 1 {
 		maxGroup = 8
 	}
-	for _, jobs := range groupByRepository(batch) {
+	groups := groupByRepository(batch)
+	for g, jobs := range groups {
 		for start := 0; start < len(jobs); start += maxGroup {
 			if ctx.Err() != nil {
-				return
+				return nil
 			}
 			end := start + maxGroup
 			if end > len(jobs) {
@@ -582,6 +624,16 @@ func (s *Service) processBatch(ctx context.Context, batch []Job) {
 			}
 			chunk := jobs[start:end]
 			resolved, err := s.resolveJobs(ctx, chunk)
+			if err != nil && suppErrors.IsTransient(err) {
+				// A switchover or restart: every later chunk would fail the
+				// same way, and recording them would fail too.
+				retry = append(retry, jobs[start:]...)
+				for _, rest := range groups[g+1:] {
+					retry = append(retry, rest...)
+				}
+				s.logger.Warn("triage stopped: cannot load scans", "repository", chunk[0].Repository, "error", err)
+				return retry
+			}
 			if err != nil {
 				for _, job := range chunk {
 					s.record(ctx, job, modelVerdict{}, 0, StatusError, "", "", shaKey(checkouts), err.Error())
@@ -604,6 +656,7 @@ func (s *Service) processBatch(ctx context.Context, batch []Job) {
 			s.executeSession(ctx, resolved, checkouts, roots)
 		}
 	}
+	return nil
 }
 
 func groupByRepository(batch []Job) [][]Job {
