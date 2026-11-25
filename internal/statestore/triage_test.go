@@ -3,13 +3,12 @@ package statestore
 import (
 	"context"
 	"github.com/daimoniac/suppline/internal/types"
-	"path/filepath"
 	"testing"
 	"time"
 )
 
 func TestTriageRunRoundTrip(t *testing.T) {
-	store, err := NewSQLiteStore(filepath.Join(t.TempDir(), "triage.db"))
+	store, err := NewPostgresStore(testDatabaseURL(t))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -60,7 +59,7 @@ func TestTriageRunRoundTrip(t *testing.T) {
 }
 
 func TestListTriageRunsLatestOnlyDropsSupersededRuns(t *testing.T) {
-	store, err := NewSQLiteStore(filepath.Join(t.TempDir(), "triage.db"))
+	store, err := NewPostgresStore(testDatabaseURL(t))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -112,7 +111,7 @@ func TestListTriageRunsLatestOnlyDropsSupersededRuns(t *testing.T) {
 }
 
 func TestListScansIncludeExemptionsIsOptIn(t *testing.T) {
-	store, err := NewSQLiteStore(filepath.Join(t.TempDir(), "scans.db"))
+	store, err := NewPostgresStore(testDatabaseURL(t))
 	if err != nil {
 		t.Fatal(err)
 	}

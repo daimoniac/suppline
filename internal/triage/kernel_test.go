@@ -15,6 +15,7 @@ import (
 	"github.com/daimoniac/suppline/internal/gitops"
 	"github.com/daimoniac/suppline/internal/policy/catalog"
 	"github.com/daimoniac/suppline/internal/statestore"
+	"github.com/daimoniac/suppline/internal/statestore/storetest"
 	"github.com/daimoniac/suppline/internal/types"
 )
 
@@ -114,7 +115,7 @@ sync:
 		LLM:     config.TriageLLMConfig{BaseURL: "http://llm.example/v1", Model: "stub"},
 	}
 	cat := catalog.NewConfigCatalog(parsed)
-	store, err := statestore.NewSQLiteStore(filepath.Join(dir, "triage.db"))
+	store, err := statestore.NewPostgresStore(storetest.URL(t))
 	if err != nil {
 		t.Fatal(err)
 	}

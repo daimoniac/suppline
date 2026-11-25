@@ -31,6 +31,7 @@ Use these as the source of truth instead of duplicating details here:
 ## Validation guidance
 
 - Prefer targeted tests for changed packages, then run broader test/lint commands as needed.
+- Unit tests run against PostgreSQL: wrap `go test` in `./scripts/with-test-postgres.sh` (or use `make test`), which starts a throwaway server in Docker unless `SUPPLINE_TEST_POSTGRES_URL` is set. Use `storetest.New(t)` (or `newTestStore(t)` inside package statestore) for a fresh database per test.
 - Integration tests require the environment documented in [README.md](README.md); do not assume they run in CI/local by default.
 
 ## High-signal pitfalls

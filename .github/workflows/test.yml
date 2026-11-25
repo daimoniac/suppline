@@ -10,6 +10,22 @@ jobs:
   unit-tests:
     name: Unit Tests
     runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:18-alpine
+        env:
+          POSTGRES_USER: suppline
+          POSTGRES_PASSWORD: suppline
+          POSTGRES_DB: suppline
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U suppline -d suppline"
+          --health-interval 2s
+          --health-timeout 5s
+          --health-retries 30
+    env:
+      SUPPLINE_TEST_POSTGRES_URL: postgres://suppline:suppline@localhost:5432/suppline?sslmode=disable
     steps:
       - name: Checkout code
         uses: actions/checkout@v7

@@ -2,18 +2,14 @@ package statestore
 
 import (
 	"context"
-	"os"
 	"testing"
 
 	"github.com/daimoniac/suppline/internal/types"
 )
 
 func TestListRepositories_InUseFilterIncludesWhitelistedInBothModes(t *testing.T) {
-	dbPath := "test_repositories_whitelist_filter_" + t.Name() + ".db"
-	_ = os.Remove(dbPath)
-	defer os.Remove(dbPath)
 
-	store, err := NewSQLiteStore(dbPath)
+	store, err := NewPostgresStore(testDatabaseURL(t))
 	if err != nil {
 		t.Fatalf("failed to create sqlite store: %v", err)
 	}

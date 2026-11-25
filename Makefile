@@ -16,8 +16,8 @@ ui: ## Build the web UI into ui/dist (embedded by `make build`)
 
 test: test-unit ## Run unit tests (default)
 
-test-unit: ## Run unit tests (same as CI)
-	go test -race ./internal/...
+test-unit: ## Run unit tests (same as CI); starts a throwaway PostgreSQL unless SUPPLINE_TEST_POSTGRES_URL is set
+	./scripts/with-test-postgres.sh go test -race ./internal/...
 	cd clusterstate-agent && go test -race ./...
 
 test-integration: ## Run integration tests (needs a Trivy server; see test/integration/README.md)

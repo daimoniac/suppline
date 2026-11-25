@@ -3,8 +3,6 @@ package statestore
 import (
 	"context"
 	"database/sql"
-	"os"
-	"path/filepath"
 	"reflect"
 	"sort"
 	"testing"
@@ -14,11 +12,8 @@ import (
 )
 
 func TestRecordClusterInventory_ReplacesSnapshot(t *testing.T) {
-	dbPath := "test_cluster_inventory_" + t.Name() + ".db"
-	_ = os.Remove(dbPath)
-	defer os.Remove(dbPath)
 
-	store, err := NewSQLiteStore(dbPath)
+	store, err := NewPostgresStore(testDatabaseURL(t))
 	if err != nil {
 		t.Fatalf("Failed to create SQLite store: %v", err)
 	}
@@ -66,11 +61,8 @@ func TestRecordClusterInventory_ReplacesSnapshot(t *testing.T) {
 }
 
 func TestRecordClusterInventory_EmptyImagesClearsExisting(t *testing.T) {
-	dbPath := "test_cluster_inventory_" + t.Name() + ".db"
-	_ = os.Remove(dbPath)
-	defer os.Remove(dbPath)
 
-	store, err := NewSQLiteStore(dbPath)
+	store, err := NewPostgresStore(testDatabaseURL(t))
 	if err != nil {
 		t.Fatalf("Failed to create SQLite store: %v", err)
 	}
@@ -99,11 +91,8 @@ func TestRecordClusterInventory_EmptyImagesClearsExisting(t *testing.T) {
 }
 
 func TestRecordClusterInventory_PrefersDigestRowsOverDigestlessDuplicates(t *testing.T) {
-	dbPath := "test_cluster_inventory_" + t.Name() + ".db"
-	_ = os.Remove(dbPath)
-	defer os.Remove(dbPath)
 
-	store, err := NewSQLiteStore(dbPath)
+	store, err := NewPostgresStore(testDatabaseURL(t))
 	if err != nil {
 		t.Fatalf("Failed to create SQLite store: %v", err)
 	}
@@ -155,11 +144,8 @@ func TestRecordClusterInventory_PrefersDigestRowsOverDigestlessDuplicates(t *tes
 }
 
 func TestListClusterSummaries(t *testing.T) {
-	dbPath := "test_cluster_summary_" + t.Name() + ".db"
-	_ = os.Remove(dbPath)
-	defer os.Remove(dbPath)
 
-	store, err := NewSQLiteStore(dbPath)
+	store, err := NewPostgresStore(testDatabaseURL(t))
 	if err != nil {
 		t.Fatalf("Failed to create SQLite store: %v", err)
 	}
@@ -207,11 +193,8 @@ func TestListClusterSummaries(t *testing.T) {
 }
 
 func TestDeleteClusterInventory(t *testing.T) {
-	dbPath := "test_cluster_delete_" + t.Name() + ".db"
-	_ = os.Remove(dbPath)
-	defer os.Remove(dbPath)
 
-	store, err := NewSQLiteStore(dbPath)
+	store, err := NewPostgresStore(testDatabaseURL(t))
 	if err != nil {
 		t.Fatalf("Failed to create SQLite store: %v", err)
 	}
@@ -263,11 +246,8 @@ func TestDeleteClusterInventory(t *testing.T) {
 }
 
 func TestGetRuntimeUsageForScan_DigestMatch(t *testing.T) {
-	dbPath := "test_cluster_runtime_digest_" + t.Name() + ".db"
-	_ = os.Remove(dbPath)
-	defer os.Remove(dbPath)
 
-	store, err := NewSQLiteStore(dbPath)
+	store, err := NewPostgresStore(testDatabaseURL(t))
 	if err != nil {
 		t.Fatalf("Failed to create SQLite store: %v", err)
 	}
@@ -325,11 +305,8 @@ func TestGetRuntimeUsageForScan_DigestMatch(t *testing.T) {
 }
 
 func TestGetRuntimeUsageForScan_FallbackRepositoryTagMatch(t *testing.T) {
-	dbPath := "test_cluster_runtime_fallback_" + t.Name() + ".db"
-	_ = os.Remove(dbPath)
-	defer os.Remove(dbPath)
 
-	store, err := NewSQLiteStore(dbPath)
+	store, err := NewPostgresStore(testDatabaseURL(t))
 	if err != nil {
 		t.Fatalf("Failed to create SQLite store: %v", err)
 	}
@@ -373,11 +350,8 @@ func TestGetRuntimeUsageForScan_FallbackRepositoryTagMatch(t *testing.T) {
 }
 
 func TestGetRuntimeUsageForScan_MergesDigestAndDigestlessTagFallback(t *testing.T) {
-	dbPath := "test_cluster_runtime_merge_" + t.Name() + ".db"
-	_ = os.Remove(dbPath)
-	defer os.Remove(dbPath)
 
-	store, err := NewSQLiteStore(dbPath)
+	store, err := NewPostgresStore(testDatabaseURL(t))
 	if err != nil {
 		t.Fatalf("Failed to create SQLite store: %v", err)
 	}
@@ -448,11 +422,8 @@ func TestGetRuntimeUsageForScan_MergesDigestAndDigestlessTagFallback(t *testing.
 }
 
 func TestGetRuntimeUsageForScan_IncludesDistinctDigestVariantForMatchingTag(t *testing.T) {
-	dbPath := "test_cluster_runtime_include_distinct_digest_variant_" + t.Name() + ".db"
-	_ = os.Remove(dbPath)
-	defer os.Remove(dbPath)
 
-	store, err := NewSQLiteStore(dbPath)
+	store, err := NewPostgresStore(testDatabaseURL(t))
 	if err != nil {
 		t.Fatalf("Failed to create SQLite store: %v", err)
 	}
@@ -509,11 +480,8 @@ func runtimeClusterNames(runtime RuntimeInventory) []string {
 }
 
 func TestGetRuntimeUsageForScan_NoMatch(t *testing.T) {
-	dbPath := "test_cluster_runtime_nomatch_" + t.Name() + ".db"
-	_ = os.Remove(dbPath)
-	defer os.Remove(dbPath)
 
-	store, err := NewSQLiteStore(dbPath)
+	store, err := NewPostgresStore(testDatabaseURL(t))
 	if err != nil {
 		t.Fatalf("Failed to create SQLite store: %v", err)
 	}
@@ -536,11 +504,8 @@ func TestGetRuntimeUsageForScan_NoMatch(t *testing.T) {
 }
 
 func TestListScans_InUseFilter_UsesCanonicalRepositoryTagFallback(t *testing.T) {
-	dbPath := "test_cluster_runtime_scan_in_use_canonical_" + t.Name() + ".db"
-	_ = os.Remove(dbPath)
-	defer os.Remove(dbPath)
 
-	store, err := NewSQLiteStore(dbPath)
+	store, err := NewPostgresStore(testDatabaseURL(t))
 	if err != nil {
 		t.Fatalf("Failed to create SQLite store: %v", err)
 	}
@@ -597,11 +562,8 @@ func TestListScans_InUseFilter_UsesCanonicalRepositoryTagFallback(t *testing.T) 
 }
 
 func TestListScans_InUseOrNewerSemver(t *testing.T) {
-	dbPath := "test_cluster_in_use_newer_" + t.Name() + ".db"
-	_ = os.Remove(dbPath)
-	defer os.Remove(dbPath)
 
-	store, err := NewSQLiteStore(dbPath)
+	store, err := NewPostgresStore(testDatabaseURL(t))
 	if err != nil {
 		t.Fatalf("Failed to create SQLite store: %v", err)
 	}
@@ -668,11 +630,8 @@ func TestListScans_InUseOrNewerSemver(t *testing.T) {
 }
 
 func TestRuntimeAnnotationsAndPolicyOutcomeSummary(t *testing.T) {
-	dbPath := "test_runtime_annotations_" + t.Name() + ".db"
-	_ = os.Remove(dbPath)
-	defer os.Remove(dbPath)
 
-	store, err := NewSQLiteStore(dbPath)
+	store, err := NewPostgresStore(testDatabaseURL(t))
 	if err != nil {
 		t.Fatalf("NewSQLiteStore failed: %v", err)
 	}
@@ -771,11 +730,8 @@ func assertRuntimeAnnotation(t *testing.T, records []*ScanRecord, digest string,
 // When multiple tags are in use, "in use + newer" uses the minimum in-use tag as the floor so
 // intermediate versions (e.g. 1.1.0 between 1.0.0 and 1.2.0) are not hidden.
 func TestListScans_InUseOrNewerSemver_multiInUseFloor(t *testing.T) {
-	dbPath := "test_cluster_in_use_newer_multi_" + t.Name() + ".db"
-	_ = os.Remove(dbPath)
-	defer os.Remove(dbPath)
 
-	store, err := NewSQLiteStore(dbPath)
+	store, err := NewPostgresStore(testDatabaseURL(t))
 	if err != nil {
 		t.Fatalf("Failed to create SQLite store: %v", err)
 	}
@@ -844,11 +800,8 @@ func tagNames(scans []*ScanRecord) []string {
 }
 
 func TestListRepositories_RuntimeUsageFallbackRepositoryTag(t *testing.T) {
-	dbPath := "test_cluster_runtime_repo_list_fallback_" + t.Name() + ".db"
-	_ = os.Remove(dbPath)
-	defer os.Remove(dbPath)
 
-	store, err := NewSQLiteStore(dbPath)
+	store, err := NewPostgresStore(testDatabaseURL(t))
 	if err != nil {
 		t.Fatalf("Failed to create SQLite store: %v", err)
 	}
@@ -937,11 +890,8 @@ func TestListRepositories_RuntimeUsageFallbackRepositoryTag(t *testing.T) {
 }
 
 func TestGetRuntimeUsageForScan_FollowsLatestSync(t *testing.T) {
-	dbPath := "test_cluster_runtime_window_" + t.Name() + ".db"
-	_ = os.Remove(dbPath)
-	defer os.Remove(dbPath)
 
-	store, err := NewSQLiteStore(dbPath)
+	store, err := NewPostgresStore(testDatabaseURL(t))
 	if err != nil {
 		t.Fatalf("Failed to create SQLite store: %v", err)
 	}
@@ -1005,11 +955,8 @@ func TestGetRuntimeUsageForScan_FollowsLatestSync(t *testing.T) {
 }
 
 func TestListRepositories_RuntimeUsedWhenRepositorySeenWithDifferentTag(t *testing.T) {
-	dbPath := "test_cluster_runtime_repo_seen_diff_tag_" + t.Name() + ".db"
-	_ = os.Remove(dbPath)
-	defer os.Remove(dbPath)
 
-	store, err := NewSQLiteStore(dbPath)
+	store, err := NewPostgresStore(testDatabaseURL(t))
 	if err != nil {
 		t.Fatalf("Failed to create SQLite store: %v", err)
 	}
@@ -1070,7 +1017,7 @@ func TestListRepositories_RuntimeUsedWhenRepositorySeenWithDifferentTag(t *testi
 }
 
 func TestSearchClusterImagesFiltersCurrentSnapshots(t *testing.T) {
-	store, err := NewSQLiteStore(filepath.Join(t.TempDir(), "runtime.db"))
+	store, err := NewPostgresStore(testDatabaseURL(t))
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -2,11 +2,11 @@ package malicious
 
 import (
 	"context"
-	"path/filepath"
 	"sort"
 	"testing"
 
 	"github.com/daimoniac/suppline/internal/statestore"
+	"github.com/daimoniac/suppline/internal/statestore/storetest"
 	"github.com/daimoniac/suppline/internal/types"
 )
 
@@ -44,7 +44,7 @@ type rematchFixture struct {
 
 func newRematchFixture(t *testing.T) *rematchFixture {
 	t.Helper()
-	store, err := statestore.NewSQLiteStore(filepath.Join(t.TempDir(), "state.db"))
+	store, err := statestore.NewPostgresStore(storetest.URL(t))
 	if err != nil {
 		t.Fatal(err)
 	}
