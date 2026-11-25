@@ -51,6 +51,9 @@ const (
 	shutdownTimeout = 60 * time.Second
 	drainDelay      = 3 * time.Second
 	apiDrainTimeout = 45 * time.Second
+
+	databaseCheckInterval = 15 * time.Second
+	databaseCheckTimeout  = 3 * time.Second
 )
 
 func run() error {
@@ -309,6 +312,15 @@ func run() error {
 	if !ok {
 		return fmt.Errorf("state store cannot serve the VEX audit")
 	}
+	// /health shows a PostgreSQL outage after startup too. Liveness uses
+	// /live, so an outage does not restart the pods.
+	go healthChecker.StartPeriodicChecks(runCtx, databaseCheckInterval, map[string]observability.HealthCheckFunc{
+		"database": func(ctx context.Context) error {
+			ctx, cancel := context.WithTimeout(ctx, databaseCheckTimeout)
+			defer cancel()
+			return scanReads.Ping(ctx)
+		},
+	})
 	// The audit evaluates every current scan, so it keeps its own quiet logger.
 	// The shared engine would record each of those checks as a real scan.
 	quiet := slog.New(slog.DiscardHandler)

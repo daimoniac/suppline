@@ -193,6 +193,16 @@ func (h *HealthChecker) HealthHandler() http.HandlerFunc {
 	}
 }
 
+// LiveHandler answers 200 while the process can serve HTTP. It ignores
+// component health on purpose: a liveness probe that fails because
+// PostgreSQL or Trivy is down restarts suppline without fixing anything.
+func (h *HealthChecker) LiveHandler() http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"status":"alive"}` + "\n"))
+	}
+}
+
 // ReadyHandler returns an HTTP handler for the readiness endpoint
 func (h *HealthChecker) ReadyHandler() http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {

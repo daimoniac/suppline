@@ -2565,3 +2565,17 @@ func tableColumns(t *testing.T, store *Store, table string) map[string]string {
 	}
 	return columns
 }
+
+func TestPingReportsAClosedStore(t *testing.T) {
+	store, err := NewPostgresStore(testDatabaseURL(t))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := store.Ping(t.Context()); err != nil {
+		t.Fatalf("Ping on an open store: %v", err)
+	}
+	_ = store.Close()
+	if err := store.Ping(t.Context()); err == nil {
+		t.Fatal("Ping on a closed store succeeded")
+	}
+}

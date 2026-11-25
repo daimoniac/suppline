@@ -35,6 +35,7 @@ func newMux(healthChecker *HealthChecker) *http.ServeMux {
 	mux.Handle("/metrics", metricsHandler())
 	mux.HandleFunc("/health", healthChecker.HealthHandler())
 	mux.HandleFunc("/ready", healthChecker.ReadyHandler())
+	mux.HandleFunc("/live", healthChecker.LiveHandler())
 	return mux
 }
 

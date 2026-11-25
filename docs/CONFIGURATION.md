@@ -56,7 +56,7 @@ server:
 
 observability:
   logLevel: info        # debug, info, warn, error
-  port: 9090            # /metrics, /health, /ready
+  port: 9090            # /metrics, /health, /ready, /live
 
 mirror:
   enabled: true         # copy sync entries into the target registry in-process
@@ -724,7 +724,7 @@ How it behaves:
 - **Stale data still counts.** If no sync succeeds for `stale_after`, scans keep matching against the old data and record the check as `stale`. When syncing recovers, every stored image is matched again.
 - **New advisories reach existing images within one sync.** Each scan stores the image's language packages. After every sync, images holding a package that a new or changed advisory names are rescanned at high priority. An image that was scanned while the feed was unavailable or stale, and has no match, has its stored check updated to `ok`; its signed SCAI keeps the original status until the next rescan.
 - **The SCAI attestation** always carries a `malicious-package-check` attribute with the status, the feed commit and time it matched against, and any findings.
-- **Health** reports `malicious_packages` as healthy in every state, with the status in the message. `/health` has no degraded state and backs the liveness probe, so a stale feed must not restart the pod. Alert on the metrics instead.
+- **Health** reports `malicious_packages` as healthy in every state, with the status in the message. `/health` has no degraded state, so a stale feed must not mark the instance unhealthy. Alert on the metrics instead.
 - **Disk:** the bare clone is under 100 MB. With the bundled PostgreSQL in the Helm chart, `/data` is an emptyDir, so the feed is cloned again after each restart.
 - **False positives:** exempt them per repository with a hand-written `vex` statement in state `false_positive` (see [POLICY.md](POLICY.md#malicious-packages)). `not_affected` and `vex-auto` are rejected for MAL ids. The VEX audit in the Tasks view lists such a statement as unused once no current, checked scan of the repository matches the advisory.
 - **UI:** the **Malicious Packages** view shows the feed's sync state, how many current images were checked on current data, and every affected image grouped by package or by image, with images running in a cluster first. `GET /api/v1/malicious` returns the same data.

@@ -254,7 +254,7 @@ export POSTGRES_URL=postgres://suppline:suppline@localhost:5432/suppline?sslmode
 
 ## Observability
 
-Prometheus metrics on `:9090/metrics`, JSON logs on stdout, component health on `:9090/health` (config, queue, worker, trivy, database, watcher, malicious_packages), plus the instance's `role` (`leader` or `standby`). On a standby the leader-only components report `standby`, which counts as healthy, and `/metrics` carries only `suppline_leader 0` and Go runtime metrics. `malicious_packages` always reports healthy so a broken feed never restarts the pod; its message carries `ok`, `unavailable` or `stale` — alert on the metrics below instead.
+Prometheus metrics on `:9090/metrics`, JSON logs on stdout, component health on `:9090/health` (config, queue, worker, trivy, database, watcher, malicious_packages), plus the instance's `role` (`leader` or `standby`). On a standby the leader-only components report `standby`, which counts as healthy, and `/metrics` carries only `suppline_leader 0` and Go runtime metrics. `malicious_packages` always reports healthy; its message carries `ok`, `unavailable` or `stale` — alert on the metrics below instead. `database` is re-checked every 15 s. `/ready` fails while an instance drains on shutdown or a component is unhealthy. Point liveness probes at `/live`, which only checks that the process answers: restarting suppline does not fix PostgreSQL or Trivy.
 
 | Metric | Tells you |
 |--------|-----------|
