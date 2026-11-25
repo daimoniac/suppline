@@ -1,0 +1,22 @@
+{{- if .Values.persistence.trivyCache.enabled }}
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: {{ include "suppline.fullname" . }}-trivy-cache
+  labels:
+    {{- include "suppline.labels" . | nindent 4 }}
+    component: trivy
+  {{- with .Values.persistence.trivyCache.annotations }}
+  annotations:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+spec:
+  accessModes:
+    - {{ .Values.persistence.trivyCache.accessMode }}
+  {{- if .Values.persistence.trivyCache.storageClassName }}
+  storageClassName: {{ .Values.persistence.trivyCache.storageClassName }}
+  {{- end }}
+  resources:
+    requests:
+      storage: {{ .Values.persistence.trivyCache.size }}
+{{- end }}

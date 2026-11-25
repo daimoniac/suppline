@@ -1,15 +1,21 @@
 {{- if and (not .Values.postgres.enabled) (not (index (.Values.backend.secrets | default dict) "POSTGRES_URL")) }}
 {{- fail "suppline needs PostgreSQL: keep postgres.enabled=true or set backend.secrets.POSTGRES_URL" }}
 {{- end }}
+{{- if and .Values.persistence.trivyCache.enabled (gt (int .Values.backend.replicaCount) 1) (ne .Values.persistence.trivyCache.accessMode "ReadWriteMany") }}
+{{- fail "persistence.trivyCache with more than one replica needs accessMode ReadWriteMany; or leave it disabled for a per-pod emptyDir" }}
+{{- end }}
 apiVersion: apps/v1
-kind: StatefulSet
+kind: Deployment
 metadata:
   name: {{ include "suppline.fullname" . }}
   labels:
     {{- include "suppline.labels" . | nindent 4 }}
 spec:
-  serviceName: {{ include "suppline.fullname" . }}
-  replicas: 1
+  # One leader runs the pipeline; the others stand by and forward API traffic
+  # to it (ADR 0004).
+  replicas: {{ .Values.backend.replicaCount }}
+  strategy:
+    {{- toYaml .Values.backend.strategy | nindent 4 }}
   selector:
     matchLabels:
       {{- include "suppline.selectorLabels" . | nindent 6 }}
@@ -36,6 +42,8 @@ spec:
         {{- toYaml . | nindent 8 }}
       {{- end }}
       serviceAccountName: {{ include "suppline.serviceAccountName" . }}
+      # Must exceed suppline's 60 s shutdown budget (drain, stop, release).
+      terminationGracePeriodSeconds: {{ .Values.backend.terminationGracePeriodSeconds }}
       securityContext:
         runAsNonRoot: {{ .Values.backend.securityContext.runAsNonRoot }}
         runAsUser: {{ .Values.backend.securityContext.runAsUser }}
@@ -82,6 +90,11 @@ spec:
             name: {{ include "suppline.fullname" . }}-postgres
         {{- end }}
         env:
+        # Default server.advertiseAddress host: other replicas reach this one here.
+        - name: POD_IP
+          valueFrom:
+            fieldRef:
+              fieldPath: status.podIP
         # Keep SBOM/vuln predicates on their own emptyDir so page cache from
         # other volumes does not collide with the cosign RSS spike (see backend.resources).
         - name: TMPDIR
@@ -165,9 +178,15 @@ spec:
       volumes:
       - name: data
         emptyDir: {}
-      {{- if not .Values.persistence.trivyCache.enabled }}
       - name: trivy-cache
-        emptyDir: {}
+      {{- if .Values.persistence.trivyCache.enabled }}
+        persistentVolumeClaim:
+          claimName: {{ include "suppline.fullname" . }}-trivy-cache
+      {{- else }}
+        emptyDir:
+          {{- with .Values.trivy.cacheSizeLimit }}
+          sizeLimit: {{ . }}
+          {{- end }}
       {{- end }}
       - name: tmp
         emptyDir: {}
@@ -191,32 +210,20 @@ spec:
       nodeSelector:
         {{- toYaml . | nindent 8 }}
       {{- end }}
-      {{- with .Values.affinity }}
+      {{- if .Values.affinity }}
       affinity:
-        {{- toYaml . | nindent 8 }}
+        {{- toYaml .Values.affinity | nindent 8 }}
+      {{- else if gt (int .Values.backend.replicaCount) 1 }}
+      # Keep the leader and its standby on different nodes.
+      affinity:
+        podAntiAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+          - topologyKey: kubernetes.io/hostname
+            labelSelector:
+              matchLabels:
+                {{- include "suppline.selectorLabels" . | nindent 16 }}
       {{- end }}
       {{- with .Values.tolerations }}
       tolerations:
         {{- toYaml . | nindent 8 }}
       {{- end }}
-  volumeClaimTemplates:
-  {{- if .Values.persistence.trivyCache.enabled }}
-  - metadata:
-      name: trivy-cache
-      labels:
-        {{- include "suppline.labels" . | nindent 8 }}
-        component: trivy
-      annotations:
-      {{- with .Values.persistence.trivyCache.annotations }}
-        {{- toYaml . | nindent 8 }}
-      {{- end }}
-    spec:
-      accessModes:
-        - {{ .Values.persistence.trivyCache.accessMode }}
-      {{- if .Values.persistence.trivyCache.storageClassName }}
-      storageClassName: {{ .Values.persistence.trivyCache.storageClassName }}
-      {{- end }}
-      resources:
-        requests:
-          storage: {{ .Values.persistence.trivyCache.size }}
-  {{- end }}

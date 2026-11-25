@@ -6,6 +6,8 @@ version: 1
 # Runtime settings (read at startup). Secrets stay in environment variables.
 server:
   port: 8080
+  # Where the other replicas reach this one (POD_IP comes from the chart).
+  advertiseAddress: 'http://{{ env "POD_IP" }}:8080'
   basePath: ""          # e.g. /suppline; also the chart's ingress path
 observability:
   port: 9090            # /metrics, /health, /ready
