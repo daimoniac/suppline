@@ -58,3 +58,25 @@ func TestMetricsSwitchToFullRegistryOnLeadership(t *testing.T) {
 		t.Fatalf("leader scrape lacks suppline_leader 1 or business metrics:\n%s", leader)
 	}
 }
+
+func TestReadyFailsWhileDraining(t *testing.T) {
+	h := NewHealthChecker(slog.New(slog.NewTextHandler(io.Discard, nil)))
+	h.RegisterComponent("database")
+	h.UpdateComponentHealth("database", StatusHealthy, "")
+
+	ready := func() int {
+		rec := httptest.NewRecorder()
+		h.ReadyHandler().ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/ready", nil))
+		return rec.Code
+	}
+	if got := ready(); got != http.StatusOK {
+		t.Fatalf("/ready = %d before draining, want 200", got)
+	}
+	h.SetDraining()
+	if got := ready(); got != http.StatusServiceUnavailable {
+		t.Fatalf("/ready = %d while draining, want 503", got)
+	}
+	if got := h.GetHealth().Status; got != StatusHealthy {
+		t.Fatalf("/health status = %s while draining, want healthy (liveness must not fail)", got)
+	}
+}

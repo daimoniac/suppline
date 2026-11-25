@@ -44,9 +44,21 @@ func main() {
 	}
 }
 
+// Shutdown budget (ADR 0004): the pod's termination grace period must exceed
+// shutdownTimeout.
+const (
+	shutdownTimeout = 60 * time.Second
+	drainDelay      = 3 * time.Second
+	apiDrainTimeout = 45 * time.Second
+)
+
 func run() error {
 	ctx, cancel := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer cancel()
+	// runCtx outlives the signal: on SIGTERM the API drains first, while the
+	// worker still finishes the scans that in-flight requests wait for.
+	runCtx, stopRun := context.WithCancel(context.Background())
+	defer stopRun()
 
 	_ = godotenv.Load()
 
@@ -87,7 +99,7 @@ func run() error {
 	obsServer := observability.NewServer(cfg.Observability.Port, logger, healthChecker)
 
 	go func() {
-		if err := obsServer.Start(ctx); err != nil {
+		if err := obsServer.Start(runCtx); err != nil {
 			logger.Error("observability server error",
 				"error", err.Error())
 		}
@@ -369,7 +381,7 @@ func run() error {
 			defer wg.Done()
 			logger.Info("API server listening",
 				"port", cfg.API.Port)
-			if err := apiServer.Start(ctx); err != nil && err != context.Canceled {
+			if err := apiServer.Start(runCtx); err != nil && err != context.Canceled {
 				logger.Error("API server error",
 					"error", err.Error())
 				errChan <- fmt.Errorf("API server error: %w", err)
@@ -514,7 +526,7 @@ func run() error {
 	wg.Add(1)
 	go func() {
 		defer wg.Done()
-		_ = elector.Run(ctx)
+		_ = elector.Run(runCtx)
 	}()
 
 	logger.Info("started; leader-only components start once elected", "holder", elector.Holder())
@@ -525,22 +537,37 @@ func run() error {
 	case err := <-errChan:
 		logger.Error("component error, initiating shutdown",
 			"error", err.Error())
-		cancel()
 	}
 
-	logger.Info("shutting down gracefully")
-
-	shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), 30*time.Second)
+	logger.Info("shutting down gracefully", "timeout", shutdownTimeout)
+	shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), shutdownTimeout)
 	defer shutdownCancel()
 
-	logger.Debug("waiting for components to stop")
+	// 1. Fail readiness so the Service stops sending new requests, and give
+	//    endpoint updates a moment to reach the load balancers.
+	healthChecker.SetDraining()
+	select {
+	case <-time.After(drainDelay):
+	case <-shutdownCtx.Done():
+	}
+	// 2. Open scan-request long-polls answer 202 with their poll path; the
+	//    client polls again and reaches the next leader.
+	scanRequests.Close()
+	// 3. Let in-flight requests finish while the worker keeps running.
+	apiDrainCtx, apiDrainCancel := context.WithTimeout(shutdownCtx, apiDrainTimeout)
+	if err := apiServer.Shutdown(apiDrainCtx); err != nil {
+		logger.Warn("API requests still running after the drain timeout", "error", err.Error())
+	}
+	apiDrainCancel()
 
+	// 4. Stop the components.
+	stopRun()
+	logger.Debug("waiting for components to stop")
 	done := make(chan struct{})
 	go func() {
 		wg.Wait()
 		close(done)
 	}()
-
 	select {
 	case <-done:
 		logger.Info("all components stopped gracefully")
@@ -549,9 +576,11 @@ func run() error {
 	}
 
 	// Components have stopped, so a standby may take over now.
-	if err := elector.Release(shutdownCtx); err != nil {
+	releaseCtx, releaseCancel := context.WithTimeout(context.Background(), 5*time.Second)
+	if err := elector.Release(releaseCtx); err != nil {
 		logger.Warn("failed to release leader lock; it ends with the session", "error", err.Error())
 	}
+	releaseCancel()
 
 	queueDepth, _ := taskQueue.GetQueueDepth(shutdownCtx)
 	if queueDepth > 0 {
@@ -559,13 +588,6 @@ func run() error {
 			"remaining_tasks", queueDepth)
 	} else {
 		logger.Debug("queue drained successfully")
-	}
-
-	if apiServer != nil {
-		if err := apiServer.Shutdown(shutdownCtx); err != nil {
-			logger.Error("error shutting down API server",
-				"error", err.Error())
-		}
 	}
 
 	if err := obsServer.Shutdown(shutdownCtx); err != nil {

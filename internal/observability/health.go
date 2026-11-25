@@ -50,6 +50,7 @@ type HealthChecker struct {
 	mu         sync.RWMutex
 	components map[string]ComponentHealth
 	role       string
+	draining   bool
 	logger     *slog.Logger
 }
 
@@ -76,6 +77,20 @@ func (h *HealthChecker) SetRole(role string) {
 	h.mu.Lock()
 	defer h.mu.Unlock()
 	h.role = role
+}
+
+// SetDraining makes /ready fail so load balancers stop sending new
+// requests while in-flight ones finish. /health is unaffected.
+func (h *HealthChecker) SetDraining() {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	h.draining = true
+}
+
+func (h *HealthChecker) isDraining() bool {
+	h.mu.RLock()
+	defer h.mu.RUnlock()
+	return h.draining
 }
 
 // UpdateComponentHealth updates the health status of a component
@@ -184,6 +199,12 @@ func (h *HealthChecker) ReadyHandler() http.HandlerFunc {
 		health := h.GetHealth()
 
 		w.Header().Set("Content-Type", "application/json")
+
+		if h.isDraining() {
+			w.WriteHeader(http.StatusServiceUnavailable)
+			fmt.Fprintf(w, `{"status":"draining"}`)
+			return
+		}
 
 		// Ready if all components are healthy
 		if health.Status == StatusHealthy {
