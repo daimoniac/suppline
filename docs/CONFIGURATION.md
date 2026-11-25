@@ -31,7 +31,7 @@ suppline reads `suppline.yml` at startup and checks that same file every 15 seco
 | `SUPPLINE_API_KEY` | yes, unless `server.allowNoAuth` | API key for the UI and API. The cluster-inventory webhook and cluster list stay unauthenticated |
 | `ATTESTATION_KEY` | yes | Base64-encoded cosign private key |
 | `ATTESTATION_KEY_PASSWORD` | if the key is encrypted | Password for `ATTESTATION_KEY` |
-| `POSTGRES_URL` | no | PostgreSQL connection URL. Set → PostgreSQL; unset → SQLite at `store.sqlitePath` |
+| `POSTGRES_URL` | yes | PostgreSQL connection URL, e.g. `postgres://user:pass@host:5432/suppline?sslmode=disable` |
 | `TRIVY_TOKEN` | no | Token for the Trivy server |
 | `SUPPLINE_LLM_API_KEY` | no | Bearer token for the Triage OpenAI-compatible endpoint. If `triage.enabled` is true and this is empty, Triage stays off |
 | `SUPPLINE_GITHUB_TOKEN` | no | GitHub token for Triage code and commit search. A generic `GITHUB_TOKEN` is ignored |
@@ -66,9 +66,6 @@ scanner:
   insecure: false       # skip TLS verification / allow HTTP registries (eval only)
   localFallback: true   # retry a failed server-mode scan locally
 
-store:
-  sqlitePath: suppline.db  # SQLite file when POSTGRES_URL is unset; relative to the working directory (/data in the image)
-
 attestation:
   commandTimeout: 2m    # per cosign invocation
   allowHttpRegistry: false  # pass --allow-http-registry to cosign (Compose eval / HTTP registries only)
@@ -83,36 +80,15 @@ Queue and worker tuning stays under `defaults` (`rescanInterval`, `worker-poll-i
 
 ### State store
 
-suppline uses PostgreSQL when `POSTGRES_URL` is set and SQLite at `store.sqlitePath` otherwise. The default rescan interval is `defaults.rescanInterval` (7 days when unset).
+suppline keeps its state in PostgreSQL and refuses to start without `POSTGRES_URL`
+(for example `postgres://user:pass@host:5432/suppline?sslmode=disable`). SQLite
+support was removed; a leftover `store:` section in `suppline.yml` fails startup.
+The default rescan interval is `defaults.rescanInterval` (7 days when unset).
 
-### SQLite schema reset
-
-The normalized vulnerability schema stores CVE descriptions once in `cve_catalog`
-and package occurrences in `scan_findings`. It intentionally does not migrate the
-legacy `vulnerabilities` table. When upgrading from a version that used that table,
-stop all Suppline writers, remove the SQLite database plus its `-wal` and `-shm`
-files, and restart Suppline. Registry discovery and cluster inventory will refill
-the empty database. Suppline refuses to start if it detects the legacy table.
-
-### PostgreSQL
-
-Set `POSTGRES_URL` (for example
-`postgres://user:pass@host:5432/suppline?sslmode=disable`). Compose and the Helm
+Compose and the Helm
 chart default to a bundled PostgreSQL 18 instance. Official 18 images store data
 under `/var/lib/postgresql/18/docker`; Compose and the chart mount
 `/var/lib/postgresql`. Existing PostgreSQL 16 volumes cannot be reused.
-
-To copy an existing catalog-schema SQLite database into an empty Postgres
-database without starting the full worker pipeline:
-
-```bash
-# copies store.sqlitePath from suppline.yml into POSTGRES_URL
-POSTGRES_URL=postgres://... /app/suppline copy-sqlite
-```
-
-The command preserves row IDs and refuses to run if the destination already has
-repositories. Do not switch a live backend to `postgres` until this copy
-succeeds.
 
 ## Sync configuration
 
@@ -615,8 +591,6 @@ sync:
 version: 1
 observability:
   logLevel: debug
-store:
-  sqlitePath: ./data/suppline.db
 defaults:
   rescanInterval: 1h
 sync: []
@@ -627,6 +601,7 @@ sync: []
 ATTESTATION_KEY=<base64 -w0 cosign.key>
 ATTESTATION_KEY_PASSWORD=<password>
 SUPPLINE_API_KEY=dev-secret-key
+POSTGRES_URL=postgres://suppline:suppline@localhost:5432/suppline?sslmode=disable
 ```
 
 ### Production (Helm)

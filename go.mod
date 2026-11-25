@@ -15,7 +15,6 @@ require (
 	github.com/jackc/pgx/v5 v5.13.0
 	github.com/joho/godotenv v1.5.1
 	github.com/leanovate/gopter v0.2.11
-	github.com/mattn/go-sqlite3 v1.14.53
 	github.com/olareg/olareg v0.2.2
 	github.com/opencontainers/go-digest v1.0.0
 	github.com/package-url/packageurl-go v0.1.7

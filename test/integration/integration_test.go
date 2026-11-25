@@ -19,6 +19,7 @@ import (
 	"github.com/daimoniac/suppline/internal/registry"
 	"github.com/daimoniac/suppline/internal/scanner"
 	"github.com/daimoniac/suppline/internal/statestore"
+	"github.com/daimoniac/suppline/internal/statestore/storetest"
 	"github.com/daimoniac/suppline/internal/types"
 )
 
@@ -300,10 +301,8 @@ func TestTrivyScanner(t *testing.T) {
 
 // TestStateStore tests the state store integration
 func TestStateStore(t *testing.T) {
-	dbPath := "test_integration.db"
-	defer os.Remove(dbPath)
 
-	store, err := statestore.NewSQLiteStore(dbPath)
+	store, err := statestore.NewPostgresStore(storetest.URL(t))
 	if err != nil {
 		t.Fatalf("Failed to create state store: %v", err)
 	}
@@ -562,8 +561,6 @@ func TestTaskQueue(t *testing.T) {
 // TestEndToEndWorkflow tests a complete workflow
 func TestEndToEndWorkflow(t *testing.T) {
 	// Setup
-	dbPath := "test_e2e.db"
-	defer os.Remove(dbPath)
 
 	scannerCfg := config.ScannerConfig{
 		ServerAddr: getEnv("TRIVY_SERVER_ADDR", "localhost:4954"),
@@ -576,7 +573,7 @@ func TestEndToEndWorkflow(t *testing.T) {
 		t.Fatalf("Failed to create scanner: %v", err)
 	}
 
-	store, err := statestore.NewSQLiteStore(dbPath)
+	store, err := statestore.NewPostgresStore(storetest.URL(t))
 	if err != nil {
 		t.Fatalf("Failed to create state store: %v", err)
 	}
@@ -1446,8 +1443,6 @@ func TestOptimizedAttestationFlow(t *testing.T) {
 // This test exercises all 8 steps of the workflow with real components
 func TestCompleteWorkerWorkflow(t *testing.T) {
 	// Setup
-	dbPath := "test_worker_workflow.db"
-	defer os.Remove(dbPath)
 
 	scannerCfg := config.ScannerConfig{
 		ServerAddr: getEnv("TRIVY_SERVER_ADDR", "localhost:4954"),
@@ -1460,7 +1455,7 @@ func TestCompleteWorkerWorkflow(t *testing.T) {
 		t.Fatalf("Failed to create scanner: %v", err)
 	}
 
-	store, err := statestore.NewSQLiteStore(dbPath)
+	store, err := statestore.NewPostgresStore(storetest.URL(t))
 	if err != nil {
 		t.Fatalf("Failed to create state store: %v", err)
 	}

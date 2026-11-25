@@ -56,12 +56,3 @@ func TestPostgresStoreRoundTrip(t *testing.T) {
 		t.Fatalf("unexpected last scan: %+v", got)
 	}
 }
-
-func TestNormalizeCopyValueBool(t *testing.T) {
-	if got := normalizeCopyValue("policy_passed", int64(1)); got != true {
-		t.Fatalf("got %v", got)
-	}
-	if got := normalizeCopyValue("policy_passed", int64(0)); got != false {
-		t.Fatalf("got %v", got)
-	}
-}

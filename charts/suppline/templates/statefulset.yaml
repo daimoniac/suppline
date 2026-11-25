@@ -1,3 +1,6 @@
+{{- if and (not .Values.postgres.enabled) (not (index (.Values.backend.secrets | default dict) "POSTGRES_URL")) }}
+{{- fail "suppline needs PostgreSQL: keep postgres.enabled=true or set backend.secrets.POSTGRES_URL" }}
+{{- end }}
 apiVersion: apps/v1
 kind: StatefulSet
 metadata:
@@ -79,8 +82,8 @@ spec:
             name: {{ include "suppline.fullname" . }}-postgres
         {{- end }}
         env:
-        # Keep SBOM/vuln predicates off the SQLite PVC so Longhorn dirty pages
-        # do not collide with the cosign RSS spike (see backend.resources).
+        # Keep SBOM/vuln predicates on their own emptyDir so page cache from
+        # other volumes does not collide with the cosign RSS spike (see backend.resources).
         - name: TMPDIR
           value: /tmp
         {{- if .Values.registry.enabled }}
@@ -160,10 +163,8 @@ spec:
         securityContext:
           {{- toYaml .Values.trivy.securityContext | nindent 10 }}
       volumes:
-      {{- if not (and .Values.persistence.data.enabled (not .Values.postgres.enabled)) }}
       - name: data
         emptyDir: {}
-      {{- end }}
       {{- if not .Values.persistence.trivyCache.enabled }}
       - name: trivy-cache
         emptyDir: {}
@@ -199,26 +200,6 @@ spec:
         {{- toYaml . | nindent 8 }}
       {{- end }}
   volumeClaimTemplates:
-  {{- if and .Values.persistence.data.enabled (not .Values.postgres.enabled) }}
-  - metadata:
-      name: data
-      labels:
-        {{- include "suppline.labels" . | nindent 8 }}
-      annotations:
-        "helm.sh/resource-policy": keep
-      {{- with .Values.persistence.data.annotations }}
-        {{- toYaml . | nindent 8 }}
-      {{- end }}
-    spec:
-      accessModes:
-        - {{ .Values.persistence.data.accessMode }}
-      {{- if .Values.persistence.data.storageClassName }}
-      storageClassName: {{ .Values.persistence.data.storageClassName }}
-      {{- end }}
-      resources:
-        requests:
-          storage: {{ .Values.persistence.data.size }}
-  {{- end }}
   {{- if .Values.persistence.trivyCache.enabled }}
   - metadata:
       name: trivy-cache

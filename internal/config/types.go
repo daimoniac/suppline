@@ -58,9 +58,7 @@ type AttestationConfig struct {
 
 // StateStoreConfig configures the state store
 type StateStoreConfig struct {
-	Type           string // "postgres" when PostgresURL is set, else "sqlite"
 	PostgresURL    string
-	SQLitePath     string
 	RescanInterval time.Duration
 }
 
@@ -101,7 +99,6 @@ type RegsyncConfig struct {
 	Observability ObservabilitySettings `yaml:"observability,omitempty"`
 	Mirror        MirrorSettings        `yaml:"mirror,omitempty"`
 	Scanner       ScannerSettings       `yaml:"scanner,omitempty"`
-	Store         StoreSettings         `yaml:"store,omitempty"`
 	Attestation   AttestationSettings   `yaml:"attestation,omitempty"`
 	// MaliciousPackages configures known-malicious package detection.
 	MaliciousPackages *MaliciousPackagesConfig `yaml:"malicious-packages,omitempty"`

@@ -69,7 +69,7 @@ jobs:
         with:
           context: .
           file: ./Dockerfile
-          # amd64 only — qemu arm64 + CGO is too slow for a solo release path
+          # amd64 only — arm64 under qemu is too slow for a solo release path
           platforms: linux/amd64
           push: true
           tags: ${{ steps.meta.outputs.tags }}

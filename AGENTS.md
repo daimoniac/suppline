@@ -36,5 +36,4 @@ Use these as the source of truth instead of duplicating details here:
 
 ## High-signal pitfalls
 
-- CGO is required for sqlite (`mattn/go-sqlite3`), so local builds need a C toolchain.
 - `suppline.yml` is template-expanded before YAML parsing; preserve intentional `{{ ... }}` expressions.

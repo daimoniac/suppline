@@ -20,7 +20,7 @@ Your cluster runs dozens of third-party images you didn't build. Every one of th
 
 suppline is the gate in front of that. **Stop maintaining supply-chain glue** — mirror, scan, policy, and cosign attestations in one system, and admit only what passed. Your clusters then pull only from the mirror — and can refuse to run anything without a valid, fresh attestation.
 
-One Go binary. SQLite or PostgreSQL state. No SaaS, no phone-home, air-gap compatible by design.
+One Go binary. PostgreSQL state. No SaaS, no phone-home, air-gap compatible by design.
 
 **Used in production at [SocialHub](https://www.socialhub.io)** to gate third-party images before admission.
 
@@ -35,7 +35,7 @@ One Go binary. SQLite or PostgreSQL state. No SaaS, no phone-home, air-gap compa
 ## How it works
 
 <p align="center">
-  <img src="suppline.cloud/images/architecture-diagram.svg" alt="suppline architecture: regsync mirrors remote registries into a local registry, the watcher and queue feed a worker pipeline that scans with Trivy, evaluates CEL policy and signs cosign attestations back into the registry, results are persisted in SQLite and exposed through the API, dashboard and metrics, while Kubernetes pulls verified images and an optional cluster agent reports what is actually running" width="760"/>
+  <img src="suppline.cloud/images/architecture-diagram.svg" alt="suppline architecture: regsync mirrors remote registries into a local registry, the watcher and queue feed a worker pipeline that scans with Trivy, evaluates CEL policy and signs cosign attestations back into the registry, results are persisted in PostgreSQL and exposed through the API, dashboard and metrics, while Kubernetes pulls verified images and an optional cluster agent reports what is actually running" width="760"/>
 </p>
 
 1. **Mirror** — suppline copies the upstream repositories listed in `suppline.yml` into your registry.
@@ -125,7 +125,7 @@ sync:
         expires_at: 2026-12-31T23:59:59Z
 ```
 
-Everything else is in `suppline.yml` too: the `server`, `observability`, `scanner`, `store`, `mirror` and `attestation` sections hold the runtime settings (ports, base path, Trivy address, SQLite path, ...). Environment variables carry only secrets — `SUPPLINE_API_KEY`, `ATTESTATION_KEY`, `ATTESTATION_KEY_PASSWORD`, `POSTGRES_URL`, `TRIVY_TOKEN`, `SUPPLINE_LLM_API_KEY`, `SUPPLINE_GITHUB_TOKEN` — plus `SUPPLINE_CONFIG`, the path to the file. Full reference: [docs/CONFIGURATION.md](docs/CONFIGURATION.md).
+Everything else is in `suppline.yml` too: the `server`, `observability`, `scanner`, `store`, `mirror` and `attestation` sections hold the runtime settings (ports, base path, Trivy address, ...). Environment variables carry only secrets — `SUPPLINE_API_KEY`, `ATTESTATION_KEY`, `ATTESTATION_KEY_PASSWORD`, `POSTGRES_URL`, `TRIVY_TOKEN`, `SUPPLINE_LLM_API_KEY`, `SUPPLINE_GITHUB_TOKEN` — plus `SUPPLINE_CONFIG`, the path to the file. Full reference: [docs/CONFIGURATION.md](docs/CONFIGURATION.md).
 
 ## Policy as code
 
@@ -239,7 +239,7 @@ Images ship to GHCR as `ghcr.io/daimoniac/suppline:<semver>`; the web UI is buil
 
 Need raw YAML instead of applying with Helm? `helm template … > manifests.yaml` — there is no separate Kustomize tree.
 
-**Standalone binary** — CGO is required for SQLite, so you need a C toolchain, plus Node for the embedded UI:
+**Standalone binary** — needs Go, Node for the embedded UI, and a PostgreSQL database:
 
 ```bash
 make build
@@ -248,6 +248,7 @@ export SUPPLINE_CONFIG=suppline.yml   # scanner.server defaults to localhost:495
 export SUPPLINE_API_KEY=<api key>
 export ATTESTATION_KEY=$(base64 -w0 keys/cosign.key)
 export ATTESTATION_KEY_PASSWORD=<cosign password>
+export POSTGRES_URL=postgres://suppline:suppline@localhost:5432/suppline?sslmode=disable
 ./suppline
 ```
 
@@ -293,7 +294,7 @@ internal/
   scanner/             Trivy integration
   policy/              CEL engine and VEX handling
   attestation/         cosign / Sigstore
-  statestore/          SQLite or PostgreSQL persistence
+  statestore/          PostgreSQL persistence
   api/                 REST API and Swagger
 clusterstate-agent/    Kubernetes inventory reporter
 charts/suppline/       Helm chart
