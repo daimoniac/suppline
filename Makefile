@@ -143,10 +143,10 @@ helm-uninstall: ## Uninstall Helm chart
 
 # Release targets
 release-build: swagger ui ## Build release binaries for multiple platforms
-	GOOS=linux GOARCH=amd64 CGO_ENABLED=1 go build -tags embedui -o dist/suppline-linux-amd64 ./cmd/suppline
-	GOOS=linux GOARCH=arm64 CGO_ENABLED=1 go build -tags embedui -o dist/suppline-linux-arm64 ./cmd/suppline
-	GOOS=darwin GOARCH=amd64 CGO_ENABLED=1 go build -tags embedui -o dist/suppline-darwin-amd64 ./cmd/suppline
-	GOOS=darwin GOARCH=arm64 CGO_ENABLED=1 go build -tags embedui -o dist/suppline-darwin-arm64 ./cmd/suppline
+	GOOS=linux GOARCH=amd64 CGO_ENABLED=0 go build -tags embedui -o dist/suppline-linux-amd64 ./cmd/suppline
+	GOOS=linux GOARCH=arm64 CGO_ENABLED=0 go build -tags embedui -o dist/suppline-linux-arm64 ./cmd/suppline
+	GOOS=darwin GOARCH=amd64 CGO_ENABLED=0 go build -tags embedui -o dist/suppline-darwin-amd64 ./cmd/suppline
+	GOOS=darwin GOARCH=arm64 CGO_ENABLED=0 go build -tags embedui -o dist/suppline-darwin-arm64 ./cmd/suppline
 
 # API Documentation targets
 swagger: ## Generate Swagger/OpenAPI documentation

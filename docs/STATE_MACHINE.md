@@ -53,7 +53,7 @@ stateDiagram-v2
     Scanning : Trivy produces SBOM and CVEs
     Evaluating : VEX resolved at scan time, then CEL expression
     Attesting : cosign SBOM, vuln, VEX, SCAI
-    Persisted : SQLite scan record written
+    Persisted : Scan record written
     Passed : deployable under verified-only admission
     Failed : blocked, evidence still published
     Triage : gitops context plus LLM, writes vex-auto or records a rejection

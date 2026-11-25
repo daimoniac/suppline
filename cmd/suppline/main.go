@@ -47,10 +47,6 @@ func run() error {
 	ctx, cancel := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer cancel()
 
-	if len(os.Args) > 1 && os.Args[1] == "copy-sqlite" {
-		return runCopySQLite(ctx)
-	}
-
 	_ = godotenv.Load()
 
 	cfg, err := config.Load()
@@ -110,24 +106,12 @@ func run() error {
 		"credentials", len(regsyncCfg.Creds))
 	repositoryPolicies := policycatalog.NewConfigCatalog(regsyncCfg)
 
-	logger.Debug("initializing state store",
-		"type", cfg.StateStore.Type)
+	logger.Debug("initializing state store")
 	var store statestore.StateStoreQuery
-	switch cfg.StateStore.Type {
-	case "sqlite":
-		store, err = statestore.NewSQLiteStore(cfg.StateStore.SQLitePath)
-		if err != nil {
-			healthChecker.UpdateComponentHealth("database", observability.StatusUnhealthy, err.Error())
-			return fmt.Errorf("failed to initialize sqlite store: %w", err)
-		}
-	case "postgres":
-		store, err = statestore.NewPostgresStore(cfg.StateStore.PostgresURL)
-		if err != nil {
-			healthChecker.UpdateComponentHealth("database", observability.StatusUnhealthy, err.Error())
-			return fmt.Errorf("failed to initialize postgres store: %w", err)
-		}
-	default:
-		return fmt.Errorf("unsupported state store type: %s", cfg.StateStore.Type)
+	store, err = statestore.NewPostgresStore(cfg.StateStore.PostgresURL)
+	if err != nil {
+		healthChecker.UpdateComponentHealth("database", observability.StatusUnhealthy, err.Error())
+		return fmt.Errorf("failed to initialize postgres store: %w", err)
 	}
 	healthChecker.UpdateComponentHealth("database", observability.StatusHealthy, "")
 	logger.Debug("state store initialized")

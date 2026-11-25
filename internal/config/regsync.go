@@ -74,6 +74,9 @@ func decodeStrict(data []byte) (RegsyncConfig, error) {
 	dec := yaml.NewDecoder(bytes.NewReader(data))
 	dec.KnownFields(true)
 	if err := dec.Decode(&config); err != nil && !stderrors.Is(err, io.EOF) {
+		if strings.Contains(err.Error(), "field store not found") {
+			return RegsyncConfig{}, fmt.Errorf("%w (SQLite support was removed: delete the store section and set POSTGRES_URL)", err)
+		}
 		return RegsyncConfig{}, err
 	}
 	return config, nil

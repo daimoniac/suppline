@@ -49,10 +49,6 @@ func fromFile(regsyncPath string, file *RegsyncConfig) (*Config, error) {
 	}
 
 	postgresURL := getEnv("POSTGRES_URL", "")
-	storeType := "sqlite"
-	if postgresURL != "" {
-		storeType = "postgres"
-	}
 
 	cfg := &Config{
 		RegsyncPath:   regsyncPath,
@@ -83,9 +79,7 @@ func fromFile(regsyncPath string, file *RegsyncConfig) (*Config, error) {
 			NewBundleFormat:   boolOr(file.Attestation.NewBundleFormat, true),
 		},
 		StateStore: StateStoreConfig{
-			Type:           storeType,
 			PostgresURL:    postgresURL,
-			SQLitePath:     stringOr(file.Store.SQLitePath, defaultSQLitePath),
 			RescanInterval: rescanInterval,
 		},
 		API: APIConfig{
@@ -113,6 +107,10 @@ func (c *Config) Validate() error {
 
 	if _, err := os.Stat(c.RegsyncPath); os.IsNotExist(err) {
 		return errors.NewPermanentf("regsync file not found: %s", c.RegsyncPath)
+	}
+
+	if strings.TrimSpace(c.StateStore.PostgresURL) == "" {
+		return errors.NewPermanentf("POSTGRES_URL is required: suppline keeps its state in PostgreSQL")
 	}
 
 	if c.Attestation.Key == "" {

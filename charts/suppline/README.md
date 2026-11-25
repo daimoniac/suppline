@@ -18,7 +18,7 @@ helm template suppline ./charts/suppline \
 - Kubernetes 1.19+
 - Helm 3 or 4
 - A **target registry you control** (Harbor, ECR, ACR, Artifactory, …) — preferred for production
-- PersistentVolume support for bundled PostgreSQL (`postgres.enabled`, default) or SQLite (`postgres.enabled=false` and `persistence.data.enabled`)
+- PersistentVolume for the bundled PostgreSQL (`postgres.enabled`, default); or bring your own with `backend.secrets.POSTGRES_URL`
 - Cosign keypair for attestation signing
 
 ## Quick install (BYO registry)
@@ -100,8 +100,7 @@ Data PVCs may be retained (`helm.sh/resource-policy: keep`) so reinstalls can re
 | `ingress.enabled` | Ingress to the UI and API on the backend service; its path is `server.basePath` from suppline.yml | `false` |
 | `ingress.hosts` | Host names for the ingress | `[suppline.example.com]` |
 | `registry.enabled` | Bundled registry | `false` (BYO) |
-| `postgres.enabled` | Bundled PostgreSQL | `true` |
-| `persistence.data.enabled` | SQLite PVC (ignored while Postgres is enabled; `/data` is then an emptyDir and the malicious-packages feed is cloned again after each restart) | `true` |
+| `postgres.enabled` | Bundled PostgreSQL; set `false` and `backend.secrets.POSTGRES_URL` for an external one | `true` |
 | `backend.resources` | CPU/memory for the suppline container | `1Gi` request / `4Gi` limit (attestation spikes + page cache; not a heap leak) |
 | `trivy.image.tag` | Trivy sidecar | `0.76.2` |
 
@@ -116,7 +115,8 @@ See `values.yaml` for the full set.
 
 ## Notes
 
-- Backend is a single replica (SQLite, or one Postgres writer in this chart)
+- Backend is a single replica
+- `/data` is an emptyDir: the malicious-packages feed is cloned again after each restart
 - Chart ships an **example** `suppline.yml`, not a production site config
 - OCI chart: `oci://ghcr.io/daimoniac/charts/suppline` — cut releases with [docs/RELEASE.md](../../docs/RELEASE.md)
 

@@ -13,7 +13,7 @@ RUN npm run build
 FROM golang:1.27.4-alpine AS builder
 
 # Install build dependencies
-RUN apk add --no-cache git ca-certificates gcc musl-dev sqlite-dev
+RUN apk add --no-cache git ca-certificates
 
 WORKDIR /build
 
@@ -40,11 +40,11 @@ COPY --from=ui /ui/dist/ ./ui/dist/
 RUN mkdir -p build/swagger && \
     swag init -g internal/api/api.go -o build/swagger --parseDependency --parseInternal
 
-# Build the binary with CGO enabled for SQLite and cache mount
+# Build a static binary (pure Go, no CGO)
 ARG VERSION=dev
 RUN --mount=type=cache,target=/go/pkg/mod \
     --mount=type=cache,target=/root/.cache/go-build \
-    CGO_ENABLED=1 GOOS=linux go build -tags embedui \
+    CGO_ENABLED=0 GOOS=linux go build -tags embedui \
     -ldflags="-w -s -X github.com/daimoniac/suppline/internal/version.Version=${VERSION}" \
     -o suppline \
     ./cmd/suppline
@@ -58,7 +58,7 @@ FROM alpine:3.24.4
 # Install runtime dependencies including trivy and cosign clients.
 # cosign is pinned rather than installed from apk: its CLI contract changes between patch
 # releases, and an unpinned upgrade silently breaks the attestation pipeline.
-RUN apk add --no-cache ca-certificates sqlite-libs git wget && \
+RUN apk add --no-cache ca-certificates git wget && \
     wget https://github.com/aquasecurity/trivy/releases/download/v0.76.2/trivy_0.76.2_Linux-64bit.tar.gz && \
     tar zxvf trivy_0.76.2_Linux-64bit.tar.gz trivy && \
     mv trivy /usr/local/bin/ && \
@@ -90,8 +90,7 @@ EXPOSE 8080 9090
 # Runtime settings live in suppline.yml; only secrets come from the environment.
 ENV SUPPLINE_CONFIG=/config/suppline.yml
 
-# Relative paths in suppline.yml (the default store.sqlitePath is suppline.db)
-# resolve inside the writable data volume.
+# Relative paths (checkouts, caches) resolve inside the writable data directory.
 WORKDIR /data
 
 # Health check

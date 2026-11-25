@@ -11,8 +11,6 @@ observability:
   port: 9090            # /metrics, /health, /ready
 scanner:
   server: localhost:4954  # Trivy sidecar
-store:
-  sqlitePath: /data/suppline.db  # used when POSTGRES_URL is not set (postgres.enabled=false)
 
 creds:
   - registry: registry-1.docker.io

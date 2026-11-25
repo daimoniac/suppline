@@ -59,12 +59,6 @@ type ScannerSettings struct {
 	LocalFallback *bool `yaml:"localFallback,omitempty"`
 }
 
-// StoreSettings configures the state store. POSTGRES_URL (a secret) selects
-// PostgreSQL; without it suppline uses SQLite at SQLitePath.
-type StoreSettings struct {
-	SQLitePath string `yaml:"sqlitePath,omitempty"`
-}
-
 // AttestationSettings configures how cosign writes attestations.
 type AttestationSettings struct {
 	// CommandTimeout bounds one cosign invocation.
@@ -82,7 +76,6 @@ const (
 	defaultLogLevel             = "info"
 	defaultTrivyServer          = "localhost:4954"
 	defaultTrivyTimeout         = 5 * time.Minute
-	defaultSQLitePath           = "suppline.db"
 	defaultAttestCommandTimeout = 2 * time.Minute
 )
 

@@ -7,13 +7,6 @@ import (
 	"strings"
 )
 
-type dbDialect string
-
-const (
-	dialectSQLite   dbDialect = "sqlite"
-	dialectPostgres dbDialect = "postgres"
-)
-
 func rewritePlaceholders(query string) string {
 	var b strings.Builder
 	b.Grow(len(query) + 8)
@@ -30,21 +23,14 @@ func rewritePlaceholders(query string) string {
 	return b.String()
 }
 
-func identitySQL(query string) string { return query }
-
-// DB wraps database/sql and rewrites ? placeholders for Postgres.
+// DB wraps database/sql and rewrites ? placeholders to PostgreSQL $n.
 type DB struct {
 	*sql.DB
 	rewrite func(string) string
-	dialect dbDialect
 }
 
-func wrapDB(db *sql.DB, dialect dbDialect) *DB {
-	rewrite := identitySQL
-	if dialect == dialectPostgres {
-		rewrite = rewritePlaceholders
-	}
-	return &DB{DB: db, rewrite: rewrite, dialect: dialect}
+func wrapDB(db *sql.DB) *DB {
+	return &DB{DB: db, rewrite: rewritePlaceholders}
 }
 
 func (d *DB) Exec(query string, args ...any) (sql.Result, error) {
@@ -105,35 +91,18 @@ func (t *Tx) PrepareContext(ctx context.Context, query string) (*sql.Stmt, error
 	return t.Tx.PrepareContext(ctx, t.rewrite(query))
 }
 
-func (s *SQLiteStore) boolTrue() string {
-	if s.db != nil && s.db.dialect == dialectPostgres {
-		return "TRUE"
-	}
-	return "1"
-}
+func (s *SQLiteStore) boolTrue() string { return "TRUE" }
 
-func (s *SQLiteStore) boolFalse() string {
-	if s.db != nil && s.db.dialect == dialectPostgres {
-		return "FALSE"
-	}
-	return "0"
-}
+func (s *SQLiteStore) boolFalse() string { return "FALSE" }
 
+// insertReturningID runs an INSERT and returns the new row's id.
 func (s *SQLiteStore) insertReturningID(ctx context.Context, exec interface {
-	ExecContext(context.Context, string, ...any) (sql.Result, error)
 	QueryRowContext(context.Context, string, ...any) *sql.Row
 }, query string, args ...any) (int64, error) {
-	if s.db != nil && s.db.dialect == dialectPostgres {
-		query = strings.TrimRight(query, " \t\n;") + " RETURNING id"
-		var id int64
-		if err := exec.QueryRowContext(ctx, query, args...).Scan(&id); err != nil {
-			return 0, err
-		}
-		return id, nil
-	}
-	result, err := exec.ExecContext(ctx, query, args...)
-	if err != nil {
+	query = strings.TrimRight(query, " \t\n;") + " RETURNING id"
+	var id int64
+	if err := exec.QueryRowContext(ctx, query, args...).Scan(&id); err != nil {
 		return 0, err
 	}
-	return result.LastInsertId()
+	return id, nil
 }

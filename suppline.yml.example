@@ -19,8 +19,6 @@ scanner:
   timeout: 5m
   insecure: false
   localFallback: true
-store:
-  sqlitePath: suppline.db   # used when POSTGRES_URL is unset
 attestation:
   commandTimeout: 2m
   allowHttpRegistry: false

@@ -45,8 +45,6 @@ func TestLoad_Defaults(t *testing.T) {
 		{"trivy server", cfg.Scanner.ServerAddr, "localhost:4954"},
 		{"trivy timeout", cfg.Scanner.Timeout, 5 * time.Minute},
 		{"local fallback", cfg.Scanner.LocalFallback, true},
-		{"store type", cfg.StateStore.Type, "sqlite"},
-		{"sqlite path", cfg.StateStore.SQLitePath, "suppline.db"},
 		{"rescan interval", cfg.StateStore.RescanInterval, 7 * 24 * time.Hour},
 		{"queue buffer", cfg.Queue.BufferSize, 1000},
 		{"worker concurrency", cfg.Worker.Concurrency, 3},
@@ -80,8 +78,6 @@ func TestLoad_SettingsFromFileAndSecretsFromEnv(t *testing.T) {
 		"  timeout: 90s",
 		"  insecure: true",
 		"  localFallback: false",
-		"store:",
-		"  sqlitePath: /data/suppline.db",
 		"attestation:",
 		"  commandTimeout: 3m",
 		"  allowHttpRegistry: true",
@@ -123,9 +119,7 @@ func TestLoad_SettingsFromFileAndSecretsFromEnv(t *testing.T) {
 		{"trivy insecure", cfg.Scanner.Insecure, true},
 		{"local fallback", cfg.Scanner.LocalFallback, false},
 		{"trivy token", cfg.Scanner.Token, "tok"},
-		{"store type", cfg.StateStore.Type, "postgres"},
 		{"postgres url", cfg.StateStore.PostgresURL, "postgres://x"},
-		{"sqlite path", cfg.StateStore.SQLitePath, "/data/suppline.db"},
 		{"queue buffer", cfg.Queue.BufferSize, 2000},
 		{"retry attempts", cfg.Worker.RetryAttempts, 5},
 		{"poll interval", cfg.Worker.PollInterval, 15 * time.Second},
@@ -176,6 +170,7 @@ func TestValidate(t *testing.T) {
 			RegsyncPath: writeConfig(t, "version: 1", "sync: []"),
 			Attestation: AttestationConfig{Key: "a2V5"},
 			API:         APIConfig{APIKey: "k"},
+			StateStore:  StateStoreConfig{PostgresURL: "postgres://x"},
 		}
 	}
 
@@ -185,6 +180,7 @@ func TestValidate(t *testing.T) {
 
 	cases := map[string]func(*Config){
 		"missing attestation key": func(c *Config) { c.Attestation.Key = "" },
+		"missing postgres url":    func(c *Config) { c.StateStore.PostgresURL = "" },
 		"missing api key":         func(c *Config) { c.API.APIKey = "" },
 		"bad base path":           func(c *Config) { c.API.BasePath = "suppline" },
 		"missing config file":     func(c *Config) { c.RegsyncPath = filepath.Join(t.TempDir(), "nope.yml") },
@@ -220,4 +216,28 @@ func TestValidate(t *testing.T) {
 			t.Fatalf("Validate: %v", err)
 		}
 	})
+}
+
+func TestLoad_RejectsRemovedStoreSection(t *testing.T) {
+	clearSecretEnv(t)
+	t.Setenv("SUPPLINE_CONFIG", writeConfig(t, "version: 1", "store:", "  sqlitePath: suppline.db", "sync: []"))
+
+	_, err := Load()
+	if err == nil || !strings.Contains(err.Error(), "SQLite support was removed") {
+		t.Fatalf("Load error = %v, want a hint that SQLite support was removed", err)
+	}
+}
+
+func TestValidate_RequiresPostgresURL(t *testing.T) {
+	clearSecretEnv(t)
+	t.Setenv("SUPPLINE_CONFIG", writeConfig(t, "version: 1", "sync: []"))
+	t.Setenv("ATTESTATION_KEY", "a2V5")
+
+	cfg, err := Load()
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if err := cfg.Validate(); err == nil || !strings.Contains(err.Error(), "POSTGRES_URL is required") {
+		t.Fatalf("Validate error = %v, want POSTGRES_URL is required", err)
+	}
 }

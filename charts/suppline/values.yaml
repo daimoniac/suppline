@@ -136,7 +136,7 @@ ingress:
   #    hosts:
   #      - suppline.example.com
 
-# Bundled PostgreSQL (default). Set enabled=false and persistence.data.enabled=true for SQLite.
+# Bundled PostgreSQL (default). Set enabled=false and backend.secrets.POSTGRES_URL to use your own.
 postgres:
   enabled: true
   image: postgres:18-alpine
@@ -162,14 +162,6 @@ postgres:
 
 # Persistence configuration
 persistence:
-  # Data volume for SQLite when postgres.enabled is false.
-  data:
-    enabled: true
-    storageClassName: ""
-    accessMode: ReadWriteOnce
-    size: 10Gi
-    annotations: {}
-
   # Trivy cache volume
   trivyCache:
     enabled: false
