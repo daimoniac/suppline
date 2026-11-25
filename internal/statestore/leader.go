@@ -43,7 +43,7 @@ func (l *LeaderLock) connect(ctx context.Context) (*sql.Conn, error) {
 	if l.conn != nil {
 		return l.conn, nil
 	}
-	conn, err := l.store.db.DB.Conn(ctx)
+	conn, err := l.store.db.Conn(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("open leader lock connection: %w", err)
 	}
