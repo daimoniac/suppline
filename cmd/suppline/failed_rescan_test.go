@@ -2,6 +2,7 @@ package main
 
 import (
 	"testing"
+	"time"
 
 	"github.com/daimoniac/suppline/internal/statestore"
 )
@@ -35,4 +36,15 @@ func digests(records []*statestore.ScanRecord) []string {
 		out = append(out, r.Digest)
 	}
 	return out
+}
+
+func TestScannedBeforeSkipsRecentScans(t *testing.T) {
+	now := time.Now()
+	old := &statestore.ScanRecord{Digest: "sha256:old", CreatedAt: now.Add(-10 * time.Minute).Unix()}
+	recent := &statestore.ScanRecord{Digest: "sha256:recent", CreatedAt: now.Add(-time.Minute).Unix()}
+
+	kept, skipped := scannedBefore([]*statestore.ScanRecord{old, recent}, now.Add(-5*time.Minute))
+	if len(kept) != 1 || kept[0] != old || skipped != 1 {
+		t.Fatalf("kept %v, skipped %d; want [sha256:old], 1", digests(kept), skipped)
+	}
 }

@@ -224,11 +224,19 @@ func (m *runner) wantedTags(ctx context.Context, entries []config.SyncEntry, tar
 	return wanted, excludes, nil
 }
 
-func (m *runner) runCleanupForAllTargets(ctx context.Context) error {
+// runCleanupForTargets cleans the targets with cleanupTags among only, or
+// all of them when only is nil. Targets whose entries skipped their startup
+// pass were cleaned after their last copy already.
+func (m *runner) runCleanupForTargets(ctx context.Context, only map[string]struct{}) error {
 	targetMap := map[string]struct{}{}
 	for _, s := range m.cfg.MirrorEntries() {
 		if s.Target == "" || s.CleanupTags == nil || !*s.CleanupTags {
 			continue
+		}
+		if only != nil {
+			if _, ok := only[s.Target]; !ok {
+				continue
+			}
 		}
 		targetMap[s.Target] = struct{}{}
 	}

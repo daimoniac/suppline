@@ -409,7 +409,7 @@ func run() error {
 		// full, draining as the workers catch up; OnElected must not block.
 		go func() {
 			logger.Info("checking for failed artifacts to rescan")
-			if err := enqueueFailedArtifacts(ctx, store, scanEnqueuer, logger); err != nil {
+			if err := enqueueFailedArtifacts(ctx, store, scanEnqueuer, cfg.Worker.PollInterval, logger); err != nil {
 				logger.Error("failed to enqueue failed artifacts", "error", err)
 			}
 			if err := enqueueDueArtifacts(ctx, store, scanEnqueuer, cfg.StateStore.RescanInterval, logger); err != nil {
