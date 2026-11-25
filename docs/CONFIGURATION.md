@@ -344,6 +344,7 @@ curl -sS -X POST "$SUPPLINE_URL/api/v1/scan-requests?wait=55s" \
 - **The image must be in an in-place repository** (404 for an unknown repository, 422 for a mirrored one), and the tag must pass the entry's tag filters (422) and resolve in the registry (404). A digest after the tag (`repo:tag@sha256:…`) must be the one the tag names (409).
 - **Scan requests run first.** They use their own queue tier ahead of discovery and rescans, and `worker-urgent-concurrency` workers (default 3) take nothing else. Attestations are pushed in parallel, and older ones are replaced in the background, so a request answers as soon as the new attestations are published.
 - **Read-only mode** refuses new scan requests.
+- **Retry when the leader changes.** With more than one instance, a queued request lives in the leader's memory. When the leader restarts or fails over, an open request answers 202 or drops the connection, and a later poll can answer **404** because the new leader never heard of it. Send the POST again on a 404 from a poll, a 5xx or a dropped connection. A repeated POST queues one more scan at most.
 
 **Authentication.** The API key may request scans of every in-place repository. With `server.oidc` set, a CI job can instead send an OIDC ID token, such as a GitLab CI `id_token` whose `aud` is `server.oidc.audience`. suppline verifies it against the issuer's published keys and accepts it only when the token's `claim` (default `project_path`) is listed in the repository's `scan-requesters`. ID tokens open the scan-request endpoints only; every other route still needs the API key. The issuer is discovered on the first ID token, so suppline starts even when it is unreachable; until it is reachable, ID tokens get 503.
 
@@ -359,15 +360,28 @@ suppline_scan:
   script:
     - apk add --no-cache curl jq
     - |
-      out=$(curl -sS -X POST "$SUPPLINE_URL/api/v1/scan-requests?wait=55s" \
-        -H "Authorization: Bearer $SUPPLINE_ID_TOKEN" \
-        -d "{\"image\":\"$CI_REGISTRY_IMAGE:sha$CI_COMMIT_SHORT_SHA\"}")
-      while [ "$(echo "$out" | jq -r .state)" = queued ]; do
-        out=$(curl -sS "$SUPPLINE_URL$(echo "$out" | jq -r .poll)&wait=55s" \
-          -H "Authorization: Bearer $SUPPLINE_ID_TOKEN")
+      auth="Authorization: Bearer $SUPPLINE_ID_TOKEN"
+      request() {
+        curl -sS -o out.json -w '%{http_code}' -X POST "$SUPPLINE_URL/api/v1/scan-requests?wait=55s" \
+          -H "$auth" -d "{\"image\":\"$CI_REGISTRY_IMAGE:sha$CI_COMMIT_SHORT_SHA\"}" || true
+      }
+      poll() {
+        curl -sS -o out.json -w '%{http_code}' "$SUPPLINE_URL$(jq -r .poll out.json)&wait=55s" -H "$auth" || true
+      }
+      retries=0
+      code=$(request)
+      while [ "$code" != 200 ]; do
+        case "$code" in
+          202) code=$(poll); [ "$code" = 404 ] && code=retry ;;
+          5??|000|retry)
+            # The leader changed and the request went with it: ask again.
+            retries=$((retries + 1)); [ "$retries" -le 3 ] || break
+            sleep 5; code=$(request) ;;
+          *) break ;;
+        esac
       done
-      echo "$out" | jq .
-      echo "$out" | jq -e '.state == "done" and .verdict.status == "passed" and .verdict.attested.scai'
+      jq . out.json
+      [ "$code" = 200 ] && jq -e '.state == "done" and .verdict.status == "passed" and .verdict.attested.scai' out.json
 ```
 
 ### Rescan Interval Configuration
