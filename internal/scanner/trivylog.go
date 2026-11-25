@@ -18,6 +18,23 @@ var (
 	progressBarRe   = regexp.MustCompile(`\[=*>?\s*\]`)
 )
 
+// trivyNoise are Trivy notices suppline triggers on purpose on every scan.
+// They are relayed at DEBUG instead of their own level.
+var trivyNoise = []string{
+	// GenerateSBOM runs `--format cyclonedx` without scanners: the
+	// vulnerability scan is a separate call.
+	`"--format cyclonedx" disables security scanning`,
+}
+
+func isTrivyNoise(msg string) bool {
+	for _, n := range trivyNoise {
+		if strings.Contains(msg, n) {
+			return true
+		}
+	}
+	return false
+}
+
 // trivyLogRelay copies Trivy stderr into slog JSON, attaching the image currently being scanned.
 type trivyLogRelay struct {
 	logger   *slog.Logger
@@ -67,8 +84,15 @@ func (r *trivyLogRelay) emit(line string) {
 	}
 	parsed, ok := parseTrivyLogLine(line)
 	if !ok {
-		r.logger.Info(line, "image_ref", r.imageRef)
+		level := slog.LevelInfo
+		if isTrivyNoise(line) {
+			level = slog.LevelDebug
+		}
+		r.logger.Log(context.Background(), level, line, "image_ref", r.imageRef)
 		return
+	}
+	if isTrivyNoise(parsed.msg) {
+		parsed.level = slog.LevelDebug
 	}
 	args := make([]any, 0, 4+len(parsed.attrs)*2)
 	if r.imageRef != "" {

@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"log/slog"
+	"strings"
 	"testing"
 )
 
@@ -102,4 +103,30 @@ func attrMap(attrs []trivyLogAttr) map[string]string {
 		out[a.key] = a.value
 	}
 	return out
+}
+
+// SBOM generation runs `trivy image --format cyclonedx` on purpose without
+// scanners; Trivy's reminder about that is noise at INFO on every scan.
+func TestTrivyLogRelay_DemotesCycloneDXNotice(t *testing.T) {
+	var buf bytes.Buffer
+	logger := slog.New(slog.NewJSONHandler(&buf, &slog.HandlerOptions{Level: slog.LevelInfo}))
+	relay := newTrivyLogRelay(logger, "hostingmaloonde/python@sha256:abc")
+	line := "2026-11-25T18:34:40Z\tINFO\t\"--format cyclonedx\" disables security scanning. Specify \"--scanners vuln\" explicitly if you want to include vulnerabilities in the \"cyclonedx\" report.\n"
+	if _, err := relay.Write([]byte(line + "2026-11-25T18:34:41Z\tINFO\tDetected OS\tfamily=\"alpine\"\n")); err != nil {
+		t.Fatal(err)
+	}
+	relay.Flush()
+	if strings.Contains(buf.String(), "disables security scanning") {
+		t.Fatalf("notice logged at INFO:\n%s", buf.String())
+	}
+	if !strings.Contains(buf.String(), "Detected OS") {
+		t.Fatalf("other Trivy lines must still be relayed:\n%s", buf.String())
+	}
+
+	buf.Reset()
+	debug := newTrivyLogRelay(slog.New(slog.NewJSONHandler(&buf, &slog.HandlerOptions{Level: slog.LevelDebug})), "x")
+	_, _ = debug.Write([]byte(line))
+	if !strings.Contains(buf.String(), `"level":"DEBUG"`) {
+		t.Fatalf("notice missing at DEBUG:\n%s", buf.String())
+	}
 }
