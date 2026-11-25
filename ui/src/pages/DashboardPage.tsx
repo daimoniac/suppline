@@ -7,7 +7,8 @@ import { fetchPolicyComplianceData, type PolicyComplianceSnapshot } from '../lib
 import { scheduleEffectLoad } from '../lib/scheduleEffectLoad';
 import { LoadingState, ErrorState, StatusBadge, VulnCounts, DigestLinkWithCopy, RepoName } from '../components/ui';
 import { PolicyCompliancePanel } from '../components/PolicyCompliancePanel';
-import type { CoverageResponse, PoliciesResponse, Scan, SemverUpdateTasksResponse, VEXExpiryTasksResponse } from '../lib/api';
+import { ClusterStateCard } from '../components/ClusterStateCard';
+import type { ClusterInstance, CoverageResponse, PoliciesResponse, Scan, SemverUpdateTasksResponse, VEXExpiryTasksResponse } from '../lib/api';
 import { ShieldAlert, ShieldCheck, Clock, Clock3, ArrowRight, ClipboardList, Sparkles, Trash2, TriangleAlert, Radar, Server, Layers } from 'lucide-react';
 
 interface DashboardData {
@@ -27,6 +28,7 @@ interface DashboardData {
   vexExpiredTaskCount: number;
   vexExpiringSoonTaskCount: number;
   defaultPolicy: PoliciesResponse['Default'];
+  instances: ClusterInstance[];
 }
 
 function emptyCoverage(): CoverageResponse {
@@ -80,7 +82,7 @@ export default function DashboardPage() {
     setLoading(true);
     setError('');
     try {
-      const [recentScans, policySnap, allVEXStatements, inactiveVEXStatements, coverage, semverTasksResult, runtimeUnusedReposResult, runtimeUnusedWhitelistResult, vexExpiryTasksResult, policies, ineffectiveVEX] = await Promise.all([
+      const [recentScans, policySnap, allVEXStatements, inactiveVEXStatements, coverage, semverTasksResult, runtimeUnusedReposResult, runtimeUnusedWhitelistResult, vexExpiryTasksResult, policies, ineffectiveVEX, cluster] = await Promise.all([
         apiClient.getScans({ limit: 20, ...(inUseRequestParams && inUseRequestParams) }),
         fetchPolicyComplianceData(apiClient, inUseRequestParams),
         apiClient.getVEXStatements({}),
@@ -93,6 +95,7 @@ export default function DashboardPage() {
         apiClient.getVEXExpiryTasks().catch(() => null as VEXExpiryTasksResponse | null),
         apiClient.getPolicies().catch(() => ({}) as PoliciesResponse),
         apiClient.getIneffectiveVEX().catch(() => ({ statements: [], computed_at: 0 })),
+        apiClient.getClusterInstances().catch(() => ({ Instances: [] as ClusterInstance[] })),
       ]);
 
       const runtimeUnusedTaskCount = runtimeUnusedReposResult
@@ -132,6 +135,7 @@ export default function DashboardPage() {
         vexExpiredTaskCount,
         vexExpiringSoonTaskCount,
         defaultPolicy: policies.Default ?? null,
+        instances: cluster.Instances ?? [],
       });
     } catch (e: unknown) {
       setError(e instanceof Error ? e.message : 'Failed to load dashboard');
@@ -157,7 +161,7 @@ export default function DashboardPage() {
         <p className="text-sm text-text-secondary mt-1">Container image security overview</p>
       </div>
 
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
         <SummaryCard
           icon={<ShieldAlert className="w-5 h-5" />}
           value={data.failedCount}
@@ -168,6 +172,7 @@ export default function DashboardPage() {
         />
         <SummaryCard icon={<Clock className="w-5 h-5" />} value={data.pendingCount} label="Held" variant="warning" detail="In cooldown, not attested yet" to={mirrorEnabled ? '/mirror' : undefined} />
         <SummaryCard icon={<ShieldCheck className="w-5 h-5" />} value={data.activeVEXStatements} label="Active VEX Statements" variant="info" to="/triage" />
+        <ClusterStateCard instances={data.instances} />
       </div>
 
       {(data.outOfBoundsTaskCount > 0 || data.tightenTaskCount > 0 || data.runtimeUnusedTaskCount > 0 || data.vexExpiredTaskCount > 0 || data.vexExpiringSoonTaskCount > 0 || data.inactiveVEXStatements > 0 || data.ineffectiveVEXStatements > 0) && (

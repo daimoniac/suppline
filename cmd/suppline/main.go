@@ -31,6 +31,7 @@ import (
 	"github.com/daimoniac/suppline/internal/scanner"
 	"github.com/daimoniac/suppline/internal/statestore"
 	"github.com/daimoniac/suppline/internal/triage"
+	"github.com/daimoniac/suppline/internal/version"
 	"github.com/daimoniac/suppline/internal/vexaudit"
 	"github.com/daimoniac/suppline/internal/watcher"
 	"github.com/daimoniac/suppline/internal/worker"
@@ -527,6 +528,20 @@ func run() error {
 	go func() {
 		defer wg.Done()
 		_ = elector.Run(runCtx)
+	}()
+
+	// Every instance, leader or standby, shows on the dashboard's cluster card.
+	hostname, _ := os.Hostname()
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		runHeartbeat(runCtx, scanReads, statestore.Instance{
+			Holder:    holder,
+			Hostname:  hostname,
+			Address:   cfg.API.AdvertiseAddress,
+			Version:   version.Version,
+			StartedAt: time.Now(),
+		}, heartbeatInterval, logger.With("module", "heartbeat"))
 	}()
 
 	logger.Info("started; leader-only components start once elected", "holder", elector.Holder())

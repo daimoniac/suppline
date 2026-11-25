@@ -163,6 +163,10 @@ export class APIClient {
     return this.request<CoverageResponse>('/api/v1/coverage');
   }
 
+  async getClusterInstances() {
+    return this.request<ClusterInstancesResponse>('/api/v1/cluster/instances');
+  }
+
   // VEX Statements
   async getVEXStatements(filters: Record<string, unknown> = {}) {
     return this.request<VEXSummary[]>(`/api/v1/vex${this.qs(filters)}`);
@@ -811,6 +815,20 @@ export interface KubernetesClusterSummary {
   Name: string;
   LastReported?: number;
   ImageCount: number;
+}
+
+/** A running suppline instance; the leader runs the workers. */
+export interface ClusterInstance {
+  Hostname: string;
+  Address: string;
+  Version: string;
+  Leader: boolean;
+  StartedAt: number;
+  SeenAt: number;
+}
+
+export interface ClusterInstancesResponse {
+  Instances: ClusterInstance[];
 }
 
 export interface CoverageResponse {
