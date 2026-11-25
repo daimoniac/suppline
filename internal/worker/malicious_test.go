@@ -25,7 +25,7 @@ func (f *fakeMaliciousChecker) Check([]byte) (*types.MaliciousCheck, []types.Pac
 	return f.check, f.packages, f.err
 }
 
-func newMaliciousPipeline(t *testing.T, checker MaliciousChecker) (*Pipeline, *statestore.SQLiteStore) {
+func newMaliciousPipeline(t *testing.T, checker MaliciousChecker) (*Pipeline, *statestore.Store) {
 	t.Helper()
 	store, err := statestore.NewPostgresStore(storetest.URL(t))
 	if err != nil {

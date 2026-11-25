@@ -9,7 +9,7 @@ import (
 	"github.com/daimoniac/suppline/internal/errors"
 )
 
-func (s *SQLiteStore) InsertTriageRun(ctx context.Context, run *TriageRun) error {
+func (s *Store) InsertTriageRun(ctx context.Context, run *TriageRun) error {
 	if run == nil {
 		return errors.NewPermanentf("triage run is nil")
 	}
@@ -30,7 +30,7 @@ func (s *SQLiteStore) InsertTriageRun(ctx context.Context, run *TriageRun) error
 	return nil
 }
 
-func (s *SQLiteStore) LatestTriageRun(ctx context.Context, repository, cveID string) (*TriageRun, error) {
+func (s *Store) LatestTriageRun(ctx context.Context, repository, cveID string) (*TriageRun, error) {
 	row := s.db.QueryRowContext(ctx, `
 		SELECT id, repository, cve_id, verdict, justification, confidence, evidence_json, reasoning,
 			model, repo_shas_json, cve_hash, tokens, status, session_id, commit_sha, written_state, created_at
@@ -49,7 +49,7 @@ func (s *SQLiteStore) LatestTriageRun(ctx context.Context, repository, cveID str
 	return run, nil
 }
 
-func (s *SQLiteStore) LatestTriageCommit(ctx context.Context) (*TriageRun, error) {
+func (s *Store) LatestTriageCommit(ctx context.Context) (*TriageRun, error) {
 	row := s.db.QueryRowContext(ctx, `
 		SELECT id, repository, cve_id, verdict, justification, confidence, evidence_json, reasoning,
 			model, repo_shas_json, cve_hash, tokens, status, session_id, commit_sha, written_state, created_at
@@ -68,7 +68,7 @@ func (s *SQLiteStore) LatestTriageCommit(ctx context.Context) (*TriageRun, error
 	return run, nil
 }
 
-func (s *SQLiteStore) ListTriageRuns(ctx context.Context, filter TriageFilter) ([]TriageRun, error) {
+func (s *Store) ListTriageRuns(ctx context.Context, filter TriageFilter) ([]TriageRun, error) {
 	var where []string
 	var args []any
 	if filter.Repository != "" {
@@ -128,7 +128,7 @@ func (s *SQLiteStore) ListTriageRuns(ctx context.Context, filter TriageFilter) (
 	return runs, nil
 }
 
-func (s *SQLiteStore) TriageTokensSince(ctx context.Context, since time.Time) (int, error) {
+func (s *Store) TriageTokensSince(ctx context.Context, since time.Time) (int, error) {
 	var total int
 	err := s.db.QueryRowContext(ctx, `SELECT COALESCE(SUM(tokens), 0) FROM triage_runs WHERE created_at >= ?`, since.Unix()).Scan(&total)
 	if err != nil {
@@ -137,7 +137,7 @@ func (s *SQLiteStore) TriageTokensSince(ctx context.Context, since time.Time) (i
 	return total, nil
 }
 
-func (s *SQLiteStore) BudgetResetAt(ctx context.Context) (time.Time, error) {
+func (s *Store) BudgetResetAt(ctx context.Context) (time.Time, error) {
 	var unix int64
 	err := s.db.QueryRowContext(ctx, `SELECT reset_at FROM triage_budget WHERE id = 1`).Scan(&unix)
 	if err == sql.ErrNoRows || (err == nil && unix <= 0) {
@@ -149,7 +149,7 @@ func (s *SQLiteStore) BudgetResetAt(ctx context.Context) (time.Time, error) {
 	return time.Unix(unix, 0).UTC(), nil
 }
 
-func (s *SQLiteStore) SetBudgetResetAt(ctx context.Context, at time.Time) error {
+func (s *Store) SetBudgetResetAt(ctx context.Context, at time.Time) error {
 	_, err := s.db.ExecContext(ctx, `
 		INSERT INTO triage_budget (id, reset_at) VALUES (1, ?)
 		ON CONFLICT(id) DO UPDATE SET reset_at = excluded.reset_at

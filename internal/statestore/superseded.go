@@ -16,7 +16,7 @@ import (
 //
 // currentDigests are the digests the registry tags resolve to in this
 // discovery cycle. Those are already on the watcher's scan path.
-func (s *SQLiteStore) ReconcileSupersededDigests(ctx context.Context, repository string, currentDigests []string, rescanInterval time.Duration) ([]DigestRenewal, error) {
+func (s *Store) ReconcileSupersededDigests(ctx context.Context, repository string, currentDigests []string, rescanInterval time.Duration) ([]DigestRenewal, error) {
 	repository = strings.TrimSpace(repository)
 	if repository == "" {
 		return nil, domainerrors.NewPermanentf("repository is required")
@@ -78,7 +78,7 @@ func (s *SQLiteStore) ReconcileSupersededDigests(ctx context.Context, repository
 // inUseDigestTags returns digests cluster inventory currently reports for this
 // repository, with one tag to record the renewal under. Tag-only observations
 // are omitted: those follow the mutable tag the watcher already resolves.
-func (s *SQLiteStore) inUseDigestTags(ctx context.Context, repository string) (map[string]string, error) {
+func (s *Store) inUseDigestTags(ctx context.Context, repository string) (map[string]string, error) {
 	usage, err := s.queryRuntimeUsageByRepository(ctx, repository)
 	if err != nil {
 		return nil, err
@@ -105,7 +105,7 @@ func (s *SQLiteStore) inUseDigestTags(ctx context.Context, repository string) (m
 	return out, nil
 }
 
-func (s *SQLiteStore) storedTagForDigest(ctx context.Context, repository, digest string) string {
+func (s *Store) storedTagForDigest(ctx context.Context, repository, digest string) string {
 	var tag string
 	err := s.db.QueryRowContext(ctx, `
 		SELECT COALESCE(a.tag, '')
@@ -121,7 +121,7 @@ func (s *SQLiteStore) storedTagForDigest(ctx context.Context, repository, digest
 	return tag
 }
 
-func (s *SQLiteStore) releaseUnusedSuperseded(ctx context.Context, repository string, current map[string]struct{}, inUse map[string]string) error {
+func (s *Store) releaseUnusedSuperseded(ctx context.Context, repository string, current map[string]struct{}, inUse map[string]string) error {
 	rows, err := s.db.QueryContext(ctx, `
 		SELECT a.id, a.digest
 		FROM artifacts a

@@ -21,7 +21,7 @@ func testDatabaseURL(t testing.TB) string {
 
 // newTestStore opens a store on a fresh database and closes it when the
 // test ends.
-func newTestStore(t testing.TB) *SQLiteStore {
+func newTestStore(t testing.TB) *Store {
 	t.Helper()
 	store, err := NewPostgresStore(testDatabaseURL(t))
 	if err != nil {

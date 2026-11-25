@@ -11,7 +11,7 @@ func TestListRepositories_InUseFilterIncludesWhitelistedInBothModes(t *testing.T
 
 	store, err := NewPostgresStore(testDatabaseURL(t))
 	if err != nil {
-		t.Fatalf("failed to create sqlite store: %v", err)
+		t.Fatalf("failed to create store: %v", err)
 	}
 	defer store.Close()
 

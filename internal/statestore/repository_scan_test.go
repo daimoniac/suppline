@@ -11,9 +11,9 @@ import (
 func TestGetLastRepositoryScan_IgnoresOtherRepository(t *testing.T) {
 	raw, cleanup := createTestStore(t)
 	defer cleanup()
-	store, ok := raw.(*SQLiteStore)
+	store, ok := raw.(*Store)
 	if !ok {
-		t.Fatal("expected *SQLiteStore")
+		t.Fatal("expected *Store")
 	}
 
 	ctx := context.Background()
@@ -50,9 +50,9 @@ func TestGetLastRepositoryScan_IgnoresOtherRepository(t *testing.T) {
 func TestGetLastRepositoryScanSummary_SkipsFindings(t *testing.T) {
 	raw, cleanup := createTestStore(t)
 	defer cleanup()
-	store, ok := raw.(*SQLiteStore)
+	store, ok := raw.(*Store)
 	if !ok {
-		t.Fatal("expected *SQLiteStore")
+		t.Fatal("expected *Store")
 	}
 
 	ctx := context.Background()

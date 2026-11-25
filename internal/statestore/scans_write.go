@@ -19,7 +19,7 @@ func nullableInt64(value int64) interface{} {
 
 // RecordClusterInventory replaces the image inventory snapshot for a cluster.
 
-func (s *SQLiteStore) RecordScan(ctx context.Context, record *ScanRecord) error {
+func (s *Store) RecordScan(ctx context.Context, record *ScanRecord) error {
 	if record == nil {
 		return errors.NewPermanentf("scan record is required")
 	}
@@ -218,7 +218,7 @@ func (s *SQLiteStore) RecordScan(ctx context.Context, record *ScanRecord) error 
 // markTagBindingTx records whether this scan owns the tag. A retained renewal
 // stays superseded when the tag already has a different current digest, so the
 // renewal cannot hide that binding. It returns true when prune should run.
-func (s *SQLiteStore) markTagBindingTx(ctx context.Context, tx *Tx, repositoryID, artifactID int64, record *ScanRecord) (bool, error) {
+func (s *Store) markTagBindingTx(ctx context.Context, tx *Tx, repositoryID, artifactID int64, record *ScanRecord) (bool, error) {
 	if !record.RetainSuperseded {
 		if _, err := tx.ExecContext(ctx, `UPDATE artifacts SET superseded = 0 WHERE id = ?`, artifactID); err != nil {
 			return false, errors.NewTransientf("failed to mark current tag binding: %w", err)
@@ -247,7 +247,7 @@ func (s *SQLiteStore) markTagBindingTx(ctx context.Context, tx *Tx, repositoryID
 // pruneSupersededTagBindingsTx drops other digests for this tag. A digest that
 // cluster inventory still reports is marked superseded instead of deleted, so
 // a later renewal can attest it. Empty tags are left untouched.
-func (s *SQLiteStore) pruneSupersededTagBindingsTx(ctx context.Context, tx *Tx, repositoryID int64, digest, tag string) error {
+func (s *Store) pruneSupersededTagBindingsTx(ctx context.Context, tx *Tx, repositoryID int64, digest, tag string) error {
 	if tag == "" {
 		return nil
 	}
@@ -299,7 +299,7 @@ func (s *SQLiteStore) pruneSupersededTagBindingsTx(ctx context.Context, tx *Tx, 
 	return nil
 }
 
-func (s *SQLiteStore) digestInUseTx(ctx context.Context, tx *Tx, digest string) (bool, error) {
+func (s *Store) digestInUseTx(ctx context.Context, tx *Tx, digest string) (bool, error) {
 	digest = strings.TrimSpace(digest)
 	if digest == "" {
 		return false, nil
@@ -407,7 +407,7 @@ func deleteArtifactPreservingSharedScansTx(ctx context.Context, tx *Tx, artifact
 // EnsureArtifactTagBinding ensures a (repository, digest, tag) artifact exists when the
 // digest already has a scan via a sibling tag. Alias tags inherit last_scan_id so they
 // appear in repository listings without a redundant rescan.
-func (s *SQLiteStore) EnsureArtifactTagBinding(ctx context.Context, repository, digest, tag string) (bool, error) {
+func (s *Store) EnsureArtifactTagBinding(ctx context.Context, repository, digest, tag string) (bool, error) {
 	if repository == "" || digest == "" {
 		return false, errors.NewPermanentf("repository and digest are required")
 	}

@@ -10,7 +10,7 @@ import (
 )
 
 // NewPostgresStore opens PostgreSQL and creates the catalog schema if needed.
-func NewPostgresStore(url string) (*SQLiteStore, error) {
+func NewPostgresStore(url string) (*Store, error) {
 	db, err := sql.Open("pgx", url)
 	if err != nil {
 		return nil, errors.NewTransientf("failed to open postgres database: %w", err)
@@ -25,7 +25,7 @@ func NewPostgresStore(url string) (*SQLiteStore, error) {
 		return nil, errors.NewTransientf("failed to ping postgres: %w", err)
 	}
 
-	store := &SQLiteStore{db: wrapDB(db)}
+	store := &Store{db: wrapDB(db)}
 	if err := store.initSchema(); err != nil {
 		db.Close()
 		return nil, errors.NewPermanentf("failed to initialize schema: %w", err)
@@ -33,7 +33,7 @@ func NewPostgresStore(url string) (*SQLiteStore, error) {
 	return store, nil
 }
 
-func (s *SQLiteStore) initPostgresSchema() error {
+func (s *Store) initPostgresSchema() error {
 	stmts := []string{
 		`CREATE TABLE IF NOT EXISTS repositories (
 			id BIGSERIAL PRIMARY KEY,

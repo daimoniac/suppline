@@ -14,7 +14,7 @@ func TestListRunningPolicyFailures_SupersededDigestStillRunning(t *testing.T) {
 	store, cleanup := createTestStore(t)
 	defer cleanup()
 
-	sqliteStore := store.(*SQLiteStore)
+	pgStore := store.(*Store)
 	ctx := context.Background()
 	const (
 		repo      = "hostingmaloonde/memcached"
@@ -29,7 +29,7 @@ func TestListRunningPolicyFailures_SupersededDigestStillRunning(t *testing.T) {
 
 	recordInventory := func(reportedAt time.Time, entries ...ClusterImageEntry) {
 		t.Helper()
-		if err := sqliteStore.RecordClusterInventory(ctx, cluster, entries, reportedAt); err != nil {
+		if err := pgStore.RecordClusterInventory(ctx, cluster, entries, reportedAt); err != nil {
 			t.Fatalf("RecordClusterInventory: %v", err)
 		}
 	}
@@ -67,7 +67,7 @@ func TestListRunningPolicyFailures_SupersededDigestStillRunning(t *testing.T) {
 
 	// The current-binding list only knows the passing digest: this is what the
 	// dashboard card used to read.
-	current, err := sqliteStore.ListScans(ctx, ScanFilter{ImageUsage: ImageUsageInUse, PolicyStatus: "failed"})
+	current, err := pgStore.ListScans(ctx, ScanFilter{ImageUsage: ImageUsageInUse, PolicyStatus: "failed"})
 	if err != nil {
 		t.Fatalf("ListScans: %v", err)
 	}
@@ -75,7 +75,7 @@ func TestListRunningPolicyFailures_SupersededDigestStillRunning(t *testing.T) {
 		t.Fatalf("ListScans(in_use, failed) = %d records, want 0 (tag now points at the passing digest)", len(current))
 	}
 
-	running, err := sqliteStore.ListRunningPolicyFailures(ctx)
+	running, err := pgStore.ListRunningPolicyFailures(ctx)
 	if err != nil {
 		t.Fatalf("ListRunningPolicyFailures: %v", err)
 	}
@@ -98,7 +98,7 @@ func TestListRunningPolicyFailures_SupersededDigestStillRunning(t *testing.T) {
 		}
 	}
 
-	summary, err := sqliteStore.GetPolicyOutcomeSummary(ctx)
+	summary, err := pgStore.GetPolicyOutcomeSummary(ctx)
 	if err != nil {
 		t.Fatalf("GetPolicyOutcomeSummary: %v", err)
 	}
@@ -112,14 +112,14 @@ func TestListRunningPolicyFailures_SupersededDigestStillRunning(t *testing.T) {
 		ClusterImageEntry{Namespace: namespace, ImageRef: imageRef, Tag: tag, Digest: passingC},
 		ClusterImageEntry{Namespace: "other", ImageRef: imageRef, Tag: tag},
 	)
-	running, err = sqliteStore.ListRunningPolicyFailures(ctx)
+	running, err = pgStore.ListRunningPolicyFailures(ctx)
 	if err != nil {
 		t.Fatalf("ListRunningPolicyFailures after roll: %v", err)
 	}
 	if len(running) != 0 {
 		t.Fatalf("running failures after roll = %v, want none", runningDigests(running))
 	}
-	summary, err = sqliteStore.GetPolicyOutcomeSummary(ctx)
+	summary, err = pgStore.GetPolicyOutcomeSummary(ctx)
 	if err != nil {
 		t.Fatalf("GetPolicyOutcomeSummary after roll: %v", err)
 	}
@@ -134,7 +134,7 @@ func TestListRunningPolicyFailures_CurrentBindingNotCreditedWithOldDigest(t *tes
 	store, cleanup := createTestStore(t)
 	defer cleanup()
 
-	sqliteStore := store.(*SQLiteStore)
+	pgStore := store.(*Store)
 	ctx := context.Background()
 	const (
 		repo     = "hostingmaloonde/redis"
@@ -147,7 +147,7 @@ func TestListRunningPolicyFailures_CurrentBindingNotCreditedWithOldDigest(t *tes
 	if err := store.RecordScan(ctx, &ScanRecord{Repository: repo, Digest: oldPass, Tag: tag, PolicyPassed: true, PolicyStatus: "passed"}); err != nil {
 		t.Fatalf("RecordScan(old): %v", err)
 	}
-	if err := sqliteStore.RecordClusterInventory(ctx, "c1", []ClusterImageEntry{
+	if err := pgStore.RecordClusterInventory(ctx, "c1", []ClusterImageEntry{
 		{Namespace: "cache", ImageRef: imageRef, Tag: tag, Digest: oldPass},
 	}, time.Now().UTC()); err != nil {
 		t.Fatalf("RecordClusterInventory: %v", err)
@@ -156,7 +156,7 @@ func TestListRunningPolicyFailures_CurrentBindingNotCreditedWithOldDigest(t *tes
 		t.Fatalf("RecordScan(new): %v", err)
 	}
 
-	running, err := sqliteStore.ListRunningPolicyFailures(ctx)
+	running, err := pgStore.ListRunningPolicyFailures(ctx)
 	if err != nil {
 		t.Fatalf("ListRunningPolicyFailures: %v", err)
 	}

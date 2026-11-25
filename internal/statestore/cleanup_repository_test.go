@@ -10,9 +10,9 @@ func TestCleanupRepository_RemovesAllArtifactsAndRepo(t *testing.T) {
 	store, cleanup := createTestStore(t)
 	defer cleanup()
 
-	sqliteStore, ok := store.(*SQLiteStore)
+	pgStore, ok := store.(*Store)
 	if !ok {
-		t.Fatal("expected *SQLiteStore from createTestStore")
+		t.Fatal("expected *Store from createTestStore")
 	}
 
 	ctx := context.Background()
@@ -80,7 +80,7 @@ func TestCleanupRepository_RemovesAllArtifactsAndRepo(t *testing.T) {
 	}
 
 	var repoCount int
-	if err := sqliteStore.db.QueryRowContext(ctx, `SELECT COUNT(*) FROM repositories WHERE name = ?`, repo).Scan(&repoCount); err != nil {
+	if err := pgStore.db.QueryRowContext(ctx, `SELECT COUNT(*) FROM repositories WHERE name = ?`, repo).Scan(&repoCount); err != nil {
 		t.Fatalf("count repositories: %v", err)
 	}
 	if repoCount != 0 {

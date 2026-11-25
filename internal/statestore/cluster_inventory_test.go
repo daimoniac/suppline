@@ -15,7 +15,7 @@ func TestRecordClusterInventory_ReplacesSnapshot(t *testing.T) {
 
 	store, err := NewPostgresStore(testDatabaseURL(t))
 	if err != nil {
-		t.Fatalf("Failed to create SQLite store: %v", err)
+		t.Fatalf("Failed to create store: %v", err)
 	}
 	defer store.Close()
 
@@ -64,7 +64,7 @@ func TestRecordClusterInventory_EmptyImagesClearsExisting(t *testing.T) {
 
 	store, err := NewPostgresStore(testDatabaseURL(t))
 	if err != nil {
-		t.Fatalf("Failed to create SQLite store: %v", err)
+		t.Fatalf("Failed to create store: %v", err)
 	}
 	defer store.Close()
 
@@ -94,7 +94,7 @@ func TestRecordClusterInventory_PrefersDigestRowsOverDigestlessDuplicates(t *tes
 
 	store, err := NewPostgresStore(testDatabaseURL(t))
 	if err != nil {
-		t.Fatalf("Failed to create SQLite store: %v", err)
+		t.Fatalf("Failed to create store: %v", err)
 	}
 	defer store.Close()
 
@@ -147,7 +147,7 @@ func TestListClusterSummaries(t *testing.T) {
 
 	store, err := NewPostgresStore(testDatabaseURL(t))
 	if err != nil {
-		t.Fatalf("Failed to create SQLite store: %v", err)
+		t.Fatalf("Failed to create store: %v", err)
 	}
 	defer store.Close()
 
@@ -196,7 +196,7 @@ func TestDeleteClusterInventory(t *testing.T) {
 
 	store, err := NewPostgresStore(testDatabaseURL(t))
 	if err != nil {
-		t.Fatalf("Failed to create SQLite store: %v", err)
+		t.Fatalf("Failed to create store: %v", err)
 	}
 	defer store.Close()
 
@@ -249,7 +249,7 @@ func TestGetRuntimeUsageForScan_DigestMatch(t *testing.T) {
 
 	store, err := NewPostgresStore(testDatabaseURL(t))
 	if err != nil {
-		t.Fatalf("Failed to create SQLite store: %v", err)
+		t.Fatalf("Failed to create store: %v", err)
 	}
 	defer store.Close()
 
@@ -308,7 +308,7 @@ func TestGetRuntimeUsageForScan_FallbackRepositoryTagMatch(t *testing.T) {
 
 	store, err := NewPostgresStore(testDatabaseURL(t))
 	if err != nil {
-		t.Fatalf("Failed to create SQLite store: %v", err)
+		t.Fatalf("Failed to create store: %v", err)
 	}
 	defer store.Close()
 
@@ -353,7 +353,7 @@ func TestGetRuntimeUsageForScan_MergesDigestAndDigestlessTagFallback(t *testing.
 
 	store, err := NewPostgresStore(testDatabaseURL(t))
 	if err != nil {
-		t.Fatalf("Failed to create SQLite store: %v", err)
+		t.Fatalf("Failed to create store: %v", err)
 	}
 	defer store.Close()
 
@@ -425,7 +425,7 @@ func TestGetRuntimeUsageForScan_IncludesDistinctDigestVariantForMatchingTag(t *t
 
 	store, err := NewPostgresStore(testDatabaseURL(t))
 	if err != nil {
-		t.Fatalf("Failed to create SQLite store: %v", err)
+		t.Fatalf("Failed to create store: %v", err)
 	}
 	defer store.Close()
 
@@ -483,7 +483,7 @@ func TestGetRuntimeUsageForScan_NoMatch(t *testing.T) {
 
 	store, err := NewPostgresStore(testDatabaseURL(t))
 	if err != nil {
-		t.Fatalf("Failed to create SQLite store: %v", err)
+		t.Fatalf("Failed to create store: %v", err)
 	}
 	defer store.Close()
 
@@ -507,7 +507,7 @@ func TestListScans_InUseFilter_UsesCanonicalRepositoryTagFallback(t *testing.T) 
 
 	store, err := NewPostgresStore(testDatabaseURL(t))
 	if err != nil {
-		t.Fatalf("Failed to create SQLite store: %v", err)
+		t.Fatalf("Failed to create store: %v", err)
 	}
 	defer store.Close()
 
@@ -565,7 +565,7 @@ func TestListScans_InUseOrNewerSemver(t *testing.T) {
 
 	store, err := NewPostgresStore(testDatabaseURL(t))
 	if err != nil {
-		t.Fatalf("Failed to create SQLite store: %v", err)
+		t.Fatalf("Failed to create store: %v", err)
 	}
 	defer store.Close()
 
@@ -633,7 +633,7 @@ func TestRuntimeAnnotationsAndPolicyOutcomeSummary(t *testing.T) {
 
 	store, err := NewPostgresStore(testDatabaseURL(t))
 	if err != nil {
-		t.Fatalf("NewSQLiteStore failed: %v", err)
+		t.Fatalf("NewPostgresStore failed: %v", err)
 	}
 	defer store.Close()
 
@@ -733,7 +733,7 @@ func TestListScans_InUseOrNewerSemver_multiInUseFloor(t *testing.T) {
 
 	store, err := NewPostgresStore(testDatabaseURL(t))
 	if err != nil {
-		t.Fatalf("Failed to create SQLite store: %v", err)
+		t.Fatalf("Failed to create store: %v", err)
 	}
 	defer store.Close()
 
@@ -803,7 +803,7 @@ func TestListRepositories_RuntimeUsageFallbackRepositoryTag(t *testing.T) {
 
 	store, err := NewPostgresStore(testDatabaseURL(t))
 	if err != nil {
-		t.Fatalf("Failed to create SQLite store: %v", err)
+		t.Fatalf("Failed to create store: %v", err)
 	}
 	defer store.Close()
 
@@ -893,7 +893,7 @@ func TestGetRuntimeUsageForScan_FollowsLatestSync(t *testing.T) {
 
 	store, err := NewPostgresStore(testDatabaseURL(t))
 	if err != nil {
-		t.Fatalf("Failed to create SQLite store: %v", err)
+		t.Fatalf("Failed to create store: %v", err)
 	}
 	defer store.Close()
 
@@ -958,7 +958,7 @@ func TestListRepositories_RuntimeUsedWhenRepositorySeenWithDifferentTag(t *testi
 
 	store, err := NewPostgresStore(testDatabaseURL(t))
 	if err != nil {
-		t.Fatalf("Failed to create SQLite store: %v", err)
+		t.Fatalf("Failed to create store: %v", err)
 	}
 	defer store.Close()
 

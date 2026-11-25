@@ -8,7 +8,7 @@ import (
 	"github.com/daimoniac/suppline/internal/types"
 )
 
-func (s *SQLiteStore) ListVEXStatements(ctx context.Context, filter VEXFilter) ([]*types.VEXInfo, error) {
+func (s *Store) ListVEXStatements(ctx context.Context, filter VEXFilter) ([]*types.VEXInfo, error) {
 	query := `
 		SELECT 
 			r.name as repository,
@@ -83,7 +83,7 @@ func (s *SQLiteStore) ListVEXStatements(ctx context.Context, filter VEXFilter) (
 
 // GetExemptedCVEImageCounts returns a map of CVE ID → count of distinct digests
 // that have this CVE exempted via VEX in the latest scan for each artifact.
-func (s *SQLiteStore) GetExemptedCVEImageCounts(ctx context.Context) (map[string]int, error) {
+func (s *Store) GetExemptedCVEImageCounts(ctx context.Context) (map[string]int, error) {
 	query := `
 		SELECT a.digest, sr.vex_statements_json
 		FROM artifacts a
@@ -117,7 +117,7 @@ func (s *SQLiteStore) GetExemptedCVEImageCounts(ctx context.Context) (map[string
 
 // getAppliedCVESet returns a set of all CVE IDs that have been applied (exempted via VEX)
 // in at least one scan record. This is a helper method for inactive VEX queries.
-func (s *SQLiteStore) getAppliedCVESet(ctx context.Context) (map[string]bool, error) {
+func (s *Store) getAppliedCVESet(ctx context.Context) (map[string]bool, error) {
 	query := `
 		SELECT 
 			sr.vex_statements_json
@@ -155,7 +155,7 @@ func (s *SQLiteStore) getAppliedCVESet(ctx context.Context) (map[string]bool, er
 // GetInactiveVEXCount returns the count of CVE IDs from the provided list
 // that have never been applied via VEX in any scan record.
 // This helps identify VEX statements defined in configuration that are no longer being used.
-func (s *SQLiteStore) GetInactiveVEXCount(ctx context.Context, definedCVEIDs []string) (int, error) {
+func (s *Store) GetInactiveVEXCount(ctx context.Context, definedCVEIDs []string) (int, error) {
 	if len(definedCVEIDs) == 0 {
 		return 0, nil
 	}
@@ -178,7 +178,7 @@ func (s *SQLiteStore) GetInactiveVEXCount(ctx context.Context, definedCVEIDs []s
 
 // GetAppliedVEXCVEIDs returns the subset of provided CVE IDs that have been applied
 // via VEX in at least one scan record.
-func (s *SQLiteStore) GetAppliedVEXCVEIDs(ctx context.Context, definedCVEIDs []string) ([]string, error) {
+func (s *Store) GetAppliedVEXCVEIDs(ctx context.Context, definedCVEIDs []string) ([]string, error) {
 	if len(definedCVEIDs) == 0 {
 		return []string{}, nil
 	}

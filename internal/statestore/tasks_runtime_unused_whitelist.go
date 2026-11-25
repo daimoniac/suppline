@@ -8,7 +8,7 @@ import (
 	"github.com/daimoniac/suppline/internal/errors"
 )
 
-func (s *SQLiteStore) ListRuntimeUnusedRepositoryWhitelist(ctx context.Context) ([]RuntimeUnusedRepositoryWhitelistEntry, error) {
+func (s *Store) ListRuntimeUnusedRepositoryWhitelist(ctx context.Context) ([]RuntimeUnusedRepositoryWhitelistEntry, error) {
 	rows, err := s.db.QueryContext(ctx, `
 		SELECT repository, created_at
 		FROM runtime_unused_repository_whitelist
@@ -35,7 +35,7 @@ func (s *SQLiteStore) ListRuntimeUnusedRepositoryWhitelist(ctx context.Context) 
 	return entries, nil
 }
 
-func (s *SQLiteStore) AddRuntimeUnusedRepositoryWhitelist(ctx context.Context, repository string) error {
+func (s *Store) AddRuntimeUnusedRepositoryWhitelist(ctx context.Context, repository string) error {
 	repository = strings.TrimSpace(repository)
 	if repository == "" {
 		return errors.NewPermanentf("repository is required")
@@ -52,7 +52,7 @@ func (s *SQLiteStore) AddRuntimeUnusedRepositoryWhitelist(ctx context.Context, r
 	return nil
 }
 
-func (s *SQLiteStore) RemoveRuntimeUnusedRepositoryWhitelist(ctx context.Context, repository string) error {
+func (s *Store) RemoveRuntimeUnusedRepositoryWhitelist(ctx context.Context, repository string) error {
 	repository = strings.TrimSpace(repository)
 	if repository == "" {
 		return errors.NewPermanentf("repository is required")
@@ -68,7 +68,7 @@ func (s *SQLiteStore) RemoveRuntimeUnusedRepositoryWhitelist(ctx context.Context
 	return nil
 }
 
-func (s *SQLiteStore) runtimeUnusedRepositoryWhitelistSet(ctx context.Context) (map[string]struct{}, error) {
+func (s *Store) runtimeUnusedRepositoryWhitelistSet(ctx context.Context) (map[string]struct{}, error) {
 	entries, err := s.ListRuntimeUnusedRepositoryWhitelist(ctx)
 	if err != nil {
 		return nil, err
@@ -86,7 +86,7 @@ func (s *SQLiteStore) runtimeUnusedRepositoryWhitelistSet(ctx context.Context) (
 	return whitelist, nil
 }
 
-func (s *SQLiteStore) isRuntimeUnusedRepositoryWhitelisted(ctx context.Context, repository string) (bool, error) {
+func (s *Store) isRuntimeUnusedRepositoryWhitelisted(ctx context.Context, repository string) (bool, error) {
 	repository = strings.TrimSpace(repository)
 	if repository == "" {
 		return false, nil

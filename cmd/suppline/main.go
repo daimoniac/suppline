@@ -303,7 +303,7 @@ func run() error {
 	healthChecker.UpdateComponentHealth("worker", observability.StatusHealthy, "")
 	logger.Debug("worker initialized")
 
-	scanReads, ok := store.(*statestore.SQLiteStore)
+	scanReads, ok := store.(*statestore.Store)
 	if !ok {
 		return fmt.Errorf("state store cannot serve the VEX audit")
 	}

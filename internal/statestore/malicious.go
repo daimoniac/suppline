@@ -40,7 +40,7 @@ func applyStoredMaliciousCheck(record *ScanRecord, data sql.NullString) error {
 // ReplacePackageInventory stores the language packages of an image digest,
 // replacing what was recorded before. Rows are removed once no artifact
 // references the digest any more.
-func (s *SQLiteStore) ReplacePackageInventory(ctx context.Context, digest string, packages []types.PackageRef) error {
+func (s *Store) ReplacePackageInventory(ctx context.Context, digest string, packages []types.PackageRef) error {
 	if digest == "" {
 		return errors.NewPermanentf("digest is required")
 	}
@@ -72,7 +72,7 @@ func (s *SQLiteStore) ReplacePackageInventory(ctx context.Context, digest string
 }
 
 // ListPackageInventory returns the packages recorded for a digest.
-func (s *SQLiteStore) ListPackageInventory(ctx context.Context, digest string) ([]types.PackageRef, error) {
+func (s *Store) ListPackageInventory(ctx context.Context, digest string) ([]types.PackageRef, error) {
 	rows, err := s.db.QueryContext(ctx, `
 		SELECT ecosystem, name, version, purl FROM package_inventory WHERE digest = ? ORDER BY purl
 	`, digest)
@@ -139,7 +139,7 @@ type InventoryPackage struct {
 
 // ListInventoryByPackage returns every stored package with the given
 // ecosystem and (normalised) name, across all digests.
-func (s *SQLiteStore) ListInventoryByPackage(ctx context.Context, ecosystem, name string) ([]InventoryPackage, error) {
+func (s *Store) ListInventoryByPackage(ctx context.Context, ecosystem, name string) ([]InventoryPackage, error) {
 	rows, err := s.db.QueryContext(ctx, `
 		SELECT digest, ecosystem, name, version, purl FROM package_inventory
 		WHERE ecosystem = ? AND name = ?
@@ -164,7 +164,7 @@ func (s *SQLiteStore) ListInventoryByPackage(ctx context.Context, ecosystem, nam
 }
 
 // ListInventoryDigests returns every digest that has a stored inventory.
-func (s *SQLiteStore) ListInventoryDigests(ctx context.Context) ([]string, error) {
+func (s *Store) ListInventoryDigests(ctx context.Context) ([]string, error) {
 	rows, err := s.db.QueryContext(ctx, `SELECT DISTINCT digest FROM package_inventory ORDER BY digest`)
 	if err != nil {
 		return nil, errors.NewTransientf("failed to list inventory digests: %w", err)
@@ -195,7 +195,7 @@ type DigestScan struct {
 
 // ListLatestDigestScans returns, for each repository holding the digest, its
 // latest scan and one tag to rescan it under.
-func (s *SQLiteStore) ListLatestDigestScans(ctx context.Context, digest string) ([]DigestScan, error) {
+func (s *Store) ListLatestDigestScans(ctx context.Context, digest string) ([]DigestScan, error) {
 	rows, err := s.db.QueryContext(ctx, `
 		SELECT sr.id, r.name, a.digest, COALESCE(MIN(a.tag), ''), sr.malicious_check_json
 		FROM artifacts a
@@ -232,7 +232,7 @@ func (s *SQLiteStore) ListLatestDigestScans(ctx context.Context, digest string) 
 // UpdateMaliciousCheck replaces the malicious-package check stored on a scan.
 // It is used when a late re-match confirms an image that was scanned while the
 // check was unavailable or stale; the signed attestation is not changed.
-func (s *SQLiteStore) UpdateMaliciousCheck(ctx context.Context, scanID int64, check *types.MaliciousCheck) error {
+func (s *Store) UpdateMaliciousCheck(ctx context.Context, scanID int64, check *types.MaliciousCheck) error {
 	status, data, err := encodeMaliciousCheck(check)
 	if err != nil {
 		return err
@@ -273,7 +273,7 @@ type MaliciousCoverage struct {
 // ListMaliciousImages returns every current image whose latest scan found
 // malicious packages, in-use images first, and how many current images each
 // check status covers.
-func (s *SQLiteStore) ListMaliciousImages(ctx context.Context) ([]MaliciousImage, MaliciousCoverage, error) {
+func (s *Store) ListMaliciousImages(ctx context.Context) ([]MaliciousImage, MaliciousCoverage, error) {
 	rows, err := s.db.QueryContext(ctx, `
 		SELECT r.name, a.digest, COALESCE(a.tag, ''), sr.id, sr.created_at, sr.policy_passed, sr.policy_status,
 			sr.malicious_status, sr.malicious_check_json
@@ -368,7 +368,7 @@ func (s *SQLiteStore) ListMaliciousImages(ctx context.Context) ([]MaliciousImage
 
 // ListDigestsWithMaliciousStatus returns the digests whose latest scan (in any
 // repository) recorded one of the given malicious-check statuses.
-func (s *SQLiteStore) ListDigestsWithMaliciousStatus(ctx context.Context, statuses ...string) ([]string, error) {
+func (s *Store) ListDigestsWithMaliciousStatus(ctx context.Context, statuses ...string) ([]string, error) {
 	if len(statuses) == 0 {
 		return nil, nil
 	}

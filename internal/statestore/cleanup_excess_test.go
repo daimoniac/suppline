@@ -14,7 +14,7 @@ func TestCleanupExcessScans(t *testing.T) {
 
 	store, err := NewPostgresStore(testDatabaseURL(t))
 	if err != nil {
-		t.Fatalf("Failed to create SQLite store: %v", err)
+		t.Fatalf("Failed to create store: %v", err)
 	}
 	defer store.Close()
 
@@ -121,7 +121,7 @@ func TestCleanupExcessScans_KeepMultiple(t *testing.T) {
 
 	store, err := NewPostgresStore(testDatabaseURL(t))
 	if err != nil {
-		t.Fatalf("Failed to create SQLite store: %v", err)
+		t.Fatalf("Failed to create store: %v", err)
 	}
 	defer store.Close()
 
@@ -212,7 +212,7 @@ func TestCleanupExcessScans_NoExcessScans(t *testing.T) {
 
 	store, err := NewPostgresStore(testDatabaseURL(t))
 	if err != nil {
-		t.Fatalf("Failed to create SQLite store: %v", err)
+		t.Fatalf("Failed to create store: %v", err)
 	}
 	defer store.Close()
 
@@ -266,7 +266,7 @@ func TestCleanupExcessScans_NonExistentDigest(t *testing.T) {
 
 	store, err := NewPostgresStore(testDatabaseURL(t))
 	if err != nil {
-		t.Fatalf("Failed to create SQLite store: %v", err)
+		t.Fatalf("Failed to create store: %v", err)
 	}
 	defer store.Close()
 
@@ -286,7 +286,7 @@ func TestCleanupExcessScans_InvalidMaxScans(t *testing.T) {
 
 	store, err := NewPostgresStore(testDatabaseURL(t))
 	if err != nil {
-		t.Fatalf("Failed to create SQLite store: %v", err)
+		t.Fatalf("Failed to create store: %v", err)
 	}
 	defer store.Close()
 

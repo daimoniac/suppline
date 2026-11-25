@@ -10,13 +10,13 @@ import (
 	"github.com/daimoniac/suppline/internal/types"
 )
 
-func TestSQLiteStore(t *testing.T) {
+func TestStore(t *testing.T) {
 	// Create temporary database file with unique name
 	// Remove any existing database file to start fresh
 
 	store, err := NewPostgresStore(testDatabaseURL(t))
 	if err != nil {
-		t.Fatalf("Failed to create SQLite store: %v", err)
+		t.Fatalf("Failed to create store: %v", err)
 	}
 	defer store.Close()
 
@@ -440,7 +440,7 @@ func TestSQLiteStore(t *testing.T) {
 
 		rStore, err := NewPostgresStore(testDatabaseURL(t))
 		if err != nil {
-			t.Fatalf("Failed to create SQLite store: %v", err)
+			t.Fatalf("Failed to create store: %v", err)
 		}
 		defer rStore.Close()
 
@@ -624,7 +624,7 @@ func TestInactiveVEXCount(t *testing.T) {
 
 	store, err := NewPostgresStore(testDatabaseURL(t))
 	if err != nil {
-		t.Fatalf("Failed to create SQLite store: %v", err)
+		t.Fatalf("Failed to create store: %v", err)
 	}
 	defer store.Close()
 
@@ -712,7 +712,7 @@ func TestGetAppliedVEXCVEIDs(t *testing.T) {
 
 	store, err := NewPostgresStore(testDatabaseURL(t))
 	if err != nil {
-		t.Fatalf("Failed to create SQLite store: %v", err)
+		t.Fatalf("Failed to create store: %v", err)
 	}
 	defer store.Close()
 
@@ -819,7 +819,7 @@ func TestSchemaAndConstraints(t *testing.T) {
 
 	store, err := NewPostgresStore(testDatabaseURL(t))
 	if err != nil {
-		t.Fatalf("Failed to create SQLite store: %v", err)
+		t.Fatalf("Failed to create store: %v", err)
 	}
 	defer store.Close()
 
@@ -1225,7 +1225,7 @@ func TestRescanScheduling(t *testing.T) {
 
 	store, err := NewPostgresStore(testDatabaseURL(t))
 	if err != nil {
-		t.Fatalf("Failed to create SQLite store: %v", err)
+		t.Fatalf("Failed to create store: %v", err)
 	}
 	defer store.Close()
 
@@ -1602,7 +1602,7 @@ func TestRepositoryAggregation(t *testing.T) {
 
 	store, err := NewPostgresStore(testDatabaseURL(t))
 	if err != nil {
-		t.Fatalf("Failed to create SQLite store: %v", err)
+		t.Fatalf("Failed to create store: %v", err)
 	}
 	defer store.Close()
 
@@ -2360,7 +2360,7 @@ func TestGetFailedArtifacts(t *testing.T) {
 
 	store, err := NewPostgresStore(testDatabaseURL(t))
 	if err != nil {
-		t.Fatalf("Failed to create SQLite store: %v", err)
+		t.Fatalf("Failed to create store: %v", err)
 	}
 	defer store.Close()
 
@@ -2497,7 +2497,7 @@ func TestGetFailedArtifacts(t *testing.T) {
 
 		store2, err := NewPostgresStore(testDatabaseURL(t))
 		if err != nil {
-			t.Fatalf("Failed to create SQLite store: %v", err)
+			t.Fatalf("Failed to create store: %v", err)
 		}
 		defer store2.Close()
 
@@ -2535,7 +2535,7 @@ func TestGetFailedArtifacts(t *testing.T) {
 
 // tableColumns maps each column of table to a coarse type: INTEGER, TEXT or
 // BOOLEAN, or the PostgreSQL type name for anything else.
-func tableColumns(t *testing.T, store *SQLiteStore, table string) map[string]string {
+func tableColumns(t *testing.T, store *Store, table string) map[string]string {
 	t.Helper()
 	rows, err := store.db.QueryContext(context.Background(), `
 		SELECT column_name, data_type FROM information_schema.columns
