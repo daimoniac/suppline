@@ -195,10 +195,6 @@ serviceAccount:
   annotations: {}
   name: "suppline"
 
-# RBAC configuration
-rbac:
-  create: true
-
 # Pod annotations
 # Extra pod annotations. The chart already adds prometheus.io/{scrape,port,path}
 # for the observability port from suppline.yml.
