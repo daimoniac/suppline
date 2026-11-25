@@ -5,7 +5,6 @@ import (
 	"io"
 	"log/slog"
 	"net/http/httptest"
-	"path/filepath"
 	"testing"
 
 	"github.com/olareg/olareg"
@@ -15,6 +14,7 @@ import (
 	"github.com/regclient/regclient/types/manifest"
 
 	"github.com/daimoniac/suppline/internal/statestore"
+	"github.com/daimoniac/suppline/internal/statestore/storetest"
 )
 
 func TestProcessRepoBackfillsExistingTagWithoutCopy(t *testing.T) {
@@ -55,7 +55,7 @@ sync:
       semverRange:
         - ">=1.2.0"
 `)
-	store, err := statestore.NewSQLiteStore(filepath.Join(t.TempDir(), "mirror.db"))
+	store, err := statestore.NewPostgresStore(storetest.URL(t))
 	if err != nil {
 		t.Fatal(err)
 	}

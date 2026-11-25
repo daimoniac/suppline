@@ -1,19 +1,13 @@
 package statestore
 
 import (
-	"os"
 	"testing"
 
 	"github.com/daimoniac/suppline/internal/types"
 )
 
 func TestPostgresStoreRoundTrip(t *testing.T) {
-	url := os.Getenv("SUPPLINE_TEST_POSTGRES_URL")
-	if url == "" {
-		t.Skip("set SUPPLINE_TEST_POSTGRES_URL to run postgres smoke tests")
-	}
-
-	store, err := NewPostgresStore(url)
+	store, err := NewPostgresStore(testDatabaseURL(t))
 	if err != nil {
 		t.Fatalf("NewPostgresStore: %v", err)
 	}
@@ -57,7 +51,8 @@ func TestPostgresStoreRoundTrip(t *testing.T) {
 	if err != nil {
 		t.Fatalf("GetLastScan: %v", err)
 	}
-	if got == nil || !got.PolicyPassed || len(got.Vulnerabilities) != 1 {
+	// The rescan found nothing, so the latest scan carries no findings.
+	if got == nil || !got.PolicyPassed || len(got.Vulnerabilities) != 0 {
 		t.Fatalf("unexpected last scan: %+v", got)
 	}
 }

@@ -279,7 +279,7 @@ A starter Grafana dashboard lives in [grafana/](grafana/).
 ```bash
 make dev-setup          # deps + tooling
 make build              # regenerates swagger, then builds
-make test               # unit tests
+make test               # unit tests; starts a throwaway PostgreSQL in Docker (or uses SUPPLINE_TEST_POSTGRES_URL)
 make test-integration   # integration tests (needs a Trivy server)
 make lint fmt vet
 ```

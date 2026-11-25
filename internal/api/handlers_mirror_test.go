@@ -4,7 +4,6 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
-	"path/filepath"
 	"testing"
 	"time"
 
@@ -13,10 +12,11 @@ import (
 	"github.com/daimoniac/suppline/internal/observability"
 	"github.com/daimoniac/suppline/internal/queue"
 	"github.com/daimoniac/suppline/internal/statestore"
+	"github.com/daimoniac/suppline/internal/statestore/storetest"
 )
 
 func TestMirrorEndpointOverlaysRunning(t *testing.T) {
-	store, err := statestore.NewSQLiteStore(filepath.Join(t.TempDir(), "mirror.db"))
+	store, err := statestore.NewPostgresStore(storetest.URL(t))
 	if err != nil {
 		t.Fatal(err)
 	}

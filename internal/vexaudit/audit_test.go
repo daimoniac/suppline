@@ -11,6 +11,7 @@ import (
 	"github.com/daimoniac/suppline/internal/policy"
 	"github.com/daimoniac/suppline/internal/policy/catalog"
 	"github.com/daimoniac/suppline/internal/statestore"
+	"github.com/daimoniac/suppline/internal/statestore/storetest"
 	"github.com/daimoniac/suppline/internal/types"
 )
 
@@ -145,7 +146,7 @@ func TestAuditIgnoresCooldown(t *testing.T) {
 // scan of another image rewrites the shared CVE catalog, and trusting that
 // rewrite makes a load-bearing not_affected statement look unused.
 func TestAuditKeepsFixableCriticalAfterCatalogSeverityRewrite(t *testing.T) {
-	store, err := statestore.NewSQLiteStore(t.TempDir() + "/vex-audit.db")
+	store, err := statestore.NewPostgresStore(storetest.URL(t))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -200,8 +201,8 @@ func TestAuditKeepsFixableCriticalAfterCatalogSeverityRewrite(t *testing.T) {
 // Findings stored before per-scan severity have only the shared catalog value.
 // That value may already have been rewritten, so those statements stay put.
 func TestAuditKeepsStatementWhenFindingSeverityWasNotRecorded(t *testing.T) {
-	path := t.TempDir() + "/vex-audit-legacy.db"
-	store, err := statestore.NewSQLiteStore(path)
+	url := storetest.URL(t)
+	store, err := statestore.NewPostgresStore(url)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -220,7 +221,7 @@ func TestAuditKeepsStatementWhenFindingSeverityWasNotRecorded(t *testing.T) {
 	}); err != nil {
 		t.Fatal(err)
 	}
-	legacy, err := sql.Open("sqlite3", path+"?_foreign_keys=1&_busy_timeout=3000")
+	legacy, err := sql.Open("pgx", url)
 	if err != nil {
 		t.Fatal(err)
 	}

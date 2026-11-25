@@ -2,13 +2,12 @@ package statestore
 
 import (
 	"context"
-	"path/filepath"
 	"testing"
 	"time"
 )
 
 func TestMirrorStoreRetentionAndPrune(t *testing.T) {
-	store, err := NewSQLiteStore(filepath.Join(t.TempDir(), "mirror.db"))
+	store, err := NewPostgresStore(testDatabaseURL(t))
 	if err != nil {
 		t.Fatal(err)
 	}

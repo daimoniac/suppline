@@ -8,7 +8,7 @@ import (
 )
 
 func TestLoadVulnerabilitiesByScanIDsBatchesFindings(t *testing.T) {
-	store, err := NewSQLiteStore(t.TempDir() + "/vuln-batch.db")
+	store, err := NewPostgresStore(testDatabaseURL(t))
 	if err != nil {
 		t.Fatal(err)
 	}

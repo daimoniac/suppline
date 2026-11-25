@@ -4,11 +4,11 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
-	"path/filepath"
 	"testing"
 
 	"github.com/daimoniac/suppline/internal/config"
 	"github.com/daimoniac/suppline/internal/statestore"
+	"github.com/daimoniac/suppline/internal/statestore/storetest"
 	"github.com/daimoniac/suppline/internal/types"
 )
 
@@ -50,11 +50,7 @@ func TestTriageStatementsShowEachRepositorysOwnStatement(t *testing.T) {
 // not_affected, eck auto affected, falcoctl hand-written with no expiry.
 func threeStatementsForOneCVE(t *testing.T) (*statestore.SQLiteStore, *config.RegsyncConfig) {
 	t.Helper()
-	store, err := statestore.NewSQLiteStore(filepath.Join(t.TempDir(), "state.db"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { store.Close() })
+	store := storetest.New(t)
 	eckExpires, falcoExpires := int64(1798111939), int64(1796138031)
 	return store, &config.RegsyncConfig{
 		Version: 1,

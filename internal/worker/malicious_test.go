@@ -4,12 +4,12 @@ import (
 	"context"
 	"errors"
 	"log/slog"
-	"path/filepath"
 	"testing"
 
 	"github.com/daimoniac/suppline/internal/queue"
 	"github.com/daimoniac/suppline/internal/scanner"
 	"github.com/daimoniac/suppline/internal/statestore"
+	"github.com/daimoniac/suppline/internal/statestore/storetest"
 	"github.com/daimoniac/suppline/internal/types"
 )
 
@@ -27,7 +27,7 @@ func (f *fakeMaliciousChecker) Check([]byte) (*types.MaliciousCheck, []types.Pac
 
 func newMaliciousPipeline(t *testing.T, checker MaliciousChecker) (*Pipeline, *statestore.SQLiteStore) {
 	t.Helper()
-	store, err := statestore.NewSQLiteStore(filepath.Join(t.TempDir(), "state.db"))
+	store, err := statestore.NewPostgresStore(storetest.URL(t))
 	if err != nil {
 		t.Fatal(err)
 	}

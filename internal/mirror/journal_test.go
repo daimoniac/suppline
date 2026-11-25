@@ -4,12 +4,12 @@ import (
 	"context"
 	"errors"
 	"log/slog"
-	"path/filepath"
 	"testing"
 	"time"
 
 	"github.com/daimoniac/suppline/internal/config"
 	"github.com/daimoniac/suppline/internal/statestore"
+	"github.com/daimoniac/suppline/internal/statestore/storetest"
 )
 
 func testMirrorConfig(t *testing.T, body string) *config.RegsyncConfig {
@@ -24,7 +24,7 @@ func testMirrorConfig(t *testing.T, body string) *config.RegsyncConfig {
 
 func testJournal(t *testing.T, cfg *config.RegsyncConfig) (*journal, *statestore.SQLiteStore) {
 	t.Helper()
-	store, err := statestore.NewSQLiteStore(filepath.Join(t.TempDir(), "mirror.db"))
+	store, err := statestore.NewPostgresStore(storetest.URL(t))
 	if err != nil {
 		t.Fatal(err)
 	}

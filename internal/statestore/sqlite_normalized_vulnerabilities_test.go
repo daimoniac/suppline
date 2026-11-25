@@ -2,15 +2,13 @@ package statestore
 
 import (
 	"context"
-	"database/sql"
-	"strings"
 	"testing"
 
 	"github.com/daimoniac/suppline/internal/types"
 )
 
 func TestCountFindingImagesByCVEUsesLatestScanDigests(t *testing.T) {
-	store, err := NewSQLiteStore(t.TempDir() + "/finding-images.db")
+	store, err := NewPostgresStore(testDatabaseURL(t))
 	if err != nil {
 		t.Fatalf("create store: %v", err)
 	}
@@ -58,31 +56,8 @@ func TestCountFindingImagesByCVEUsesLatestScanDigests(t *testing.T) {
 	}
 }
 
-func TestNewSQLiteStoreRejectsLegacyVulnerabilitySchema(t *testing.T) {
-	path := t.TempDir() + "/legacy.db"
-	db, err := sql.Open("sqlite3", path)
-	if err != nil {
-		t.Fatalf("open legacy database: %v", err)
-	}
-	if _, err := db.Exec(`CREATE TABLE vulnerabilities (id INTEGER PRIMARY KEY)`); err != nil {
-		t.Fatalf("create legacy table: %v", err)
-	}
-	if err := db.Close(); err != nil {
-		t.Fatalf("close legacy database: %v", err)
-	}
-
-	store, err := NewSQLiteStore(path)
-	if store != nil {
-		_ = store.Close()
-		t.Fatal("expected legacy schema to be rejected")
-	}
-	if err == nil || !strings.Contains(err.Error(), "legacy vulnerabilities table detected") {
-		t.Fatalf("unexpected legacy schema error: %v", err)
-	}
-}
-
 func TestRecordScanDeduplicatesCVEMetadataAndPreservesFirstSeen(t *testing.T) {
-	store, err := NewSQLiteStore(t.TempDir() + "/normalized.db")
+	store, err := NewPostgresStore(testDatabaseURL(t))
 	if err != nil {
 		t.Fatalf("create store: %v", err)
 	}
@@ -165,7 +140,7 @@ func TestRecordScanDeduplicatesCVEMetadataAndPreservesFirstSeen(t *testing.T) {
 }
 
 func TestGetUniqueVulnerabilityCountsUsesLatestScansOnly(t *testing.T) {
-	store, err := NewSQLiteStore(t.TempDir() + "/unique-counts.db")
+	store, err := NewPostgresStore(testDatabaseURL(t))
 	if err != nil {
 		t.Fatalf("create store: %v", err)
 	}

@@ -4,8 +4,6 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
-	"os"
-	"strings"
 	"testing"
 	"time"
 
@@ -14,12 +12,9 @@ import (
 
 func TestSQLiteStore(t *testing.T) {
 	// Create temporary database file with unique name
-	dbPath := "test_statestore_" + t.Name() + ".db"
 	// Remove any existing database file to start fresh
-	os.Remove(dbPath)
-	defer os.Remove(dbPath)
 
-	store, err := NewSQLiteStore(dbPath)
+	store, err := NewPostgresStore(testDatabaseURL(t))
 	if err != nil {
 		t.Fatalf("Failed to create SQLite store: %v", err)
 	}
@@ -442,9 +437,8 @@ func TestSQLiteStore(t *testing.T) {
 	// Before the fix, ListScans with policy_passed=false would still surface the old record,
 	// contradicting GetRepository which reads current state via last_scan_id.
 	t.Run("ListScans only returns current scan per artifact not stale historical scans", func(t *testing.T) {
-		dbPath := t.TempDir() + "/regression_stale.db"
 
-		rStore, err := NewSQLiteStore(dbPath)
+		rStore, err := NewPostgresStore(testDatabaseURL(t))
 		if err != nil {
 			t.Fatalf("Failed to create SQLite store: %v", err)
 		}
@@ -627,11 +621,8 @@ func TestSQLiteStore(t *testing.T) {
 
 // TestInactiveVEXCount tests the GetInactiveVEXCount method
 func TestInactiveVEXCount(t *testing.T) {
-	dbPath := "test_inactive_VEX statements_" + t.Name() + ".db"
-	os.Remove(dbPath)
-	defer os.Remove(dbPath)
 
-	store, err := NewSQLiteStore(dbPath)
+	store, err := NewPostgresStore(testDatabaseURL(t))
 	if err != nil {
 		t.Fatalf("Failed to create SQLite store: %v", err)
 	}
@@ -718,11 +709,8 @@ func TestInactiveVEXCount(t *testing.T) {
 
 // TestGetAppliedVEXCVEIDs tests the GetAppliedVEXCVEIDs method
 func TestGetAppliedVEXCVEIDs(t *testing.T) {
-	dbPath := "test_applied_cveids_" + t.Name() + ".db"
-	os.Remove(dbPath)
-	defer os.Remove(dbPath)
 
-	store, err := NewSQLiteStore(dbPath)
+	store, err := NewPostgresStore(testDatabaseURL(t))
 	if err != nil {
 		t.Fatalf("Failed to create SQLite store: %v", err)
 	}
@@ -828,11 +816,8 @@ func TestGetAppliedVEXCVEIDs(t *testing.T) {
 
 // TestSchemaAndConstraints tests database schema creation, indexes, and constraints
 func TestSchemaAndConstraints(t *testing.T) {
-	dbPath := "test_schema_" + t.Name() + ".db"
-	os.Remove(dbPath)
-	defer os.Remove(dbPath)
 
-	store, err := NewSQLiteStore(dbPath)
+	store, err := NewPostgresStore(testDatabaseURL(t))
 	if err != nil {
 		t.Fatalf("Failed to create SQLite store: %v", err)
 	}
@@ -846,8 +831,8 @@ func TestSchemaAndConstraints(t *testing.T) {
 		for _, table := range tables {
 			var count int
 			err := store.db.QueryRowContext(ctx, `
-				SELECT COUNT(*) FROM sqlite_master 
-				WHERE type='table' AND name=?
+				SELECT COUNT(*) FROM pg_tables
+				WHERE schemaname = current_schema() AND tablename = ?
 			`, table).Scan(&count)
 			if err != nil || count == 0 {
 				t.Errorf("Table %s not found", table)
@@ -870,8 +855,8 @@ func TestSchemaAndConstraints(t *testing.T) {
 		for _, idx := range indexes {
 			var count int
 			err := store.db.QueryRowContext(ctx, `
-				SELECT COUNT(*) FROM sqlite_master 
-				WHERE type='index' AND name=?
+				SELECT COUNT(*) FROM pg_indexes
+				WHERE schemaname = current_schema() AND indexname = ?
 			`, idx).Scan(&count)
 			if err != nil || count == 0 {
 				t.Errorf("Index %s not found", idx)
@@ -909,7 +894,7 @@ func TestSchemaAndConstraints(t *testing.T) {
 			t.Fatalf("Failed to get repository: %v", err)
 		}
 
-		now := time.Now()
+		now := time.Now().Unix()
 		// Insert first artifact with tag
 		_, err = store.db.ExecContext(ctx, `
 			INSERT INTO artifacts (repository_id, digest, tag, first_seen, last_seen)
@@ -949,7 +934,7 @@ func TestSchemaAndConstraints(t *testing.T) {
 
 	// Test 6: Foreign key constraint - artifact references repository
 	t.Run("Foreign key constraint - artifact references repository", func(t *testing.T) {
-		now := time.Now()
+		now := time.Now().Unix()
 		// Try to insert artifact with non-existent repository_id
 		_, err := store.db.ExecContext(ctx, `
 			INSERT INTO artifacts (repository_id, digest, first_seen, last_seen)
@@ -1002,18 +987,15 @@ func TestSchemaAndConstraints(t *testing.T) {
 			t.Fatalf("Failed to get repository: %v", err)
 		}
 
-		now := time.Now()
-		result, err := store.db.ExecContext(ctx, `
+		now := time.Now().Unix()
+		var artifactID int64
+		err = store.db.QueryRowContext(ctx, `
 			INSERT INTO artifacts (repository_id, digest, first_seen, last_seen)
 			VALUES (?, ?, ?, ?)
-		`, repoID, "sha256:cascade-test", now, now)
+			RETURNING id
+		`, repoID, "sha256:cascade-test", now, now).Scan(&artifactID)
 		if err != nil {
 			t.Fatalf("Failed to insert artifact: %v", err)
-		}
-
-		artifactID, err := result.LastInsertId()
-		if err != nil {
-			t.Fatalf("Failed to get artifact ID: %v", err)
 		}
 
 		// Insert scan record
@@ -1064,34 +1046,28 @@ func TestSchemaAndConstraints(t *testing.T) {
 			t.Fatalf("Failed to get repository: %v", err)
 		}
 
-		now := time.Now()
-		result, err := store.db.ExecContext(ctx, `
+		now := time.Now().Unix()
+		var artifactID int64
+		err = store.db.QueryRowContext(ctx, `
 			INSERT INTO artifacts (repository_id, digest, first_seen, last_seen)
 			VALUES (?, ?, ?, ?)
-		`, repoID, "sha256:vuln-cascade-test", now, now)
+			RETURNING id
+		`, repoID, "sha256:vuln-cascade-test", now, now).Scan(&artifactID)
 		if err != nil {
 			t.Fatalf("Failed to insert artifact: %v", err)
 		}
 
-		artifactID, err := result.LastInsertId()
-		if err != nil {
-			t.Fatalf("Failed to get artifact ID: %v", err)
-		}
-
 		// Insert scan record
-		result, err = store.db.ExecContext(ctx, `
+		var scanRecordID int64
+		err = store.db.QueryRowContext(ctx, `
 			INSERT INTO scan_records (artifact_id, critical_vuln_count, high_vuln_count,
 				medium_vuln_count, low_vuln_count, policy_passed, sbom_attested,
 				vuln_attested, scai_attested)
 			VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-		`, artifactID, 1, 0, 0, 0, false, false, false, false)
+			RETURNING id
+		`, artifactID, 1, 0, 0, 0, false, false, false, false).Scan(&scanRecordID)
 		if err != nil {
 			t.Fatalf("Failed to insert scan record: %v", err)
-		}
-
-		scanRecordID, err := result.LastInsertId()
-		if err != nil {
-			t.Fatalf("Failed to get scan record ID: %v", err)
 		}
 
 		// Insert catalog metadata and a scan finding
@@ -1135,35 +1111,10 @@ func TestSchemaAndConstraints(t *testing.T) {
 		}
 	})
 
-	// Test 12: Foreign keys are enabled
-	t.Run("Foreign keys are enabled", func(t *testing.T) {
-		var foreignKeysEnabled int
-		err := store.db.QueryRowContext(ctx, "PRAGMA foreign_keys").Scan(&foreignKeysEnabled)
-		if err != nil {
-			t.Fatalf("Failed to check foreign keys pragma: %v", err)
-		}
-		if foreignKeysEnabled != 1 {
-			t.Error("Foreign keys are not enabled")
-		}
-	})
-
 	// Test 13: Verify column types and constraints
 	t.Run("Verify column types and constraints", func(t *testing.T) {
 		// Check repositories table
-		rows, err := store.db.QueryContext(ctx, "PRAGMA table_info(repositories)")
-		if err != nil {
-			t.Fatalf("Failed to get repositories table info: %v", err)
-		}
-		defer rows.Close()
-
-		columns := make(map[string]string)
-		for rows.Next() {
-			var cid, name, type_, notnull, dfltValue, pk interface{}
-			if err := rows.Scan(&cid, &name, &type_, &notnull, &dfltValue, &pk); err != nil {
-				t.Fatalf("Failed to scan column info: %v", err)
-			}
-			columns[name.(string)] = type_.(string)
-		}
+		columns := tableColumns(t, store, "repositories")
 
 		expectedColumns := map[string]string{
 			"id":         "INTEGER",
@@ -1183,20 +1134,7 @@ func TestSchemaAndConstraints(t *testing.T) {
 
 	// Test 14: Verify artifacts table structure
 	t.Run("Verify artifacts table structure", func(t *testing.T) {
-		rows, err := store.db.QueryContext(ctx, "PRAGMA table_info(artifacts)")
-		if err != nil {
-			t.Fatalf("Failed to get artifacts table info: %v", err)
-		}
-		defer rows.Close()
-
-		columns := make(map[string]string)
-		for rows.Next() {
-			var cid, name, type_, notnull, dfltValue, pk interface{}
-			if err := rows.Scan(&cid, &name, &type_, &notnull, &dfltValue, &pk); err != nil {
-				t.Fatalf("Failed to scan column info: %v", err)
-			}
-			columns[name.(string)] = type_.(string)
-		}
+		columns := tableColumns(t, store, "artifacts")
 
 		expectedColumns := map[string]string{
 			"id":            "INTEGER",
@@ -1221,20 +1159,7 @@ func TestSchemaAndConstraints(t *testing.T) {
 
 	// Test 15: Verify scan_records table structure
 	t.Run("Verify scan_records table structure", func(t *testing.T) {
-		rows, err := store.db.QueryContext(ctx, "PRAGMA table_info(scan_records)")
-		if err != nil {
-			t.Fatalf("Failed to get scan_records table info: %v", err)
-		}
-		defer rows.Close()
-
-		columns := make(map[string]string)
-		for rows.Next() {
-			var cid, name, type_, notnull, dfltValue, pk interface{}
-			if err := rows.Scan(&cid, &name, &type_, &notnull, &dfltValue, &pk); err != nil {
-				t.Fatalf("Failed to scan column info: %v", err)
-			}
-			columns[name.(string)] = type_.(string)
-		}
+		columns := tableColumns(t, store, "scan_records")
 
 		expectedColumns := map[string]string{
 			"id":                  "INTEGER",
@@ -1263,20 +1188,7 @@ func TestSchemaAndConstraints(t *testing.T) {
 
 	// Test 16: Verify normalized vulnerability table structures
 	t.Run("Verify CVE catalog structure", func(t *testing.T) {
-		rows, err := store.db.QueryContext(ctx, "PRAGMA table_info(cve_catalog)")
-		if err != nil {
-			t.Fatalf("Failed to get cve_catalog table info: %v", err)
-		}
-		defer rows.Close()
-
-		columns := make(map[string]string)
-		for rows.Next() {
-			var cid, name, type_, notnull, dfltValue, pk interface{}
-			if err := rows.Scan(&cid, &name, &type_, &notnull, &dfltValue, &pk); err != nil {
-				t.Fatalf("Failed to scan column info: %v", err)
-			}
-			columns[name.(string)] = type_.(string)
-		}
+		columns := tableColumns(t, store, "cve_catalog")
 
 		expectedColumns := map[string]string{
 			"cve_id":      "TEXT",
@@ -1297,20 +1209,7 @@ func TestSchemaAndConstraints(t *testing.T) {
 
 	// Test 17: Verify scan_records table has vex_statements_json column.
 	t.Run("Verify scan_records table has vex_statements_json column", func(t *testing.T) {
-		rows, err := store.db.QueryContext(ctx, "PRAGMA table_info(scan_records)")
-		if err != nil {
-			t.Fatalf("Failed to get scan_records table info: %v", err)
-		}
-		defer rows.Close()
-
-		columns := make(map[string]string)
-		for rows.Next() {
-			var cid, name, type_, notnull, dfltValue, pk interface{}
-			if err := rows.Scan(&cid, &name, &type_, &notnull, &dfltValue, &pk); err != nil {
-				t.Fatalf("Failed to scan column info: %v", err)
-			}
-			columns[name.(string)] = type_.(string)
-		}
+		columns := tableColumns(t, store, "scan_records")
 
 		// Check for vex_statements_json column.
 		if actualType, exists := columns["vex_statements_json"]; !exists {
@@ -1323,11 +1222,8 @@ func TestSchemaAndConstraints(t *testing.T) {
 
 // TestRescanScheduling tests rescan scheduling functionality
 func TestRescanScheduling(t *testing.T) {
-	dbPath := "test_rescan_" + t.Name() + ".db"
-	os.Remove(dbPath)
-	defer os.Remove(dbPath)
 
-	store, err := NewSQLiteStore(dbPath)
+	store, err := NewPostgresStore(testDatabaseURL(t))
 	if err != nil {
 		t.Fatalf("Failed to create SQLite store: %v", err)
 	}
@@ -1451,7 +1347,7 @@ func TestRescanScheduling(t *testing.T) {
 		}
 
 		// Update next_scan_at to the future
-		futureTime := time.Now().Add(24 * time.Hour)
+		futureTime := time.Now().Add(24 * time.Hour).Unix()
 		_, err = store.db.ExecContext(ctx, `
 			UPDATE artifacts SET next_scan_at = ? WHERE digest = ?
 		`, futureTime, "sha256:rescan-test-3")
@@ -1568,8 +1464,8 @@ func TestRescanScheduling(t *testing.T) {
 		// Verify the index exists
 		var indexCount int
 		err := store.db.QueryRowContext(ctx, `
-			SELECT COUNT(*) FROM sqlite_master 
-			WHERE type='index' AND name='idx_artifacts_next_scan'
+			SELECT COUNT(*) FROM pg_indexes
+			WHERE schemaname = current_schema() AND indexname = 'idx_artifacts_next_scan'
 		`).Scan(&indexCount)
 		if err != nil {
 			t.Fatalf("Failed to check index: %v", err)
@@ -1578,39 +1474,6 @@ func TestRescanScheduling(t *testing.T) {
 			t.Error("Expected idx_artifacts_next_scan index to exist")
 		}
 
-		// Verify the query plan uses the index by checking the EXPLAIN output
-		rows, err := store.db.QueryContext(ctx, `
-			EXPLAIN QUERY PLAN
-			SELECT digest FROM artifacts
-			WHERE last_scan_id IS NOT NULL AND next_scan_at < ?
-			ORDER BY next_scan_at ASC
-		`, time.Now())
-		if err != nil {
-			t.Fatalf("Failed to get query plan: %v", err)
-		}
-		defer rows.Close()
-
-		// EXPLAIN QUERY PLAN returns: id, parent, notused, detail
-		var id, parent, notused int
-		var detail string
-		var foundIndex bool
-		for rows.Next() {
-			err := rows.Scan(&id, &parent, &notused, &detail)
-			if err != nil {
-				t.Fatalf("Failed to scan query plan: %v", err)
-			}
-			if strings.Contains(detail, "idx_artifacts_next_scan") {
-				foundIndex = true
-			}
-		}
-
-		if err := rows.Err(); err != nil {
-			t.Fatalf("Error iterating query plan: %v", err)
-		}
-
-		if !foundIndex {
-			t.Logf("Note: Index may not be used in query plan, but idx_artifacts_next_scan index exists for efficiency")
-		}
 	})
 
 	// Test 6: Multiple scans for same artifact update next_scan_at
@@ -1736,11 +1599,8 @@ func TestRescanScheduling(t *testing.T) {
 
 // TestRepositoryAggregation tests the repository aggregation logic
 func TestRepositoryAggregation(t *testing.T) {
-	dbPath := "test_repo_aggregation_" + t.Name() + ".db"
-	os.Remove(dbPath)
-	defer os.Remove(dbPath)
 
-	store, err := NewSQLiteStore(dbPath)
+	store, err := NewPostgresStore(testDatabaseURL(t))
 	if err != nil {
 		t.Fatalf("Failed to create SQLite store: %v", err)
 	}
@@ -2497,11 +2357,8 @@ func TestRepositoryAggregation(t *testing.T) {
 
 // TestGetFailedArtifacts tests the GetFailedArtifacts method
 func TestGetFailedArtifacts(t *testing.T) {
-	dbPath := "test_failed_artifacts.db"
-	os.Remove(dbPath)
-	defer os.Remove(dbPath)
 
-	store, err := NewSQLiteStore(dbPath)
+	store, err := NewPostgresStore(testDatabaseURL(t))
 	if err != nil {
 		t.Fatalf("Failed to create SQLite store: %v", err)
 	}
@@ -2637,11 +2494,8 @@ func TestGetFailedArtifacts(t *testing.T) {
 
 	t.Run("GetFailedArtifacts returns empty when all scans pass", func(t *testing.T) {
 		// Create a new database with only passing scans
-		dbPath2 := "test_all_passing.db"
-		os.Remove(dbPath2)
-		defer os.Remove(dbPath2)
 
-		store2, err := NewSQLiteStore(dbPath2)
+		store2, err := NewPostgresStore(testDatabaseURL(t))
 		if err != nil {
 			t.Fatalf("Failed to create SQLite store: %v", err)
 		}
@@ -2677,4 +2531,37 @@ func TestGetFailedArtifacts(t *testing.T) {
 			t.Errorf("Expected 0 failed artifacts when all scans pass, got %d", len(failedArtifacts))
 		}
 	})
+}
+
+// tableColumns maps each column of table to a coarse type: INTEGER, TEXT or
+// BOOLEAN, or the PostgreSQL type name for anything else.
+func tableColumns(t *testing.T, store *SQLiteStore, table string) map[string]string {
+	t.Helper()
+	rows, err := store.db.QueryContext(context.Background(), `
+		SELECT column_name, data_type FROM information_schema.columns
+		WHERE table_schema = current_schema() AND table_name = ?`, table)
+	if err != nil {
+		t.Fatalf("read columns of %s: %v", table, err)
+	}
+	defer rows.Close()
+	columns := make(map[string]string)
+	for rows.Next() {
+		var name, dataType string
+		if err := rows.Scan(&name, &dataType); err != nil {
+			t.Fatalf("scan column of %s: %v", table, err)
+		}
+		switch dataType {
+		case "bigint", "integer", "smallint":
+			dataType = "INTEGER"
+		case "text", "character varying":
+			dataType = "TEXT"
+		case "boolean":
+			dataType = "BOOLEAN"
+		}
+		columns[name] = dataType
+	}
+	if err := rows.Err(); err != nil {
+		t.Fatalf("read columns of %s: %v", table, err)
+	}
+	return columns
 }

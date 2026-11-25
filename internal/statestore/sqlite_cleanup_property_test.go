@@ -3,7 +3,6 @@ package statestore
 import (
 	"context"
 	"fmt"
-	"os"
 	"testing"
 
 	"github.com/daimoniac/suppline/internal/types"
@@ -145,25 +144,11 @@ func TestVulnerabilityCascadeDeletionProperty(t *testing.T) {
 // Helper functions for property testing
 
 func createTestStore(t *testing.T) (StateStoreCleanup, func()) {
-	// Create a temporary database file
-	tmpFile, err := os.CreateTemp("", "test_*.db")
+	store, err := NewPostgresStore(testDatabaseURL(t))
 	if err != nil {
-		t.Fatalf("Failed to create temp file: %v", err)
-	}
-	tmpFile.Close()
-
-	store, err := NewSQLiteStore(tmpFile.Name())
-	if err != nil {
-		os.Remove(tmpFile.Name())
 		t.Fatalf("Failed to create store: %v", err)
 	}
-
-	cleanup := func() {
-		store.Close()
-		os.Remove(tmpFile.Name())
-	}
-
-	return store, cleanup
+	return store, func() { store.Close() }
 }
 
 func genValidDigest() gopter.Gen {

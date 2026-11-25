@@ -6,11 +6,12 @@ import (
 	"testing"
 
 	"github.com/daimoniac/suppline/internal/statestore"
+	"github.com/daimoniac/suppline/internal/statestore/storetest"
 )
 
 func newRequeueStore(t *testing.T) *statestore.SQLiteStore {
 	t.Helper()
-	store, err := statestore.NewSQLiteStore(t.TempDir() + "/requeue.db")
+	store, err := statestore.NewPostgresStore(storetest.URL(t))
 	if err != nil {
 		t.Fatal(err)
 	}

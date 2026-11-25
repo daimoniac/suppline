@@ -3,6 +3,7 @@ package statestore
 import (
 	"context"
 	"testing"
+	"time"
 )
 
 func TestListScans_OnlyLatestArtifactPerRepositoryTag(t *testing.T) {
@@ -38,35 +39,30 @@ func TestListScans_OnlyLatestArtifactPerRepositoryTag(t *testing.T) {
 		t.Fatalf("lookup old artifact: %v", err)
 	}
 
-	res, err := sqliteStore.db.ExecContext(ctx, `
+	now := time.Now().Unix()
+	var newArtifactID int64
+	if err := sqliteStore.db.QueryRowContext(ctx, `
 		INSERT INTO artifacts (repository_id, digest, tag, first_seen, last_seen)
-		VALUES (?, ?, '13.1', strftime('%s','now'), strftime('%s','now'))
-	`, repoID, newDigest)
-	if err != nil {
+		VALUES (?, ?, '13.1', ?, ?)
+		RETURNING id
+	`, repoID, newDigest, now, now).Scan(&newArtifactID); err != nil {
 		t.Fatalf("insert new artifact: %v", err)
-	}
-	newArtifactID, err := res.LastInsertId()
-	if err != nil {
-		t.Fatalf("new artifact id: %v", err)
 	}
 	if newArtifactID <= oldArtifactID {
 		t.Fatalf("expected newer artifact id > %d, got %d", oldArtifactID, newArtifactID)
 	}
 
-	scanRes, err := sqliteStore.db.ExecContext(ctx, `
+	var newScanID int64
+	if err := sqliteStore.db.QueryRowContext(ctx, `
 		INSERT INTO scan_records (
 			artifact_id, scan_duration_ms,
 			critical_vuln_count, high_vuln_count, medium_vuln_count, low_vuln_count,
 			policy_passed, policy_status, policy_reason, error_message,
 			sbom_attested, vuln_attested, scai_attested
-		) VALUES (?, 10, 0, 0, 0, 0, 1, 'passed', 'ok', '', 1, 1, 0)
-	`, newArtifactID)
-	if err != nil {
+		) VALUES (?, 10, 0, 0, 0, 0, TRUE, 'passed', 'ok', '', TRUE, TRUE, FALSE)
+		RETURNING id
+	`, newArtifactID).Scan(&newScanID); err != nil {
 		t.Fatalf("insert passing scan: %v", err)
-	}
-	newScanID, err := scanRes.LastInsertId()
-	if err != nil {
-		t.Fatalf("new scan id: %v", err)
 	}
 	if _, err := sqliteStore.db.ExecContext(ctx, `
 		UPDATE artifacts SET last_scan_id = ? WHERE id = ?

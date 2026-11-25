@@ -4,7 +4,6 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
-	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -14,6 +13,7 @@ import (
 	"github.com/daimoniac/suppline/internal/observability"
 	"github.com/daimoniac/suppline/internal/queue"
 	"github.com/daimoniac/suppline/internal/statestore"
+	"github.com/daimoniac/suppline/internal/statestore/storetest"
 	"github.com/daimoniac/suppline/internal/types"
 )
 
@@ -22,7 +22,7 @@ type stubMaliciousFeed struct{ overview malicious.Overview }
 func (s stubMaliciousFeed) Overview() malicious.Overview { return s.overview }
 
 func TestMaliciousEndpoint(t *testing.T) {
-	store, err := statestore.NewSQLiteStore(filepath.Join(t.TempDir(), "malicious.db"))
+	store, err := statestore.NewPostgresStore(storetest.URL(t))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -129,7 +129,7 @@ func TestTriageRepositoriesShowMalicious(t *testing.T) {
 }
 
 func TestAddMaliciousImageCounts(t *testing.T) {
-	store, err := statestore.NewSQLiteStore(filepath.Join(t.TempDir(), "counts.db"))
+	store, err := statestore.NewPostgresStore(storetest.URL(t))
 	if err != nil {
 		t.Fatal(err)
 	}

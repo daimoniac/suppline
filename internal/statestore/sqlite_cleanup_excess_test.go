@@ -2,7 +2,6 @@ package statestore
 
 import (
 	"context"
-	"os"
 	"testing"
 	"time"
 
@@ -11,12 +10,9 @@ import (
 
 func TestCleanupExcessScans(t *testing.T) {
 	// Create temporary database file with unique name
-	dbPath := "test_cleanup_excess_" + t.Name() + ".db"
 	// Remove any existing database file to start fresh
-	os.Remove(dbPath)
-	defer os.Remove(dbPath)
 
-	store, err := NewSQLiteStore(dbPath)
+	store, err := NewPostgresStore(testDatabaseURL(t))
 	if err != nil {
 		t.Fatalf("Failed to create SQLite store: %v", err)
 	}
@@ -121,12 +117,9 @@ func TestCleanupExcessScans(t *testing.T) {
 
 func TestCleanupExcessScans_KeepMultiple(t *testing.T) {
 	// Create temporary database file with unique name
-	dbPath := "test_cleanup_multiple_" + t.Name() + ".db"
 	// Remove any existing database file to start fresh
-	os.Remove(dbPath)
-	defer os.Remove(dbPath)
 
-	store, err := NewSQLiteStore(dbPath)
+	store, err := NewPostgresStore(testDatabaseURL(t))
 	if err != nil {
 		t.Fatalf("Failed to create SQLite store: %v", err)
 	}
@@ -215,12 +208,9 @@ func TestCleanupExcessScans_KeepMultiple(t *testing.T) {
 
 func TestCleanupExcessScans_NoExcessScans(t *testing.T) {
 	// Create temporary database file with unique name
-	dbPath := "test_cleanup_no_excess_" + t.Name() + ".db"
 	// Remove any existing database file to start fresh
-	os.Remove(dbPath)
-	defer os.Remove(dbPath)
 
-	store, err := NewSQLiteStore(dbPath)
+	store, err := NewPostgresStore(testDatabaseURL(t))
 	if err != nil {
 		t.Fatalf("Failed to create SQLite store: %v", err)
 	}
@@ -272,12 +262,9 @@ func TestCleanupExcessScans_NoExcessScans(t *testing.T) {
 
 func TestCleanupExcessScans_NonExistentDigest(t *testing.T) {
 	// Create temporary database file with unique name
-	dbPath := "test_cleanup_nonexistent_" + t.Name() + ".db"
 	// Remove any existing database file to start fresh
-	os.Remove(dbPath)
-	defer os.Remove(dbPath)
 
-	store, err := NewSQLiteStore(dbPath)
+	store, err := NewPostgresStore(testDatabaseURL(t))
 	if err != nil {
 		t.Fatalf("Failed to create SQLite store: %v", err)
 	}
@@ -295,12 +282,9 @@ func TestCleanupExcessScans_NonExistentDigest(t *testing.T) {
 
 func TestCleanupExcessScans_InvalidMaxScans(t *testing.T) {
 	// Create temporary database file with unique name
-	dbPath := "test_cleanup_invalid_" + t.Name() + ".db"
 	// Remove any existing database file to start fresh
-	os.Remove(dbPath)
-	defer os.Remove(dbPath)
 
-	store, err := NewSQLiteStore(dbPath)
+	store, err := NewPostgresStore(testDatabaseURL(t))
 	if err != nil {
 		t.Fatalf("Failed to create SQLite store: %v", err)
 	}

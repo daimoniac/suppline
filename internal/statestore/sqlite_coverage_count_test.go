@@ -2,7 +2,6 @@ package statestore
 
 import (
 	"context"
-	"os"
 	"testing"
 	"time"
 
@@ -10,11 +9,8 @@ import (
 )
 
 func TestCountDueForRescan_UsesLastScanAge(t *testing.T) {
-	dbPath := "test_count_due_" + t.Name() + ".db"
-	_ = os.Remove(dbPath)
-	defer os.Remove(dbPath)
 
-	store, err := NewSQLiteStore(dbPath)
+	store, err := NewPostgresStore(testDatabaseURL(t))
 	if err != nil {
 		t.Fatalf("NewSQLiteStore: %v", err)
 	}
@@ -55,11 +51,8 @@ func TestCountDueForRescan_UsesLastScanAge(t *testing.T) {
 }
 
 func TestCountCurrentDigests_TotalAndInUse(t *testing.T) {
-	dbPath := "test_count_digests_" + t.Name() + ".db"
-	_ = os.Remove(dbPath)
-	defer os.Remove(dbPath)
 
-	store, err := NewSQLiteStore(dbPath)
+	store, err := NewPostgresStore(testDatabaseURL(t))
 	if err != nil {
 		t.Fatalf("NewSQLiteStore: %v", err)
 	}
@@ -103,11 +96,8 @@ func TestCountCurrentDigests_TotalAndInUse(t *testing.T) {
 // Runtime inventory often reports images without a digest, so the in-use digest count must
 // use the same repository+tag fallback as the in_use list filters.
 func TestCountCurrentDigests_CountsDigestlessRuntimeMatch(t *testing.T) {
-	dbPath := "test_count_digests_fallback_" + t.Name() + ".db"
-	_ = os.Remove(dbPath)
-	defer os.Remove(dbPath)
 
-	store, err := NewSQLiteStore(dbPath)
+	store, err := NewPostgresStore(testDatabaseURL(t))
 	if err != nil {
 		t.Fatalf("NewSQLiteStore: %v", err)
 	}
@@ -145,11 +135,8 @@ func TestCountCurrentDigests_CountsDigestlessRuntimeMatch(t *testing.T) {
 // ListDueForRescanArtifacts must select the same artifacts CountDueForRescan counts, and
 // carry the repository and tag that enqueueing a scan requires.
 func TestListDueForRescanArtifacts_MatchesCountAndCarriesIdentity(t *testing.T) {
-	dbPath := "test_list_due_" + t.Name() + ".db"
-	_ = os.Remove(dbPath)
-	defer os.Remove(dbPath)
 
-	store, err := NewSQLiteStore(dbPath)
+	store, err := NewPostgresStore(testDatabaseURL(t))
 	if err != nil {
 		t.Fatalf("NewSQLiteStore: %v", err)
 	}
