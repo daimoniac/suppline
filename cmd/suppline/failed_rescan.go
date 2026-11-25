@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"time"
 
 	"github.com/daimoniac/suppline/internal/scanenqueue"
 	"github.com/daimoniac/suppline/internal/statestore"
@@ -29,11 +30,26 @@ func partitionArtifactsByRuntimeUsage(
 	return inUse, notInUse
 }
 
+// scannedBefore keeps the artifacts whose last scan is older than cutoff.
+func scannedBefore(artifacts []*statestore.ScanRecord, cutoff time.Time) (old []*statestore.ScanRecord, recent int) {
+	old = make([]*statestore.ScanRecord, 0, len(artifacts))
+	for _, artifact := range artifacts {
+		if time.Unix(artifact.CreatedAt, 0).Before(cutoff) {
+			old = append(old, artifact)
+		} else {
+			recent++
+		}
+	}
+	return old, recent
+}
+
 // enqueueFailedArtifacts retrieves failed artifacts from the state store and
 // enqueues in-use ones for immediate high-priority rescanning on startup.
 // Unused policy-failed digests are skipped so they are not prioritized over
 // regular watcher scans; they continue via normal interval/rescan scheduling.
-func enqueueFailedArtifacts(ctx context.Context, store statestore.StateStoreQuery, scanEnqueuer *scanenqueue.Enqueuer, logger *slog.Logger) error {
+// In-use ones scanned within minAge are skipped too: after a failover the
+// previous leader has just scanned them.
+func enqueueFailedArtifacts(ctx context.Context, store statestore.StateStoreQuery, scanEnqueuer *scanenqueue.Enqueuer, minAge time.Duration, logger *slog.Logger) error {
 	failedArtifacts, err := store.GetFailedArtifacts(ctx)
 	if err != nil {
 		return fmt.Errorf("failed to get failed artifacts: %w", err)
@@ -47,6 +63,10 @@ func enqueueFailedArtifacts(ctx context.Context, store statestore.StateStoreQuer
 	logger.Info("found failed artifacts to consider for startup rescan", "count", len(failedArtifacts))
 
 	inUse, notInUse := partitionArtifactsByRuntimeUsage(failedArtifacts)
+	inUse, recent := scannedBefore(inUse, time.Now().Add(-minAge))
+	if recent > 0 {
+		logger.Info("skipping in-use failed artifacts scanned moments ago", "count", recent, "min_age", minAge)
+	}
 	if len(inUse) == 0 {
 		logger.Info("no in-use failed artifacts to rescan on startup",
 			"skipped_not_in_use", len(notInUse),

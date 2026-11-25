@@ -5,6 +5,7 @@ import (
 	"errors"
 	"log/slog"
 	"sync"
+	"time"
 
 	"github.com/robfig/cron/v3"
 
@@ -122,7 +123,10 @@ func Run(ctx context.Context, cfg *config.RegsyncConfig, logger *slog.Logger, op
 		}
 		genCtx, cancel := context.WithCancel(ctx)
 		done := make(chan error, 1)
-		go func(cfg *config.RegsyncConfig) { done <- m.runSchedule(genCtx, cfg) }(cfg)
+		// The first schedule continues what the previous process left in the
+		// store; a schedule restarted by a config change starts over.
+		resume := generation == 0
+		go func(cfg *config.RegsyncConfig) { done <- m.runSchedule(genCtx, cfg, resume) }(cfg)
 
 		restarted, err := m.waitForChange(ctx, cfg, changed, done)
 		cancel()
@@ -178,7 +182,7 @@ func waitForNext(ctx context.Context, changed func() <-chan struct{}) bool {
 }
 
 // runSchedule runs one mirror schedule over cfg until ctx is cancelled.
-func (m *runner) runSchedule(ctx context.Context, cfg *config.RegsyncConfig) error {
+func (m *runner) runSchedule(ctx context.Context, cfg *config.RegsyncConfig, resume bool) error {
 	logger := m.log
 	parallel := cfg.Defaults.Parallel
 	if parallel < 1 {
@@ -200,6 +204,18 @@ func (m *runner) runSchedule(ctx context.Context, cfg *config.RegsyncConfig) err
 		if err := m.journal.Bind(ctx); err != nil {
 			logger.Error("failed to record mirror config", "error", err.Error())
 		}
+	}
+
+	var stored map[string]*statestore.MirrorSync
+	if resume && m.journal != nil {
+		stored = m.startupPlan(ctx)
+	}
+	now := time.Now()
+	// ranTargets collects the targets whose entries run their startup pass;
+	// nil means every target (no stored state to continue from).
+	var ranTargets map[string]struct{}
+	if stored != nil {
+		ranTargets = map[string]struct{}{}
 	}
 
 	var wg sync.WaitGroup
@@ -225,13 +241,28 @@ func (m *runner) runSchedule(ctx context.Context, cfg *config.RegsyncConfig) err
 				"source", s.Source, "target", s.Target, "type", s.Type)
 			continue
 		}
+		decision := startupDecision{run: true}
+		if stored != nil && key != "" {
+			decision = decideStartup(s, stored[key], now)
+		}
+		var schedule cron.Schedule
+		if decision.firstCopyIn > 0 {
+			schedule = resumedEvery{first: now.Add(decision.firstCopyIn), every: time.Duration(s.Interval)}
+		} else if parsed, err := cron.ParseStandard(sched); err != nil {
+			logger.Error("failed to schedule cron", "source", s.Source, "target", s.Target, "sched", sched, "error", err.Error())
+			continue
+		} else {
+			schedule = parsed
+		}
 		runCtx := ctx
 		if key != "" {
 			runCtx = withSyncKey(ctx, key)
-			started = append(started, startedSync{key: key, target: s.Target})
+			if decision.run {
+				started = append(started, startedSync{key: key, target: s.Target})
+			}
 		}
 		logger.Debug("scheduled task", "source", s.Source, "target", s.Target, "type", s.Type, "sched", sched)
-		_, err := c.AddFunc(sched, func() {
+		c.Schedule(schedule, cron.FuncJob(func() {
 			logger.Debug("running task", "source", s.Source, "target", s.Target, "type", s.Type)
 			wg.Add(1)
 			defer wg.Done()
@@ -245,9 +276,15 @@ func (m *runner) runSchedule(ctx context.Context, cfg *config.RegsyncConfig) err
 			if err != nil && !errors.Is(err, context.Canceled) {
 				logger.Error("sync failed", "source", s.Source, "target", s.Target, "error", err.Error())
 			}
-		})
-		if err != nil {
-			logger.Error("failed to schedule cron", "source", s.Source, "target", s.Target, "sched", sched, "error", err.Error())
+		}))
+		if !decision.run {
+			logger.Info("continuing mirror schedule without a startup pass",
+				"source", s.Source, "target", s.Target, "reason", decision.reason,
+				"next_copy", schedule.Next(now).Format(time.RFC3339))
+			continue
+		}
+		if ranTargets != nil {
+			ranTargets[s.Target] = struct{}{}
 		}
 		recordMissing := func() {
 			if m.journal != nil {
@@ -277,7 +314,7 @@ func (m *runner) runSchedule(ctx context.Context, cfg *config.RegsyncConfig) err
 		}
 		return nil
 	}
-	if err := m.runCleanupForAllTargets(ctx); err != nil {
+	if err := m.runCleanupForTargets(ctx, ranTargets); err != nil {
 		logger.Error("startup cleanup encountered errors", "error", err.Error())
 	}
 	if m.journal != nil {
