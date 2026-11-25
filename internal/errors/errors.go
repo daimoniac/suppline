@@ -1,9 +1,15 @@
 package errors
 
 import (
+	"database/sql"
+	"database/sql/driver"
 	"errors"
 	"fmt"
+	"io"
+	"net"
 	"strings"
+
+	"github.com/jackc/pgx/v5/pgconn"
 )
 
 // Sentinel errors for common cases
@@ -173,6 +179,10 @@ func ClassifyError(err error) ErrorClass {
 		return ErrorClassTransient
 	}
 
+	if isConnectionLoss(err) {
+		return ErrorClassTransient
+	}
+
 	// Unknown error classification
 	return ErrorClassUnknown
 }
@@ -213,4 +223,31 @@ func ClassifyRegistryError(err error) error {
 
 	// Default to transient for other registry errors
 	return NewTransientf("registry error: %w", err)
+}
+
+// retryableSQLStates are PostgreSQL errors a retry on a fresh connection can
+// clear: a lost or refused connection (class 08), a server shutting down or
+// starting (57P01-57P03, as in a switchover), a write that reached a demoted
+// primary (25006), and transaction conflicts (40001, 40P01).
+var retryableSQLStates = map[string]bool{
+	"57P01": true, "57P02": true, "57P03": true,
+	"25006": true, "40001": true, "40P01": true,
+}
+
+// isConnectionLoss reports a database or network error that a PostgreSQL
+// switchover or restart causes.
+func isConnectionLoss(err error) bool {
+	var pgErr *pgconn.PgError
+	if errors.As(err, &pgErr) {
+		return strings.HasPrefix(pgErr.Code, "08") || retryableSQLStates[pgErr.Code]
+	}
+	var connectErr *pgconn.ConnectError
+	if errors.As(err, &connectErr) {
+		return true
+	}
+	var netErr *net.OpError
+	return errors.As(err, &netErr) ||
+		errors.Is(err, driver.ErrBadConn) ||
+		errors.Is(err, sql.ErrConnDone) ||
+		errors.Is(err, io.ErrUnexpectedEOF)
 }
