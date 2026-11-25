@@ -22,8 +22,8 @@ func TestInstancesListsLiveInstancesAndMarksTheLeader(t *testing.T) {
 
 	started := time.Unix(1_800_000_000, 0)
 	for _, in := range []Instance{
-		{Holder: "holder-a", Hostname: "pod-a", Address: "http://10.0.0.1:8080", Version: "v1", StartedAt: started},
-		{Holder: "holder-b", Hostname: "pod-b", Address: "http://10.0.0.2:8080", Version: "v1", StartedAt: started},
+		{Holder: "holder-a", Hostname: "pod-a", Address: "http://10.0.0.1:8080", Version: "v1", StartedAt: started, Status: "healthy"},
+		{Holder: "holder-b", Hostname: "pod-b", Address: "http://10.0.0.2:8080", Version: "v1", StartedAt: started, Status: "unhealthy"},
 	} {
 		if err := b.Heartbeat(ctx, in); err != nil {
 			t.Fatalf("Heartbeat %s: %v", in.Holder, err)
@@ -49,6 +49,9 @@ func TestInstancesListsLiveInstancesAndMarksTheLeader(t *testing.T) {
 	}
 	if !byHost["pod-a"].Leader || byHost["pod-b"].Leader {
 		t.Fatalf("leader flags a=%v b=%v, want only pod-a", byHost["pod-a"].Leader, byHost["pod-b"].Leader)
+	}
+	if byHost["pod-a"].Status != "healthy" || byHost["pod-b"].Status != "unhealthy" {
+		t.Fatalf("statuses a=%q b=%q", byHost["pod-a"].Status, byHost["pod-b"].Status)
 	}
 	if !byHost["pod-b"].StartedAt.Equal(started) || byHost["pod-b"].SeenAt.IsZero() {
 		t.Fatalf("pod-b = %+v", byHost["pod-b"])

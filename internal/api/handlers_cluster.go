@@ -5,12 +5,18 @@ import (
 	"net/http"
 	"time"
 
+	"github.com/daimoniac/suppline/internal/observability"
 	"github.com/daimoniac/suppline/internal/statestore"
 )
 
-// clusterInstancesWindow is how recently an instance must have sent a
-// heartbeat to be listed. Instances send one every 10 s.
-const clusterInstancesWindow = 30 * time.Second
+const (
+	// clusterInstancesWindow is how long an instance stays listed after its
+	// last heartbeat, so a crashed pod shows in red before it disappears.
+	clusterInstancesWindow = 2 * time.Minute
+	// heartbeatFreshFor marks an instance healthy only while its heartbeats,
+	// sent every 10 s, keep arriving.
+	heartbeatFreshFor = 30 * time.Second
+)
 
 type instanceLister interface {
 	ListInstances(ctx context.Context, window time.Duration) ([]statestore.Instance, error)
@@ -18,10 +24,15 @@ type instanceLister interface {
 
 // ClusterInstanceResponse is one running suppline instance.
 type ClusterInstanceResponse struct {
-	Hostname  string
-	Address   string
-	Version   string
-	Leader    bool
+	Hostname string
+	Address  string
+	Version  string
+	Leader   bool
+	// Status is the instance's own /health verdict at its last heartbeat.
+	Status string
+	// Healthy is true when Status is healthy and the last heartbeat is
+	// recent.
+	Healthy   bool
 	StartedAt int64
 	SeenAt    int64
 }
@@ -33,7 +44,7 @@ type ClusterInstancesResponse struct {
 
 // handleListClusterInstances lists the suppline instances sharing this database.
 // @Summary Running suppline instances
-// @Description Instances that sent a heartbeat in the last 30 s, the leader first. The leader runs the workers; standbys forward API requests to it.
+// @Description Instances that sent a heartbeat in the last 2 minutes, the leader first. The leader runs the workers; standbys forward API requests to it. Healthy is false when the instance reports itself unhealthy or its last heartbeat is older than 30 s.
 // @Tags Cluster
 // @Produce json
 // @Success 200 {object} ClusterInstancesResponse
@@ -54,12 +65,16 @@ func (s *APIServer) handleListClusterInstances(w http.ResponseWriter, r *http.Re
 			s.respondError(w, http.StatusInternalServerError, "Failed to list cluster instances")
 			return
 		}
+		now := s.clock()
 		for _, in := range instances {
+			fresh := now.Sub(in.SeenAt) <= heartbeatFreshFor
 			out.Instances = append(out.Instances, ClusterInstanceResponse{
 				Hostname:  in.Hostname,
 				Address:   in.Address,
 				Version:   in.Version,
 				Leader:    in.Leader,
+				Status:    in.Status,
+				Healthy:   fresh && in.Status == string(observability.StatusHealthy),
 				StartedAt: in.StartedAt.Unix(),
 				SeenAt:    in.SeenAt.Unix(),
 			})

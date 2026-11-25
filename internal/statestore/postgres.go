@@ -323,6 +323,11 @@ func (s *Store) initPostgresSchema() error {
 	}
 
 	if _, err := s.db.Exec(`
+		ALTER TABLE instances ADD COLUMN IF NOT EXISTS status TEXT NOT NULL DEFAULT ''
+	`); err != nil {
+		return fmt.Errorf("add instances.status: %w", err)
+	}
+	if _, err := s.db.Exec(`
 		ALTER TABLE artifacts ADD COLUMN IF NOT EXISTS superseded INTEGER NOT NULL DEFAULT 0
 	`); err != nil {
 		return fmt.Errorf("add artifacts.superseded: %w", err)

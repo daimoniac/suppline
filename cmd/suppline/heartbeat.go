@@ -17,12 +17,14 @@ type instanceRecorder interface {
 	RemoveInstance(ctx context.Context, holder string) error
 }
 
-// runHeartbeat records the instance now and every interval until ctx ends,
-// then removes its row so the dashboard drops it at once.
-func runHeartbeat(ctx context.Context, rec instanceRecorder, in statestore.Instance, every time.Duration, logger *slog.Logger) {
+// runHeartbeat records the instance and its current health (status) now
+// and every interval until ctx ends, then removes its row so the dashboard
+// drops it at once.
+func runHeartbeat(ctx context.Context, rec instanceRecorder, in statestore.Instance, status func() string, every time.Duration, logger *slog.Logger) {
 	ticker := time.NewTicker(every)
 	defer ticker.Stop()
 	for {
+		in.Status = status()
 		if err := rec.Heartbeat(ctx, in); err != nil && ctx.Err() == nil {
 			logger.Warn("failed to record instance heartbeat", "error", err.Error())
 		}

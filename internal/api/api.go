@@ -50,6 +50,8 @@ import (
 
 // APIServer provides HTTP API for querying scan results and triggering operations
 type APIServer struct {
+	// clock is time.Now outside tests.
+	clock             func() time.Time
 	config            *config.APIConfig
 	attestationConfig *config.AttestationConfig
 	stateStore        statestore.StateStoreQuery
@@ -105,6 +107,7 @@ func NewAPIServerWithCatalogAndEnqueuer(cfg *config.APIConfig, attestationCfg *c
 	}
 
 	api := &APIServer{
+		clock:             time.Now,
 		config:            cfg,
 		attestationConfig: attestationCfg,
 		stateStore:        store,

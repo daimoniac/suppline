@@ -14,6 +14,9 @@ type Instance struct {
 	Version   string
 	StartedAt time.Time
 	SeenAt    time.Time
+	// Status is the instance's own /health verdict at its last heartbeat:
+	// healthy or unhealthy.
+	Status string
 	// Leader is true while this instance holds the leader lock.
 	Leader bool
 }
@@ -26,14 +29,15 @@ const instancesRetention = 24 * time.Hour
 // periodically, leader or standby.
 func (s *Store) Heartbeat(ctx context.Context, in Instance) error {
 	if _, err := s.db.ExecContext(ctx, `
-		INSERT INTO instances (holder, hostname, address, version, started_at, seen_at)
-		VALUES (?, ?, ?, ?, ?, EXTRACT(EPOCH FROM CLOCK_TIMESTAMP())::BIGINT)
+		INSERT INTO instances (holder, hostname, address, version, started_at, seen_at, status)
+		VALUES (?, ?, ?, ?, ?, EXTRACT(EPOCH FROM CLOCK_TIMESTAMP())::BIGINT, ?)
 		ON CONFLICT (holder) DO UPDATE SET
 			hostname = EXCLUDED.hostname,
 			address = EXCLUDED.address,
 			version = EXCLUDED.version,
-			seen_at = EXCLUDED.seen_at`,
-		in.Holder, in.Hostname, in.Address, in.Version, in.StartedAt.Unix()); err != nil {
+			seen_at = EXCLUDED.seen_at,
+			status = EXCLUDED.status`,
+		in.Holder, in.Hostname, in.Address, in.Version, in.StartedAt.Unix(), in.Status); err != nil {
 		return fmt.Errorf("record instance heartbeat: %w", err)
 	}
 	if _, err := s.db.ExecContext(ctx, `
@@ -57,7 +61,7 @@ func (s *Store) RemoveInstance(ctx context.Context, holder string) error {
 // still holds the lock.
 func (s *Store) ListInstances(ctx context.Context, window time.Duration) ([]Instance, error) {
 	rows, err := s.db.QueryContext(ctx, `
-		SELECT i.holder, i.hostname, i.address, i.version, i.started_at, i.seen_at,
+		SELECT i.holder, i.hostname, i.address, i.version, i.started_at, i.seen_at, i.status,
 			EXISTS (
 				SELECT 1 FROM leader l
 				JOIN pg_locks k ON k.pid = l.backend_pid
@@ -81,7 +85,7 @@ func (s *Store) ListInstances(ctx context.Context, window time.Duration) ([]Inst
 			in              Instance
 			started, seenAt int64
 		)
-		if err := rows.Scan(&in.Holder, &in.Hostname, &in.Address, &in.Version, &started, &seenAt, &in.Leader); err != nil {
+		if err := rows.Scan(&in.Holder, &in.Hostname, &in.Address, &in.Version, &started, &seenAt, &in.Status, &in.Leader); err != nil {
 			return nil, fmt.Errorf("scan instance: %w", err)
 		}
 		in.StartedAt, in.SeenAt = time.Unix(started, 0), time.Unix(seenAt, 0)

@@ -16,12 +16,17 @@ export function ClusterStateCard({ instances }: { instances: ClusterInstance[] }
             <li
               key={instance.Hostname}
               data-leader={instance.Leader ? 'true' : 'false'}
-              title={`${instance.Hostname} · ${instance.Leader ? 'leader' : 'standby'} · ${instance.Version}`}
+              title={`${instance.Hostname} · ${instance.Leader ? 'leader' : 'standby'} · ${healthLabel(instance)} · ${instance.Version}`}
               className={cn(
                 'flex items-center gap-1.5 text-xs font-mono rounded px-1.5 py-0.5 min-w-0',
                 instance.Leader ? 'bg-success/10 text-success font-semibold' : 'text-text-secondary',
               )}
             >
+              <span
+                data-health={instance.Healthy ? 'healthy' : 'unhealthy'}
+                aria-label={healthLabel(instance)}
+                className={cn('w-2 h-2 rounded-full flex-shrink-0', instance.Healthy ? 'bg-success' : 'bg-danger')}
+              />
               {instance.Leader ? <Crown className="w-3 h-3 flex-shrink-0" /> : <span className="w-3 h-3 flex-shrink-0" />}
               {/* rtl puts the ellipsis on the left; the LRMs keep the name itself left-to-right. */}
               <span className="truncate min-w-0" style={{ direction: 'rtl', textAlign: 'left' }}>{'‎'}{instance.Hostname}{'‎'}</span>
@@ -31,4 +36,11 @@ export function ClusterStateCard({ instances }: { instances: ClusterInstance[] }
       )}
     </div>
   );
+}
+
+/** Why a pod is green or red, for the tooltip. */
+function healthLabel(instance: ClusterInstance): string {
+  if (instance.Healthy) return 'healthy';
+  if (instance.Status === 'healthy') return `unhealthy (no heartbeat since ${new Date(instance.SeenAt * 1000).toLocaleTimeString()})`;
+  return 'unhealthy';
 }
