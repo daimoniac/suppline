@@ -209,6 +209,7 @@ func (s *APIServer) setupRoutes() {
 	s.router.HandleFunc("/api/v1/vulnerabilities", s.authMiddleware(s.handleQueryVulnerabilities, false))
 	s.router.HandleFunc("/api/v1/vulnerabilities/", s.authMiddleware(s.handleGetVulnerabilityDetails, false))
 	s.router.HandleFunc("/api/v1/coverage", s.authMiddleware(s.handleGetCoverage, false))
+	s.router.HandleFunc("/api/v1/cluster/instances", s.authMiddleware(s.handleListClusterInstances, false))
 	s.router.HandleFunc("/api/v1/vex", s.authMiddleware(s.handleListVEX, false))
 	s.router.HandleFunc("/api/v1/triage", s.authMiddleware(s.handleListTriage, false))
 	s.router.HandleFunc("/api/v1/triage/statements", s.authMiddleware(s.handleListTriageStatements, false))

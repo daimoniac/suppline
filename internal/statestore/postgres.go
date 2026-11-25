@@ -94,6 +94,16 @@ func (s *Store) initPostgresSchema() error {
 			backend_pid INTEGER NOT NULL,
 			acquired_at BIGINT NOT NULL
 		)`,
+		// Every running instance, leader or standby, refreshes its row; the
+		// dashboard lists those seen recently.
+		`CREATE TABLE IF NOT EXISTS instances (
+			holder TEXT PRIMARY KEY,
+			hostname TEXT NOT NULL,
+			address TEXT NOT NULL,
+			version TEXT NOT NULL,
+			started_at BIGINT NOT NULL,
+			seen_at BIGINT NOT NULL
+		)`,
 		`CREATE TABLE IF NOT EXISTS repositories (
 			id BIGSERIAL PRIMARY KEY,
 			name TEXT NOT NULL UNIQUE,
