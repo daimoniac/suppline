@@ -13,6 +13,7 @@ import (
 
 	"github.com/daimoniac/suppline/internal/config"
 	"github.com/daimoniac/suppline/internal/configedit"
+	suppErrors "github.com/daimoniac/suppline/internal/errors"
 	"github.com/daimoniac/suppline/internal/mirror"
 	"github.com/daimoniac/suppline/internal/policy/catalog"
 	"github.com/daimoniac/suppline/internal/queue"
@@ -346,6 +347,18 @@ func (s *APIServer) respondJSON(w http.ResponseWriter, status int, data interfac
 // respondError sends an error response
 func (s *APIServer) respondError(w http.ResponseWriter, status int, message string) {
 	s.respondJSON(w, status, map[string]string{"error": message})
+}
+
+// respondStoreError answers a failed state-store call. A transient error,
+// such as a connection dropped by a PostgreSQL switchover, gets 503 with
+// Retry-After so clients try again; anything else is a 500.
+func (s *APIServer) respondStoreError(w http.ResponseWriter, err error, message string) {
+	if suppErrors.IsTransient(err) {
+		w.Header().Set("Retry-After", "5")
+		s.respondError(w, http.StatusServiceUnavailable, message)
+		return
+	}
+	s.respondError(w, http.StatusInternalServerError, message)
 }
 
 // parseQueryParam extracts a query parameter from the request

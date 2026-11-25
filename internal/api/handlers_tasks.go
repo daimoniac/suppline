@@ -147,7 +147,7 @@ func (s *APIServer) handleGetSemverUpdateTasks(w http.ResponseWriter, r *http.Re
 		clusters, err := s.clusterInventory.ListClusterSummaries(ctx)
 		if err != nil {
 			s.logger.Error("failed to list cluster summaries", "error", err)
-			s.respondError(w, http.StatusInternalServerError, "Failed to list cluster summaries")
+			s.respondStoreError(w, err, "Failed to list cluster summaries")
 			return
 		}
 
@@ -376,7 +376,7 @@ func (s *APIServer) handleRuntimeUnusedWhitelistRouter(w http.ResponseWriter, r 
 func (s *APIServer) handleGetRuntimeUnusedWhitelist(w http.ResponseWriter, r *http.Request) {
 	entries, err := s.stateStore.ListRuntimeUnusedRepositoryWhitelist(r.Context())
 	if err != nil {
-		s.respondError(w, http.StatusInternalServerError, fmt.Sprintf("Failed to list runtime-unused whitelist: %v", err))
+		s.respondStoreError(w, err, fmt.Sprintf("Failed to list runtime-unused whitelist: %v", err))
 		return
 	}
 
@@ -402,7 +402,7 @@ func (s *APIServer) handleAddRuntimeUnusedWhitelist(w http.ResponseWriter, r *ht
 	}
 
 	if err := s.stateStore.AddRuntimeUnusedRepositoryWhitelist(r.Context(), repository); err != nil {
-		s.respondError(w, http.StatusInternalServerError, fmt.Sprintf("Failed to add runtime-unused whitelist entry: %v", err))
+		s.respondStoreError(w, err, fmt.Sprintf("Failed to add runtime-unused whitelist entry: %v", err))
 		return
 	}
 
@@ -423,7 +423,7 @@ func (s *APIServer) handleRemoveRuntimeUnusedWhitelist(w http.ResponseWriter, r 
 	}
 
 	if err := s.stateStore.RemoveRuntimeUnusedRepositoryWhitelist(r.Context(), repository); err != nil {
-		s.respondError(w, http.StatusInternalServerError, fmt.Sprintf("Failed to remove runtime-unused whitelist entry: %v", err))
+		s.respondStoreError(w, err, fmt.Sprintf("Failed to remove runtime-unused whitelist entry: %v", err))
 		return
 	}
 

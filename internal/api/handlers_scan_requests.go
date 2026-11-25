@@ -150,7 +150,7 @@ func (s *APIServer) handleCreateScanRequest(w http.ResponseWriter, r *http.Reque
 	}
 	allowed, err := tagselect.Allowed(entry, tag)
 	if err != nil {
-		s.respondError(w, http.StatusInternalServerError, fmt.Sprintf("tag filters: %v", err))
+		s.respondStoreError(w, err, fmt.Sprintf("tag filters: %v", err))
 		return
 	}
 	if !allowed {
@@ -171,7 +171,7 @@ func (s *APIServer) handleCreateScanRequest(w http.ResponseWriter, r *http.Reque
 
 	after, err := s.latestScanID(r.Context(), repository, digest)
 	if err != nil {
-		s.respondError(w, http.StatusInternalServerError, err.Error())
+		s.respondStoreError(w, err, err.Error())
 		return
 	}
 	finish := s.scanWaiter.watch(repository, digest)
@@ -181,7 +181,7 @@ func (s *APIServer) handleCreateScanRequest(w http.ResponseWriter, r *http.Reque
 		Digest:     digest,
 		Tag:        tag,
 	}); err != nil {
-		s.respondError(w, http.StatusInternalServerError, fmt.Sprintf("queue scan: %v", err))
+		s.respondStoreError(w, err, fmt.Sprintf("queue scan: %v", err))
 		return
 	}
 	s.logger.Info("scan requested", "repository", repository, "tag", tag, "digest", digest, "caller", callerFrom(r.Context()).subject)

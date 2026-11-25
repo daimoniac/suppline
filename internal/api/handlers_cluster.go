@@ -62,7 +62,7 @@ func (s *APIServer) handleListClusterInstances(w http.ResponseWriter, r *http.Re
 		instances, err := store.ListInstances(r.Context(), clusterInstancesWindow)
 		if err != nil {
 			s.logger.Error("list cluster instances", "error", err.Error())
-			s.respondError(w, http.StatusInternalServerError, "Failed to list cluster instances")
+			s.respondStoreError(w, err, "Failed to list cluster instances")
 			return
 		}
 		now := s.clock()
