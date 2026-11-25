@@ -18,6 +18,15 @@ const (
 	StatusHealthy   ComponentStatus = "healthy"
 	StatusUnhealthy ComponentStatus = "unhealthy"
 	StatusUnknown   ComponentStatus = "unknown"
+	// StatusStandby marks a leader-only component on a standby instance. It
+	// counts as healthy: a standby that waits for leadership is working.
+	StatusStandby ComponentStatus = "standby"
+)
+
+// Roles an instance reports in /health.
+const (
+	RoleLeader  = "leader"
+	RoleStandby = "standby"
 )
 
 // ComponentHealth represents the health of a single component
@@ -30,6 +39,7 @@ type ComponentHealth struct {
 // HealthStatus represents the overall health status
 type HealthStatus struct {
 	Status     ComponentStatus            `json:"status"`
+	Role       string                     `json:"role,omitempty"`
 	Version    string                     `json:"version"`
 	Components map[string]ComponentHealth `json:"components"`
 	Timestamp  time.Time                  `json:"timestamp"`
@@ -39,6 +49,7 @@ type HealthStatus struct {
 type HealthChecker struct {
 	mu         sync.RWMutex
 	components map[string]ComponentHealth
+	role       string
 	logger     *slog.Logger
 }
 
@@ -58,6 +69,13 @@ func (h *HealthChecker) RegisterComponent(name string) {
 		Status:    StatusUnknown,
 		LastCheck: time.Now(),
 	}
+}
+
+// SetRole records whether this instance leads or stands by.
+func (h *HealthChecker) SetRole(role string) {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	h.role = role
 }
 
 // UpdateComponentHealth updates the health status of a component
@@ -82,7 +100,7 @@ func (h *HealthChecker) GetHealth() HealthStatus {
 
 	for name, health := range h.components {
 		components[name] = health
-		if health.Status != StatusHealthy {
+		if health.Status != StatusHealthy && health.Status != StatusStandby {
 			overallHealthy = false
 		}
 	}
@@ -94,6 +112,7 @@ func (h *HealthChecker) GetHealth() HealthStatus {
 
 	return HealthStatus{
 		Status:     status,
+		Role:       h.role,
 		Version:    version.Version,
 		Components: components,
 		Timestamp:  time.Now(),

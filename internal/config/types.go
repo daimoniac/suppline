@@ -74,6 +74,8 @@ type APIConfig struct {
 	// OIDC, when set, accepts ID tokens of this issuer on the scan-request
 	// endpoints.
 	OIDC *OIDCSettings
+	// AdvertiseAddress is where other instances reach this one's API.
+	AdvertiseAddress string
 }
 
 // ObservabilityConfig configures logging and the operations port

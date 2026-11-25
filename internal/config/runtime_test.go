@@ -241,3 +241,52 @@ func TestValidate_RequiresPostgresURL(t *testing.T) {
 		t.Fatalf("Validate error = %v, want POSTGRES_URL is required", err)
 	}
 }
+
+// The chart and the docs set the address from the pod IP with a template.
+func TestLoad_ExpandsAdvertiseAddressTemplate(t *testing.T) {
+	clearSecretEnv(t)
+	t.Setenv("POD_IP", "10.42.0.7")
+	t.Setenv("SUPPLINE_CONFIG", writeConfig(t, "version: 1", "server:",
+		`  advertiseAddress: 'http://{{ env "POD_IP" }}:8080'`, "sync: []"))
+
+	cfg, err := Load()
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if cfg.API.AdvertiseAddress != "http://10.42.0.7:8080" {
+		t.Fatalf("advertise address = %q, want http://10.42.0.7:8080", cfg.API.AdvertiseAddress)
+	}
+}
+
+func TestValidate_AdvertiseAddress(t *testing.T) {
+	base := func() *Config {
+		return &Config{
+			RegsyncPath: writeConfig(t, "version: 1", "sync: []"),
+			Attestation: AttestationConfig{Key: "a2V5"},
+			API:         APIConfig{APIKey: "k", Port: 8080},
+			StateStore:  StateStoreConfig{PostgresURL: "postgres://x"},
+		}
+	}
+
+	c := base()
+	if err := c.Validate(); err != nil {
+		t.Fatalf("Validate: %v", err)
+	}
+	if !strings.HasPrefix(c.API.AdvertiseAddress, "http://") || !strings.HasSuffix(c.API.AdvertiseAddress, ":8080") {
+		t.Fatalf("default advertise address = %q, want http://<host>:8080", c.API.AdvertiseAddress)
+	}
+
+	c = base()
+	c.API.AdvertiseAddress = "http://10.0.3.7:8080"
+	if err := c.Validate(); err != nil || c.API.AdvertiseAddress != "http://10.0.3.7:8080" {
+		t.Fatalf("explicit address: %v, %q", err, c.API.AdvertiseAddress)
+	}
+
+	for _, bad := range []string{"10.0.3.7:8080", "ftp://x", "http://"} {
+		c = base()
+		c.API.AdvertiseAddress = bad
+		if err := c.Validate(); err == nil {
+			t.Errorf("Validate accepted advertise address %q", bad)
+		}
+	}
+}

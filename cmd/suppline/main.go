@@ -18,6 +18,7 @@ import (
 	"github.com/daimoniac/suppline/internal/config"
 	"github.com/daimoniac/suppline/internal/configedit"
 	"github.com/daimoniac/suppline/internal/configreload"
+	"github.com/daimoniac/suppline/internal/leader"
 	"github.com/daimoniac/suppline/internal/malicious"
 	"github.com/daimoniac/suppline/internal/mirror"
 	"github.com/daimoniac/suppline/internal/observability"
@@ -120,7 +121,6 @@ func run() error {
 		"buffer_size", cfg.Queue.BufferSize)
 	taskQueue := queue.NewInMemoryQueue(cfg.Queue.BufferSize)
 	scanEnqueuer := scanenqueue.New(taskQueue, store)
-	healthChecker.UpdateComponentHealth("queue", observability.StatusHealthy, "")
 	logger.Debug("task queue initialized")
 
 	logger.Debug("initializing trivy scanner",
@@ -239,24 +239,7 @@ func run() error {
 		watcherConfig,
 		logger,
 	)
-	healthChecker.UpdateComponentHealth("watcher", observability.StatusHealthy, "")
 	logger.Debug("registry watcher initialized")
-
-	// Enqueue failed artifacts for immediate rescanning on startup
-	logger.Info("checking for failed artifacts to rescan")
-	if err := enqueueFailedArtifacts(ctx, store, scanEnqueuer, logger); err != nil {
-		logger.Error("failed to enqueue failed artifacts", "error", err)
-		// Don't fail startup - this is a best-effort operation
-	}
-
-	// Seed the queue with work already known to be due, so a restart does not wait for a
-	// full discovery walk. This runs in the background because it blocks once the queue
-	// buffer is full, draining as the workers catch up.
-	go func() {
-		if err := enqueueDueArtifacts(ctx, store, scanEnqueuer, cfg.StateStore.RescanInterval, logger); err != nil {
-			logger.Error("failed to seed artifacts due for rescan", "error", err)
-		}
-	}()
 
 	logger.Debug("initializing worker",
 		"retry_attempts", cfg.Worker.RetryAttempts,
@@ -300,7 +283,6 @@ func run() error {
 		workerInstance.SetCooldownClock(tagRunway)
 		workerInstance.SetHeldDigests(tagRunway.HeldDigests)
 	}
-	healthChecker.UpdateComponentHealth("worker", observability.StatusHealthy, "")
 	logger.Debug("worker initialized")
 
 	scanReads, ok := store.(*statestore.Store)
@@ -360,79 +342,21 @@ func run() error {
 	}
 
 	var wg sync.WaitGroup
-	errChan := make(chan error, 4)
+	errChan := make(chan error, 8)
 
-	wg.Add(1)
-	go func() {
-		defer wg.Done()
-		logger.Debug("starting registry watcher")
-		if err := registryWatcher.Start(ctx); err != nil && err != context.Canceled {
-			logger.Error("registry watcher error",
-				"error", err.Error())
-			errChan <- fmt.Errorf("registry watcher error: %w", err)
-		}
-		logger.Debug("registry watcher stopped")
-	}()
-
-	wg.Add(1)
-	go func() {
-		defer wg.Done()
-		logger.Debug("starting triage")
-		if err := triageService.Start(ctx); err != nil && err != context.Canceled {
-			logger.Error("triage error", "error", err.Error())
-			errChan <- fmt.Errorf("triage error: %w", err)
-		}
-		logger.Debug("triage stopped")
-	}()
-
-	wg.Add(1)
-	go func() {
-		defer wg.Done()
-		vexAudit.Run(ctx)
-	}()
-
-	if maliciousService != nil {
-		rematcher := malicious.NewRematcher(maliciousService, scanReads, maliciousRescanQueue{enqueuer: scanEnqueuer},
-			observability.GetMetrics().MaliciousRescans, logger.With("module", "malicious"))
-		maliciousService.OnUpdate(rematcher.Notify)
-		wg.Add(2)
-		go func() {
-			defer wg.Done()
-			rematcher.Run(ctx)
-		}()
-		go func() {
-			defer wg.Done()
-			maliciousService.Run(ctx)
-		}()
+	// Leader-only components stand by until this instance is elected.
+	leaderOnly := []string{"queue", "worker", "watcher"}
+	if cfg.MirrorEnabled {
+		leaderOnly = append(leaderOnly, "mirror")
 	}
-
-	wg.Add(1)
-	go func() {
-		defer wg.Done()
-		configreload.Run(ctx, logger, cfg.RegsyncPath, configreload.Interval, func(parsed *config.RegsyncConfig) {
-			changed := repositoryPolicies.Replace(parsed)
-			logger.Info("reloaded suppline config", "path", cfg.RegsyncPath, "repositories_changed", len(changed))
-			queued, err := scanEnqueuer.RequeueRepositories(ctx, changed)
-			if err != nil {
-				logger.Error("config reload requeue failed", "repositories", len(changed), "queued", queued, "error", err)
-			}
-			if queued > 0 {
-				logger.Info("queued scans after config reload", "images", queued, "repositories", len(changed))
-			}
-		})
-	}()
-
-	wg.Add(1)
-	go func() {
-		defer wg.Done()
-		logger.Debug("starting worker")
-		if err := workerInstance.Start(ctx); err != nil && err != context.Canceled {
-			logger.Error("worker error",
-				"error", err.Error())
-			errChan <- fmt.Errorf("worker error: %w", err)
-		}
-		logger.Debug("worker stopped")
-	}()
+	if maliciousService != nil {
+		// Only the leader syncs the feed; its health stays unknown until then.
+		leaderOnly = append(leaderOnly, malicious.HealthComponent)
+	}
+	for _, name := range leaderOnly {
+		healthChecker.UpdateComponentHealth(name, observability.StatusStandby, "waiting for leadership")
+	}
+	healthChecker.SetRole(observability.RoleStandby)
 
 	if apiServer != nil {
 		wg.Add(1)
@@ -449,29 +373,146 @@ func run() error {
 		}()
 	}
 
-	if cfg.MirrorEnabled {
+	// startLeader starts everything that must run on one instance only. ctx
+	// ends with the process: a leader never steps down, it exits.
+	startLeader := func(ctx context.Context) {
+		observability.MarkLeader()
+		healthChecker.SetRole(observability.RoleLeader)
+		for _, name := range []string{"queue", "worker", "watcher"} {
+			healthChecker.UpdateComponentHealth(name, observability.StatusHealthy, "")
+		}
+		if cfg.MirrorEnabled {
+			// The mirror reports healthy once its registry client is ready.
+			healthChecker.UpdateComponentHealth("mirror", observability.StatusUnknown, "starting")
+		}
+
+		// Seed the queue: failed in-use artifacts first (urgent), then work already
+		// known to be due, so a new leader does not wait for a full discovery walk.
+		// This runs in the background because it blocks once the queue buffer is
+		// full, draining as the workers catch up; OnElected must not block.
+		go func() {
+			logger.Info("checking for failed artifacts to rescan")
+			if err := enqueueFailedArtifacts(ctx, store, scanEnqueuer, logger); err != nil {
+				logger.Error("failed to enqueue failed artifacts", "error", err)
+			}
+			if err := enqueueDueArtifacts(ctx, store, scanEnqueuer, cfg.StateStore.RescanInterval, logger); err != nil {
+				logger.Error("failed to seed artifacts due for rescan", "error", err)
+			}
+		}()
+
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			mirrorLog := logger.With("module", "regsync")
-			mirrorLog.Info("starting in-process mirror")
-			mirrorStore, _ := store.(statestore.MirrorStore)
-			opts := []mirror.Option{mirror.WithStore(mirrorStore), mirror.WithActivity(mirrorActivity)}
-			if inventory, ok := store.(mirror.ClusterInventory); ok {
-				opts = append(opts, mirror.WithInventory(inventory))
+			logger.Debug("starting registry watcher")
+			if err := registryWatcher.Start(ctx); err != nil && err != context.Canceled {
+				logger.Error("registry watcher error",
+					"error", err.Error())
+				errChan <- fmt.Errorf("registry watcher error: %w", err)
 			}
-			if err := mirror.Run(ctx, regsyncCfg, logger, append(opts, mirror.WithReady(func() {
-				healthChecker.UpdateComponentHealth("mirror", observability.StatusHealthy, "")
-			}), mirror.WithRunway(tagRunway),
-				mirror.WithReload(repositoryPolicies.Current, repositoryPolicies.Changed))...); err != nil && err != context.Canceled {
-				mirrorLog.Error("mirror error", "error", err.Error())
-				healthChecker.UpdateComponentHealth("mirror", observability.StatusUnhealthy, err.Error())
-			}
-			mirrorLog.Debug("mirror stopped")
+			logger.Debug("registry watcher stopped")
 		}()
+
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			logger.Debug("starting triage")
+			if err := triageService.Start(ctx); err != nil && err != context.Canceled {
+				logger.Error("triage error", "error", err.Error())
+				errChan <- fmt.Errorf("triage error: %w", err)
+			}
+			logger.Debug("triage stopped")
+		}()
+
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			vexAudit.Run(ctx)
+		}()
+
+		if maliciousService != nil {
+			rematcher := malicious.NewRematcher(maliciousService, scanReads, maliciousRescanQueue{enqueuer: scanEnqueuer},
+				observability.GetMetrics().MaliciousRescans, logger.With("module", "malicious"))
+			maliciousService.OnUpdate(rematcher.Notify)
+			wg.Add(2)
+			go func() {
+				defer wg.Done()
+				rematcher.Run(ctx)
+			}()
+			go func() {
+				defer wg.Done()
+				maliciousService.Run(ctx)
+			}()
+		}
+
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			configreload.Run(ctx, logger, cfg.RegsyncPath, configreload.Interval, func(parsed *config.RegsyncConfig) {
+				changed := repositoryPolicies.Replace(parsed)
+				logger.Info("reloaded suppline config", "path", cfg.RegsyncPath, "repositories_changed", len(changed))
+				queued, err := scanEnqueuer.RequeueRepositories(ctx, changed)
+				if err != nil {
+					logger.Error("config reload requeue failed", "repositories", len(changed), "queued", queued, "error", err)
+				}
+				if queued > 0 {
+					logger.Info("queued scans after config reload", "images", queued, "repositories", len(changed))
+				}
+			})
+		}()
+
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			logger.Debug("starting worker")
+			if err := workerInstance.Start(ctx); err != nil && err != context.Canceled {
+				logger.Error("worker error",
+					"error", err.Error())
+				errChan <- fmt.Errorf("worker error: %w", err)
+			}
+			logger.Debug("worker stopped")
+		}()
+
+		if cfg.MirrorEnabled {
+			wg.Add(1)
+			go func() {
+				defer wg.Done()
+				mirrorLog := logger.With("module", "regsync")
+				mirrorLog.Info("starting in-process mirror")
+				mirrorStore, _ := store.(statestore.MirrorStore)
+				opts := []mirror.Option{mirror.WithStore(mirrorStore), mirror.WithActivity(mirrorActivity)}
+				if inventory, ok := store.(mirror.ClusterInventory); ok {
+					opts = append(opts, mirror.WithInventory(inventory))
+				}
+				if err := mirror.Run(ctx, regsyncCfg, logger, append(opts, mirror.WithReady(func() {
+					healthChecker.UpdateComponentHealth("mirror", observability.StatusHealthy, "")
+				}), mirror.WithRunway(tagRunway),
+					mirror.WithReload(repositoryPolicies.Current, repositoryPolicies.Changed))...); err != nil && err != context.Canceled {
+					mirrorLog.Error("mirror error", "error", err.Error())
+					healthChecker.UpdateComponentHealth("mirror", observability.StatusUnhealthy, err.Error())
+				}
+				mirrorLog.Debug("mirror stopped")
+			}()
+		}
+
 	}
 
-	logger.Info("all components started successfully")
+	elector, err := leader.New(leader.Config{
+		Lock:      scanReads.LeaderLock(),
+		Holder:    leader.NewHolderID(),
+		Address:   cfg.API.AdvertiseAddress,
+		OnElected: startLeader,
+		Logger:    logger.With("module", "leader"),
+	})
+	if err != nil {
+		return fmt.Errorf("failed to initialize leader election: %w", err)
+	}
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		_ = elector.Run(ctx)
+	}()
+
+	logger.Info("started; leader-only components start once elected", "holder", elector.Holder())
 
 	select {
 	case <-ctx.Done():
@@ -500,6 +541,11 @@ func run() error {
 		logger.Info("all components stopped gracefully")
 	case <-shutdownCtx.Done():
 		logger.Warn("shutdown timeout exceeded, forcing exit")
+	}
+
+	// Components have stopped, so a standby may take over now.
+	if err := elector.Release(shutdownCtx); err != nil {
+		logger.Warn("failed to release leader lock; it ends with the session", "error", err.Error())
 	}
 
 	queueDepth, _ := taskQueue.GetQueueDepth(shutdownCtx)

@@ -85,6 +85,15 @@ func discardConn(conn *sql.Conn) {
 
 func (s *Store) initPostgresSchema() error {
 	stmts := []string{
+		// The advertised leader (ADR 0004). One row; trusted only while the
+		// session in backend_pid holds the leader lock.
+		`CREATE TABLE IF NOT EXISTS leader (
+			id INTEGER PRIMARY KEY CHECK (id = 1),
+			holder TEXT NOT NULL,
+			address TEXT NOT NULL,
+			backend_pid INTEGER NOT NULL,
+			acquired_at BIGINT NOT NULL
+		)`,
 		`CREATE TABLE IF NOT EXISTS repositories (
 			id BIGSERIAL PRIMARY KEY,
 			name TEXT NOT NULL UNIQUE,
