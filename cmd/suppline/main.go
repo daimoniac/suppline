@@ -122,7 +122,14 @@ func run() error {
 
 	logger.Debug("initializing state store")
 	var store statestore.StateStoreQuery
-	store, err = statestore.NewPostgresStore(cfg.StateStore.PostgresURL)
+	// A PostgreSQL switchover refuses connections for a few seconds; wait for
+	// the new primary instead of exiting and being restarted.
+	store, err = retryOpen(ctx, startupDBRetry, func() (*statestore.Store, error) {
+		return statestore.NewPostgresStore(cfg.StateStore.PostgresURL)
+	}, func(err error, next time.Duration) {
+		logger.Warn("cannot reach PostgreSQL yet; retrying", "retry_in", next, "error", err.Error())
+		healthChecker.UpdateComponentHealth("database", observability.StatusUnhealthy, "waiting for PostgreSQL: "+err.Error())
+	})
 	if err != nil {
 		healthChecker.UpdateComponentHealth("database", observability.StatusUnhealthy, err.Error())
 		return fmt.Errorf("failed to initialize postgres store: %w", err)
