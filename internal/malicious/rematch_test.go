@@ -35,7 +35,7 @@ const (
 
 type rematchFixture struct {
 	t       *testing.T
-	store   *statestore.SQLiteStore
+	store   *statestore.Store
 	service *Service
 	feed    *fakeFeed
 	queue   *recordedRescans

@@ -13,7 +13,7 @@ func TestRepositoryInUse_MatchesMirroredDigestUnderSourceName(t *testing.T) {
 	store, cleanup := createTestStore(t)
 	defer cleanup()
 
-	sqliteStore := store.(*SQLiteStore)
+	pgStore := store.(*Store)
 	ctx := context.Background()
 	const (
 		repo   = "hostingmaloonde/shcomp"
@@ -29,13 +29,13 @@ func TestRepositoryInUse_MatchesMirroredDigestUnderSourceName(t *testing.T) {
 
 	report := func(entries ...ClusterImageEntry) {
 		t.Helper()
-		if err := sqliteStore.RecordClusterInventory(ctx, "c1", entries, time.Now()); err != nil {
+		if err := pgStore.RecordClusterInventory(ctx, "c1", entries, time.Now()); err != nil {
 			t.Fatalf("RecordClusterInventory: %v", err)
 		}
 	}
 	inUse := func() bool {
 		t.Helper()
-		used, err := sqliteStore.RepositoryInUse(ctx, repo)
+		used, err := pgStore.RepositoryInUse(ctx, repo)
 		if err != nil {
 			t.Fatalf("RepositoryInUse: %v", err)
 		}

@@ -12,7 +12,7 @@ func TestCleanupArtifactTag_PreservesSharedScanOnSiblingAlias(t *testing.T) {
 	store, cleanup := createTestStore(t)
 	defer cleanup()
 
-	sqliteStore := store.(*SQLiteStore)
+	pgStore := store.(*Store)
 	ctx := context.Background()
 	repo := "hostingmaloonde/kong"
 	digest := "sha256:c944149b4d0aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
@@ -39,7 +39,7 @@ func TestCleanupArtifactTag_PreservesSharedScanOnSiblingAlias(t *testing.T) {
 		t.Fatalf("CleanupArtifactTag(3.0): %v", err)
 	}
 
-	detail, err := sqliteStore.GetRepository(ctx, repo, RepositoryTagFilter{})
+	detail, err := pgStore.GetRepository(ctx, repo, RepositoryTagFilter{})
 	if err != nil {
 		t.Fatalf("GetRepository: %v", err)
 	}
@@ -59,7 +59,7 @@ func TestRecordScan_RetagPreservesSiblingSharedScan(t *testing.T) {
 	store, cleanup := createTestStore(t)
 	defer cleanup()
 
-	sqliteStore := store.(*SQLiteStore)
+	pgStore := store.(*Store)
 	ctx := context.Background()
 	repo := "hostingmaloonde/dhi_grafana"
 	oldDigest := "sha256:245a7ae34af1f3503a8dffadca09032ca86e26b59dae07164982a356ce6fa08c"
@@ -98,7 +98,7 @@ func TestRecordScan_RetagPreservesSiblingSharedScan(t *testing.T) {
 		t.Fatalf("RecordScan(13.1 new): %v", err)
 	}
 
-	detail, err := sqliteStore.GetRepository(ctx, repo, RepositoryTagFilter{})
+	detail, err := pgStore.GetRepository(ctx, repo, RepositoryTagFilter{})
 	if err != nil {
 		t.Fatalf("GetRepository: %v", err)
 	}

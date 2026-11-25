@@ -12,7 +12,7 @@ func TestCountDueForRescan_UsesLastScanAge(t *testing.T) {
 
 	store, err := NewPostgresStore(testDatabaseURL(t))
 	if err != nil {
-		t.Fatalf("NewSQLiteStore: %v", err)
+		t.Fatalf("NewPostgresStore: %v", err)
 	}
 	defer store.Close()
 
@@ -54,7 +54,7 @@ func TestCountCurrentDigests_TotalAndInUse(t *testing.T) {
 
 	store, err := NewPostgresStore(testDatabaseURL(t))
 	if err != nil {
-		t.Fatalf("NewSQLiteStore: %v", err)
+		t.Fatalf("NewPostgresStore: %v", err)
 	}
 	defer store.Close()
 
@@ -99,7 +99,7 @@ func TestCountCurrentDigests_CountsDigestlessRuntimeMatch(t *testing.T) {
 
 	store, err := NewPostgresStore(testDatabaseURL(t))
 	if err != nil {
-		t.Fatalf("NewSQLiteStore: %v", err)
+		t.Fatalf("NewPostgresStore: %v", err)
 	}
 	defer store.Close()
 
@@ -138,7 +138,7 @@ func TestListDueForRescanArtifacts_MatchesCountAndCarriesIdentity(t *testing.T) 
 
 	store, err := NewPostgresStore(testDatabaseURL(t))
 	if err != nil {
-		t.Fatalf("NewSQLiteStore: %v", err)
+		t.Fatalf("NewPostgresStore: %v", err)
 	}
 	defer store.Close()
 

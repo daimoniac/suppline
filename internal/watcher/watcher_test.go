@@ -181,7 +181,7 @@ func (m *mockStateStore) EnsureArtifactTagBinding(ctx context.Context, repositor
 	if m.bindings[key] {
 		return false, nil
 	}
-	// Only create when this repository already scanned the digest (mirrors SQLite).
+	// Only create when this repository already scanned the digest (mirrors the store).
 	scan, ok := m.scans[digest]
 	if !ok || scan.Repository != repository {
 		return false, nil

@@ -12,17 +12,17 @@ import (
 	"github.com/daimoniac/suppline/internal/vulnurl"
 )
 
-func (s *SQLiteStore) GetLastScan(ctx context.Context, digest string) (*ScanRecord, error) {
+func (s *Store) GetLastScan(ctx context.Context, digest string) (*ScanRecord, error) {
 	return s.getLastScan(ctx, digest, "", true)
 }
 
 // GetLastScanSummary is GetLastScan without findings.
-func (s *SQLiteStore) GetLastScanSummary(ctx context.Context, digest string) (*ScanRecord, error) {
+func (s *Store) GetLastScanSummary(ctx context.Context, digest string) (*ScanRecord, error) {
 	return s.getLastScan(ctx, digest, "", false)
 }
 
 // GetLastRepositoryScan returns the newest scan of digest stored under repository.
-func (s *SQLiteStore) GetLastRepositoryScan(ctx context.Context, repository, digest string) (*ScanRecord, error) {
+func (s *Store) GetLastRepositoryScan(ctx context.Context, repository, digest string) (*ScanRecord, error) {
 	if repository == "" {
 		return nil, errors.NewPermanentf("repository is required")
 	}
@@ -35,7 +35,7 @@ func (s *SQLiteStore) GetLastRepositoryScan(ctx context.Context, repository, dig
 // GetLastRepositoryScanSummary returns the same scan as GetLastRepositoryScan
 // without its findings. Vulnerabilities stays nil; counts, policy outcome,
 // attestation flags and applied VEX statements are set.
-func (s *SQLiteStore) GetLastRepositoryScanSummary(ctx context.Context, repository, digest string) (*ScanRecord, error) {
+func (s *Store) GetLastRepositoryScanSummary(ctx context.Context, repository, digest string) (*ScanRecord, error) {
 	if repository == "" {
 		return nil, errors.NewPermanentf("repository is required")
 	}
@@ -45,7 +45,7 @@ func (s *SQLiteStore) GetLastRepositoryScanSummary(ctx context.Context, reposito
 	return s.getLastScan(ctx, digest, repository, false)
 }
 
-func (s *SQLiteStore) getLastScan(ctx context.Context, digest, repository string, withFindings bool) (*ScanRecord, error) {
+func (s *Store) getLastScan(ctx context.Context, digest, repository string, withFindings bool) (*ScanRecord, error) {
 	var record ScanRecord
 	var vexJSON sql.NullString
 	var failureFindingsJSON sql.NullString
@@ -110,7 +110,7 @@ func (s *SQLiteStore) getLastScan(ctx context.Context, digest, repository string
 }
 
 // GetArtifactFirstSeen returns when the artifact was first observed for the given repository and digest.
-func (s *SQLiteStore) GetArtifactFirstSeen(ctx context.Context, digest, repository, tag string) (*time.Time, error) {
+func (s *Store) GetArtifactFirstSeen(ctx context.Context, digest, repository, tag string) (*time.Time, error) {
 	var firstSeen sql.NullInt64
 
 	err := s.db.QueryRowContext(ctx, `
@@ -139,7 +139,7 @@ func (s *SQLiteStore) GetArtifactFirstSeen(ctx context.Context, digest, reposito
 // ListDueForRescan returns digests that need rescanning
 // Returns artifacts where next_scan_at is in the past (due for rescan now)
 // Uses DISTINCT to avoid scanning the same digest multiple times when multiple tags point to it
-func (s *SQLiteStore) ListDueForRescan(ctx context.Context, interval time.Duration) ([]string, error) {
+func (s *Store) ListDueForRescan(ctx context.Context, interval time.Duration) ([]string, error) {
 	nowUnix := time.Now().Unix()
 
 	rows, err := s.db.QueryContext(ctx, `
@@ -171,7 +171,7 @@ func (s *SQLiteStore) ListDueForRescan(ctx context.Context, interval time.Durati
 
 // CountDueForRescan returns how many distinct current digests are due for rescan
 // because their last scan is older than olderThan (same basis as the watcher).
-func (s *SQLiteStore) CountDueForRescan(ctx context.Context, olderThan time.Duration) (int, error) {
+func (s *Store) CountDueForRescan(ctx context.Context, olderThan time.Duration) (int, error) {
 	if olderThan <= 0 {
 		olderThan = 7 * 24 * time.Hour
 	}
@@ -194,7 +194,7 @@ func (s *SQLiteStore) CountDueForRescan(ctx context.Context, olderThan time.Dura
 // ListDueForRescanArtifacts returns the current artifacts counted by CountDueForRescan,
 // carrying the repository and tag needed to enqueue a scan. Records are deduplicated by
 // digest, annotated with runtime usage, and ordered oldest scan first.
-func (s *SQLiteStore) ListDueForRescanArtifacts(ctx context.Context, olderThan time.Duration) ([]*ScanRecord, error) {
+func (s *Store) ListDueForRescanArtifacts(ctx context.Context, olderThan time.Duration) ([]*ScanRecord, error) {
 	if olderThan <= 0 {
 		olderThan = 7 * 24 * time.Hour
 	}
@@ -242,7 +242,7 @@ func (s *SQLiteStore) ListDueForRescanArtifacts(ctx context.Context, olderThan t
 // CountCurrentDigests returns distinct digests among current latest-per-tag artifacts
 // and how many are in runtime use. Usage matching goes through getRuntimeUsageForScans so
 // the count includes the repository+tag fallback and matches the in_use list filters.
-func (s *SQLiteStore) CountCurrentDigests(ctx context.Context) (total int, inUse int, err error) {
+func (s *Store) CountCurrentDigests(ctx context.Context) (total int, inUse int, err error) {
 	rows, err := s.db.QueryContext(ctx, `
 		SELECT DISTINCT a.digest, COALESCE(a.tag, ''), r.name
 		FROM artifacts a
@@ -289,7 +289,7 @@ func (s *SQLiteStore) CountCurrentDigests(ctx context.Context) (total int, inUse
 }
 
 // GetFailedArtifacts returns all artifacts whose most recent scan failed policy evaluation
-func (s *SQLiteStore) GetFailedArtifacts(ctx context.Context) ([]*ScanRecord, error) {
+func (s *Store) GetFailedArtifacts(ctx context.Context) ([]*ScanRecord, error) {
 	records, err := s.queryFailedArtifacts(ctx)
 	if err != nil {
 		return nil, err
@@ -306,7 +306,7 @@ func (s *SQLiteStore) GetFailedArtifacts(ctx context.Context) ([]*ScanRecord, er
 // pending policy and whose digest a cluster runs. A digest the tag has moved off
 // is included, marked Superseded with the tag's CurrentDigest. This is the set
 // behind the runtime policy outcome counts (suppline_policy_failed_current{source="runtime"}).
-func (s *SQLiteStore) ListRunningPolicyFailures(ctx context.Context) ([]*ScanRecord, error) {
+func (s *Store) ListRunningPolicyFailures(ctx context.Context) ([]*ScanRecord, error) {
 	records, err := s.queryFailedArtifacts(ctx)
 	if err != nil {
 		return nil, err
@@ -324,7 +324,7 @@ func (s *SQLiteStore) ListRunningPolicyFailures(ctx context.Context) ([]*ScanRec
 	return running, nil
 }
 
-func (s *SQLiteStore) queryFailedArtifacts(ctx context.Context) ([]*ScanRecord, error) {
+func (s *Store) queryFailedArtifacts(ctx context.Context) ([]*ScanRecord, error) {
 	query := `
 		SELECT sr.id, sr.artifact_id, sr.scan_duration_ms,
 			sr.critical_vuln_count, sr.high_vuln_count, sr.medium_vuln_count, sr.low_vuln_count,
@@ -395,7 +395,7 @@ func (s *SQLiteStore) queryFailedArtifacts(ctx context.Context) ([]*ScanRecord, 
 // registry presence, runtime use, and runtime use plus cluster-wide newer semver tags.
 // Runtime use is the ListRunningPolicyFailures definition, so the runtime counts and
 // that list always agree.
-func (s *SQLiteStore) GetPolicyOutcomeSummary(ctx context.Context) (PolicyOutcomeSummary, error) {
+func (s *Store) GetPolicyOutcomeSummary(ctx context.Context) (PolicyOutcomeSummary, error) {
 	records, err := s.queryFailedArtifacts(ctx)
 	if err != nil {
 		return PolicyOutcomeSummary{}, err
@@ -444,7 +444,7 @@ func (s *SQLiteStore) GetPolicyOutcomeSummary(ctx context.Context) (PolicyOutcom
 }
 
 // GetScanHistory returns scan history for a digest with full details
-func (s *SQLiteStore) GetScanHistory(ctx context.Context, digest string, limit int) ([]*ScanRecord, error) {
+func (s *Store) GetScanHistory(ctx context.Context, digest string, limit int) ([]*ScanRecord, error) {
 	query := `
 		SELECT sr.id, sr.artifact_id, sr.scan_duration_ms,
 			sr.critical_vuln_count, sr.high_vuln_count, sr.medium_vuln_count, sr.low_vuln_count,
@@ -513,7 +513,7 @@ func (s *SQLiteStore) GetScanHistory(ctx context.Context, digest string, limit i
 }
 
 // GetTagsForDigest returns all repository+tag combinations that point to the given digest
-func (s *SQLiteStore) GetTagsForDigest(ctx context.Context, digest string) ([]TagRef, error) {
+func (s *Store) GetTagsForDigest(ctx context.Context, digest string) ([]TagRef, error) {
 	query := `
 		SELECT r.name, a.tag, a.last_seen
 		FROM artifacts a
@@ -546,7 +546,7 @@ func (s *SQLiteStore) GetTagsForDigest(ctx context.Context, digest string) ([]Ta
 
 // LoadVulnerabilitiesByScanIDs returns the findings of many scans in a few
 // queries. A scan with no findings is absent from the map.
-func (s *SQLiteStore) LoadVulnerabilitiesByScanIDs(ctx context.Context, scanIDs []int64) (map[int64][]types.VulnerabilityRecord, error) {
+func (s *Store) LoadVulnerabilitiesByScanIDs(ctx context.Context, scanIDs []int64) (map[int64][]types.VulnerabilityRecord, error) {
 	out := make(map[int64][]types.VulnerabilityRecord)
 	const chunkSize = 400
 	for start := 0; start < len(scanIDs); start += chunkSize {
@@ -561,7 +561,7 @@ func (s *SQLiteStore) LoadVulnerabilitiesByScanIDs(ctx context.Context, scanIDs 
 	return out, nil
 }
 
-func (s *SQLiteStore) loadVulnerabilityChunk(ctx context.Context, scanIDs []int64, out map[int64][]types.VulnerabilityRecord) error {
+func (s *Store) loadVulnerabilityChunk(ctx context.Context, scanIDs []int64, out map[int64][]types.VulnerabilityRecord) error {
 	placeholders := make([]string, len(scanIDs))
 	args := make([]any, len(scanIDs))
 	for i, id := range scanIDs {
@@ -601,7 +601,7 @@ func (s *SQLiteStore) loadVulnerabilityChunk(ctx context.Context, scanIDs []int6
 	return nil
 }
 
-func (s *SQLiteStore) loadVulnerabilitiesByScan(ctx context.Context, scanRecordID int64) ([]types.VulnerabilityRecord, error) {
+func (s *Store) loadVulnerabilitiesByScan(ctx context.Context, scanRecordID int64) ([]types.VulnerabilityRecord, error) {
 	rows, err := s.db.QueryContext(ctx, `
 		SELECT f.cve_id, COALESCE(NULLIF(f.severity, ''), c.severity), f.package_name, f.installed_version, f.fixed_version,
 			c.title, c.description, c.primary_url
@@ -636,7 +636,7 @@ func (s *SQLiteStore) loadVulnerabilitiesByScan(ctx context.Context, scanRecordI
 	return vulnerabilities, nil
 }
 
-func (s *SQLiteStore) buildScanFilterClause(filter ScanFilter) (string, []interface{}) {
+func (s *Store) buildScanFilterClause(filter ScanFilter) (string, []interface{}) {
 	clause := ""
 	args := []interface{}{}
 
@@ -672,7 +672,7 @@ func (s *SQLiteStore) buildScanFilterClause(filter ScanFilter) (string, []interf
 // (repository, tag), matching GetRepository's MAX(id) semantics. This avoids
 // surfacing superseded digest bindings after a tag was retargeted, as well as
 // stale historical scan_records that are no longer referenced by last_scan_id.
-func (s *SQLiteStore) ListScans(ctx context.Context, filter ScanFilter) ([]*ScanRecord, error) {
+func (s *Store) ListScans(ctx context.Context, filter ScanFilter) ([]*ScanRecord, error) {
 	if needsInUsePostFilter(filter.ImageUsage) {
 		filtered, err := s.listScansFilteredByImageUsage(ctx, filter)
 		if err != nil {
@@ -693,7 +693,7 @@ func (s *SQLiteStore) ListScans(ctx context.Context, filter ScanFilter) ([]*Scan
 
 // CountScans returns the total number of scan records that match the filters.
 // Pagination fields (Limit/Offset) are intentionally ignored.
-func (s *SQLiteStore) CountScans(ctx context.Context, filter ScanFilter) (int, error) {
+func (s *Store) CountScans(ctx context.Context, filter ScanFilter) (int, error) {
 	if needsInUsePostFilter(filter.ImageUsage) {
 		filtered, err := s.listScansFilteredByImageUsage(ctx, filter)
 		if err != nil {
@@ -724,7 +724,7 @@ func (s *SQLiteStore) CountScans(ctx context.Context, filter ScanFilter) (int, e
 
 // ListScansWithTotal returns a page of scans and the total matching count.
 // Image-usage post-filters are applied once and then paginated.
-func (s *SQLiteStore) ListScansWithTotal(ctx context.Context, filter ScanFilter) ([]*ScanRecord, int, error) {
+func (s *Store) ListScansWithTotal(ctx context.Context, filter ScanFilter) ([]*ScanRecord, int, error) {
 	if needsInUsePostFilter(filter.ImageUsage) {
 		filtered, err := s.listScansFilteredByImageUsage(ctx, filter)
 		if err != nil {
@@ -749,7 +749,7 @@ func (s *SQLiteStore) ListScansWithTotal(ctx context.Context, filter ScanFilter)
 
 // listScansFilteredByImageUsage loads all current scans matching non-usage filters,
 // annotates runtime usage, and applies the ImageUsage predicate. Limit/Offset are ignored.
-func (s *SQLiteStore) listScansFilteredByImageUsage(ctx context.Context, filter ScanFilter) ([]*ScanRecord, error) {
+func (s *Store) listScansFilteredByImageUsage(ctx context.Context, filter ScanFilter) ([]*ScanRecord, error) {
 	sqlFilter := filter
 	sqlFilter.Limit = 0
 	sqlFilter.Offset = 0
@@ -779,7 +779,7 @@ func (s *SQLiteStore) listScansFilteredByImageUsage(ctx context.Context, filter 
 	return filterScanRecordsByImageUsage(records, runtimeUsageByDigest, minTagByRepo, filter.ImageUsage), nil
 }
 
-func (s *SQLiteStore) annotateScanRecordsWithRuntimeUsage(ctx context.Context, records []*ScanRecord) error {
+func (s *Store) annotateScanRecordsWithRuntimeUsage(ctx context.Context, records []*ScanRecord) error {
 	lookups := make([]runtimeLookupInput, 0, len(records))
 	for _, record := range records {
 		lookups = append(lookups, runtimeLookupInput{
@@ -823,7 +823,7 @@ func paginateScanRecords(records []*ScanRecord, limit, offset int) []*ScanRecord
 	return records[start:end]
 }
 
-func (s *SQLiteStore) queryScanRecords(ctx context.Context, filter ScanFilter) ([]*ScanRecord, error) {
+func (s *Store) queryScanRecords(ctx context.Context, filter ScanFilter) ([]*ScanRecord, error) {
 	exemptionColumn := ""
 	if filter.IncludeExemptions {
 		exemptionColumn = ", sr.vex_statements_json"

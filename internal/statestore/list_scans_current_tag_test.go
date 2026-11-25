@@ -10,7 +10,7 @@ func TestListScans_OnlyLatestArtifactPerRepositoryTag(t *testing.T) {
 	store, cleanup := createTestStore(t)
 	defer cleanup()
 
-	sqliteStore := store.(*SQLiteStore)
+	pgStore := store.(*Store)
 	ctx := context.Background()
 	repo := "hostingmaloonde/dhi_grafana"
 	oldDigest := "sha256:olddigestolddigestolddigestolddigestolddigestolddigestolddigestold"
@@ -30,7 +30,7 @@ func TestListScans_OnlyLatestArtifactPerRepositoryTag(t *testing.T) {
 	// Simulate a historical superseded binding that RecordScan would normally prune:
 	// insert a newer artifact for the same tag on a different digest with a passing scan.
 	var repoID, oldArtifactID int64
-	if err := sqliteStore.db.QueryRowContext(ctx, `
+	if err := pgStore.db.QueryRowContext(ctx, `
 		SELECT r.id, a.id
 		FROM repositories r
 		JOIN artifacts a ON a.repository_id = r.id
@@ -41,7 +41,7 @@ func TestListScans_OnlyLatestArtifactPerRepositoryTag(t *testing.T) {
 
 	now := time.Now().Unix()
 	var newArtifactID int64
-	if err := sqliteStore.db.QueryRowContext(ctx, `
+	if err := pgStore.db.QueryRowContext(ctx, `
 		INSERT INTO artifacts (repository_id, digest, tag, first_seen, last_seen)
 		VALUES (?, ?, '13.1', ?, ?)
 		RETURNING id
@@ -53,7 +53,7 @@ func TestListScans_OnlyLatestArtifactPerRepositoryTag(t *testing.T) {
 	}
 
 	var newScanID int64
-	if err := sqliteStore.db.QueryRowContext(ctx, `
+	if err := pgStore.db.QueryRowContext(ctx, `
 		INSERT INTO scan_records (
 			artifact_id, scan_duration_ms,
 			critical_vuln_count, high_vuln_count, medium_vuln_count, low_vuln_count,
@@ -64,14 +64,14 @@ func TestListScans_OnlyLatestArtifactPerRepositoryTag(t *testing.T) {
 	`, newArtifactID).Scan(&newScanID); err != nil {
 		t.Fatalf("insert passing scan: %v", err)
 	}
-	if _, err := sqliteStore.db.ExecContext(ctx, `
+	if _, err := pgStore.db.ExecContext(ctx, `
 		UPDATE artifacts SET last_scan_id = ? WHERE id = ?
 	`, newScanID, newArtifactID); err != nil {
 		t.Fatalf("point new artifact at scan: %v", err)
 	}
 
 	policyFailed := false
-	failed, err := sqliteStore.ListScans(ctx, ScanFilter{PolicyPassed: &policyFailed, Limit: 100})
+	failed, err := pgStore.ListScans(ctx, ScanFilter{PolicyPassed: &policyFailed, Limit: 100})
 	if err != nil {
 		t.Fatalf("ListScans(failed): %v", err)
 	}
@@ -82,7 +82,7 @@ func TestListScans_OnlyLatestArtifactPerRepositoryTag(t *testing.T) {
 	}
 
 	policyPassed := true
-	passed, err := sqliteStore.ListScans(ctx, ScanFilter{PolicyPassed: &policyPassed, Limit: 100})
+	passed, err := pgStore.ListScans(ctx, ScanFilter{PolicyPassed: &policyPassed, Limit: 100})
 	if err != nil {
 		t.Fatalf("ListScans(passed): %v", err)
 	}
@@ -99,7 +99,7 @@ func TestListScans_OnlyLatestArtifactPerRepositoryTag(t *testing.T) {
 		t.Fatal("expected current passing 13.1 in ListScans")
 	}
 
-	detail, err := sqliteStore.GetRepository(ctx, repo, RepositoryTagFilter{Limit: 100})
+	detail, err := pgStore.GetRepository(ctx, repo, RepositoryTagFilter{Limit: 100})
 	if err != nil {
 		t.Fatalf("GetRepository: %v", err)
 	}
@@ -110,7 +110,7 @@ func TestListScans_OnlyLatestArtifactPerRepositoryTag(t *testing.T) {
 		t.Fatalf("GetRepository returned superseded digest %q, want %q", detail.Tags[0].Digest, newDigest)
 	}
 
-	latestRows, err := sqliteStore.allLatestArtifactTagRows(ctx)
+	latestRows, err := pgStore.allLatestArtifactTagRows(ctx)
 	if err != nil {
 		t.Fatalf("allLatestArtifactTagRows: %v", err)
 	}
@@ -118,7 +118,7 @@ func TestListScans_OnlyLatestArtifactPerRepositoryTag(t *testing.T) {
 		t.Fatalf("allLatestArtifactTagRows returned %+v, want only current digest %q", latestRows, newDigest)
 	}
 
-	currentTotal, _, err := sqliteStore.CountCurrentDigests(ctx)
+	currentTotal, _, err := pgStore.CountCurrentDigests(ctx)
 	if err != nil {
 		t.Fatalf("CountCurrentDigests: %v", err)
 	}
@@ -126,7 +126,7 @@ func TestListScans_OnlyLatestArtifactPerRepositoryTag(t *testing.T) {
 		t.Fatalf("CountCurrentDigests=%d, want 1 current digest", currentTotal)
 	}
 
-	failedCount, err := sqliteStore.CountScans(ctx, ScanFilter{PolicyPassed: &policyFailed})
+	failedCount, err := pgStore.CountScans(ctx, ScanFilter{PolicyPassed: &policyFailed})
 	if err != nil {
 		t.Fatalf("CountScans(failed): %v", err)
 	}

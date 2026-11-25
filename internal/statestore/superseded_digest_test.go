@@ -10,7 +10,7 @@ func TestRecordScan_RetainsInUseDigestWhenTagMoves(t *testing.T) {
 	store, cleanup := createTestStore(t)
 	defer cleanup()
 
-	sqliteStore := store.(*SQLiteStore)
+	pgStore := store.(*Store)
 	ctx := context.Background()
 	repo := "hostingmaloonde/dhi_traefik"
 	tag := "3.7.13-debian13"
@@ -26,7 +26,7 @@ func TestRecordScan_RetainsInUseDigestWhenTagMoves(t *testing.T) {
 	}); err != nil {
 		t.Fatalf("RecordScan(old): %v", err)
 	}
-	if err := sqliteStore.RecordClusterInventory(ctx, "hetzner-1", []ClusterImageEntry{
+	if err := pgStore.RecordClusterInventory(ctx, "hetzner-1", []ClusterImageEntry{
 		{Namespace: "traefik", ImageRef: "docker.io/hostingmaloonde/dhi_traefik", Tag: tag, Digest: oldDigest},
 	}, time.Now().UTC()); err != nil {
 		t.Fatalf("RecordClusterInventory: %v", err)
@@ -41,14 +41,14 @@ func TestRecordScan_RetainsInUseDigestWhenTagMoves(t *testing.T) {
 		t.Fatalf("RecordScan(new): %v", err)
 	}
 
-	if got := artifactSuperseded(t, sqliteStore, repo, oldDigest, tag); got != 1 {
+	if got := artifactSuperseded(t, pgStore, repo, oldDigest, tag); got != 1 {
 		t.Fatalf("old digest superseded=%d, want 1", got)
 	}
-	if got := artifactSuperseded(t, sqliteStore, repo, newDigest, tag); got != 0 {
+	if got := artifactSuperseded(t, pgStore, repo, newDigest, tag); got != 0 {
 		t.Fatalf("new digest superseded=%d, want 0", got)
 	}
 
-	detail, err := sqliteStore.GetRepository(ctx, repo, RepositoryTagFilter{})
+	detail, err := pgStore.GetRepository(ctx, repo, RepositoryTagFilter{})
 	if err != nil {
 		t.Fatalf("GetRepository: %v", err)
 	}
@@ -56,7 +56,7 @@ func TestRecordScan_RetainsInUseDigestWhenTagMoves(t *testing.T) {
 		t.Fatalf("repository view = total %d tags %+v, want only the new digest", detail.Total, detail.Tags)
 	}
 
-	if _, err := sqliteStore.GetLastRepositoryScan(ctx, repo, oldDigest); err != nil {
+	if _, err := pgStore.GetLastRepositoryScan(ctx, repo, oldDigest); err != nil {
 		t.Fatalf("old digest scan was dropped: %v", err)
 	}
 
@@ -71,14 +71,14 @@ func TestRecordScan_RetainsInUseDigestWhenTagMoves(t *testing.T) {
 	}); err != nil {
 		t.Fatalf("RecordScan(retain): %v", err)
 	}
-	detail, err = sqliteStore.GetRepository(ctx, repo, RepositoryTagFilter{})
+	detail, err = pgStore.GetRepository(ctx, repo, RepositoryTagFilter{})
 	if err != nil {
 		t.Fatalf("GetRepository after renewal: %v", err)
 	}
 	if detail.Total != 1 || detail.Tags[0].Digest != newDigest {
 		t.Fatalf("renewal took over the tag: %+v", detail.Tags)
 	}
-	if got := artifactSuperseded(t, sqliteStore, repo, oldDigest, tag); got != 1 {
+	if got := artifactSuperseded(t, pgStore, repo, oldDigest, tag); got != 1 {
 		t.Fatalf("renewed digest superseded=%d, want 1", got)
 	}
 }
@@ -87,7 +87,7 @@ func TestRecordScan_TagOnlyRuntimeUseDoesNotRetainOldDigest(t *testing.T) {
 	store, cleanup := createTestStore(t)
 	defer cleanup()
 
-	sqliteStore := store.(*SQLiteStore)
+	pgStore := store.(*Store)
 	ctx := context.Background()
 	repo := "hostingmaloonde/dhi_traefik"
 	tag := "3.7.13-debian13"
@@ -103,7 +103,7 @@ func TestRecordScan_TagOnlyRuntimeUseDoesNotRetainOldDigest(t *testing.T) {
 	}); err != nil {
 		t.Fatalf("RecordScan(old): %v", err)
 	}
-	if err := sqliteStore.RecordClusterInventory(ctx, "hetzner-1", []ClusterImageEntry{
+	if err := pgStore.RecordClusterInventory(ctx, "hetzner-1", []ClusterImageEntry{
 		{Namespace: "traefik", ImageRef: "docker.io/hostingmaloonde/dhi_traefik", Tag: tag},
 	}, time.Now().UTC()); err != nil {
 		t.Fatalf("RecordClusterInventory: %v", err)
@@ -118,7 +118,7 @@ func TestRecordScan_TagOnlyRuntimeUseDoesNotRetainOldDigest(t *testing.T) {
 		t.Fatalf("RecordScan(new): %v", err)
 	}
 
-	if _, err := sqliteStore.GetLastRepositoryScan(ctx, repo, oldDigest); err == nil {
+	if _, err := pgStore.GetLastRepositoryScan(ctx, repo, oldDigest); err == nil {
 		t.Fatal("tag-only inventory kept the old digest")
 	} else if err != ErrScanNotFound {
 		t.Fatalf("GetLastRepositoryScan(old): %v", err)
@@ -129,7 +129,7 @@ func TestReconcileSupersededDigests_RenewsStalePinAndDropsUnused(t *testing.T) {
 	store, cleanup := createTestStore(t)
 	defer cleanup()
 
-	sqliteStore := store.(*SQLiteStore)
+	pgStore := store.(*Store)
 	ctx := context.Background()
 	repo := "hostingmaloonde/dhi_traefik"
 	tag := "3.7.13-debian13"
@@ -145,7 +145,7 @@ func TestReconcileSupersededDigests_RenewsStalePinAndDropsUnused(t *testing.T) {
 	}); err != nil {
 		t.Fatalf("RecordScan(old): %v", err)
 	}
-	if err := sqliteStore.RecordClusterInventory(ctx, "hetzner-1", []ClusterImageEntry{
+	if err := pgStore.RecordClusterInventory(ctx, "hetzner-1", []ClusterImageEntry{
 		{Namespace: "traefik", ImageRef: "docker.io/hostingmaloonde/dhi_traefik", Tag: tag, Digest: oldDigest},
 	}, time.Now().UTC()); err != nil {
 		t.Fatalf("RecordClusterInventory: %v", err)
@@ -160,7 +160,7 @@ func TestReconcileSupersededDigests_RenewsStalePinAndDropsUnused(t *testing.T) {
 		t.Fatalf("RecordScan(new): %v", err)
 	}
 
-	fresh, err := sqliteStore.ReconcileSupersededDigests(ctx, repo, []string{newDigest}, 7*24*time.Hour)
+	fresh, err := pgStore.ReconcileSupersededDigests(ctx, repo, []string{newDigest}, 7*24*time.Hour)
 	if err != nil {
 		t.Fatalf("Reconcile fresh: %v", err)
 	}
@@ -169,7 +169,7 @@ func TestReconcileSupersededDigests_RenewsStalePinAndDropsUnused(t *testing.T) {
 	}
 
 	oldScanAt := time.Now().UTC().Add(-8 * 24 * time.Hour).Unix()
-	if _, err := sqliteStore.db.ExecContext(ctx, `
+	if _, err := pgStore.db.ExecContext(ctx, `
 		UPDATE scan_records SET created_at = ?
 		WHERE artifact_id IN (
 			SELECT a.id FROM artifacts a
@@ -180,7 +180,7 @@ func TestReconcileSupersededDigests_RenewsStalePinAndDropsUnused(t *testing.T) {
 		t.Fatalf("backdate scan: %v", err)
 	}
 
-	due, err := sqliteStore.ReconcileSupersededDigests(ctx, repo, []string{newDigest}, 7*24*time.Hour)
+	due, err := pgStore.ReconcileSupersededDigests(ctx, repo, []string{newDigest}, 7*24*time.Hour)
 	if err != nil {
 		t.Fatalf("Reconcile due: %v", err)
 	}
@@ -189,17 +189,17 @@ func TestReconcileSupersededDigests_RenewsStalePinAndDropsUnused(t *testing.T) {
 	}
 
 	// The tag moved back to the pinned digest before the next rescan.
-	restored, err := sqliteStore.EnsureArtifactTagBinding(ctx, repo, oldDigest, tag)
+	restored, err := pgStore.EnsureArtifactTagBinding(ctx, repo, oldDigest, tag)
 	if err != nil {
 		t.Fatalf("EnsureArtifactTagBinding: %v", err)
 	}
 	if restored {
 		t.Fatal("restoring an existing binding reported a new alias")
 	}
-	if got := artifactSuperseded(t, sqliteStore, repo, oldDigest, tag); got != 0 {
+	if got := artifactSuperseded(t, pgStore, repo, oldDigest, tag); got != 0 {
 		t.Fatalf("restored digest superseded=%d, want 0", got)
 	}
-	detail, err := sqliteStore.GetRepository(ctx, repo, RepositoryTagFilter{})
+	detail, err := pgStore.GetRepository(ctx, repo, RepositoryTagFilter{})
 	if err != nil {
 		t.Fatalf("GetRepository after restore: %v", err)
 	}
@@ -219,37 +219,37 @@ func TestReconcileSupersededDigests_RenewsStalePinAndDropsUnused(t *testing.T) {
 		t.Fatalf("RecordScan(new again): %v", err)
 	}
 	reportedAt := time.Now().UTC()
-	if err := sqliteStore.RecordClusterInventory(ctx, "hetzner-1", []ClusterImageEntry{
+	if err := pgStore.RecordClusterInventory(ctx, "hetzner-1", []ClusterImageEntry{
 		{Namespace: "traefik", ImageRef: "docker.io/hostingmaloonde/dhi_traefik", Tag: tag, Digest: oldDigest},
 	}, reportedAt); err != nil {
 		t.Fatalf("re-record inventory: %v", err)
 	}
-	if _, err := sqliteStore.db.ExecContext(ctx, `
+	if _, err := pgStore.db.ExecContext(ctx, `
 		UPDATE cluster_images_seen SET last_seen_at = ?
 	`, reportedAt.Add(-2*time.Hour).Unix()); err != nil {
 		t.Fatalf("age inventory: %v", err)
 	}
-	if _, err := sqliteStore.db.ExecContext(ctx, `
+	if _, err := pgStore.db.ExecContext(ctx, `
 		UPDATE clusters SET last_reported_at = ?
 	`, reportedAt.Unix()); err != nil {
 		t.Fatalf("bump cluster report: %v", err)
 	}
 
-	left, err := sqliteStore.ReconcileSupersededDigests(ctx, repo, []string{newDigest}, time.Hour)
+	left, err := pgStore.ReconcileSupersededDigests(ctx, repo, []string{newDigest}, time.Hour)
 	if err != nil {
 		t.Fatalf("Reconcile unused: %v", err)
 	}
 	if len(left) != 0 {
 		t.Fatalf("unused digest still renewing: %+v", left)
 	}
-	if _, err := sqliteStore.GetLastRepositoryScan(ctx, repo, oldDigest); err == nil {
+	if _, err := pgStore.GetLastRepositoryScan(ctx, repo, oldDigest); err == nil {
 		t.Fatal("unused superseded digest was kept")
 	} else if err != ErrScanNotFound {
 		t.Fatalf("GetLastRepositoryScan(old): %v", err)
 	}
 }
 
-func artifactSuperseded(t *testing.T, store *SQLiteStore, repo, digest, tag string) int {
+func artifactSuperseded(t *testing.T, store *Store, repo, digest, tag string) int {
 	t.Helper()
 	var superseded int
 	err := store.db.QueryRowContext(context.Background(), `
@@ -268,18 +268,18 @@ func TestReconcileSupersededDigests_MarksClusterOnlyTag(t *testing.T) {
 	store, cleanup := createTestStore(t)
 	defer cleanup()
 
-	sqliteStore := store.(*SQLiteStore)
+	pgStore := store.(*Store)
 	ctx := context.Background()
 	repo := "hostingmaloonde/minio_minio"
 	gone := "sha256:34c8e2f52a5984492555427fee07254c80036bdb7079bb91679232abd7a4fa20"
 
-	if err := sqliteStore.RecordClusterInventory(ctx, "internal1", []ClusterImageEntry{
+	if err := pgStore.RecordClusterInventory(ctx, "internal1", []ClusterImageEntry{
 		{Namespace: "minio", ImageRef: "docker.io/hostingmaloonde/minio_minio", Tag: "RELEASE.2024-12-18T13-15-44Z", Digest: gone},
 	}, time.Now().UTC()); err != nil {
 		t.Fatalf("RecordClusterInventory: %v", err)
 	}
 
-	due, err := sqliteStore.ReconcileSupersededDigests(ctx, repo, nil, 7*24*time.Hour)
+	due, err := pgStore.ReconcileSupersededDigests(ctx, repo, nil, 7*24*time.Hour)
 	if err != nil {
 		t.Fatalf("Reconcile: %v", err)
 	}

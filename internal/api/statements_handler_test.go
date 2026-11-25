@@ -48,7 +48,7 @@ func TestTriageStatementsShowEachRepositorysOwnStatement(t *testing.T) {
 
 // threeStatementsForOneCVE is the live CVE-2026-91403 layout: falco auto
 // not_affected, eck auto affected, falcoctl hand-written with no expiry.
-func threeStatementsForOneCVE(t *testing.T) (*statestore.SQLiteStore, *config.RegsyncConfig) {
+func threeStatementsForOneCVE(t *testing.T) (*statestore.Store, *config.RegsyncConfig) {
 	t.Helper()
 	store := storetest.New(t)
 	eckExpires, falcoExpires := int64(1798111939), int64(1796138031)

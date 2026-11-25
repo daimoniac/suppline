@@ -6,9 +6,8 @@ package statestore
 // can keep scanning them. Reads use this join as a defensive boundary even
 // though RecordScan and EnsureArtifactTagBinding maintain the flag.
 //
-// Keep this as a query fragment rather than a view so the same SQL remains
-// portable between SQLite and PostgreSQL and continues through DB's placeholder
-// rewriting.
+// Keep this as a query fragment rather than a view so it continues through
+// DB's placeholder rewriting.
 const currentArtifactTagBindingJoin = `
 		INNER JOIN (
 			SELECT a2.repository_id, a2.tag, MAX(a2.id) AS max_id

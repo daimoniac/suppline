@@ -91,12 +91,12 @@ func (t *Tx) PrepareContext(ctx context.Context, query string) (*sql.Stmt, error
 	return t.Tx.PrepareContext(ctx, t.rewrite(query))
 }
 
-func (s *SQLiteStore) boolTrue() string { return "TRUE" }
+func (s *Store) boolTrue() string { return "TRUE" }
 
-func (s *SQLiteStore) boolFalse() string { return "FALSE" }
+func (s *Store) boolFalse() string { return "FALSE" }
 
 // insertReturningID runs an INSERT and returns the new row's id.
-func (s *SQLiteStore) insertReturningID(ctx context.Context, exec interface {
+func (s *Store) insertReturningID(ctx context.Context, exec interface {
 	QueryRowContext(context.Context, string, ...any) *sql.Row
 }, query string, args ...any) (int64, error) {
 	query = strings.TrimRight(query, " \t\n;") + " RETURNING id"

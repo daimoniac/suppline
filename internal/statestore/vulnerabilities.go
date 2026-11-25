@@ -10,7 +10,7 @@ import (
 	"github.com/daimoniac/suppline/internal/vulnurl"
 )
 
-func (s *SQLiteStore) GetUniqueVulnerabilityCounts(ctx context.Context) (map[string]int, error) {
+func (s *Store) GetUniqueVulnerabilityCounts(ctx context.Context) (map[string]int, error) {
 	// Distinct CVE IDs on current last scans first (~catalog size), then count by
 	// catalog severity. COUNT(DISTINCT) over the full findings join sorts millions
 	// of rows on disk; this keeps the aggregate in memory.
@@ -56,7 +56,7 @@ func (s *SQLiteStore) GetUniqueVulnerabilityCounts(ctx context.Context) (map[str
 }
 
 // QueryVulnerabilities searches vulnerabilities across all scans
-func (s *SQLiteStore) QueryVulnerabilities(ctx context.Context, filter VulnFilter) ([]*types.VulnerabilityRecord, error) {
+func (s *Store) QueryVulnerabilities(ctx context.Context, filter VulnFilter) ([]*types.VulnerabilityRecord, error) {
 	query := `
 		SELECT v.cve_id, c.severity, v.package_name,
 			v.installed_version, v.fixed_version, c.title, c.description, c.primary_url,
@@ -128,7 +128,7 @@ func (s *SQLiteStore) QueryVulnerabilities(ctx context.Context, filter VulnFilte
 }
 
 // ListVulnerabilityCVEPage returns paginated distinct CVE IDs with SQL-level grouping/sorting.
-func (s *SQLiteStore) ListVulnerabilityCVEPage(ctx context.Context, filter VulnFilter, sortBy, sortDir string, limit, offset int) ([]string, int, error) {
+func (s *Store) ListVulnerabilityCVEPage(ctx context.Context, filter VulnFilter, sortBy, sortDir string, limit, offset int) ([]string, int, error) {
 	if limit <= 0 {
 		limit = 10
 	}
@@ -240,7 +240,7 @@ func (s *SQLiteStore) ListVulnerabilityCVEPage(ctx context.Context, filter VulnF
 }
 
 // QueryVulnerabilitiesByCVEIDs returns vulnerability records for the selected CVE IDs.
-func (s *SQLiteStore) QueryVulnerabilitiesByCVEIDs(ctx context.Context, filter VulnFilter, cveIDs []string) ([]*types.VulnerabilityRecord, error) {
+func (s *Store) QueryVulnerabilitiesByCVEIDs(ctx context.Context, filter VulnFilter, cveIDs []string) ([]*types.VulnerabilityRecord, error) {
 	if len(cveIDs) == 0 {
 		return []*types.VulnerabilityRecord{}, nil
 	}
@@ -314,7 +314,7 @@ func (s *SQLiteStore) QueryVulnerabilitiesByCVEIDs(ctx context.Context, filter V
 
 // ListVulnerabilityGroupSummariesByCVEIDs returns grouped summaries for the selected CVE IDs.
 // This avoids loading per-image rows when only counts/metadata are needed.
-func (s *SQLiteStore) ListVulnerabilityGroupSummariesByCVEIDs(ctx context.Context, filter VulnFilter, cveIDs []string) ([]*types.VulnerabilityGroup, error) {
+func (s *Store) ListVulnerabilityGroupSummariesByCVEIDs(ctx context.Context, filter VulnFilter, cveIDs []string) ([]*types.VulnerabilityGroup, error) {
 	if len(cveIDs) == 0 {
 		return []*types.VulnerabilityGroup{}, nil
 	}
@@ -413,7 +413,7 @@ func (s *SQLiteStore) ListVulnerabilityGroupSummariesByCVEIDs(ctx context.Contex
 }
 
 // CountFindingImagesByCVE counts distinct latest-scan digests that contain each CVE.
-func (s *SQLiteStore) CountFindingImagesByCVE(ctx context.Context, cveIDs []string) (map[string]int, error) {
+func (s *Store) CountFindingImagesByCVE(ctx context.Context, cveIDs []string) (map[string]int, error) {
 	unique := make([]string, 0, len(cveIDs))
 	seen := make(map[string]struct{}, len(cveIDs))
 	for _, raw := range cveIDs {
@@ -445,7 +445,7 @@ func (s *SQLiteStore) CountFindingImagesByCVE(ctx context.Context, cveIDs []stri
 	return counts, nil
 }
 
-func (s *SQLiteStore) countFindingImagesByCVE(ctx context.Context, cveIDs []string) (map[string]int, error) {
+func (s *Store) countFindingImagesByCVE(ctx context.Context, cveIDs []string) (map[string]int, error) {
 	placeholders := strings.TrimSuffix(strings.Repeat("?,", len(cveIDs)), ",")
 	query := `
 		SELECT v.cve_id, COUNT(DISTINCT la.digest)
@@ -484,7 +484,7 @@ func (s *SQLiteStore) countFindingImagesByCVE(ctx context.Context, cveIDs []stri
 }
 
 // GetImagesByCVE returns all images affected by a specific CVE
-func (s *SQLiteStore) GetImagesByCVE(ctx context.Context, cveID string) ([]*ScanRecord, error) {
+func (s *Store) GetImagesByCVE(ctx context.Context, cveID string) ([]*ScanRecord, error) {
 	query := `
 		SELECT DISTINCT sr.id, sr.artifact_id, sr.scan_duration_ms,
 			sr.critical_vuln_count, sr.high_vuln_count, sr.medium_vuln_count, sr.low_vuln_count,

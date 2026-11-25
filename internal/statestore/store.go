@@ -1,11 +1,11 @@
 package statestore
 
-// SQLiteStore implements StateStore on PostgreSQL.
+// Store implements StateStore on PostgreSQL.
 //
 // Runtime usage follows each cluster's latest inventory report: an image is in
 // use while the cluster's most recent report contains it. The cluster agent
 // decides how long short-lived pods stay in its reports.
-type SQLiteStore struct {
+type Store struct {
 	db *DB
 }
 
@@ -25,11 +25,11 @@ type normalizedClusterImageGroup struct {
 }
 
 // Close closes the database connection pool.
-func (s *SQLiteStore) Close() error {
+func (s *Store) Close() error {
 	return s.db.Close()
 }
 
 // initSchema creates or migrates the schema.
-func (s *SQLiteStore) initSchema() error {
+func (s *Store) initSchema() error {
 	return s.initPostgresSchema()
 }

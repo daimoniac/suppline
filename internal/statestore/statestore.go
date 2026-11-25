@@ -534,7 +534,7 @@ type TriageFilter struct {
 	Limit      int
 }
 
-// TriageStore persists triage decisions. SQLite and Postgres implement it.
+// TriageStore persists triage decisions.
 type TriageStore interface {
 	InsertTriageRun(ctx context.Context, run *TriageRun) error
 	LatestTriageRun(ctx context.Context, repository, cveID string) (*TriageRun, error)

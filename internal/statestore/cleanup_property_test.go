@@ -115,7 +115,7 @@ func TestVulnerabilityCascadeDeletionProperty(t *testing.T) {
 			}
 
 			// Count vulnerabilities before cleanup
-			vulnCountBefore := countVulnerabilities(store.(*SQLiteStore), digest)
+			vulnCountBefore := countVulnerabilities(store.(*Store), digest)
 			if vulnCountBefore != vulnCount {
 				t.Logf("Expected %d vulnerabilities before cleanup, got %d", vulnCount, vulnCountBefore)
 				return false
@@ -129,7 +129,7 @@ func TestVulnerabilityCascadeDeletionProperty(t *testing.T) {
 			}
 
 			// Count vulnerabilities after cleanup - should be 0
-			vulnCountAfter := countVulnerabilities(store.(*SQLiteStore), digest)
+			vulnCountAfter := countVulnerabilities(store.(*Store), digest)
 			return vulnCountAfter == 0
 		},
 		genValidDigest(),
@@ -196,7 +196,7 @@ func generateVulnerabilities(count int) []types.VulnerabilityRecord {
 	return vulns
 }
 
-func countVulnerabilities(store *SQLiteStore, digest string) int {
+func countVulnerabilities(store *Store, digest string) int {
 	var count int
 	err := store.db.QueryRow(`
 		SELECT COUNT(v.id)
@@ -268,7 +268,7 @@ func TestExcessScanCleanupProperty(t *testing.T) {
 			}
 
 			// Count remaining scans
-			remainingScans := countScanRecords(store.(*SQLiteStore), digest)
+			remainingScans := countScanRecords(store.(*Store), digest)
 
 			return remainingScans == maxScansToKeep
 		},
@@ -348,7 +348,7 @@ func TestArtifactReferenceConsistencyProperty(t *testing.T) {
 			}
 
 			// Get the artifact's last_scan_id
-			lastScanID := getArtifactLastScanID(store.(*SQLiteStore), digest)
+			lastScanID := getArtifactLastScanID(store.(*Store), digest)
 			if lastScanID == -1 {
 				t.Logf("Failed to get artifact's last_scan_id")
 				return false
@@ -368,7 +368,7 @@ func TestArtifactReferenceConsistencyProperty(t *testing.T) {
 	properties.TestingRun(t, gopter.ConsoleReporter(false))
 }
 
-func countScanRecords(store *SQLiteStore, digest string) int {
+func countScanRecords(store *Store, digest string) int {
 	var count int
 	err := store.db.QueryRow(`
 		SELECT COUNT(sr.id)
@@ -382,7 +382,7 @@ func countScanRecords(store *SQLiteStore, digest string) int {
 	return count
 }
 
-func getArtifactLastScanID(store *SQLiteStore, digest string) int64 {
+func getArtifactLastScanID(store *Store, digest string) int64 {
 	var lastScanID int64
 	err := store.db.QueryRow(`
 		SELECT last_scan_id
@@ -575,17 +575,17 @@ func TestTransactionAtomicityProperty(t *testing.T) {
 			}
 
 			// Get initial state counts
-			initialScanCount := countScanRecords(store.(*SQLiteStore), digest)
-			initialVulnCount := countVulnerabilities(store.(*SQLiteStore), digest)
-			initialArtifactExists := artifactExists(store.(*SQLiteStore), digest)
+			initialScanCount := countScanRecords(store.(*Store), digest)
+			initialVulnCount := countVulnerabilities(store.(*Store), digest)
+			initialArtifactExists := artifactExists(store.(*Store), digest)
 
 			// Test transaction atomicity by simulating a failure scenario
 			// We'll create a custom operation that should fail partway through
-			sqliteStore := store.(*SQLiteStore)
+			pgStore := store.(*Store)
 
 			// Try to execute a cleanup operation that will fail due to constraint violation
 			// We'll attempt to delete from a non-existent table to force a failure
-			err = sqliteStore.executeCleanup(ctx, func(tx *Tx) error {
+			err = pgStore.executeCleanup(ctx, func(tx *Tx) error {
 				// First, do a valid operation
 				_, err := tx.ExecContext(ctx, `
 					UPDATE artifacts SET last_scan_id = NULL WHERE digest = ?
@@ -608,9 +608,9 @@ func TestTransactionAtomicityProperty(t *testing.T) {
 			}
 
 			// Verify that the database state is unchanged (rollback occurred)
-			finalScanCount := countScanRecords(store.(*SQLiteStore), digest)
-			finalVulnCount := countVulnerabilities(store.(*SQLiteStore), digest)
-			finalArtifactExists := artifactExists(store.(*SQLiteStore), digest)
+			finalScanCount := countScanRecords(store.(*Store), digest)
+			finalVulnCount := countVulnerabilities(store.(*Store), digest)
+			finalArtifactExists := artifactExists(store.(*Store), digest)
 
 			// All counts should be the same as before the failed operation
 			return initialScanCount == finalScanCount &&
@@ -681,9 +681,9 @@ func TestCleanupIdempotencyProperty(t *testing.T) {
 			}
 
 			// Verify final state - should be the same regardless of execution count
-			finalScanCount := countScanRecords(store.(*SQLiteStore), digest)
-			finalVulnCount := countVulnerabilities(store.(*SQLiteStore), digest)
-			finalArtifactExists := artifactExists(store.(*SQLiteStore), digest)
+			finalScanCount := countScanRecords(store.(*Store), digest)
+			finalVulnCount := countVulnerabilities(store.(*Store), digest)
+			finalArtifactExists := artifactExists(store.(*Store), digest)
 
 			// After cleanup, there should be no scans, no vulnerabilities, and no artifact
 			return finalScanCount == 0 && finalVulnCount == 0 && !finalArtifactExists
@@ -698,7 +698,7 @@ func TestCleanupIdempotencyProperty(t *testing.T) {
 	properties.TestingRun(t, gopter.ConsoleReporter(false))
 }
 
-func artifactExists(store *SQLiteStore, digest string) bool {
+func artifactExists(store *Store, digest string) bool {
 	var count int
 	err := store.db.QueryRow(`
 		SELECT COUNT(*)

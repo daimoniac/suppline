@@ -10,9 +10,9 @@ func TestEnsureArtifactTagBinding_CreatesAliasFromSiblingScan(t *testing.T) {
 	store, cleanup := createTestStore(t)
 	defer cleanup()
 
-	sqliteStore, ok := store.(*SQLiteStore)
+	pgStore, ok := store.(*Store)
 	if !ok {
-		t.Fatal("expected *SQLiteStore from createTestStore")
+		t.Fatal("expected *Store from createTestStore")
 	}
 
 	ctx := context.Background()
@@ -48,7 +48,7 @@ func TestEnsureArtifactTagBinding_CreatesAliasFromSiblingScan(t *testing.T) {
 		t.Fatal("expected second call to be a no-op create")
 	}
 
-	detail, err := sqliteStore.GetRepository(ctx, repo, RepositoryTagFilter{})
+	detail, err := pgStore.GetRepository(ctx, repo, RepositoryTagFilter{})
 	if err != nil {
 		t.Fatalf("GetRepository: %v", err)
 	}
@@ -78,7 +78,7 @@ func TestEnsureArtifactTagBinding_ExistingAliasDoesNotUpgradeReadTransaction(t *
 	store, cleanup := createTestStore(t)
 	defer cleanup()
 
-	sqliteStore := store.(*SQLiteStore)
+	pgStore := store.(*Store)
 	ctx := context.Background()
 	repo := "hostingmaloonde/supabase_edge-runtime"
 	digest := "sha256:e8d000000000000000000000000000000000000000000000000000000000000"
@@ -93,10 +93,9 @@ func TestEnsureArtifactTagBinding_ExistingAliasDoesNotUpgradeReadTransaction(t *
 		t.Fatalf("RecordScan: %v", err)
 	}
 
-	// Hold a concurrent SQLite writer open. The old implementation first read the
-	// alias in a deferred transaction, then tried to upgrade that stale snapshot
-	// to UPDATE after this writer committed, which returned SQLITE_BUSY.
-	writer, err := sqliteStore.db.BeginTx(ctx, nil)
+	// Hold a concurrent writer open while the binding is ensured, so the
+	// implementation must not depend on a stale snapshot of the alias.
+	writer, err := pgStore.db.BeginTx(ctx, nil)
 	if err != nil {
 		t.Fatalf("begin writer: %v", err)
 	}

@@ -9,7 +9,7 @@ import (
 	"github.com/daimoniac/suppline/internal/statestore/storetest"
 )
 
-func newRequeueStore(t *testing.T) *statestore.SQLiteStore {
+func newRequeueStore(t *testing.T) *statestore.Store {
 	t.Helper()
 	store, err := statestore.NewPostgresStore(storetest.URL(t))
 	if err != nil {

@@ -22,7 +22,7 @@ func testMirrorConfig(t *testing.T, body string) *config.RegsyncConfig {
 	return cfg
 }
 
-func testJournal(t *testing.T, cfg *config.RegsyncConfig) (*journal, *statestore.SQLiteStore) {
+func testJournal(t *testing.T, cfg *config.RegsyncConfig) (*journal, *statestore.Store) {
 	t.Helper()
 	store, err := statestore.NewPostgresStore(storetest.URL(t))
 	if err != nil {

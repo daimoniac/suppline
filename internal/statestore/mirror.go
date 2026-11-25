@@ -13,7 +13,7 @@ const (
 	mirrorDeletionHub = "hub_repo"
 )
 
-func (s *SQLiteStore) pruneExpiredMirrorDeletions(ctx context.Context, now time.Time) error {
+func (s *Store) pruneExpiredMirrorDeletions(ctx context.Context, now time.Time) error {
 	cutoff := now.Add(-MirrorDeletionRetention).Unix()
 	_, err := s.db.ExecContext(ctx, `DELETE FROM mirror_deletions WHERE deleted_at < ?`, cutoff)
 	if err != nil {
@@ -24,7 +24,7 @@ func (s *SQLiteStore) pruneExpiredMirrorDeletions(ctx context.Context, now time.
 
 // ReplaceMirrorSyncs upserts the current config and drops syncs that left it.
 // Tag deletions for a removed sync are dropped. Hub repository deletions stay.
-func (s *SQLiteStore) ReplaceMirrorSyncs(ctx context.Context, syncs []MirrorSync) error {
+func (s *Store) ReplaceMirrorSyncs(ctx context.Context, syncs []MirrorSync) error {
 	if err := s.pruneExpiredMirrorDeletions(ctx, time.Now()); err != nil {
 		return err
 	}
@@ -75,7 +75,7 @@ func (s *SQLiteStore) ReplaceMirrorSyncs(ctx context.Context, syncs []MirrorSync
 }
 
 // FinishMirrorSync records the last finished run. Running is not stored.
-func (s *SQLiteStore) FinishMirrorSync(ctx context.Context, key, status, errMsg string, finishedAt time.Time) error {
+func (s *Store) FinishMirrorSync(ctx context.Context, key, status, errMsg string, finishedAt time.Time) error {
 	res, err := s.db.ExecContext(ctx, `
 		UPDATE mirror_syncs SET status = ?, finished_at = ?, error = ? WHERE sync_key = ?
 	`, status, finishedAt.Unix(), errMsg, key)
@@ -93,7 +93,7 @@ func (s *SQLiteStore) FinishMirrorSync(ctx context.Context, key, status, errMsg 
 }
 
 // ObserveMirrorImage records a wanted tag that is present and clears a matching deletion.
-func (s *SQLiteStore) ObserveMirrorImage(ctx context.Context, syncKey, repository, tag string, seenAt time.Time) error {
+func (s *Store) ObserveMirrorImage(ctx context.Context, syncKey, repository, tag string, seenAt time.Time) error {
 	if err := s.pruneExpiredMirrorDeletions(ctx, seenAt); err != nil {
 		return err
 	}
@@ -133,7 +133,7 @@ func (s *SQLiteStore) ObserveMirrorImage(ctx context.Context, syncKey, repositor
 }
 
 // PruneMirrorImages drops current images for one sync that this run did not observe.
-func (s *SQLiteStore) PruneMirrorImages(ctx context.Context, syncKey string, keep []MirrorImage) error {
+func (s *Store) PruneMirrorImages(ctx context.Context, syncKey string, keep []MirrorImage) error {
 	tx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {
 		return fmt.Errorf("begin prune mirror images: %w", err)
@@ -177,7 +177,7 @@ func (s *SQLiteStore) PruneMirrorImages(ctx context.Context, syncKey string, kee
 }
 
 // RecordMirrorTagDeletion removes the tag from the current set and lists the deletion.
-func (s *SQLiteStore) RecordMirrorTagDeletion(ctx context.Context, syncKey, repository, tag string, deletedAt time.Time) error {
+func (s *Store) RecordMirrorTagDeletion(ctx context.Context, syncKey, repository, tag string, deletedAt time.Time) error {
 	if err := s.pruneExpiredMirrorDeletions(ctx, deletedAt); err != nil {
 		return err
 	}
@@ -201,7 +201,7 @@ func (s *SQLiteStore) RecordMirrorTagDeletion(ctx context.Context, syncKey, repo
 }
 
 // RecordMirrorHubDeletion lists one Docker Hub repository cleanup and drops current images of that repository.
-func (s *SQLiteStore) RecordMirrorHubDeletion(ctx context.Context, repository string, deletedAt time.Time) error {
+func (s *Store) RecordMirrorHubDeletion(ctx context.Context, repository string, deletedAt time.Time) error {
 	if err := s.pruneExpiredMirrorDeletions(ctx, deletedAt); err != nil {
 		return err
 	}
@@ -238,7 +238,7 @@ func upsertMirrorDeletion(ctx context.Context, tx *Tx, syncKey, kind, repository
 }
 
 // SetMirrorHubError stores the last cleanupRepos error. An empty message clears it.
-func (s *SQLiteStore) SetMirrorHubError(ctx context.Context, message string) error {
+func (s *Store) SetMirrorHubError(ctx context.Context, message string) error {
 	_, err := s.db.ExecContext(ctx, `
 		INSERT INTO mirror_hub_status (id, last_error) VALUES (1, ?)
 		ON CONFLICT(id) DO UPDATE SET last_error = excluded.last_error
@@ -250,7 +250,7 @@ func (s *SQLiteStore) SetMirrorHubError(ctx context.Context, message string) err
 }
 
 // ListMirrorSyncs returns syncs in config order with image and tag-deletion counts.
-func (s *SQLiteStore) ListMirrorSyncs(ctx context.Context) ([]MirrorSyncSummary, error) {
+func (s *Store) ListMirrorSyncs(ctx context.Context) ([]MirrorSyncSummary, error) {
 	now := time.Now()
 	if err := s.pruneExpiredMirrorDeletions(ctx, now); err != nil {
 		return nil, err
@@ -290,11 +290,11 @@ func (s *SQLiteStore) ListMirrorSyncs(ctx context.Context) ([]MirrorSyncSummary,
 }
 
 // ListMirrorImages returns a page of current images for one sync.
-func (s *SQLiteStore) ListMirrorImages(ctx context.Context, syncKey string, limit, offset int) ([]MirrorImage, int, error) {
+func (s *Store) ListMirrorImages(ctx context.Context, syncKey string, limit, offset int) ([]MirrorImage, int, error) {
 	return listMirrorImages(ctx, s, syncKey, limit, offset)
 }
 
-func listMirrorImages(ctx context.Context, s *SQLiteStore, syncKey string, limit, offset int) ([]MirrorImage, int, error) {
+func listMirrorImages(ctx context.Context, s *Store, syncKey string, limit, offset int) ([]MirrorImage, int, error) {
 	var total int
 	if err := s.db.QueryRowContext(ctx, `SELECT COUNT(*) FROM mirror_images WHERE sync_key = ?`, syncKey).Scan(&total); err != nil {
 		return nil, 0, fmt.Errorf("count mirror images: %w", err)
@@ -328,7 +328,7 @@ func listMirrorImages(ctx context.Context, s *SQLiteStore, syncKey string, limit
 }
 
 // ListMirrorTagDeletions returns a page of tag deletions for one sync.
-func (s *SQLiteStore) ListMirrorTagDeletions(ctx context.Context, syncKey string, limit, offset int) ([]MirrorDeletion, int, error) {
+func (s *Store) ListMirrorTagDeletions(ctx context.Context, syncKey string, limit, offset int) ([]MirrorDeletion, int, error) {
 	if err := s.pruneExpiredMirrorDeletions(ctx, time.Now()); err != nil {
 		return nil, 0, err
 	}
@@ -336,14 +336,14 @@ func (s *SQLiteStore) ListMirrorTagDeletions(ctx context.Context, syncKey string
 }
 
 // ListMirrorHubDeletions returns a page of Docker Hub repository deletions.
-func (s *SQLiteStore) ListMirrorHubDeletions(ctx context.Context, limit, offset int) ([]MirrorDeletion, int, error) {
+func (s *Store) ListMirrorHubDeletions(ctx context.Context, limit, offset int) ([]MirrorDeletion, int, error) {
 	if err := s.pruneExpiredMirrorDeletions(ctx, time.Now()); err != nil {
 		return nil, 0, err
 	}
 	return listMirrorDeletions(ctx, s, mirrorDeletionHub, "", limit, offset)
 }
 
-func listMirrorDeletions(ctx context.Context, s *SQLiteStore, kind, syncKey string, limit, offset int) ([]MirrorDeletion, int, error) {
+func listMirrorDeletions(ctx context.Context, s *Store, kind, syncKey string, limit, offset int) ([]MirrorDeletion, int, error) {
 	var total int
 	if err := s.db.QueryRowContext(ctx, `
 		SELECT COUNT(*) FROM mirror_deletions WHERE kind = ? AND sync_key = ?
@@ -379,7 +379,7 @@ func listMirrorDeletions(ctx context.Context, s *SQLiteStore, kind, syncKey stri
 }
 
 // MirrorHubError returns the last cleanupRepos error, or empty when the last run succeeded.
-func (s *SQLiteStore) MirrorHubError(ctx context.Context) (string, error) {
+func (s *Store) MirrorHubError(ctx context.Context) (string, error) {
 	var message string
 	err := s.db.QueryRowContext(ctx, `SELECT last_error FROM mirror_hub_status WHERE id = 1`).Scan(&message)
 	if err == sql.ErrNoRows {

@@ -12,7 +12,7 @@ import (
 // CleanupArtifactTag removes one (repository, digest, tag) artifact binding without
 // deleting sibling tags that still point at the same digest. Scan records still
 // referenced by sibling aliases are reassigned, not deleted.
-func (s *SQLiteStore) CleanupArtifactTag(ctx context.Context, repository, digest, tag string) error {
+func (s *Store) CleanupArtifactTag(ctx context.Context, repository, digest, tag string) error {
 	return s.executeCleanup(ctx, func(tx *Tx) error {
 		var artifactID, repositoryID int64
 		err := tx.QueryRowContext(ctx, `
@@ -54,7 +54,7 @@ func (s *SQLiteStore) CleanupArtifactTag(ctx context.Context, repository, digest
 
 // CleanupRepository removes all artifacts and scan records for a repository, then
 // deletes the repository row. Used when a sync target is removed from configuration.
-func (s *SQLiteStore) CleanupRepository(ctx context.Context, repository string) error {
+func (s *Store) CleanupRepository(ctx context.Context, repository string) error {
 	return s.executeCleanup(ctx, func(tx *Tx) error {
 		var repositoryID int64
 		err := tx.QueryRowContext(ctx, `
@@ -173,7 +173,7 @@ func (s *SQLiteStore) CleanupRepository(ctx context.Context, repository string) 
 }
 
 // ListArtifactTags returns all stored (tag, digest) bindings for a repository.
-func (s *SQLiteStore) ListArtifactTags(ctx context.Context, repository string) ([]ArtifactTagBinding, error) {
+func (s *Store) ListArtifactTags(ctx context.Context, repository string) ([]ArtifactTagBinding, error) {
 	rows, err := s.db.QueryContext(ctx, `
 		SELECT a.tag, a.digest
 		FROM artifacts a
@@ -201,7 +201,7 @@ func (s *SQLiteStore) ListArtifactTags(ctx context.Context, repository string) (
 }
 
 // ListStoredRepositoryNames returns every repository name present in the state store.
-func (s *SQLiteStore) ListStoredRepositoryNames(ctx context.Context) ([]string, error) {
+func (s *Store) ListStoredRepositoryNames(ctx context.Context) ([]string, error) {
 	rows, err := s.db.QueryContext(ctx, `
 		SELECT name FROM repositories ORDER BY name ASC
 	`)
@@ -224,7 +224,7 @@ func (s *SQLiteStore) ListStoredRepositoryNames(ctx context.Context) ([]string, 
 	return names, nil
 }
 
-func (s *SQLiteStore) CleanupArtifactScans(ctx context.Context, digest string) error {
+func (s *Store) CleanupArtifactScans(ctx context.Context, digest string) error {
 	return s.executeCleanup(ctx, func(tx *Tx) error {
 		// First, get all artifact IDs and repository IDs for this digest
 		rows, err := tx.QueryContext(ctx, `
@@ -319,7 +319,7 @@ func (s *SQLiteStore) CleanupArtifactScans(ctx context.Context, digest string) e
 }
 
 // executeCleanup is a helper method for transaction management in cleanup operations
-func (s *SQLiteStore) executeCleanup(ctx context.Context, operation func(*Tx) error) error {
+func (s *Store) executeCleanup(ctx context.Context, operation func(*Tx) error) error {
 	tx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {
 		return errors.NewTransientf("failed to begin cleanup transaction: %w", err)
@@ -339,7 +339,7 @@ func (s *SQLiteStore) executeCleanup(ctx context.Context, operation func(*Tx) er
 
 // CleanupOrphanedRepositories removes repositories with no remaining artifacts.
 // Returns a list of deleted repository names for logging purposes.
-func (s *SQLiteStore) CleanupOrphanedRepositories(ctx context.Context) ([]string, error) {
+func (s *Store) CleanupOrphanedRepositories(ctx context.Context) ([]string, error) {
 	var deletedRepos []string
 
 	err := s.executeCleanup(ctx, func(tx *Tx) error {
@@ -393,7 +393,7 @@ func (s *SQLiteStore) CleanupOrphanedRepositories(ctx context.Context) ([]string
 // CleanupExcessScans removes excess scan records for all artifacts with the given digest, keeping only the most recent N scans per artifact.
 // This provides a more robust cleanup that handles concurrent scans and ensures a maximum number of scans per artifact.
 // Note: Multiple tags may point to the same digest, and each gets its own scan cleanup.
-func (s *SQLiteStore) CleanupExcessScans(ctx context.Context, digest string, maxScansToKeep int) error {
+func (s *Store) CleanupExcessScans(ctx context.Context, digest string, maxScansToKeep int) error {
 	if maxScansToKeep <= 0 {
 		return errors.NewPermanentf("maxScansToKeep must be positive, got %d", maxScansToKeep)
 	}
@@ -437,7 +437,7 @@ func (s *SQLiteStore) CleanupExcessScans(ctx context.Context, digest string, max
 }
 
 // cleanupExcessScansForArtifact is a helper to clean up scans for a single artifact
-func (s *SQLiteStore) cleanupExcessScansForArtifact(tx *Tx, ctx context.Context, artifactID int64, maxScansToKeep int) error {
+func (s *Store) cleanupExcessScansForArtifact(tx *Tx, ctx context.Context, artifactID int64, maxScansToKeep int) error {
 	// Get scan IDs to keep (most recent N scans)
 	rows, err := tx.QueryContext(ctx, `
 		SELECT id FROM scan_records 

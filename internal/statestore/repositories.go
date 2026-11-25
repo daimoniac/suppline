@@ -9,7 +9,7 @@ import (
 	"github.com/daimoniac/suppline/internal/errors"
 )
 
-func (s *SQLiteStore) ListRepositories(ctx context.Context, filter RepositoryFilter) (*RepositoriesListResponse, error) {
+func (s *Store) ListRepositories(ctx context.Context, filter RepositoryFilter) (*RepositoriesListResponse, error) {
 	// First, get total count
 	countQuery := `
 		SELECT COUNT(DISTINCT r.id)
@@ -277,7 +277,7 @@ func (s *SQLiteStore) ListRepositories(ctx context.Context, filter RepositoryFil
 	}, nil
 }
 
-func (s *SQLiteStore) repositoryRuntimeUsageByID(ctx context.Context, repoNamesByID map[int64]string) (map[int64]bool, error) {
+func (s *Store) repositoryRuntimeUsageByID(ctx context.Context, repoNamesByID map[int64]string) (map[int64]bool, error) {
 	runtimeUsedByRepoID := make(map[int64]bool, len(repoNamesByID))
 	if len(repoNamesByID) == 0 {
 		return runtimeUsedByRepoID, nil
@@ -369,7 +369,7 @@ func (s *SQLiteStore) repositoryRuntimeUsageByID(ctx context.Context, repoNamesB
 }
 
 // GetRepository returns a repository with all its tags
-func (s *SQLiteStore) GetRepository(ctx context.Context, name string, filter RepositoryTagFilter) (*RepositoryDetail, error) {
+func (s *Store) GetRepository(ctx context.Context, name string, filter RepositoryTagFilter) (*RepositoryDetail, error) {
 	isWhitelisted, err := s.isRuntimeUnusedRepositoryWhitelisted(ctx, name)
 	if err != nil {
 		return nil, err
@@ -563,7 +563,7 @@ func (s *SQLiteStore) GetRepository(ctx context.Context, name string, filter Rep
 }
 
 // allLatestArtifactTagRows returns the newest artifact per (repository, tag) across the database.
-func (s *SQLiteStore) allLatestArtifactTagRows(ctx context.Context) ([]latestArtifactTagRow, error) {
+func (s *Store) allLatestArtifactTagRows(ctx context.Context) ([]latestArtifactTagRow, error) {
 	query := `
 		SELECT r.name, a.tag, a.digest
 		FROM artifacts a
@@ -593,7 +593,7 @@ func (s *SQLiteStore) allLatestArtifactTagRows(ctx context.Context) ([]latestArt
 
 // repositoryNamesWithInUseOrNewerSemver maps repository name -> true if that repo should appear
 // in the "in use or newer semver" repository list (any tag passes the scan list predicate for that mode).
-func (s *SQLiteStore) repositoryNamesWithInUseOrNewerSemver(ctx context.Context) (map[string]bool, error) {
+func (s *Store) repositoryNamesWithInUseOrNewerSemver(ctx context.Context) (map[string]bool, error) {
 	rows, err := s.allLatestArtifactTagRows(ctx)
 	if err != nil {
 		return nil, err

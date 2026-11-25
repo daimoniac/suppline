@@ -11,7 +11,7 @@ import (
 	"github.com/daimoniac/suppline/internal/semverutil"
 )
 
-func (s *SQLiteStore) RecordClusterInventory(ctx context.Context, clusterName string, images []ClusterImageEntry, reportedAt time.Time) error {
+func (s *Store) RecordClusterInventory(ctx context.Context, clusterName string, images []ClusterImageEntry, reportedAt time.Time) error {
 	clusterName = strings.TrimSpace(clusterName)
 	if clusterName == "" {
 		return errors.NewPermanentf("cluster name cannot be empty")
@@ -182,7 +182,7 @@ func normalizeClusterInventoryEntries(images []ClusterImageEntry) []ClusterImage
 }
 
 // ListClusterSummaries returns one summary row per cluster.
-func (s *SQLiteStore) ListClusterSummaries(ctx context.Context) ([]ClusterSummary, error) {
+func (s *Store) ListClusterSummaries(ctx context.Context) ([]ClusterSummary, error) {
 	rows, err := s.db.QueryContext(ctx, `
 		SELECT c.name, c.last_reported_at, COUNT(ci.id) AS image_count
 		FROM clusters c
@@ -217,7 +217,7 @@ func (s *SQLiteStore) ListClusterSummaries(ctx context.Context) ([]ClusterSummar
 }
 
 // ListClusterImages returns all runtime image rows for a specific cluster.
-func (s *SQLiteStore) ListClusterImages(ctx context.Context, clusterName string) ([]ClusterImageSummary, error) {
+func (s *Store) ListClusterImages(ctx context.Context, clusterName string) ([]ClusterImageSummary, error) {
 	clusterName = strings.TrimSpace(clusterName)
 	if clusterName == "" {
 		return nil, errors.NewPermanentf("cluster name cannot be empty")
@@ -254,7 +254,7 @@ func (s *SQLiteStore) ListClusterImages(ctx context.Context, clusterName string)
 // SearchClusterImages returns current cluster-agent images matching the filters.
 // cluster and namespace match exactly, ignoring case. image is a substring of the
 // reference, tag, or digest. limit caps the rows. A limit above 40 is treated as 40.
-func (s *SQLiteStore) SearchClusterImages(ctx context.Context, cluster, namespace, image string, limit int) ([]ClusterRuntimeHit, error) {
+func (s *Store) SearchClusterImages(ctx context.Context, cluster, namespace, image string, limit int) ([]ClusterRuntimeHit, error) {
 	if limit <= 0 || limit > 40 {
 		limit = 40
 	}
@@ -310,7 +310,7 @@ func likeContains(value string) string {
 }
 
 // DeleteClusterInventory removes a cluster and all of its inventory rows.
-func (s *SQLiteStore) DeleteClusterInventory(ctx context.Context, clusterName string) error {
+func (s *Store) DeleteClusterInventory(ctx context.Context, clusterName string) error {
 	clusterName = strings.TrimSpace(clusterName)
 	if clusterName == "" {
 		return errors.NewPermanentf("cluster name cannot be empty")
@@ -327,7 +327,7 @@ func (s *SQLiteStore) DeleteClusterInventory(ctx context.Context, clusterName st
 
 // RecordScan saves scan results with full vulnerability details in a transaction
 
-func (s *SQLiteStore) getRuntimeUsageForScans(ctx context.Context, scans []runtimeLookupInput) (map[string]RuntimeUsage, error) {
+func (s *Store) getRuntimeUsageForScans(ctx context.Context, scans []runtimeLookupInput) (map[string]RuntimeUsage, error) {
 	usageByDigest := make(map[string]RuntimeUsage)
 	if len(scans) == 0 {
 		return usageByDigest, nil
@@ -404,10 +404,10 @@ type repoTagPair struct {
 	tag            string
 }
 
-// sqliteMaxVariableNumber is a conservative bound under SQLite's default SQLITE_MAX_VARIABLE_NUMBER (999).
-const sqliteMaxVariableNumber = 900
+// maxBindParams bounds the placeholders per query chunk, keeping each statement small.
+const maxBindParams = 900
 
-func (s *SQLiteStore) queryRuntimeUsageByRepoTags(ctx context.Context, pairs []repoTagPair) (map[string]RuntimeUsage, error) {
+func (s *Store) queryRuntimeUsageByRepoTags(ctx context.Context, pairs []repoTagPair) (map[string]RuntimeUsage, error) {
 	result := make(map[string]RuntimeUsage)
 	if len(pairs) == 0 {
 		return result, nil
@@ -433,8 +433,8 @@ func (s *SQLiteStore) queryRuntimeUsageByRepoTags(ctx context.Context, pairs []r
 
 	locationsByKey := make(map[string][]RuntimeLocation)
 
-	for start := 0; start < len(tags); start += sqliteMaxVariableNumber {
-		end := start + sqliteMaxVariableNumber
+	for start := 0; start < len(tags); start += maxBindParams {
+		end := start + maxBindParams
 		if end > len(tags) {
 			end = len(tags)
 		}
@@ -497,7 +497,7 @@ func (s *SQLiteStore) queryRuntimeUsageByRepoTags(ctx context.Context, pairs []r
 // RepositoryInUse reports whether any current cluster observation matches the
 // repository by name, or runs a digest stored for it. The digest match covers
 // clusters that pull a mirrored image from its source registry.
-func (s *SQLiteStore) RepositoryInUse(ctx context.Context, repository string) (bool, error) {
+func (s *Store) RepositoryInUse(ctx context.Context, repository string) (bool, error) {
 	usage, err := s.queryRuntimeUsageByRepository(ctx, repository)
 	if err != nil {
 		return false, err
@@ -510,7 +510,7 @@ func (s *SQLiteStore) RepositoryInUse(ctx context.Context, repository string) (b
 
 // runsStoredDigest reports whether a current cluster observation reports a
 // digest stored for repository.
-func (s *SQLiteStore) runsStoredDigest(ctx context.Context, repository string) (bool, error) {
+func (s *Store) runsStoredDigest(ctx context.Context, repository string) (bool, error) {
 	repository = normalizeRepositoryRef(repository)
 	if repository == "" {
 		return false, nil
@@ -543,7 +543,7 @@ func (s *SQLiteStore) runsStoredDigest(ctx context.Context, repository string) (
 }
 
 // GetRuntimeUsageForScan returns runtime usage for one scan detail response.
-func (s *SQLiteStore) GetRuntimeUsageForScan(ctx context.Context, digest, repository, tag string) (*RuntimeUsage, error) {
+func (s *Store) GetRuntimeUsageForScan(ctx context.Context, digest, repository, tag string) (*RuntimeUsage, error) {
 	digest = strings.TrimSpace(digest)
 	repository = strings.TrimSpace(repository)
 	tag = strings.TrimSpace(tag)
@@ -576,7 +576,7 @@ func (s *SQLiteStore) GetRuntimeUsageForScan(ctx context.Context, digest, reposi
 // getMinInUseImageTagByRepositories returns the minimum in-use image tag per repository name using
 // cluster inventory (same tag ordering as the "in use + newer" filter floor). Repositories with no
 // in-use image are omitted from the result.
-func (s *SQLiteStore) getMinInUseImageTagByRepositories(ctx context.Context, repositories []string) (map[string]string, error) {
+func (s *Store) getMinInUseImageTagByRepositories(ctx context.Context, repositories []string) (map[string]string, error) {
 	if len(repositories) == 0 {
 		return map[string]string{}, nil
 	}
@@ -627,7 +627,7 @@ func uniqueTagsFromRuntimeUsage(usage RuntimeUsage) []string {
 	return out
 }
 
-func (s *SQLiteStore) queryRuntimeUsageByDigests(ctx context.Context, digests []string) (map[string]RuntimeUsage, error) {
+func (s *Store) queryRuntimeUsageByDigests(ctx context.Context, digests []string) (map[string]RuntimeUsage, error) {
 	result := make(map[string]RuntimeUsage)
 	if len(digests) == 0 {
 		return result, nil
@@ -679,7 +679,7 @@ func (s *SQLiteStore) queryRuntimeUsageByDigests(ctx context.Context, digests []
 	return result, nil
 }
 
-func (s *SQLiteStore) queryRuntimeUsageByRepoTag(ctx context.Context, repository, tag string) (RuntimeUsage, error) {
+func (s *Store) queryRuntimeUsageByRepoTag(ctx context.Context, repository, tag string) (RuntimeUsage, error) {
 	repository = normalizeRepositoryRef(repository)
 	tag = strings.TrimSpace(tag)
 	if repository == "" || tag == "" {
@@ -728,7 +728,7 @@ func (s *SQLiteStore) queryRuntimeUsageByRepoTag(ctx context.Context, repository
 	return buildRuntimeUsage(locations), nil
 }
 
-func (s *SQLiteStore) queryRuntimeUsageByRepository(ctx context.Context, repository string) (RuntimeUsage, error) {
+func (s *Store) queryRuntimeUsageByRepository(ctx context.Context, repository string) (RuntimeUsage, error) {
 	repository = normalizeRepositoryRef(repository)
 	if repository == "" {
 		return RuntimeUsage{}, nil
@@ -939,7 +939,7 @@ func normalizeRepositoryRef(imageRef string) string {
 // A Superseded record therefore counts as running only while a cluster reports its
 // digest. Pods rolled onto the tag's new digest stop counting it, and pods still on
 // the old digest do not count the new binding.
-func (s *SQLiteStore) annotateRunningDigests(ctx context.Context, records []*ScanRecord) error {
+func (s *Store) annotateRunningDigests(ctx context.Context, records []*ScanRecord) error {
 	if len(records) == 0 {
 		return nil
 	}
@@ -1001,7 +1001,7 @@ func (s *SQLiteStore) annotateRunningDigests(ctx context.Context, records []*Sca
 }
 
 // storedDigestsByRepository returns every stored digest keyed by normalized repository.
-func (s *SQLiteStore) storedDigestsByRepository(ctx context.Context) (map[string]map[string]struct{}, error) {
+func (s *Store) storedDigestsByRepository(ctx context.Context) (map[string]map[string]struct{}, error) {
 	rows, err := s.db.QueryContext(ctx, `
 		SELECT DISTINCT r.name, a.digest
 		FROM artifacts a

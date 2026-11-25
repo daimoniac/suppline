@@ -18,7 +18,7 @@ func URL(t testing.TB) string {
 
 // New opens a store on a fresh, migrated database and closes it when the
 // test ends.
-func New(t testing.TB) *statestore.SQLiteStore {
+func New(t testing.TB) *statestore.Store {
 	t.Helper()
 	store, err := statestore.NewPostgresStore(URL(t))
 	if err != nil {
