@@ -823,6 +823,10 @@ export interface ClusterInstance {
   Address: string;
   Version: string;
   Leader: boolean;
+  /** The instance's own /health verdict at its last heartbeat. */
+  Status: string;
+  /** Status is healthy and the last heartbeat is under 30 s old. */
+  Healthy: boolean;
   StartedAt: number;
   SeenAt: number;
 }

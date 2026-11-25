@@ -541,7 +541,7 @@ func run() error {
 			Address:   cfg.API.AdvertiseAddress,
 			Version:   version.Version,
 			StartedAt: time.Now(),
-		}, heartbeatInterval, logger.With("module", "heartbeat"))
+		}, func() string { return string(healthChecker.GetHealth().Status) }, heartbeatInterval, logger.With("module", "heartbeat"))
 	}()
 
 	logger.Info("started; leader-only components start once elected", "holder", elector.Holder())
