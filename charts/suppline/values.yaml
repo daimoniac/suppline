@@ -71,9 +71,11 @@ backend:
       drop:
         - ALL
 
+  # /live only checks the process. /health also reflects PostgreSQL and
+  # Trivy; restarting suppline would not fix those.
   livenessProbe:
     httpGet:
-      path: /health
+      path: /live
       port: ops
     initialDelaySeconds: 30
     periodSeconds: 30
