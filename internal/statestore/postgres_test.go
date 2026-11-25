@@ -87,7 +87,7 @@ func TestMigrationWaitsForLockHolder(t *testing.T) {
 	defer holder.Close()
 
 	ctx := t.Context()
-	conn, err := holder.db.DB.Conn(ctx)
+	conn, err := holder.db.Conn(ctx)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -124,7 +124,7 @@ func TestMigrationWaitsForLockHolder(t *testing.T) {
 func TestDiscardConnEndsSession(t *testing.T) {
 	store := newTestStore(t)
 	ctx := t.Context()
-	conn, err := store.db.DB.Conn(ctx)
+	conn, err := store.db.Conn(ctx)
 	if err != nil {
 		t.Fatal(err)
 	}
