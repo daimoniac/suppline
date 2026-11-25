@@ -1,7 +1,9 @@
 package statestore
 
 import (
+	"context"
 	"database/sql"
+	"database/sql/driver"
 	"fmt"
 	"time"
 
@@ -26,11 +28,59 @@ func NewPostgresStore(url string) (*Store, error) {
 	}
 
 	store := &Store{db: wrapDB(db)}
-	if err := store.initSchema(); err != nil {
+	if err := store.migrateLocked(context.Background()); err != nil {
 		db.Close()
 		return nil, errors.NewPermanentf("failed to initialize schema: %w", err)
 	}
 	return store, nil
+}
+
+// Advisory lock keys. PostgreSQL scopes advisory locks to the database, and
+// every lock suppline takes uses advisoryLockClass as its first key so it
+// cannot collide with another application's single-key locks.
+const (
+	advisoryLockClass int32 = 0x53757070 // "Supp"
+	migrationLockID   int32 = 1
+	leaderLockID      int32 = 2
+)
+
+// migrationLockTimeout bounds how long a starting instance waits for another
+// one to finish migrating.
+const migrationLockTimeout = 10 * time.Minute
+
+// migrateLocked runs the schema migrations while holding the migration lock,
+// so instances starting together never migrate at the same time. The lock is
+// held on its own connection; the statements run through the pool.
+func (s *Store) migrateLocked(ctx context.Context) error {
+	ctx, cancel := context.WithTimeout(ctx, migrationLockTimeout)
+	defer cancel()
+	conn, err := s.db.Conn(ctx)
+	if err != nil {
+		return fmt.Errorf("open migration lock connection: %w", err)
+	}
+	if _, err := conn.ExecContext(ctx, `SELECT pg_advisory_lock($1, $2)`, advisoryLockClass, migrationLockID); err != nil {
+		discardConn(conn)
+		return fmt.Errorf("take migration lock: %w", err)
+	}
+	migrateErr := s.initSchema()
+	if _, err := conn.ExecContext(context.Background(), `SELECT pg_advisory_unlock($1, $2)`, advisoryLockClass, migrationLockID); err != nil {
+		// Ending the session releases the lock.
+		discardConn(conn)
+		if migrateErr == nil {
+			return fmt.Errorf("release migration lock: %w", err)
+		}
+		return migrateErr
+	}
+	_ = conn.Close()
+	return migrateErr
+}
+
+// discardConn ends conn's database session. (*sql.Conn).Close only returns
+// the connection to the pool, which would keep its session, and any session
+// advisory locks, alive.
+func discardConn(conn *sql.Conn) {
+	_ = conn.Raw(func(any) error { return driver.ErrBadConn })
+	_ = conn.Close()
 }
 
 func (s *Store) initPostgresSchema() error {
