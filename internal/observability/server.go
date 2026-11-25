@@ -8,7 +8,6 @@ import (
 	"time"
 
 	"github.com/daimoniac/suppline/internal/errors"
-	"github.com/prometheus/client_golang/prometheus/promhttp"
 )
 
 // Server serves /metrics, /health and /ready on the observability port.
@@ -33,7 +32,7 @@ func NewServer(port int, logger *slog.Logger, healthChecker *HealthChecker) *Ser
 
 func newMux(healthChecker *HealthChecker) *http.ServeMux {
 	mux := http.NewServeMux()
-	mux.Handle("/metrics", promhttp.Handler())
+	mux.Handle("/metrics", metricsHandler())
 	mux.HandleFunc("/health", healthChecker.HealthHandler())
 	mux.HandleFunc("/ready", healthChecker.ReadyHandler())
 	return mux

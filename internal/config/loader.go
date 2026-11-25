@@ -2,6 +2,7 @@ package config
 
 import (
 	"fmt"
+	"net/url"
 	"os"
 	"strings"
 
@@ -48,6 +49,12 @@ func fromFile(regsyncPath string, file *RegsyncConfig) (*Config, error) {
 		return nil, errors.NewPermanentf("%s", err)
 	}
 
+	// Expanded like the creds, so a pod can advertise {{ env "POD_IP" }}.
+	advertiseAddress, err := expandField("server.advertiseAddress", strings.TrimSpace(file.Server.AdvertiseAddress), nil)
+	if err != nil {
+		return nil, err
+	}
+
 	postgresURL := getEnv("POSTGRES_URL", "")
 
 	cfg := &Config{
@@ -83,12 +90,13 @@ func fromFile(regsyncPath string, file *RegsyncConfig) (*Config, error) {
 			RescanInterval: rescanInterval,
 		},
 		API: APIConfig{
-			Port:        intOr(file.Server.Port, defaultAPIPort),
-			APIKey:      getEnv("SUPPLINE_API_KEY", ""),
-			ReadOnly:    file.Server.ReadOnly,
-			AllowNoAuth: file.Server.AllowNoAuth,
-			BasePath:    file.Server.BasePath,
-			OIDC:        file.Server.OIDC,
+			Port:             intOr(file.Server.Port, defaultAPIPort),
+			APIKey:           getEnv("SUPPLINE_API_KEY", ""),
+			ReadOnly:         file.Server.ReadOnly,
+			AllowNoAuth:      file.Server.AllowNoAuth,
+			BasePath:         file.Server.BasePath,
+			OIDC:             file.Server.OIDC,
+			AdvertiseAddress: advertiseAddress,
 		},
 		Observability: ObservabilityConfig{
 			LogLevel: stringOr(file.Observability.LogLevel, defaultLogLevel),
@@ -122,6 +130,13 @@ func (c *Config) Validate() error {
 		return err
 	}
 	c.API.BasePath = basePath
+
+	if c.API.AdvertiseAddress == "" {
+		c.API.AdvertiseAddress = DefaultAdvertiseAddress(c.API.Port)
+	}
+	if u, err := url.Parse(c.API.AdvertiseAddress); err != nil || (u.Scheme != "http" && u.Scheme != "https") || u.Host == "" {
+		return errors.NewPermanentf("server.advertiseAddress must be an http(s) URL with a host, got %q", c.API.AdvertiseAddress)
+	}
 
 	if oidc := c.API.OIDC; oidc != nil {
 		if !strings.HasPrefix(oidc.Issuer, "https://") {

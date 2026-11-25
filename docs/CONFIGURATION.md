@@ -52,6 +52,7 @@ server:
     issuer: https://gitlab.com
     audience: https://suppline.example.com
     claim: project_path # token claim matched against an in-place entry's scan-requesters
+  advertiseAddress: ""  # URL other instances use to reach this one, e.g. http://10.0.3.7:8080 (default: first non-loopback IPv4 + port)
 
 observability:
   logLevel: info        # debug, info, warn, error
@@ -75,6 +76,8 @@ attestation:
 Queue and worker tuning stays under `defaults` (`rescanInterval`, `worker-poll-interval`, `worker-concurrency`, `worker-urgent-concurrency`, `worker-retry-attempts`, `worker-retry-backoff`, `queue-buffer-size`).
 
 `worker-urgent-concurrency` (default 3) starts workers that take only scan requests, on top of `worker-concurrency`, so a CI job never waits for discovery scans or rescans to finish. `0` reserves none; scan requests then still go first, but wait for a regular worker.
+
+**`server.advertiseAddress`** matters only with more than one instance. Instances share one PostgreSQL database and elect a leader with an advisory lock; only the leader runs the watcher, worker, mirror, triage and the other background jobs. The leader writes this address to the database so standbys can reach it. In Kubernetes set it from the pod IP: `advertiseAddress: 'http://{{ env "POD_IP" }}:8080'`. See [ADR 0004](adr/0004-warm-standby-with-postgres-leader-election.md).
 
 **`server.basePath`** must start with `/`; a trailing `/` is ignored. suppline serves the UI, API and Swagger under it and expects proxies to forward paths unchanged (no prefix stripping); requests outside the prefix get 404. The Helm chart uses it as the ingress path.
 

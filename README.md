@@ -254,7 +254,7 @@ export POSTGRES_URL=postgres://suppline:suppline@localhost:5432/suppline?sslmode
 
 ## Observability
 
-Prometheus metrics on `:9090/metrics`, JSON logs on stdout, component health on `:9090/health` (config, queue, worker, trivy, database, watcher, malicious_packages). `malicious_packages` always reports healthy so a broken feed never restarts the pod; its message carries `ok`, `unavailable` or `stale` — alert on the metrics below instead.
+Prometheus metrics on `:9090/metrics`, JSON logs on stdout, component health on `:9090/health` (config, queue, worker, trivy, database, watcher, malicious_packages), plus the instance's `role` (`leader` or `standby`). On a standby the leader-only components report `standby`, which counts as healthy, and `/metrics` carries only `suppline_leader 0` and Go runtime metrics. `malicious_packages` always reports healthy so a broken feed never restarts the pod; its message carries `ok`, `unavailable` or `stale` — alert on the metrics below instead.
 
 | Metric | Tells you |
 |--------|-----------|
@@ -262,6 +262,7 @@ Prometheus metrics on `:9090/metrics`, JSON logs on stdout, component health on 
 | `suppline_vulnerabilities_total` | Vulnerabilities by severity |
 | `suppline_scans_total` | Scans by status |
 | `suppline_queue_depth` | Backlog — if this climbs, add workers or slow the watcher |
+| `suppline_leader` | 1 on the leader, 0 on a standby — alert when `sum(suppline_leader) != 1` |
 | `suppline_scan_duration_seconds` | Scan latency histogram |
 | `suppline_triage_runs_total{status}` | Triage decisions by status |
 | `suppline_triage_tokens_total` | Tokens reported by the triage model |

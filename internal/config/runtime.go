@@ -20,6 +20,10 @@ type ServerSettings struct {
 	// OIDC lets CI jobs authenticate scan requests with an OIDC ID token,
 	// such as a GitLab CI id_token, instead of the API key.
 	OIDC *OIDCSettings `yaml:"oidc,omitempty"`
+	// AdvertiseAddress is the URL other instances use to reach this one's
+	// API, e.g. http://10.0.3.7:8080. Default: the first non-loopback IPv4
+	// address and server.port.
+	AdvertiseAddress string `yaml:"advertiseAddress,omitempty"`
 }
 
 // OIDCSettings configures the OIDC issuer whose ID tokens may request scans.
