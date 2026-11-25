@@ -54,7 +54,7 @@ const migrationLockTimeout = 10 * time.Minute
 func (s *Store) migrateLocked(ctx context.Context) error {
 	ctx, cancel := context.WithTimeout(ctx, migrationLockTimeout)
 	defer cancel()
-	conn, err := s.db.DB.Conn(ctx)
+	conn, err := s.db.Conn(ctx)
 	if err != nil {
 		return fmt.Errorf("open migration lock connection: %w", err)
 	}
