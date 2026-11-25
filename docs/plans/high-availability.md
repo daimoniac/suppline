@@ -178,7 +178,7 @@ Two or more replicas still must not run until PR 6, because a standby would answ
     - Otherwise resolve the leader through `Current`, cached for 2 s and refreshed early after a proxy error. If there is no leader, poll every 500 ms for up to 10 s, then answer 503 with `Retry-After: 5`.
     - Proxy with `httputil.ReverseProxy` (`Rewrite`, `SetXForwarded`, `X-Suppline-Proxied: 1`, path and basePath unchanged).
     - Clear the write deadline for proxied requests through `http.NewResponseController(w).SetWriteDeadline(time.Time{})`.
-    - On a dial error the `ErrorHandler` invalidates the cache and answers 502.
+    - On a dial error the `ErrorHandler` invalidates the cache. The request never reached the leader, so if no body byte was read the standby retries it on whoever leads next, within the same 10 s, then answers 503. A killed leader keeps its lock until PostgreSQL ends its session, so the directory can name it for a moment. Any other proxy error answers 502 and is not retried, because the leader may have acted on the request.
 - Where the leader logs the client IP or OIDC context, it must use `X-Forwarded-For` only when `X-Suppline-Proxied` is set. Check `scanRequestAuth` and the webhook handlers.
 - Tests: proxying, loop guard, waiting for a leader, a long response past 15 s, and basePath.
 
