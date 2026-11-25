@@ -52,19 +52,19 @@ func (s *APIServer) handleGetMirror(w http.ResponseWriter, r *http.Request) {
 	syncs, err := store.ListMirrorSyncs(r.Context())
 	if err != nil {
 		s.logger.Error("list mirror syncs", "error", err.Error())
-		s.respondError(w, http.StatusInternalServerError, "Failed to list mirror syncs")
+		s.respondStoreError(w, err, "Failed to list mirror syncs")
 		return
 	}
 	hubError, err := store.MirrorHubError(r.Context())
 	if err != nil {
 		s.logger.Error("read mirror hub error", "error", err.Error())
-		s.respondError(w, http.StatusInternalServerError, "Failed to read hub cleanup status")
+		s.respondStoreError(w, err, "Failed to read hub cleanup status")
 		return
 	}
 	_, hubCount, err := store.ListMirrorHubDeletions(r.Context(), 1, 0)
 	if err != nil {
 		s.logger.Error("count hub deletions", "error", err.Error())
-		s.respondError(w, http.StatusInternalServerError, "Failed to list hub deletions")
+		s.respondStoreError(w, err, "Failed to list hub deletions")
 		return
 	}
 	out := make([]MirrorSyncResponse, 0, len(syncs))
@@ -206,7 +206,7 @@ func (s *APIServer) listMirrorPage(w http.ResponseWriter, r *http.Request, load 
 	items, total, err := load(limit, offset)
 	if err != nil {
 		s.logger.Error("list mirror records", "error", err.Error())
-		s.respondError(w, http.StatusInternalServerError, "Failed to list mirror records")
+		s.respondStoreError(w, err, "Failed to list mirror records")
 		return
 	}
 	w.Header().Set("X-Total-Count", strconv.Itoa(total))

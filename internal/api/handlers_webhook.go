@@ -122,7 +122,7 @@ func (s *APIServer) handleClusterInventory(w http.ResponseWriter, r *http.Reques
 		s.logger.Error("failed to record cluster inventory",
 			"cluster", clusterName,
 			"error", err.Error())
-		s.respondError(w, http.StatusInternalServerError, "failed to record cluster inventory")
+		s.respondStoreError(w, err, "failed to record cluster inventory")
 		return
 	}
 

@@ -98,7 +98,7 @@ func (s *APIServer) handleGetMalicious(w http.ResponseWriter, r *http.Request) {
 		images, coverage, err := store.ListMaliciousImages(r.Context())
 		if err != nil {
 			s.logger.Error("list malicious images", "error", err.Error())
-			s.respondError(w, http.StatusInternalServerError, "Failed to list malicious images")
+			s.respondStoreError(w, err, "Failed to list malicious images")
 			return
 		}
 		out.Coverage = coverage

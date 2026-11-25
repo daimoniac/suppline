@@ -112,13 +112,13 @@ func (s *APIServer) handleListTriageRepositories(w http.ResponseWriter, r *http.
 	}
 	scans, err := s.stateStore.ListScans(r.Context(), statestore.ScanFilter{ImageUsage: statestore.ImageUsageInUse, IncludeExemptions: true})
 	if err != nil {
-		s.respondError(w, http.StatusInternalServerError, "Failed to list running images")
+		s.respondStoreError(w, err, "Failed to list running images")
 		s.logger.Error("triage repositories list scans", "error", err)
 		return
 	}
 	runs, err := store.ListTriageRuns(r.Context(), statestore.TriageFilter{LatestOnly: true, Limit: 5000})
 	if err != nil {
-		s.respondError(w, http.StatusInternalServerError, "Failed to list triage runs")
+		s.respondStoreError(w, err, "Failed to list triage runs")
 		s.logger.Error("triage repositories list runs", "error", err)
 		return
 	}

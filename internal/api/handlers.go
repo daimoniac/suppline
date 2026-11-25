@@ -60,7 +60,7 @@ func (s *APIServer) handleGetScan(w http.ResponseWriter, r *http.Request) {
 			s.respondError(w, http.StatusNotFound, "Scan not found")
 			return
 		}
-		s.respondError(w, http.StatusInternalServerError, fmt.Sprintf("Failed to get scan: %v", err))
+		s.respondStoreError(w, err, fmt.Sprintf("Failed to get scan: %v", err))
 		return
 	}
 
@@ -132,7 +132,7 @@ func (s *APIServer) handleListScans(w http.ResponseWriter, r *http.Request) {
 	// Get scans from state store (one pass for image-usage filters that need post-filtering).
 	records, total, err := s.stateStore.ListScansWithTotal(r.Context(), filter)
 	if err != nil {
-		s.respondError(w, http.StatusInternalServerError, fmt.Sprintf("Failed to list scans: %v", err))
+		s.respondStoreError(w, err, fmt.Sprintf("Failed to list scans: %v", err))
 		return
 	}
 	if records == nil {
@@ -203,7 +203,7 @@ func (s *APIServer) handleQueryVulnerabilities(w http.ResponseWriter, r *http.Re
 
 	cveIDs, totalGroups, err := s.stateStore.ListVulnerabilityCVEPage(r.Context(), filter, sortBy, sortDir, limit, offset)
 	if err != nil {
-		s.respondError(w, http.StatusInternalServerError, fmt.Sprintf("Failed to list vulnerability groups: %v", err))
+		s.respondStoreError(w, err, fmt.Sprintf("Failed to list vulnerability groups: %v", err))
 		return
 	}
 
@@ -213,7 +213,7 @@ func (s *APIServer) handleQueryVulnerabilities(w http.ResponseWriter, r *http.Re
 		if includeDigests {
 			vulnerabilities, err := s.stateStore.QueryVulnerabilitiesByCVEIDs(r.Context(), filter, cveIDs)
 			if err != nil {
-				s.respondError(w, http.StatusInternalServerError, fmt.Sprintf("Failed to query vulnerabilities: %v", err))
+				s.respondStoreError(w, err, fmt.Sprintf("Failed to query vulnerabilities: %v", err))
 				return
 			}
 
@@ -222,7 +222,7 @@ func (s *APIServer) handleQueryVulnerabilities(w http.ResponseWriter, r *http.Re
 		} else {
 			grouped, err = s.stateStore.ListVulnerabilityGroupSummariesByCVEIDs(r.Context(), filter, cveIDs)
 			if err != nil {
-				s.respondError(w, http.StatusInternalServerError, fmt.Sprintf("Failed to list vulnerability group summaries: %v", err))
+				s.respondStoreError(w, err, fmt.Sprintf("Failed to list vulnerability group summaries: %v", err))
 				return
 			}
 		}
@@ -295,7 +295,7 @@ func (s *APIServer) handleGetVulnerabilityDetails(w http.ResponseWriter, r *http
 
 	vulnerabilities, err := s.stateStore.QueryVulnerabilitiesByCVEIDs(r.Context(), filter, []string{cveID})
 	if err != nil {
-		s.respondError(w, http.StatusInternalServerError, fmt.Sprintf("Failed to query vulnerabilities: %v", err))
+		s.respondStoreError(w, err, fmt.Sprintf("Failed to query vulnerabilities: %v", err))
 		return
 	}
 
@@ -331,7 +331,7 @@ func (s *APIServer) handleListInactiveVEX(w http.ResponseWriter, r *http.Request
 	}
 	result, err := s.inactiveVEXSummaries(r.Context())
 	if err != nil {
-		s.respondError(w, http.StatusInternalServerError, fmt.Sprintf("Failed to get applied CVE IDs: %v", err))
+		s.respondStoreError(w, err, fmt.Sprintf("Failed to get applied CVE IDs: %v", err))
 		return
 	}
 	w.Header().Set("Content-Type", "application/json")
@@ -526,7 +526,7 @@ func (s *APIServer) handleListFailedImages(w http.ResponseWriter, r *http.Reques
 
 	records, err := s.stateStore.ListScans(r.Context(), filter)
 	if err != nil {
-		s.respondError(w, http.StatusInternalServerError, fmt.Sprintf("Failed to list failed images: %v", err))
+		s.respondStoreError(w, err, fmt.Sprintf("Failed to list failed images: %v", err))
 		return
 	}
 	if records == nil {
@@ -562,7 +562,7 @@ func (s *APIServer) handleListRunningPolicyFailures(w http.ResponseWriter, r *ht
 
 	records, err := s.stateStore.ListRunningPolicyFailures(r.Context())
 	if err != nil {
-		s.respondError(w, http.StatusInternalServerError, fmt.Sprintf("Failed to list running policy failures: %v", err))
+		s.respondStoreError(w, err, fmt.Sprintf("Failed to list running policy failures: %v", err))
 		return
 	}
 	if records == nil {
@@ -637,7 +637,7 @@ func (s *APIServer) handleTriggerScan(w http.ResponseWriter, r *http.Request) {
 				s.respondError(w, http.StatusNotFound, "Digest not found")
 				return
 			}
-			s.respondError(w, http.StatusInternalServerError, fmt.Sprintf("Failed to get scan: %v", err))
+			s.respondStoreError(w, err, fmt.Sprintf("Failed to get scan: %v", err))
 			return
 		}
 
@@ -649,7 +649,7 @@ func (s *APIServer) handleTriggerScan(w http.ResponseWriter, r *http.Request) {
 			Tag:        lastScan.Tag,
 		})
 		if err != nil {
-			s.respondError(w, http.StatusInternalServerError, fmt.Sprintf("Failed to enqueue task: %v", err))
+			s.respondStoreError(w, err, fmt.Sprintf("Failed to enqueue task: %v", err))
 			return
 		}
 
@@ -740,7 +740,7 @@ func (s *APIServer) handleReevaluatePolicy(w http.ResponseWriter, r *http.Reques
 	} else {
 		queued, err := s.scanEnqueuer.RequeueAll(ctx)
 		if queued == 0 && err != nil {
-			s.respondError(w, http.StatusInternalServerError, fmt.Sprintf("Failed to requeue scans: %v", err))
+			s.respondStoreError(w, err, fmt.Sprintf("Failed to requeue scans: %v", err))
 			return
 		}
 		if err != nil {
@@ -818,7 +818,7 @@ func (s *APIServer) handleListKubernetesClusters(w http.ResponseWriter, r *http.
 
 	summaries, err := s.clusterInventory.ListClusterSummaries(r.Context())
 	if err != nil {
-		s.respondError(w, http.StatusInternalServerError, fmt.Sprintf("Failed to list cluster summaries: %v", err))
+		s.respondStoreError(w, err, fmt.Sprintf("Failed to list cluster summaries: %v", err))
 		return
 	}
 
@@ -889,7 +889,7 @@ func (s *APIServer) handleGetKubernetesClusterImages(w http.ResponseWriter, r *h
 
 	images, err := s.clusterInventory.ListClusterImages(r.Context(), name)
 	if err != nil {
-		s.respondError(w, http.StatusInternalServerError, fmt.Sprintf("Failed to list cluster images: %v", err))
+		s.respondStoreError(w, err, fmt.Sprintf("Failed to list cluster images: %v", err))
 		return
 	}
 
@@ -939,7 +939,7 @@ func (s *APIServer) handleDeleteKubernetesCluster(w http.ResponseWriter, r *http
 	}
 
 	if err := s.clusterInventory.DeleteClusterInventory(r.Context(), name); err != nil {
-		s.respondError(w, http.StatusInternalServerError, fmt.Sprintf("Failed to delete cluster: %v", err))
+		s.respondStoreError(w, err, fmt.Sprintf("Failed to delete cluster: %v", err))
 		return
 	}
 
@@ -992,14 +992,14 @@ func (s *APIServer) handleGenerateKyvernoPolicy(w http.ResponseWriter, r *http.R
 	// Get public key
 	publicKey, err := integration.GetPublicKeyFromConfig(*s.attestationConfig)
 	if err != nil {
-		s.respondError(w, http.StatusInternalServerError, "Failed to get public key")
+		s.respondStoreError(w, err, "Failed to get public key")
 		return
 	}
 
 	// Generate policy
 	policy, err := integration.GenerateKyvernoPolicy(publicKey)
 	if err != nil {
-		s.respondError(w, http.StatusInternalServerError, "Failed to generate policy")
+		s.respondStoreError(w, err, "Failed to generate policy")
 		return
 	}
 
@@ -1047,7 +1047,7 @@ func (s *APIServer) handleListRepositories(w http.ResponseWriter, r *http.Reques
 	// Get repositories from state store
 	response, err := s.stateStore.ListRepositories(r.Context(), filter)
 	if err != nil {
-		s.respondError(w, http.StatusInternalServerError, fmt.Sprintf("Failed to list repositories: %v", err))
+		s.respondStoreError(w, err, fmt.Sprintf("Failed to list repositories: %v", err))
 		return
 	}
 
@@ -1111,7 +1111,7 @@ func (s *APIServer) handleGetRepository(w http.ResponseWriter, r *http.Request) 
 	// Get repository from state store
 	detail, err := s.stateStore.GetRepository(r.Context(), name, filter)
 	if err != nil {
-		s.respondError(w, http.StatusInternalServerError, fmt.Sprintf("Failed to get repository: %v", err))
+		s.respondStoreError(w, err, fmt.Sprintf("Failed to get repository: %v", err))
 		return
 	}
 
@@ -1272,7 +1272,7 @@ func (s *APIServer) handleRescanTag(w http.ResponseWriter, r *http.Request) {
 		Limit:      1,
 	})
 	if err != nil {
-		s.respondError(w, http.StatusInternalServerError, fmt.Sprintf("Failed to get repository: %v", err))
+		s.respondStoreError(w, err, fmt.Sprintf("Failed to get repository: %v", err))
 		return
 	}
 
@@ -1290,7 +1290,7 @@ func (s *APIServer) handleRescanTag(w http.ResponseWriter, r *http.Request) {
 			s.respondError(w, http.StatusNotFound, "Tag not found")
 			return
 		}
-		s.respondError(w, http.StatusInternalServerError, fmt.Sprintf("Failed to get scan: %v", err))
+		s.respondStoreError(w, err, fmt.Sprintf("Failed to get scan: %v", err))
 		return
 	}
 
@@ -1301,7 +1301,7 @@ func (s *APIServer) handleRescanTag(w http.ResponseWriter, r *http.Request) {
 		Tag:        lastScan.Tag,
 	})
 	if err != nil {
-		s.respondError(w, http.StatusInternalServerError, fmt.Sprintf("Failed to enqueue task: %v", err))
+		s.respondStoreError(w, err, fmt.Sprintf("Failed to enqueue task: %v", err))
 		return
 	}
 
@@ -1704,13 +1704,13 @@ func (s *APIServer) handleGetCoverage(w http.ResponseWriter, r *http.Request) {
 
 	dueCount, err := s.stateStore.CountDueForRescan(r.Context(), rescanInterval)
 	if err != nil {
-		s.respondError(w, http.StatusInternalServerError, fmt.Sprintf("Failed to count due rescans: %v", err))
+		s.respondStoreError(w, err, fmt.Sprintf("Failed to count due rescans: %v", err))
 		return
 	}
 
 	digestCount, inUseDigestCount, err := s.stateStore.CountCurrentDigests(r.Context())
 	if err != nil {
-		s.respondError(w, http.StatusInternalServerError, fmt.Sprintf("Failed to count digests: %v", err))
+		s.respondStoreError(w, err, fmt.Sprintf("Failed to count digests: %v", err))
 		return
 	}
 
@@ -1718,7 +1718,7 @@ func (s *APIServer) handleGetCoverage(w http.ResponseWriter, r *http.Request) {
 	if s.clusterInventory != nil {
 		summaries, err := s.clusterInventory.ListClusterSummaries(r.Context())
 		if err != nil {
-			s.respondError(w, http.StatusInternalServerError, fmt.Sprintf("Failed to list clusters: %v", err))
+			s.respondStoreError(w, err, fmt.Sprintf("Failed to list clusters: %v", err))
 			return
 		}
 		if summaries != nil {
@@ -1750,7 +1750,7 @@ func (s *APIServer) handleGetCoverage(w http.ResponseWriter, r *http.Request) {
 func (s *APIServer) requeueRepository(ctx context.Context, w http.ResponseWriter, repository, notFound string) (int, bool) {
 	queued, err := s.scanEnqueuer.RequeueRepositories(ctx, []string{repository})
 	if queued == 0 && err != nil {
-		s.respondError(w, http.StatusInternalServerError, fmt.Sprintf("Failed to requeue repository: %v", err))
+		s.respondStoreError(w, err, fmt.Sprintf("Failed to requeue repository: %v", err))
 		return 0, false
 	}
 	if err != nil {

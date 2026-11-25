@@ -70,7 +70,7 @@ func (s *APIServer) handleListTriage(w http.ResponseWriter, r *http.Request) {
 		Limit:      parseQueryParamInt(r, "limit", 200),
 	})
 	if err != nil {
-		s.respondError(w, http.StatusInternalServerError, "Failed to list triage runs")
+		s.respondStoreError(w, err, "Failed to list triage runs")
 		s.logger.Error("list triage runs", "error", err)
 		return
 	}
@@ -99,7 +99,7 @@ func (s *APIServer) handleListTriageStatements(w http.ResponseWriter, r *http.Re
 	}
 	runs, err := store.ListTriageRuns(r.Context(), statestore.TriageFilter{LatestOnly: true, Limit: 5000})
 	if err != nil {
-		s.respondError(w, http.StatusInternalServerError, "Failed to list triage runs")
+		s.respondStoreError(w, err, "Failed to list triage runs")
 		s.logger.Error("list triage statements", "error", err)
 		return
 	}
@@ -110,7 +110,7 @@ func (s *APIServer) handleListTriageStatements(w http.ResponseWriter, r *http.Re
 	runRows := triageRunResponses(runs)
 	findingImages, err := s.stateStore.CountFindingImagesByCVE(r.Context(), statementCVEIDs(statements, runRows))
 	if err != nil {
-		s.respondError(w, http.StatusInternalServerError, "Failed to list triage statements")
+		s.respondStoreError(w, err, "Failed to list triage statements")
 		s.logger.Error("count finding images", "error", err)
 		return
 	}
@@ -299,7 +299,7 @@ func (s *APIServer) handleTriageBudgetReset(w http.ResponseWriter, r *http.Reque
 		return
 	}
 	if err := s.triageService.ResetDailyBudget(r.Context()); err != nil {
-		s.respondError(w, http.StatusInternalServerError, "Failed to reset the daily token budget")
+		s.respondStoreError(w, err, "Failed to reset the daily token budget")
 		s.logger.Error("reset triage budget", "error", err)
 		return
 	}
@@ -351,7 +351,7 @@ func (s *APIServer) handleTriageRun(w http.ResponseWriter, r *http.Request) {
 	}
 	records, err := s.stateStore.ListScans(r.Context(), statestore.ScanFilter{PolicyStatus: "failed"})
 	if err != nil {
-		s.respondError(w, http.StatusInternalServerError, "Failed to list policy failures")
+		s.respondStoreError(w, err, "Failed to list policy failures")
 		s.logger.Error("triage run list scans", "error", err)
 		return
 	}
@@ -389,7 +389,7 @@ func (s *APIServer) handleGitopsStatus(w http.ResponseWriter, r *http.Request) {
 	}
 	repos, err := s.triageService.GitopsStatus(r.Context())
 	if err != nil {
-		s.respondError(w, http.StatusInternalServerError, "Failed to read gitops checkouts")
+		s.respondStoreError(w, err, "Failed to read gitops checkouts")
 		s.logger.Error("gitops status", "error", err)
 		return
 	}
