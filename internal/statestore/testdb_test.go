@@ -30,3 +30,13 @@ func newTestStore(t testing.TB) *Store {
 	t.Cleanup(func() { _ = store.Close() })
 	return store
 }
+
+// Every test gets its own migrated database, so no test sees another's rows.
+func TestNewTestStoreGivesEachTestAnEmptyDatabase(t *testing.T) {
+	for range 2 {
+		store := newTestStore(t)
+		if _, err := store.db.ExecContext(t.Context(), `INSERT INTO repositories (name) VALUES ('isolated/repo')`); err != nil {
+			t.Fatalf("insert into a fresh database: %v", err)
+		}
+	}
+}
