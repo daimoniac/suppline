@@ -92,6 +92,10 @@ Data PVCs may be retained (`helm.sh/resource-policy: keep`) so reinstalls can re
 
 | Parameter | Description | Default |
 |-----------|-------------|---------|
+| `backend.replicaCount` | Instances. Above 1: one leader plus warm standbys that forward API traffic to it; adds a PDB (`minAvailable: 1`) and required pod anti-affinity | `1` |
+| `backend.strategy` | Deployment update strategy. Required anti-affinity with `maxSurge: 1` needs `replicaCount + 1` nodes; otherwise use `maxSurge: 0, maxUnavailable: 1` | `RollingUpdate`, `maxSurge: 1`, `maxUnavailable: 0` |
+| `backend.terminationGracePeriodSeconds` | Must exceed suppline's 60 s shutdown drain | `90` |
+| `trivy.cacheSizeLimit` | Size limit of the per-pod Trivy cache `emptyDir` | `15Gi` |
 | `backend.image.repository` | Backend image | `ghcr.io/daimoniac/suppline` |
 | `backend.image.tag` | Backend tag | `""` → `Chart.AppVersion` |
 | `backend.supplineConfig` | Inline `suppline.yml` (overrides chart file) | unset (use chart `suppline.yml`) |
@@ -115,7 +119,8 @@ See `values.yaml` for the full set.
 
 ## Notes
 
-- Backend is a single replica
+- Backend runs as a Deployment. With `backend.replicaCount` above 1, instances elect a leader through PostgreSQL and standbys forward the API and UI to it; see [ADR 0004](../../docs/adr/0004-warm-standby-with-postgres-leader-election.md). Pods must reach each other on the API port.
+- Upgrading from a chart that ran a StatefulSet replaces it with a Deployment, with a short outage. Delete the leftover `trivy-cache-*` PVCs afterwards, if `persistence.trivyCache` was enabled.
 - `/data` is an emptyDir: the malicious-packages feed is cloned again after each restart
 - Chart ships an **example** `suppline.yml`, not a production site config
 - OCI chart: `oci://ghcr.io/daimoniac/charts/suppline` — cut releases with [docs/RELEASE.md](../../docs/RELEASE.md)

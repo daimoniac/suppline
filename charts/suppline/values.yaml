@@ -4,7 +4,21 @@
 
 # Backend configuration
 backend:
+  # More than one replica runs a warm standby: one leader runs the pipeline,
+  # the others forward API traffic to it and take over within ~30 s (ADR 0004).
+  # Above 1 the chart adds a PodDisruptionBudget (minAvailable 1) and required
+  # pod anti-affinity, which with maxSurge 1 needs replicaCount + 1 nodes;
+  # otherwise use maxSurge 0 / maxUnavailable 1.
   replicaCount: 1
+
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0
+
+  # suppline drains for up to 60 s on SIGTERM.
+  terminationGracePeriodSeconds: 90
 
   # Secrets - these can be set via values-secrets.yaml or environment variables
   # DO NOT commit actual secrets to git.
@@ -66,9 +80,10 @@ backend:
     timeoutSeconds: 10
     failureThreshold: 3
 
+  # /ready fails while the instance drains on shutdown; /health does not.
   readinessProbe:
     httpGet:
-      path: /health
+      path: /ready
       port: ops
     initialDelaySeconds: 10
     periodSeconds: 10
@@ -94,6 +109,9 @@ trivy:
     repository: aquasec/trivy
     tag: "0.76.2"
     pullPolicy: IfNotPresent
+
+  # Size limit of the per-pod cache emptyDir (vulnerability and Java DBs).
+  cacheSizeLimit: 15Gi
 
   resources:
     requests:
@@ -162,7 +180,8 @@ postgres:
 
 # Persistence configuration
 persistence:
-  # Trivy cache volume
+  # Trivy cache volume. Disabled: a per-pod emptyDir (trivy.cacheSizeLimit),
+  # refilled at pod start. Enabled with more than one replica: ReadWriteMany.
   trivyCache:
     enabled: false
     storageClassName: ""

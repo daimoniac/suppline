@@ -1,0 +1,14 @@
+{{- if gt (int .Values.backend.replicaCount) 1 }}
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: {{ include "suppline.fullname" . }}
+  labels:
+    {{- include "suppline.labels" . | nindent 4 }}
+spec:
+  # A drain may take the leader or the standby, never both.
+  minAvailable: 1
+  selector:
+    matchLabels:
+      {{- include "suppline.selectorLabels" . | nindent 6 }}
+{{- end }}
