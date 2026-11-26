@@ -124,7 +124,10 @@ Done as planned, plus `kernelHeaderPackage` on each vulnerability (option 2 belo
 - Add the KEV lookup as an `Option` in all three engine construction sites, including the vexaudit replay, so the audit judges with the same inputs.
 - Docs: new variables and a "block known-exploited" example in [POLICY.md](../POLICY.md). UI work is in PR B4.
 
-### PR B3: Re-evaluate when KEV grows
+### PR B3: Re-evaluate when KEV grows (implemented)
+
+Done as planned, with one simplification: whether a repository's policy reads KEV is a regex over its expression (`policy.UsesKEV`), not an AST walk. A false match only costs an extra rescan. The first catalog load is not treated as additions, so a restart does not rescan anything.
+
 
 - On each refresh, diff the CVE set. For newly listed CVEs, find the digests with that finding and queue a **policy re-evaluation** (not a rescan) for them, the way `malicious.Rematcher` does.
 - Skip this when no active policy references `kev`, `kevCount`, `kevRansomware` or `kevDateAdded` (check the compiled AST once per engine).

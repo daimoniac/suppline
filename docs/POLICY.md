@@ -65,7 +65,7 @@ sync:
 
 Each vulnerability carries whether it is in the [CISA Known Exploited Vulnerabilities catalog](https://www.cisa.gov/known-exploited-vulnerabilities-catalog): CVEs with evidence of exploitation in the wild. That is a stronger signal than severity alone, and the catalog includes many HIGH and some MEDIUM CVEs. The catalog comes from the `kev` feed ([CONFIGURATION.md](CONFIGURATION.md#known-exploited-vulnerabilities-kev)).
 
-Nothing changes until an expression uses these fields. To block every non-exempted known-exploited finding, add `kevCount == 0`:
+Nothing changes until an expression uses these fields. When CISA adds a CVE that a stored image has, images in repositories whose policy reads KEV are rescanned within one `kev.sync_interval`, so the gate closes the same day rather than at the next rescan. To block every non-exempted known-exploited finding, add `kevCount == 0`:
 
 ```yaml
 expression: "criticalCount == 0 && kevCount == 0"

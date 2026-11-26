@@ -18,6 +18,7 @@ import (
 	"github.com/daimoniac/suppline/internal/config"
 	"github.com/daimoniac/suppline/internal/configedit"
 	"github.com/daimoniac/suppline/internal/configreload"
+	"github.com/daimoniac/suppline/internal/kev/feed"
 	"github.com/daimoniac/suppline/internal/leader"
 	"github.com/daimoniac/suppline/internal/malicious"
 	"github.com/daimoniac/suppline/internal/mirror"
@@ -477,6 +478,17 @@ func run() error {
 			defer wg.Done()
 			vexAudit.Run(ctx)
 		}()
+
+		if kevService != nil {
+			rescanner := feed.NewRescanner(kevImageFinder{store: scanReads}, kevRescanQueue{enqueuer: scanEnqueuer},
+				policyUsesKEV(repositoryPolicies), observability.GetMetrics().KEVRescans, logger.With("module", "kev"))
+			kevService.OnAdded(rescanner.Notify)
+			wg.Add(1)
+			go func() {
+				defer wg.Done()
+				rescanner.Run(ctx)
+			}()
+		}
 
 		if maliciousService != nil {
 			rematcher := malicious.NewRematcher(maliciousService, scanReads, maliciousRescanQueue{enqueuer: scanEnqueuer},

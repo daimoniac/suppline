@@ -51,6 +51,7 @@ type Metrics struct {
 	KEVLastSync   prometheus.Gauge
 	KEVSyncErrors prometheus.Counter
 	KEVEntries    prometheus.Gauge
+	KEVRescans    prometheus.Counter
 }
 
 var (
@@ -180,6 +181,10 @@ func GetMetrics() *Metrics {
 			KEVEntries: promauto.NewGauge(prometheus.GaugeOpts{
 				Name: "suppline_kev_entries",
 				Help: "Number of CVEs in the CISA KEV catalog",
+			}),
+			KEVRescans: promauto.NewCounter(prometheus.CounterOpts{
+				Name: "suppline_kev_rescans_total",
+				Help: "Total number of rescans queued because a CVE in a stored image was added to the CISA KEV catalog",
 			}),
 		}
 	})

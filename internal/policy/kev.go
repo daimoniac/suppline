@@ -1,6 +1,8 @@
 package policy
 
 import (
+	"regexp"
+
 	"github.com/daimoniac/suppline/internal/kev"
 	"github.com/daimoniac/suppline/internal/types"
 )
@@ -35,4 +37,14 @@ func addKEVFields(enriched map[string]interface{}, vuln types.Vulnerability, cat
 	enriched["kevRansomware"] = entry.Ransomware
 	enriched["kernelHeaderPackage"] = types.IsKernelHeaderPackage(vuln.PackageName)
 	return listed
+}
+
+// kevIdentRE matches any KEV variable or field in an expression.
+var kevIdentRE = regexp.MustCompile(`\bkev(Count|Status|DateAdded|Ransomware)?\b`)
+
+// UsesKEV reports whether a policy expression reads any KEV variable or
+// field, so a change to the catalog can change its result. An empty
+// expression is the default policy, which does not.
+func UsesKEV(expression string) bool {
+	return kevIdentRE.MatchString(expression)
 }

@@ -129,3 +129,21 @@ func TestStaleCatalogStillAnswers(t *testing.T) {
 		t.Fatal("a stale catalog must still count listed findings")
 	}
 }
+
+func TestUsesKEV(t *testing.T) {
+	for expr, want := range map[string]bool{
+		"":                                 false,
+		"criticalCount == 0":               false,
+		"kevCount == 0":                    true,
+		`kevStatus == "ok"`:                true,
+		"vulnerabilities.exists(v, v.kev)": true,
+		`vulnerabilities.exists(v, v.kevDateAdded > "2026-01-01")`: true,
+		"vulnerabilities.exists(v, v.kevRansomware)":               true,
+		"vulnerabilities.exists(v, v.kernelHeaderPackage)":         false,
+		`imageRef.startsWith("kevlar/")`:                           false,
+	} {
+		if got := UsesKEV(expr); got != want {
+			t.Errorf("UsesKEV(%q) = %v, want %v", expr, got, want)
+		}
+	}
+}

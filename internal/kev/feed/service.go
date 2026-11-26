@@ -8,6 +8,7 @@ import (
 	"io"
 	"log/slog"
 	"net/http"
+	"sort"
 	"sync"
 	"time"
 
@@ -49,6 +50,9 @@ type Service struct {
 	mu       sync.RWMutex
 	catalog  *kev.Catalog
 	syncedAt time.Time
+
+	listenerMu sync.Mutex
+	listeners  []func(ctx context.Context, added []string)
 }
 
 // NewService creates a service. health and metrics may be nil.
@@ -139,8 +143,10 @@ func (s *Service) Sync(ctx context.Context) {
 	if err != nil && ctx.Err() != nil {
 		return
 	}
+	var added []string
 	if err == nil {
 		s.mu.Lock()
+		added = addedIDs(s.catalog, catalog)
 		s.catalog = catalog
 		s.syncedAt = s.now()
 		s.mu.Unlock()
@@ -157,12 +163,50 @@ func (s *Service) Sync(ctx context.Context) {
 	s.logger.Info("CISA KEV synced",
 		"catalog_version", catalog.Version,
 		"entries", catalog.Len(),
+		"added", len(added),
 		"duration", s.now().Sub(started).String())
 	if s.metrics != nil {
 		s.metrics.KEVLastSync.Set(float64(s.Snapshot().SyncedAt.Unix()))
 		s.metrics.KEVEntries.Set(float64(catalog.Len()))
 	}
 	s.reportHealth("")
+	if len(added) > 0 {
+		s.notify(ctx, added)
+	}
+}
+
+// OnAdded registers a listener called after a sync that added CVEs to the
+// catalog. The first load is not an addition. Listeners run on the sync
+// goroutine and must not block for long.
+func (s *Service) OnAdded(fn func(ctx context.Context, added []string)) {
+	s.listenerMu.Lock()
+	defer s.listenerMu.Unlock()
+	s.listeners = append(s.listeners, fn)
+}
+
+func (s *Service) notify(ctx context.Context, added []string) {
+	s.listenerMu.Lock()
+	listeners := append([]func(context.Context, []string){}, s.listeners...)
+	s.listenerMu.Unlock()
+	for _, listener := range listeners {
+		listener(ctx, added)
+	}
+}
+
+// addedIDs returns the IDs in next that are not in previous, sorted. With no
+// previous catalog nothing counts as added.
+func addedIDs(previous, next *kev.Catalog) []string {
+	if previous == nil {
+		return nil
+	}
+	var added []string
+	for _, id := range next.IDs() {
+		if _, ok := previous.Lookup(id); !ok {
+			added = append(added, id)
+		}
+	}
+	sort.Strings(added)
+	return added
 }
 
 func (s *Service) fetch(ctx context.Context) (*kev.Catalog, error) {

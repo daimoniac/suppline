@@ -751,11 +751,12 @@ How it behaves:
 
 - **Every instance fetches the feed,** leader and standby, so the API answers the same on both. It is one HTTP GET per `sync_interval`, nothing is written to the database.
 - **Fallback:** `cisa.gov` is behind Akamai, which rejects many cloud egress addresses with 403. When `feed_url` fails, `fallback_url` (CISA's own GitHub copy) is tried. For an air-gapped install, point `feed_url` at an internal mirror of the JSON file and set `fallback_url` to the same URL.
+- **New listings reach stored images within one sync.** After a sync that adds CVEs to the catalog, the leader finds current images with those CVEs and queues an urgent rescan for each, but only for repositories whose policy reads a KEV field (`kev`, `kevCount`, `kevStatus`, `kevDateAdded`, `kevRansomware`). With the default policy nothing is rescanned. The first load after startup is not an addition.
 - **A failed sync keeps the last catalog.** A feed with no entries, or one that is not JSON, counts as a failed sync.
 - **Unknown is not "not listed".** Before the first sync, and once no sync has succeeded for `stale_after`, a KEV check fails rather than answering "not listed". Triage then writes no new exemption and retries the run.
 - **Older keys:** without a `kev` block, `triage.kev_feed_url` sets `feed_url` and `triage.kev_cache_ttl` sets `sync_interval`. A `kev` block replaces both. Startup logs which one is in use.
 - **Turning it off:** `enabled: false` with triage enabled and `triage.block_kev` on (the default) refuses to start, because triage would otherwise write exemptions it could not check.
-- **Health** reports `kev` as healthy in every state, with the status, catalog version, age and entry count in the message. Alert on the metrics instead: `suppline_kev_last_sync_success_timestamp_seconds`, `suppline_kev_sync_errors_total` and `suppline_kev_entries`.
+- **Health** reports `kev` as healthy in every state, with the status, catalog version, age and entry count in the message. Alert on the metrics instead: `suppline_kev_last_sync_success_timestamp_seconds`, `suppline_kev_sync_errors_total` and `suppline_kev_entries`. `suppline_kev_rescans_total` counts the rescans queued for new listings.
 
 ## Duration Format
 
