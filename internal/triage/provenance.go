@@ -63,6 +63,21 @@ func (ociManifests) Blob(ctx context.Context, ref, digest string) ([]byte, error
 	return io.ReadAll(io.LimitReader(reader, 4<<20))
 }
 
+// upstreamRepository drops the tag or digest from an upstream image
+// reference. A single-image sync entry's source carries its tag
+// (registry/repo:tag), and the scanned tag is appended to the repository. A
+// colon before the last slash is a registry port and stays.
+func upstreamRepository(ref string) string {
+	ref = strings.TrimSpace(ref)
+	if at := strings.Index(ref, "@"); at >= 0 {
+		ref = ref[:at]
+	}
+	if colon := strings.LastIndex(ref, ":"); colon > strings.LastIndex(ref, "/") {
+		ref = ref[:colon]
+	}
+	return ref
+}
+
 type commitHit struct {
 	Owner string
 	Repo  string
@@ -216,7 +231,7 @@ func tagCommitPrefix(tag string) string {
 }
 
 func readProvenance(ctx context.Context, manifests manifestSource, job Job) (owner, repo, sha string, err error) {
-	source := strings.TrimSpace(job.Upstream)
+	source := upstreamRepository(job.Upstream)
 	index, err := manifests.Manifest(ctx, source+":"+strings.TrimSpace(job.Tag))
 	if err != nil {
 		return "", "", "", err
