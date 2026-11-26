@@ -196,9 +196,15 @@ func run() error {
 
 	logger.Debug("initializing policy engine")
 	maliciousGate := regsyncCfg.MaliciousPackages.BlockEnabled()
+	kevService := newKEVService(config.ResolveKEV(regsyncCfg.KEV, regsyncCfg.Triage), healthChecker, logger)
+	var kevSource policy.KEVSource // stays a nil interface when the feed is off
+	if kevService != nil {
+		kevSource = kevService
+		go kevService.Run(runCtx)
+	}
 	policyEngine, err := policy.NewEngine(logger, policy.PolicyConfig{
 		Expression: "criticalCount == 0",
-	}, policy.WithMaliciousGate(maliciousGate))
+	}, policy.WithMaliciousGate(maliciousGate), policy.WithKEV(kevSource))
 	if err != nil {
 		return fmt.Errorf("failed to initialize policy engine: %w", err)
 	}
@@ -300,14 +306,13 @@ func run() error {
 	if err := triageService.ValidateStartup(); err != nil {
 		return err
 	}
-	kevService := newKEVService(config.ResolveKEV(regsyncCfg.KEV, regsyncCfg.Triage), healthChecker, logger)
 	if kevService != nil {
 		triageService.SetKEV(kevService)
-		go kevService.Run(runCtx)
 	} else if triageService.NeedsKEV() {
 		return fmt.Errorf("kev.enabled is false but triage.block_kev is on: enable the kev feed or set triage.block_kev: false")
 	}
 	workerInstance.SetPolicyFailureNotifier(triageService)
+	workerInstance.SetKEV(kevSource)
 	if tagRunway != nil {
 		workerInstance.SetScanObserver(tagRunway)
 		workerInstance.SetCooldownClock(tagRunway)
@@ -333,9 +338,9 @@ func run() error {
 	quiet := slog.New(slog.DiscardHandler)
 	vexAudit := vexaudit.New(logger, repositoryPolicies, scanReads, func(cfg policy.PolicyConfig) (policy.PolicyEngine, error) {
 		if cfg.Expression == "" {
-			return policy.NewEngine(quiet, policy.PolicyConfig{Expression: "criticalCount == 0"}, policy.WithMaliciousGate(maliciousGate))
+			return policy.NewEngine(quiet, policy.PolicyConfig{Expression: "criticalCount == 0"}, policy.WithMaliciousGate(maliciousGate), policy.WithKEV(kevSource))
 		}
-		return policy.NewEngine(quiet, cfg, policy.WithMaliciousGate(maliciousGate))
+		return policy.NewEngine(quiet, cfg, policy.WithMaliciousGate(maliciousGate), policy.WithKEV(kevSource))
 	})
 
 	maliciousService, err := newMaliciousService(regsyncCfg.MaliciousPackages, healthChecker, logger)

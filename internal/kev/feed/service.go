@@ -1,4 +1,5 @@
-package kev
+// Package feed keeps the CISA KEV catalog current.
+package feed
 
 import (
 	"context"
@@ -10,21 +11,8 @@ import (
 	"sync"
 	"time"
 
+	"github.com/daimoniac/suppline/internal/kev"
 	"github.com/daimoniac/suppline/internal/observability"
-)
-
-// Status says whether the catalog can be relied on.
-type Status string
-
-const (
-	// StatusOK means a catalog is loaded and recently synced.
-	StatusOK Status = "ok"
-	// StatusStale means the last successful sync is older than allowed.
-	StatusStale Status = "stale"
-	// StatusUnavailable means no catalog has been loaded yet.
-	StatusUnavailable Status = "unavailable"
-	// StatusDisabled means the kev block turned the feed off.
-	StatusDisabled Status = "disabled"
 )
 
 // HealthComponent is the name the service reports under on /health.
@@ -48,15 +36,8 @@ type Config struct {
 	StaleAfter   time.Duration
 }
 
-// Snapshot is a consistent view of the catalog.
-type Snapshot struct {
-	Catalog  *Catalog
-	SyncedAt time.Time // zero before the first successful sync
-	Status   Status
-}
-
 // Service keeps the catalog current. Readers never wait for it: before the
-// first sync a snapshot reports StatusUnavailable.
+// first sync a snapshot reports kev.StatusUnavailable.
 type Service struct {
 	cfg     Config
 	client  *http.Client
@@ -66,7 +47,7 @@ type Service struct {
 	now     func() time.Time
 
 	mu       sync.RWMutex
-	catalog  *Catalog
+	catalog  *kev.Catalog
 	syncedAt time.Time
 }
 
@@ -92,25 +73,25 @@ func NewService(cfg Config, health HealthReporter, metrics *observability.Metric
 }
 
 // Snapshot returns the current catalog and its status. A nil service reports
-// StatusDisabled.
-func (s *Service) Snapshot() Snapshot {
+// kev.StatusDisabled.
+func (s *Service) Snapshot() kev.Snapshot {
 	if s == nil {
-		return Snapshot{Status: StatusDisabled}
+		return kev.Snapshot{Status: kev.StatusDisabled}
 	}
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	return s.snapshotLocked()
 }
 
-func (s *Service) snapshotLocked() Snapshot {
-	snapshot := Snapshot{Catalog: s.catalog, SyncedAt: s.syncedAt}
+func (s *Service) snapshotLocked() kev.Snapshot {
+	snapshot := kev.Snapshot{Catalog: s.catalog, SyncedAt: s.syncedAt}
 	switch {
 	case s.catalog == nil:
-		snapshot.Status = StatusUnavailable
+		snapshot.Status = kev.StatusUnavailable
 	case s.now().Sub(s.syncedAt) > s.cfg.StaleAfter:
-		snapshot.Status = StatusStale
+		snapshot.Status = kev.StatusStale
 	default:
-		snapshot.Status = StatusOK
+		snapshot.Status = kev.StatusOK
 	}
 	return snapshot
 }
@@ -121,13 +102,13 @@ func (s *Service) snapshotLocked() Snapshot {
 func (s *Service) Contains(_ context.Context, cve string) (bool, error) {
 	snapshot := s.Snapshot()
 	switch snapshot.Status {
-	case StatusOK:
+	case kev.StatusOK:
 		_, ok := snapshot.Catalog.Lookup(cve)
 		return ok, nil
-	case StatusStale:
+	case kev.StatusStale:
 		return false, fmt.Errorf("catalog is stale: last synced %s ago",
 			s.now().Sub(snapshot.SyncedAt).Round(time.Second))
-	case StatusDisabled:
+	case kev.StatusDisabled:
 		return false, errors.New("the kev feed is disabled")
 	default:
 		return false, errors.New("no catalog loaded yet")
@@ -184,7 +165,7 @@ func (s *Service) Sync(ctx context.Context) {
 	s.reportHealth("")
 }
 
-func (s *Service) fetch(ctx context.Context) (*Catalog, error) {
+func (s *Service) fetch(ctx context.Context) (*kev.Catalog, error) {
 	catalog, err := s.fetchURL(ctx, s.cfg.FeedURL)
 	if err == nil || s.cfg.FallbackURL == "" || s.cfg.FallbackURL == s.cfg.FeedURL || ctx.Err() != nil {
 		return catalog, err
@@ -197,7 +178,7 @@ func (s *Service) fetch(ctx context.Context) (*Catalog, error) {
 	return fallback, nil
 }
 
-func (s *Service) fetchURL(ctx context.Context, feedURL string) (*Catalog, error) {
+func (s *Service) fetchURL(ctx context.Context, feedURL string) (*kev.Catalog, error) {
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, feedURL, nil)
 	if err != nil {
 		return nil, fmt.Errorf("build CISA KEV request: %w", err)
@@ -216,7 +197,7 @@ func (s *Service) fetchURL(ctx context.Context, feedURL string) (*Catalog, error
 	if err != nil {
 		return nil, fmt.Errorf("read CISA KEV feed: %w", err)
 	}
-	return Parse(body)
+	return kev.Parse(body)
 }
 
 // reportHealth always reports healthy: /health has no degraded state, and

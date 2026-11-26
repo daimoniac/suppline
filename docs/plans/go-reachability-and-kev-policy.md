@@ -108,7 +108,10 @@ Run with govulncheck v1.10.0 (the latest), Go 1.27, fixture modules served from 
 - Behavior change for triage: it used to refetch lazily every 12h and reject on any fetch failure. Now a failed sync keeps the last catalog until `stale_after`.
 - Air gap: `enabled: false` or an internal mirror URL. Nothing else in the pipeline needs internet access.
 
-### PR B2: CEL variables
+### PR B2: CEL variables (implemented)
+
+Done as planned, plus `kernelHeaderPackage` on each vulnerability (option 2 below). Option 1 (let the header rule exempt KEV-listed kernel CVEs) is not done: it loosens a triage guardrail and needs a decision. The kev package was split: `internal/kev` holds the catalog types with no dependencies, `internal/kev/feed` the syncing service, because `observability` imports `policy` and the policy engine needs the catalog types.
+
 
 - Per vulnerability: `kev` (bool), `kevDateAdded` (string, `""` if not listed), `kevRansomware` (bool).
 - Top level: `kevCount` (KEV findings without an active VEX exemption) and `kevStatus` (`ok`/`stale`/`unavailable`/`disabled`). With `kevStatus`, the policy author decides between failing closed and failing open, e.g. `kevCount == 0 && kevStatus in ["ok", "stale"]`.

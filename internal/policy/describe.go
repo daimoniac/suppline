@@ -17,7 +17,7 @@ var (
 	whitespaceRE = regexp.MustCompile(`\s+`)
 
 	countIdentRE = regexp.MustCompile(
-		`^(criticalCount|highCount|mediumCount|lowCount|exemptedCount)\s*(==|!=|<=|>=|<|>)\s*(\d+)$`,
+		`^(criticalCount|highCount|mediumCount|lowCount|exemptedCount|kevCount)\s*(==|!=|<=|>=|<|>)\s*(\d+)$`,
 	)
 
 	// vulnerabilities.filter(...).size() == 0 with optional whitespace
@@ -42,6 +42,7 @@ var countLabels = map[string]string{
 	"mediumCount":   "medium",
 	"lowCount":      "low",
 	"exemptedCount": "exempted",
+	"kevCount":      "known-exploited",
 }
 
 // DescribeExpression turns a CEL policy expression into a short English summary.

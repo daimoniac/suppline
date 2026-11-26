@@ -1,11 +1,12 @@
-// Package kev keeps the CISA Known Exploited Vulnerabilities (KEV) catalog
-// current and answers whether a CVE is listed.
+// Package kev holds a parsed copy of the CISA Known Exploited Vulnerabilities
+// (KEV) catalog. Package kev/feed keeps it current.
 package kev
 
 import (
 	"encoding/json"
 	"fmt"
 	"strings"
+	"time"
 )
 
 // Entry is one catalog entry.
@@ -95,4 +96,25 @@ func Parse(body []byte) (*Catalog, error) {
 		return nil, fmt.Errorf("CISA KEV feed has no entries")
 	}
 	return catalog, nil
+}
+
+// Status says whether the catalog can be relied on.
+type Status string
+
+const (
+	// StatusOK means a catalog is loaded and recently synced.
+	StatusOK Status = "ok"
+	// StatusStale means the last successful sync is older than allowed.
+	StatusStale Status = "stale"
+	// StatusUnavailable means no catalog has been loaded yet.
+	StatusUnavailable Status = "unavailable"
+	// StatusDisabled means the kev block turned the feed off.
+	StatusDisabled Status = "disabled"
+)
+
+// Snapshot is a consistent view of the catalog.
+type Snapshot struct {
+	Catalog  *Catalog
+	SyncedAt time.Time // zero before the first successful sync
+	Status   Status
 }

@@ -13,6 +13,7 @@ suppline uses CEL (Common Expression Language) for flexible, powerful security p
 | Block medium+ | `criticalCount == 0 && highCount == 0 && mediumCount == 0` |
 | Allow up to 2 high | `criticalCount == 0 && highCount <= 2` |
 | Block only fixable vulns | `vulnerabilities.filter(v, v.severity == "CRITICAL" && v.fixedVersion != "" && !v.exempted).size() == 0` |
+| Block known-exploited (CISA KEV) | `criticalCount == 0 && kevCount == 0` |
 
 ## Configuration
 
@@ -50,6 +51,7 @@ sync:
 - `mediumCount` - Number of medium vulnerabilities (excluding VEX-exempted)
 - `lowCount` - Number of low vulnerabilities (excluding VEX-exempted)
 - `exemptedCount` - Number of VEX-exempted vulnerabilities
+- `kevCount` - Number of vulnerabilities in the CISA KEV catalog (excluding VEX-exempted)
 
 ### Other Variables
 
@@ -57,6 +59,42 @@ sync:
 - `imageRef` - Image reference being evaluated (string)
 - `malicious` - List of known-malicious packages found in the image (see below)
 - `maliciousCount` - Number of known-malicious packages found (int)
+- `kevStatus` - State of the CISA KEV catalog: `ok`, `stale`, `unavailable` or `disabled` (see below)
+
+### Known Exploited Vulnerabilities (CISA KEV)
+
+Each vulnerability carries whether it is in the [CISA Known Exploited Vulnerabilities catalog](https://www.cisa.gov/known-exploited-vulnerabilities-catalog): CVEs with evidence of exploitation in the wild. That is a stronger signal than severity alone, and the catalog includes many HIGH and some MEDIUM CVEs. The catalog comes from the `kev` feed ([CONFIGURATION.md](CONFIGURATION.md#known-exploited-vulnerabilities-kev)).
+
+Nothing changes until an expression uses these fields. To block every non-exempted known-exploited finding, add `kevCount == 0`:
+
+```yaml
+expression: "criticalCount == 0 && kevCount == 0"
+```
+
+`kevStatus` says how far to trust the KEV fields:
+
+| `kevStatus` | Meaning | KEV fields |
+|---|---|---|
+| `ok` | The catalog is loaded and recent | Current |
+| `stale` | No sync has succeeded for `kev.stale_after` | Still answered from the last catalog |
+| `unavailable` | No catalog has loaded yet (just after startup) | All `false`, `kevCount == 0` |
+| `disabled` | `kev.enabled: false` | All `false`, `kevCount == 0` |
+
+`kevCount == 0` alone fails open while the catalog is unavailable. To fail closed instead, so an image is never passed without a KEV check, require a usable catalog:
+
+```yaml
+expression: 'criticalCount == 0 && kevCount == 0 && kevStatus in ["ok", "stale"]'
+```
+
+A scan rejected only because the catalog was not loaded yet passes on its next rescan.
+
+Kernel CVEs are reported against kernel header packages such as `linux-libc-dev`, which ship no kernel code. A container runs the node's kernel, so these findings are a host patching concern, not an image one, and several are in the KEV catalog. `kernelHeaderPackage` lets a policy leave them out:
+
+```yaml
+expression: '!vulnerabilities.exists(v, v.kev && !v.exempted && !v.kernelHeaderPackage)'
+```
+
+A VEX statement exempts a KEV finding like any other. Automated triage never writes `not_affected` for a CVE in the catalog while `triage.block_kev` is on (the default).
 
 ### Malicious Packages
 
@@ -96,6 +134,10 @@ Each item in the `vulnerabilities` list has:
 - `vexState` - VEX analysis state for this CVE (string, if exempted)
 - `vexJustification` - VEX justification (string, if exempted)
 - `vexDetail` - VEX detail/reason (string, if exempted)
+- `kev` - Whether the CVE is in the CISA KEV catalog (bool)
+- `kevDateAdded` - When CISA added it, `YYYY-MM-DD` (string, empty if not listed)
+- `kevRansomware` - Whether CISA lists it as known to be used in ransomware campaigns (bool)
+- `kernelHeaderPackage` - Whether the package is a kernel header package such as `linux-libc-dev` (bool)
 
 ## CEL Operators
 

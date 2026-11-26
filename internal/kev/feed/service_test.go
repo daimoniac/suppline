@@ -1,4 +1,4 @@
-package kev
+package feed
 
 import (
 	"context"
@@ -9,6 +9,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/daimoniac/suppline/internal/kev"
 	"github.com/daimoniac/suppline/internal/observability"
 )
 
@@ -56,39 +57,9 @@ func serveFeed(w http.ResponseWriter, _ *http.Request) {
 	_, _ = w.Write([]byte(feedBody))
 }
 
-func TestParseKeepsFieldsAndNormalisesIDs(t *testing.T) {
-	catalog, err := Parse([]byte(feedBody))
-	if err != nil {
-		t.Fatal(err)
-	}
-	if catalog.Len() != 2 || catalog.Version != "2026.11.25" {
-		t.Fatalf("len=%d version=%q", catalog.Len(), catalog.Version)
-	}
-	entry, ok := catalog.Lookup(" cve-2024-1234 ")
-	if !ok || !entry.Ransomware || entry.DateAdded != "2024-03-01" || entry.DueDate != "2024-03-22" {
-		t.Fatalf("entry=%+v ok=%v", entry, ok)
-	}
-	entry, ok = catalog.Lookup("CVE-2023-4911")
-	if !ok || entry.Ransomware {
-		t.Fatalf("lowercase feed ID should be found, without ransomware: %+v ok=%v", entry, ok)
-	}
-	if _, ok := catalog.Lookup("CVE-2099-0001"); ok {
-		t.Fatal("unlisted CVE found")
-	}
-}
-
-func TestParseRejectsEmptyFeed(t *testing.T) {
-	if _, err := Parse([]byte(`{"vulnerabilities":[]}`)); err == nil {
-		t.Fatal("an empty feed must be an error, or every CVE would look unlisted")
-	}
-	if _, err := Parse([]byte(`<html>blocked</html>`)); err == nil {
-		t.Fatal("a non-JSON body must be an error")
-	}
-}
-
 func TestContainsBeforeFirstSyncFails(t *testing.T) {
 	service := NewService(Config{FeedURL: "http://127.0.0.1:0"}, nil, nil, nil)
-	if got := service.Snapshot().Status; got != StatusUnavailable {
+	if got := service.Snapshot().Status; got != kev.StatusUnavailable {
 		t.Fatalf("status = %q", got)
 	}
 	if _, err := service.Contains(context.Background(), "CVE-2024-1234"); err == nil {
@@ -98,7 +69,7 @@ func TestContainsBeforeFirstSyncFails(t *testing.T) {
 
 func TestNilServiceIsDisabled(t *testing.T) {
 	var service *Service
-	if got := service.Snapshot().Status; got != StatusDisabled {
+	if got := service.Snapshot().Status; got != kev.StatusDisabled {
 		t.Fatalf("status = %q", got)
 	}
 	if _, err := service.Contains(context.Background(), "CVE-2024-1234"); err == nil {
@@ -165,7 +136,7 @@ func TestFailedSyncKeepsCatalogUntilStale(t *testing.T) {
 	}
 
 	now = now.Add(time.Hour)
-	if got := service.Snapshot().Status; got != StatusStale {
+	if got := service.Snapshot().Status; got != kev.StatusStale {
 		t.Fatalf("status = %q", got)
 	}
 	if _, err := service.Contains(context.Background(), "CVE-2024-1234"); err == nil || !strings.Contains(err.Error(), "stale") {
@@ -204,7 +175,7 @@ func TestRunSyncsImmediatelyAndStops(t *testing.T) {
 		close(done)
 	}()
 	deadline := time.Now().Add(5 * time.Second)
-	for service.Snapshot().Status != StatusOK {
+	for service.Snapshot().Status != kev.StatusOK {
 		if time.Now().After(deadline) {
 			t.Fatal("first sync did not complete")
 		}
