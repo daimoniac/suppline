@@ -52,7 +52,11 @@ import (
 // APIServer provides HTTP API for querying scan results and triggering operations
 type APIServer struct {
 	// clock is time.Now outside tests.
-	clock             func() time.Time
+	clock func() time.Time
+	// storeRetryEvery and storeRetryFor pace how scan requests ride out a
+	// brief PostgreSQL outage, such as a switchover.
+	storeRetryEvery   time.Duration
+	storeRetryFor     time.Duration
 	config            *config.APIConfig
 	attestationConfig *config.AttestationConfig
 	stateStore        statestore.StateStoreQuery
@@ -109,6 +113,8 @@ func NewAPIServerWithCatalogAndEnqueuer(cfg *config.APIConfig, attestationCfg *c
 
 	api := &APIServer{
 		clock:             time.Now,
+		storeRetryEvery:   2 * time.Second,
+		storeRetryFor:     20 * time.Second,
 		config:            cfg,
 		attestationConfig: attestationCfg,
 		stateStore:        store,
