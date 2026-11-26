@@ -312,7 +312,7 @@ func toolDefinitions(withRuntime bool) []toolDef {
 			"pattern": map[string]any{"type": "string", "description": "Regular expression matched against the path relative to the image root"},
 			"path":    map[string]any{"type": "string", "description": "Directory to search. Omit for the whole image."},
 		}, "pattern")},
-		{"package_files", "Read the files one installed package owns from the scanned image's apk or dpkg database. Defaults to the package the scanner matched for this CVE. The rows are citable lines of that database.", object(map[string]any{
+		{"package_files", "Read the files one installed package owns from the scanned image's apk, dpkg, or rpm database. Defaults to the package the scanner matched for this CVE. The rows are citable: apk and dpkg rows are lines of the database file; rpm rows are the package's name, version, arch, and installed paths decoded from its header, numbered within the result.", object(map[string]any{
 			"package": map[string]any{"type": "string", "description": "Installed package name. Omit for the matched package."},
 		})},
 		{"recheck_evidence", "Replay the citations of the existing auto statement for this CVE against the current image and checkouts. Each replayed search gets a new grep_id you may cite. Fails when the CVE has no existing auto statement.", object(map[string]any{})},

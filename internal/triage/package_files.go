@@ -2,6 +2,7 @@ package triage
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -66,6 +67,8 @@ func packageFiles(ctx context.Context, roots *Roots, pub *publicSource, job Job,
 }
 
 // readPackageFiles returns the database path and its rows as "path:line:text".
+// apk and dpkg rows are lines of the database file; rpm rows are decoded from
+// the package header (see rpmPackageRows).
 func readPackageFiles(dir, name string) (string, []string, error) {
 	if raw, err := os.ReadFile(filepath.Join(dir, filepath.FromSlash(apkInstalled))); err == nil {
 		return apkInstalled, apkPackageRows(string(raw), name), nil
@@ -87,7 +90,11 @@ func readPackageFiles(dir, name string) (string, []string, error) {
 	if _, err := os.Stat(filepath.Join(dir, filepath.FromSlash(dpkgInfoDir))); err == nil {
 		return dpkgInfoDir + "/" + name + ".list", nil, nil
 	}
-	return "", nil, fmt.Errorf("image has no apk or dpkg package database; rpm is not supported")
+	db, rows, err := rpmPackageRows(dir, name)
+	if errors.Is(err, errNoRPMDatabase) {
+		return "", nil, fmt.Errorf("image has no apk, dpkg, or rpm package database")
+	}
+	return db, rows, err
 }
 
 // apkPackageRows returns the lines of the package's record: name, version,
