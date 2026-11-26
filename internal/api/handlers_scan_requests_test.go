@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/daimoniac/suppline/internal/config"
+	suppErrors "github.com/daimoniac/suppline/internal/errors"
 	"github.com/daimoniac/suppline/internal/observability"
 	"github.com/daimoniac/suppline/internal/queue"
 	"github.com/daimoniac/suppline/internal/scanenqueue"
@@ -29,11 +30,19 @@ type scanRequestStore struct {
 	mockStateStore
 	mu      sync.Mutex
 	records map[string]*statestore.ScanRecord
+	// failRead, when set, fails the n-th read (1-based) with a transient
+	// error, as a PostgreSQL switchover does.
+	failRead func(n int) bool
+	reads    int
 }
 
 func (s *scanRequestStore) GetLastRepositoryScan(_ context.Context, repository, digest string) (*statestore.ScanRecord, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	s.reads++
+	if s.failRead != nil && s.failRead(s.reads) {
+		return nil, suppErrors.NewTransientf("query: FATAL: terminating connection due to administrator command (SQLSTATE 57P01)")
+	}
 	if record, ok := s.records[repository+"@"+digest]; ok {
 		copied := *record
 		return &copied, nil
@@ -254,5 +263,80 @@ func TestScanRequest_ReadOnlyRefusesNewRequests(t *testing.T) {
 	w := f.do(http.MethodPost, "/api/v1/scan-requests", `{"image":"`+ciRepo+`:`+ciTag+`"}`, "secret")
 	if w.Code != http.StatusForbidden {
 		t.Fatalf("status = %d", w.Code)
+	}
+}
+
+func (f *scanRequestFixture) failReads(fn func(n int) bool) {
+	f.store.mu.Lock()
+	defer f.store.mu.Unlock()
+	f.store.failRead = fn
+}
+
+// A CI job waiting for its verdict must not fail because PostgreSQL
+// switched over while the scan ran: the wait re-reads until the verdict.
+func TestScanRequest_LongPollRidesOutDatabaseBlip(t *testing.T) {
+	f := newScanRequestFixture(t, "secret")
+	f.server.storeRetryEvery = 10 * time.Millisecond
+	// Read 1 is POST's "latest scan" lookup; reads 2-4 fail mid-wait.
+	f.failReads(func(n int) bool { return n >= 2 && n <= 4 })
+
+	done := make(chan *httptest.ResponseRecorder, 1)
+	go func() {
+		done <- f.do(http.MethodPost, "/api/v1/scan-requests?wait=5s", `{"image":"`+ciRepo+`:`+ciTag+`"}`, "secret")
+	}()
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	task, err := f.queue.Dequeue(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Let the wait hit the failing reads before the scan finishes.
+	deadline := time.Now().Add(2 * time.Second)
+	for {
+		f.store.mu.Lock()
+		reads := f.store.reads
+		f.store.mu.Unlock()
+		if reads >= 5 || time.Now().After(deadline) {
+			break
+		}
+		time.Sleep(5 * time.Millisecond)
+	}
+	f.store.put(&statestore.ScanRecord{ID: 9, Repository: ciRepo, Digest: ciDigest, Tag: ciTag, PolicyStatus: "passed"})
+	f.waiter.Finished(ctx, task, nil)
+
+	w := <-done
+	result := decodeResult(t, w)
+	if w.Code != http.StatusOK || result.State != "done" || result.Verdict == nil || result.Verdict.ScanID != 9 {
+		t.Fatalf("status %d result %+v; want the verdict despite the failed reads", w.Code, result)
+	}
+}
+
+// POST reads the latest scan before queuing; a brief outage is retried.
+func TestScanRequest_PostRetriesDatabaseRead(t *testing.T) {
+	f := newScanRequestFixture(t, "secret")
+	f.server.storeRetryEvery = 10 * time.Millisecond
+	f.failReads(func(n int) bool { return n <= 2 })
+
+	w := f.do(http.MethodPost, "/api/v1/scan-requests?wait=0s", `{"image":"`+ciRepo+`:`+ciTag+`"}`, "secret")
+	if w.Code != http.StatusAccepted {
+		t.Fatalf("status %d body %s; want the scan queued after two failed reads", w.Code, w.Body.String())
+	}
+	if depth, _ := f.queue.GetQueueDepth(context.Background()); depth != 1 {
+		t.Fatalf("queue depth %d, want 1", depth)
+	}
+}
+
+func TestScanRequest_PostGivesUpAfterRetryBudget(t *testing.T) {
+	f := newScanRequestFixture(t, "secret")
+	f.server.storeRetryEvery = 10 * time.Millisecond
+	f.server.storeRetryFor = 50 * time.Millisecond
+	f.failReads(func(int) bool { return true })
+
+	w := f.do(http.MethodPost, "/api/v1/scan-requests?wait=0s", `{"image":"`+ciRepo+`:`+ciTag+`"}`, "secret")
+	if w.Code != http.StatusServiceUnavailable || w.Header().Get("Retry-After") == "" {
+		t.Fatalf("status %d Retry-After %q; want 503 with Retry-After", w.Code, w.Header().Get("Retry-After"))
+	}
+	if depth, _ := f.queue.GetQueueDepth(context.Background()); depth != 0 {
+		t.Fatalf("queue depth %d, want nothing queued", depth)
 	}
 }

@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/daimoniac/suppline/internal/config"
+	suppErrors "github.com/daimoniac/suppline/internal/errors"
 	"github.com/daimoniac/suppline/internal/scanenqueue"
 	"github.com/daimoniac/suppline/internal/statestore"
 	"github.com/daimoniac/suppline/internal/tagselect"
@@ -281,16 +282,23 @@ func (s *APIServer) awaitScan(w http.ResponseWriter, r *http.Request, repository
 	timer := time.NewTimer(wait)
 	defer timer.Stop()
 	for {
+		// recheck is set when the read failed transiently: the scan may
+		// finish during the outage, so read again soon instead of failing.
+		var recheck <-chan time.Time
 		record, err := s.newerScan(r.Context(), repository, digest, after)
-		if err != nil {
+		switch {
+		case err != nil && suppErrors.IsTransient(err):
+			s.logger.Warn("scan request: database unavailable while waiting; retrying", "repository", repository, "digest", digest, "error", err.Error())
+			recheck = time.After(s.storeRetryEvery)
+		case err != nil:
 			result.State = "error"
 			result.Error = err.Error()
 			return result
-		}
-		if record != nil {
+		case record != nil:
 			return s.withVerdict(result, record)
 		}
 		select {
+		case <-recheck:
 		case <-finish.done:
 			if finish.err != nil && !s.scanPending(r.Context(), repository, digest) {
 				// Several failure paths persist no scan record; look once
@@ -385,15 +393,30 @@ func (s *APIServer) respondScanResult(w http.ResponseWriter, result ScanRequestR
 }
 
 // latestScanID is the id of the newest scan of repository@digest, or 0.
+// latestScanID returns the id of the newest scan of repository@digest, or 0.
+// A transient error, such as a PostgreSQL switchover, is retried for up to
+// storeRetryFor so a CI request rides it out instead of failing.
 func (s *APIServer) latestScanID(ctx context.Context, repository, digest string) (int64, error) {
-	record, err := s.stateStore.GetLastRepositoryScan(ctx, repository, digest)
-	if errors.Is(err, statestore.ErrScanNotFound) {
-		return 0, nil
+	deadline := time.Now().Add(s.storeRetryFor)
+	for {
+		record, err := s.stateStore.GetLastRepositoryScan(ctx, repository, digest)
+		if errors.Is(err, statestore.ErrScanNotFound) {
+			return 0, nil
+		}
+		if err == nil {
+			return record.ID, nil
+		}
+		err = fmt.Errorf("read last scan: %w", err)
+		if !suppErrors.IsTransient(err) || time.Now().Add(s.storeRetryEvery).After(deadline) {
+			return 0, err
+		}
+		s.logger.Warn("scan request: database unavailable; retrying", "repository", repository, "digest", digest, "error", err.Error())
+		select {
+		case <-ctx.Done():
+			return 0, err
+		case <-time.After(s.storeRetryEvery):
+		}
 	}
-	if err != nil {
-		return 0, fmt.Errorf("read last scan: %w", err)
-	}
-	return record.ID, nil
 }
 
 // newerScan returns the newest scan of repository@digest when its id is
