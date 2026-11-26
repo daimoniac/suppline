@@ -104,6 +104,8 @@ type RegsyncConfig struct {
 	Attestation   AttestationSettings   `yaml:"attestation,omitempty"`
 	// MaliciousPackages configures known-malicious package detection.
 	MaliciousPackages *MaliciousPackagesConfig `yaml:"malicious-packages,omitempty"`
+	// KEV configures the CISA Known Exploited Vulnerabilities catalog.
+	KEV *KEVConfig `yaml:"kev,omitempty"`
 }
 
 // RegistryCredential contains authentication information for a registry.

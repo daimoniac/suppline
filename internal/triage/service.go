@@ -38,7 +38,7 @@ type Service struct {
 	logger   *slog.Logger
 	llm      completer
 	git      *gitops.Manager
-	kev      *KEVCache
+	kev      kevLookup
 	now      func() time.Time
 
 	jobs      chan Job
@@ -133,7 +133,7 @@ func New(cfg *config.TriageConfig, configPath string, cat *catalog.ConfigCatalog
 			APIKey:  settings.APIKey,
 		},
 		git:      git,
-		kev:      &KEVCache{URL: settings.KEVFeedURL, TTL: settings.KEVCacheTTL},
+		kev:      noKEVFeed{},
 		now:      func() time.Time { return time.Now().UTC() },
 		jobs:     make(chan Job, 256),
 		pending:  make(map[string]ActiveJob),
@@ -237,6 +237,28 @@ func (s *Service) KEVBlocked(ctx context.Context, cve string) (bool, error) {
 		return false, nil
 	}
 	return s.kev.Contains(ctx, cve)
+}
+
+// NeedsKEV reports whether triage checks the CISA KEV catalog, so a KEV feed
+// must be configured.
+func (s *Service) NeedsKEV() bool {
+	return s != nil && s.settings.Enabled && s.settings.BlockKEV
+}
+
+// SetKEV gives triage the shared CISA KEV catalog. Until it is called, every
+// KEV check fails, so a verdict is rejected rather than written unchecked.
+func (s *Service) SetKEV(lookup kevLookup) {
+	if s == nil || lookup == nil {
+		return
+	}
+	s.kev = lookup
+}
+
+// noKEVFeed is the lookup before SetKEV: it fails closed.
+type noKEVFeed struct{}
+
+func (noKEVFeed) Contains(context.Context, string) (bool, error) {
+	return false, errors.New("no KEV feed configured")
 }
 
 // OnlyInUse reports whether triage is limited to images running in a cluster.

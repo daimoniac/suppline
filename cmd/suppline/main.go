@@ -300,6 +300,13 @@ func run() error {
 	if err := triageService.ValidateStartup(); err != nil {
 		return err
 	}
+	kevService := newKEVService(config.ResolveKEV(regsyncCfg.KEV, regsyncCfg.Triage), healthChecker, logger)
+	if kevService != nil {
+		triageService.SetKEV(kevService)
+		go kevService.Run(runCtx)
+	} else if triageService.NeedsKEV() {
+		return fmt.Errorf("kev.enabled is false but triage.block_kev is on: enable the kev feed or set triage.block_kev: false")
+	}
 	workerInstance.SetPolicyFailureNotifier(triageService)
 	if tagRunway != nil {
 		workerInstance.SetScanObserver(tagRunway)

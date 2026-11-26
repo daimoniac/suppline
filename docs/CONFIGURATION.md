@@ -11,6 +11,7 @@ Complete reference for all configuration options in suppline.
 - [Examples](#examples)
 - [Triage (`triage`)](#triage-triage)
 - [Malicious packages (`malicious-packages`)](#malicious-packages-malicious-packages)
+- [Known exploited vulnerabilities (`kev`)](#known-exploited-vulnerabilities-kev)
 
 ## Configuration Sources
 
@@ -730,6 +731,31 @@ How it behaves:
 - **UI:** the **Malicious Packages** view shows the feed's sync state, how many current images were checked on current data, and every affected image grouped by package or by image, with images running in a cluster first. `GET /api/v1/malicious` returns the same data.
 
 The eval stack (`suppline.demo.yml`) sets `enabled: false` so it boots quickly.
+
+## Known exploited vulnerabilities (`kev`)
+
+suppline keeps a copy of the [CISA Known Exploited Vulnerabilities catalog](https://www.cisa.gov/known-exploited-vulnerabilities-catalog) in memory and refreshes it on `sync_interval`. Triage uses it for `block_kev`. The block is read at startup only; restart suppline to change it.
+
+The feed is on when the block is missing. Every key is optional:
+
+```yaml
+kev:
+  enabled: true            # false turns the feed off; triage then needs block_kev: false
+  feed_url: https://www.cisa.gov/sites/default/files/feeds/known_exploited_vulnerabilities.json
+  fallback_url: https://raw.githubusercontent.com/cisagov/kev-data/develop/known_exploited_vulnerabilities.json
+  sync_interval: 6h
+  stale_after: 48h         # must be at least sync_interval
+```
+
+How it behaves:
+
+- **Every instance fetches the feed,** leader and standby, so the API answers the same on both. It is one HTTP GET per `sync_interval`, nothing is written to the database.
+- **Fallback:** `cisa.gov` is behind Akamai, which rejects many cloud egress addresses with 403. When `feed_url` fails, `fallback_url` (CISA's own GitHub copy) is tried. For an air-gapped install, point `feed_url` at an internal mirror of the JSON file and set `fallback_url` to the same URL.
+- **A failed sync keeps the last catalog.** A feed with no entries, or one that is not JSON, counts as a failed sync.
+- **Unknown is not "not listed".** Before the first sync, and once no sync has succeeded for `stale_after`, a KEV check fails rather than answering "not listed". Triage then writes no new exemption and retries the run.
+- **Older keys:** without a `kev` block, `triage.kev_feed_url` sets `feed_url` and `triage.kev_cache_ttl` sets `sync_interval`. A `kev` block replaces both. Startup logs which one is in use.
+- **Turning it off:** `enabled: false` with triage enabled and `triage.block_kev` on (the default) refuses to start, because triage would otherwise write exemptions it could not check.
+- **Health** reports `kev` as healthy in every state, with the status, catalog version, age and entry count in the message. Alert on the metrics instead: `suppline_kev_last_sync_success_timestamp_seconds`, `suppline_kev_sync_errors_total` and `suppline_kev_entries`.
 
 ## Duration Format
 

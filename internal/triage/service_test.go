@@ -69,7 +69,7 @@ sync:
 		_, _ = w.Write([]byte(`{"vulnerabilities":[]}`))
 	}))
 	t.Cleanup(kev.Close)
-	svc.kev = &KEVCache{URL: kev.URL, TTL: time.Hour}
+	svc.kev = staticKEV{}
 	svc.llm = stubLLM{body: `{"verdict":"not_affected","justification":"protected_at_perimeter","confidence":0.95,"evidence":[{"repo":"infra","path":"app.yaml","line":1,"quote":"ingress: internal"}],"reasoning":"only an internal ingress is exposed"}`}
 	roots := Roots{Checkouts: []CheckoutRoot{{Name: "infra", Dir: root}}}
 	checkouts := []gitops.Checkout{{Name: "infra", Dir: root, SHA: "abc123"}}
@@ -135,7 +135,7 @@ sync:
 		_, _ = w.Write([]byte(`{"vulnerabilities":[]}`))
 	}))
 	t.Cleanup(kev.Close)
-	svc.kev = &KEVCache{URL: kev.URL, TTL: time.Hour}
+	svc.kev = staticKEV{}
 	verdict := `{"verdict":"not_affected","justification":"protected_at_perimeter","confidence":0.95,"evidence":[{"repo":"infra","path":"app.yaml","line":1,"quote":"ingress: internal"}],"reasoning":"only an internal ingress is exposed"}`
 	svc.llm = &seqLLM{bodies: []string{"context ready", verdict, "not-json"}}
 	roots := Roots{Checkouts: []CheckoutRoot{{Name: "infra", Dir: root}}}

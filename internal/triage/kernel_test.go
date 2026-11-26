@@ -128,7 +128,7 @@ sync:
 		_, _ = w.Write([]byte(`{"vulnerabilities":[]}`))
 	}))
 	t.Cleanup(kev.Close)
-	svc.kev = &KEVCache{URL: kev.URL, TTL: time.Hour}
+	svc.kev = staticKEV{}
 	svc.llm = failLLM{t: t}
 	root := t.TempDir()
 	roots := Roots{Checkouts: []CheckoutRoot{{Name: "infra", Dir: root}}}
