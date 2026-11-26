@@ -86,6 +86,7 @@ type ImageWorker struct {
 	taskObserver    TaskObserver
 	malicious       MaliciousChecker
 	maliciousGate   bool
+	kev             policy.KEVSource
 	cooldownClock   CooldownClock
 	heldDigests     func(repository string) []string
 }
@@ -108,6 +109,14 @@ func (w *ImageWorker) SetMaliciousChecker(checker MaliciousChecker, block bool) 
 	if w != nil {
 		w.malicious = checker
 		w.maliciousGate = block
+	}
+}
+
+// SetKEV lets repository-specific policies see the CISA KEV catalog, like
+// the default engine. nil leaves KEV fields off.
+func (w *ImageWorker) SetKEV(source policy.KEVSource) {
+	if w != nil {
+		w.kev = source
 	}
 }
 

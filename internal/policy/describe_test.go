@@ -26,6 +26,16 @@ func TestDescribeExpression(t *testing.T) {
 			want: "No critical, high, or medium vulnerabilities",
 		},
 		{
+			name: "block known exploited",
+			expr: "kevCount == 0",
+			want: "No known-exploited vulnerabilities",
+		},
+		{
+			name: "block critical and known exploited",
+			expr: "criticalCount == 0 && kevCount == 0",
+			want: "No critical or known-exploited vulnerabilities",
+		},
+		{
 			name: "allow up to 2 high",
 			expr: "criticalCount == 0 && highCount <= 2",
 			want: "No critical vulnerabilities and at most 2 high",

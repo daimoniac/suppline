@@ -1,9 +1,10 @@
 import { cn, severityColor, copyToClipboard, truncateDigest, getRuntimeClusterCount, getRuntimeClusterNames } from '../lib/utils';
-import { Loader2, AlertCircle, Search, ChevronUp, ChevronDown, Copy, Server } from 'lucide-react';
+import { Loader2, AlertCircle, Search, ChevronUp, ChevronDown, Copy, Server, Flame } from 'lucide-react';
 import { Fragment, type ReactNode } from 'react';
 import { siCodeberg, siDigitalocean, siDocker, siGitea, siGithub, siGitlab, siGooglecloud, siJfrog, siRedhat } from 'simple-icons';
 import { parseImageRef, type RegistryInfo, type RegistryKind } from '../lib/registry';
-import type { RuntimeInventory } from '../lib/api';
+import type { KEVInfo, RuntimeInventory } from '../lib/api';
+import { kevBadgeTitle } from '../lib/kev';
 import { Link } from 'react-router';
 import { useImageUsageFilter } from '../lib/imageUsageFilter';
 import { useToast } from '../lib/toast';
@@ -205,6 +206,18 @@ const POLICY_STATUS_OPTIONS = [
 
 export function PolicyStatusSelect({ value, onChange }: { value: string; onChange: (v: string) => void }) {
   return <FilterSelect value={value} onChange={onChange} options={POLICY_STATUS_OPTIONS} />;
+}
+
+/** Marks a CVE in the CISA Known Exploited Vulnerabilities catalog; renders nothing otherwise. */
+export function KEVBadge({ info }: { info?: KEVInfo | null }) {
+  if (!info) return null;
+  return (
+    <span title={kevBadgeTitle(info)} className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-xs font-medium bg-danger-bg text-danger whitespace-nowrap">
+      <Flame className="w-3 h-3" />
+      Known exploited
+      {info.Ransomware && <span className="text-[10px] uppercase tracking-wide opacity-80">· ransomware</span>}
+    </span>
+  );
 }
 
 const maliciousCheckLabels: Record<string, string> = {

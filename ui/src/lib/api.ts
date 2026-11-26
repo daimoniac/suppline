@@ -300,7 +300,12 @@ export class APIClient {
 
   // Health
   async getHealth() {
-    return this.request<{ status: string; version?: string; mirrorEnabled?: boolean; maliciousEnabled?: boolean }>('/health');
+    return this.request<{ status: string; version?: string; mirrorEnabled?: boolean; maliciousEnabled?: boolean; kevEnabled?: boolean; kevStatus?: KEVStatus }>('/health');
+  }
+
+  // CISA Known Exploited Vulnerabilities
+  async getKEV() {
+    return this.request<KEVOverview>('/api/v1/kev');
   }
 
   // Malicious packages
@@ -532,6 +537,31 @@ export interface Vulnerability {
   Title: string;
   Description: string;
   PrimaryURL: string;
+  /** Set when the CVE is in the CISA KEV catalog. */
+  KEV?: KEVInfo;
+}
+
+/** A CVE's entry in the CISA Known Exploited Vulnerabilities catalog. */
+export interface KEVInfo {
+  DateAdded: string;
+  DueDate: string;
+  Ransomware: boolean;
+}
+
+export type KEVStatus = 'ok' | 'stale' | 'unavailable' | 'disabled';
+
+/** GET /api/v1/kev: the feed and the current images it affects. */
+export interface KEVOverview {
+  Enabled: boolean;
+  Status: KEVStatus;
+  CatalogVersion: string;
+  SyncedAt?: number | null;
+  Entries: number;
+  /** Current images with an unexempted KEV finding. */
+  Images: number;
+  InUseImages: number;
+  PassingImages: number;
+  CVEs: number;
 }
 
 export interface AppliedVEXStatement {
@@ -555,6 +585,7 @@ export interface VulnerabilityGroup {
   Title: string;
   Description: string;
   PrimaryURL: string;
+  KEV?: KEVInfo;
   affectedImageCount: number;
   affected: {
     repository: string;

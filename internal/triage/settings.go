@@ -14,8 +14,6 @@ import (
 
 const (
 	envLLMAPIKey = "SUPPLINE_LLM_API_KEY"
-
-	defaultKEVFeed = "https://www.cisa.gov/sites/default/files/feeds/known_exploited_vulnerabilities.json"
 )
 
 // Settings is the resolved runtime view of triage.
@@ -35,8 +33,6 @@ type Settings struct {
 	RetriageInterval time.Duration
 	Allowed          map[types.VEXJustification]struct{}
 	BlockKEV         bool
-	KEVFeedURL       string
-	KEVCacheTTL      time.Duration
 	Context          []config.GitRepoConfig
 	ConfigRepo       *config.ConfigRepoConfig
 	BackupRetention  int
@@ -60,8 +56,6 @@ func Resolve(cfg *config.TriageConfig, configPath string) (Settings, error) {
 		RenewBefore:      7 * 24 * time.Hour,
 		RetriageInterval: 24 * time.Hour,
 		BlockKEV:         true,
-		KEVFeedURL:       defaultKEVFeed,
-		KEVCacheTTL:      12 * time.Hour,
 		BackupRetention:  10,
 		CheckoutDir:      "/data/gitops",
 		MaxFileBytes:     32 * 1024,
@@ -144,16 +138,6 @@ func Resolve(cfg *config.TriageConfig, configPath string) (Settings, error) {
 	}
 	if cfg.BlockKEV != nil {
 		settings.BlockKEV = *cfg.BlockKEV
-	}
-	if strings.TrimSpace(cfg.KEVFeedURL) != "" {
-		settings.KEVFeedURL = strings.TrimSpace(cfg.KEVFeedURL)
-	}
-	if cfg.KEVCacheTTL != "" {
-		parsed, err := config.ParseFlexibleDuration(cfg.KEVCacheTTL)
-		if err != nil {
-			return Settings{}, err
-		}
-		settings.KEVCacheTTL = parsed
 	}
 	if cfg.BackupRetention > 0 {
 		settings.BackupRetention = cfg.BackupRetention

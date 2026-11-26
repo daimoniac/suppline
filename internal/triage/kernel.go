@@ -32,12 +32,7 @@ func kernelPackage(name string) bool {
 // A container runs the node's kernel, so a kernel CVE reported against one of
 // these packages is in code the image does not contain.
 func kernelHeaderPackage(name string) bool {
-	n := strings.ToLower(strings.TrimSpace(name))
-	switch n {
-	case "linux-libc-dev", "linux-headers", "kernel-headers", "linux-api-headers", "linux-uapi-headers":
-		return true
-	}
-	return strings.HasPrefix(n, "linux-headers-")
+	return types.IsKernelHeaderPackage(name)
 }
 
 // headerOnly reports whether every package this CVE was reported in, on any

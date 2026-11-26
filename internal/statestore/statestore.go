@@ -484,6 +484,9 @@ type VulnFilter struct {
 	PackageName string
 	Repository  string
 	Limit       int
+	// OnlyCVEIDs restricts the CVE page to these IDs (exact match). nil means
+	// no restriction; an empty, non-nil slice matches nothing.
+	OnlyCVEIDs []string
 }
 
 // ScanFilter defines criteria for listing scans

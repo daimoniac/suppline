@@ -75,6 +75,10 @@ func (s *APIServer) handleGetScan(w http.ResponseWriter, r *http.Request) {
 
 	// Enrich with current VEX metadata when needed.
 	s.enrichScanRecord(record)
+	kevCatalog := s.kevSnapshot().Catalog
+	for i := range record.Vulnerabilities {
+		record.Vulnerabilities[i].KEV = kevInfo(kevCatalog, record.Vulnerabilities[i].CVEID)
+	}
 
 	runtimeUsage, err := s.stateStore.GetRuntimeUsageForScan(r.Context(), record.Digest, record.Repository, record.Tag)
 	if err != nil {
@@ -165,6 +169,7 @@ func (s *APIServer) handleListScans(w http.ResponseWriter, r *http.Request) {
 // @Param severity query string false "Filter by severity (CRITICAL, HIGH, MEDIUM, LOW)"
 // @Param package_name query string false "Filter by package name"
 // @Param repository query string false "Filter by repository"
+// @Param kev query boolean false "Only CVEs in the CISA Known Exploited Vulnerabilities catalog"
 // @Param limit query int false "Maximum number of results" default(100)
 // @Success 200 {array} types.VulnerabilityGroup
 // @Failure 401 {object} map[string]string "Unauthorized"
@@ -183,6 +188,13 @@ func (s *APIServer) handleQueryVulnerabilities(w http.ResponseWriter, r *http.Re
 		Severity:    parseQueryParam(r, "severity"),
 		PackageName: parseQueryParam(r, "package_name"),
 		Repository:  parseQueryParam(r, "repository"),
+	}
+	kevSnapshot := s.kevSnapshot()
+	if onlyKEV := parseQueryParamBool(r, "kev"); onlyKEV != nil && *onlyKEV {
+		filter.OnlyCVEIDs = kevSnapshot.Catalog.IDs()
+		if filter.OnlyCVEIDs == nil {
+			filter.OnlyCVEIDs = []string{} // no catalog: nothing is known exploited
+		}
 	}
 
 	// Sort parameters
@@ -235,6 +247,7 @@ func (s *APIServer) handleQueryVulnerabilities(w http.ResponseWriter, r *http.Re
 		// Preserve SQL page order exactly.
 		for _, cveID := range cveIDs {
 			if group, ok := groupMap[cveID]; ok {
+				group.KEV = kevInfo(kevSnapshot.Catalog, group.CVEID)
 				pagedGroups = append(pagedGroups, group)
 			}
 		}
@@ -310,6 +323,7 @@ func (s *APIServer) handleGetVulnerabilityDetails(w http.ResponseWriter, r *http
 		return
 	}
 
+	groups[0].KEV = kevInfo(s.kevSnapshot().Catalog, groups[0].CVEID)
 	s.respondJSON(w, http.StatusOK, groups[0])
 }
 
@@ -786,6 +800,8 @@ func (s *APIServer) handleHealth(w http.ResponseWriter, r *http.Request) {
 		Version:          version.Version,
 		MirrorEnabled:    s.mirrorEnabled,
 		MaliciousEnabled: s.malicious != nil,
+		KEVEnabled:       s.kev != nil,
+		KEVStatus:        string(s.kevSnapshot().Status),
 	})
 }
 
@@ -794,6 +810,8 @@ type healthResponse struct {
 	Version          string `json:"version"`
 	MirrorEnabled    bool   `json:"mirrorEnabled"`
 	MaliciousEnabled bool   `json:"maliciousEnabled"`
+	KEVEnabled       bool   `json:"kevEnabled"`
+	KEVStatus        string `json:"kevStatus"` // ok, stale, unavailable or disabled
 }
 
 // handleListKubernetesClusters lists cluster inventory summaries.

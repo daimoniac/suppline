@@ -46,6 +46,12 @@ type Metrics struct {
 	MaliciousSyncErrors prometheus.Counter
 	MaliciousPackages   *prometheus.GaugeVec
 	MaliciousRescans    prometheus.Counter
+
+	// CISA KEV feed metrics
+	KEVLastSync   prometheus.Gauge
+	KEVSyncErrors prometheus.Counter
+	KEVEntries    prometheus.Gauge
+	KEVRescans    prometheus.Counter
 }
 
 var (
@@ -163,6 +169,22 @@ func GetMetrics() *Metrics {
 			MaliciousRescans: promauto.NewCounter(prometheus.CounterOpts{
 				Name: "suppline_malicious_rematch_rescans_total",
 				Help: "Total number of rescans queued because a new malicious-package advisory matched a stored image",
+			}),
+			KEVLastSync: promauto.NewGauge(prometheus.GaugeOpts{
+				Name: "suppline_kev_last_sync_success_timestamp_seconds",
+				Help: "Unix time of the last successful CISA KEV catalog sync",
+			}),
+			KEVSyncErrors: promauto.NewCounter(prometheus.CounterOpts{
+				Name: "suppline_kev_sync_errors_total",
+				Help: "Total number of failed CISA KEV catalog syncs",
+			}),
+			KEVEntries: promauto.NewGauge(prometheus.GaugeOpts{
+				Name: "suppline_kev_entries",
+				Help: "Number of CVEs in the CISA KEV catalog",
+			}),
+			KEVRescans: promauto.NewCounter(prometheus.CounterOpts{
+				Name: "suppline_kev_rescans_total",
+				Help: "Total number of rescans queued because a CVE in a stored image was added to the CISA KEV catalog",
 			}),
 		}
 	})

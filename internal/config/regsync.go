@@ -748,6 +748,9 @@ func (c *RegsyncConfig) ValidateVEXStatements() error {
 	if err := c.MaliciousPackages.Validate(); err != nil {
 		return err
 	}
+	if err := c.KEV.Validate(); err != nil {
+		return err
+	}
 	return nil
 }
 

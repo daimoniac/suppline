@@ -18,6 +18,7 @@ import (
 	"github.com/daimoniac/suppline/internal/config"
 	"github.com/daimoniac/suppline/internal/configedit"
 	"github.com/daimoniac/suppline/internal/configreload"
+	"github.com/daimoniac/suppline/internal/kev/feed"
 	"github.com/daimoniac/suppline/internal/leader"
 	"github.com/daimoniac/suppline/internal/malicious"
 	"github.com/daimoniac/suppline/internal/mirror"
@@ -196,9 +197,15 @@ func run() error {
 
 	logger.Debug("initializing policy engine")
 	maliciousGate := regsyncCfg.MaliciousPackages.BlockEnabled()
+	kevService := newKEVService(config.ResolveKEV(regsyncCfg.KEV, regsyncCfg.Triage), healthChecker, logger)
+	var kevSource policy.KEVSource // stays a nil interface when the feed is off
+	if kevService != nil {
+		kevSource = kevService
+		go kevService.Run(runCtx)
+	}
 	policyEngine, err := policy.NewEngine(logger, policy.PolicyConfig{
 		Expression: "criticalCount == 0",
-	}, policy.WithMaliciousGate(maliciousGate))
+	}, policy.WithMaliciousGate(maliciousGate), policy.WithKEV(kevSource))
 	if err != nil {
 		return fmt.Errorf("failed to initialize policy engine: %w", err)
 	}
@@ -300,7 +307,13 @@ func run() error {
 	if err := triageService.ValidateStartup(); err != nil {
 		return err
 	}
+	if kevService != nil {
+		triageService.SetKEV(kevService)
+	} else if triageService.NeedsKEV() {
+		return fmt.Errorf("kev.enabled is false but triage.block_kev is on: enable the kev feed or set triage.block_kev: false")
+	}
 	workerInstance.SetPolicyFailureNotifier(triageService)
+	workerInstance.SetKEV(kevSource)
 	if tagRunway != nil {
 		workerInstance.SetScanObserver(tagRunway)
 		workerInstance.SetCooldownClock(tagRunway)
@@ -326,9 +339,9 @@ func run() error {
 	quiet := slog.New(slog.DiscardHandler)
 	vexAudit := vexaudit.New(logger, repositoryPolicies, scanReads, func(cfg policy.PolicyConfig) (policy.PolicyEngine, error) {
 		if cfg.Expression == "" {
-			return policy.NewEngine(quiet, policy.PolicyConfig{Expression: "criticalCount == 0"}, policy.WithMaliciousGate(maliciousGate))
+			return policy.NewEngine(quiet, policy.PolicyConfig{Expression: "criticalCount == 0"}, policy.WithMaliciousGate(maliciousGate), policy.WithKEV(kevSource))
 		}
-		return policy.NewEngine(quiet, cfg, policy.WithMaliciousGate(maliciousGate))
+		return policy.NewEngine(quiet, cfg, policy.WithMaliciousGate(maliciousGate), policy.WithKEV(kevSource))
 	})
 
 	maliciousService, err := newMaliciousService(regsyncCfg.MaliciousPackages, healthChecker, logger)
@@ -361,6 +374,9 @@ func run() error {
 			RepoURL: regsyncCfg.MaliciousPackages.RepoURL(),
 			Ref:     regsyncCfg.MaliciousPackages.RepoRef(),
 		})
+	}
+	if kevService != nil {
+		apiServer.SetKEV(kevService)
 	}
 	logger.Debug("API server initialized")
 	mirrorActivity := mirror.NewActivity()
@@ -465,6 +481,17 @@ func run() error {
 			defer wg.Done()
 			vexAudit.Run(ctx)
 		}()
+
+		if kevService != nil {
+			rescanner := feed.NewRescanner(kevImageFinder{store: scanReads}, kevRescanQueue{enqueuer: scanEnqueuer},
+				policyUsesKEV(repositoryPolicies), observability.GetMetrics().KEVRescans, logger.With("module", "kev"))
+			kevService.OnAdded(rescanner.Notify)
+			wg.Add(1)
+			go func() {
+				defer wg.Done()
+				rescanner.Run(ctx)
+			}()
+		}
 
 		if maliciousService != nil {
 			rematcher := malicious.NewRematcher(maliciousService, scanReads, maliciousRescanQueue{enqueuer: scanEnqueuer},

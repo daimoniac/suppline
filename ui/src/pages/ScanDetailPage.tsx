@@ -4,7 +4,7 @@ import { useAuth } from '../lib/auth';
 import { useToast } from '../lib/toast';
 import { formatRelativeTime, formatDate, truncateDigest, copyToClipboard, cooldownDaysLeft, formatHeld, getRuntimeClusterCount, getRuntimeNamespaceEntries, isPast } from '../lib/utils';
 import { scheduleEffectLoad } from '../lib/scheduleEffectLoad';
-import { LoadingState, ErrorState, StatusBadge, SeverityBadge, MaliciousCheckBadge, RepoName } from '../components/ui';
+import { LoadingState, ErrorState, StatusBadge, SeverityBadge, MaliciousCheckBadge, RepoName, KEVBadge } from '../components/ui';
 import type { AppliedVEXStatement, MaliciousCheck, ScanDetail, Vulnerability } from '../lib/api';
 import { ArrowLeft, RefreshCw, Copy, CheckCircle, XCircle, ChevronDown, ChevronRight, ExternalLink, Skull } from 'lucide-react';
 
@@ -332,6 +332,7 @@ function VulnItem({ vuln, compact }: { vuln: Vulnerability; compact?: boolean })
             </a>
           ) : vuln.CVEID}
         </span>
+        <KEVBadge info={vuln.KEV} />
         {vuln.Title && <span className="text-xs text-text-secondary truncate">{vuln.Title}</span>}
       </div>
       <div className="flex gap-4 text-xs text-text-muted">

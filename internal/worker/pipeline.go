@@ -978,7 +978,7 @@ func (p *Pipeline) getPolicyEngineForRepository(repository string) (policy.Polic
 		"expression", policyConfig.Expression)
 
 	// Create a new policy engine with the repository-specific config
-	return policy.NewEngine(p.logger, policyConfig, policy.WithMaliciousGate(p.worker.maliciousGate))
+	return policy.NewEngine(p.logger, policyConfig, policy.WithMaliciousGate(p.worker.maliciousGate), policy.WithKEV(p.worker.kev))
 }
 
 // cooldownFirstSeen returns when the cooldown of task's digest started, or nil

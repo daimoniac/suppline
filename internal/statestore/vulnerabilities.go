@@ -135,6 +135,9 @@ func (s *Store) ListVulnerabilityCVEPage(ctx context.Context, filter VulnFilter,
 	if offset < 0 {
 		offset = 0
 	}
+	if filter.OnlyCVEIDs != nil && len(filter.OnlyCVEIDs) == 0 {
+		return []string{}, 0, nil
+	}
 
 	base := `
 		FROM (
@@ -167,6 +170,13 @@ func (s *Store) ListVulnerabilityCVEPage(ctx context.Context, filter VulnFilter,
 	if filter.Repository != "" {
 		base += " AND LOWER(r.name) LIKE LOWER(?)"
 		args = append(args, "%"+filter.Repository+"%")
+	}
+
+	if len(filter.OnlyCVEIDs) > 0 {
+		base += " AND v.cve_id IN (" + strings.TrimSuffix(strings.Repeat("?,", len(filter.OnlyCVEIDs)), ",") + ")"
+		for _, id := range filter.OnlyCVEIDs {
+			args = append(args, id)
+		}
 	}
 
 	countQuery := "SELECT COUNT(*) FROM (SELECT v.cve_id " + base + " GROUP BY v.cve_id)"

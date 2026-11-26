@@ -2,47 +2,25 @@ package triage
 
 import (
 	"context"
-	"net/http"
-	"net/http/httptest"
+	"errors"
+	"strings"
 	"testing"
 	"time"
 
 	"github.com/daimoniac/suppline/internal/statestore"
 )
 
-func TestKEVFallsBackWhenPrimaryIsForbidden(t *testing.T) {
-	var userAgents []string
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		userAgents = append(userAgents, r.Header.Get("User-Agent"))
-		if r.URL.Path == "/primary" {
-			http.Error(w, "blocked", http.StatusForbidden)
-			return
-		}
-		w.Header().Set("Content-Type", "application/json")
-		_, _ = w.Write([]byte(`{"vulnerabilities":[{"cveID":"CVE-2024-1234"}]}`))
-	}))
-	defer server.Close()
+// staticKEV is a KEV lookup with a fixed answer.
+type staticKEV struct {
+	listed map[string]bool
+	err    error
+}
 
-	cache := &KEVCache{
-		URL:         server.URL + "/primary",
-		FallbackURL: server.URL + "/fallback",
-		TTL:         time.Hour,
-		Client:      server.Client(),
+func (k staticKEV) Contains(_ context.Context, cve string) (bool, error) {
+	if k.err != nil {
+		return false, k.err
 	}
-	hit, err := cache.Contains(context.Background(), "CVE-2024-1234")
-	if err != nil {
-		t.Fatal(err)
-	}
-	if !hit {
-		t.Fatal("expected CVE from the fallback feed")
-	}
-	miss, err := cache.Contains(context.Background(), "CVE-2024-9999")
-	if err != nil || miss {
-		t.Fatalf("miss=%v err=%v", miss, err)
-	}
-	if len(userAgents) != 2 || userAgents[0] == "" || userAgents[1] == "" {
-		t.Fatalf("user agents = %v", userAgents)
-	}
+	return k.listed[cve], nil
 }
 
 func TestShouldSkipRetriesKEVFeedFailure(t *testing.T) {
@@ -55,5 +33,55 @@ func TestShouldSkipRetriesKEVFeedFailure(t *testing.T) {
 	}
 	if ShouldSkip(last, false, "same", "same", time.Hour, time.Now()) {
 		t.Fatal("a KEV feed failure should be retried")
+	}
+}
+
+func TestKEVCheckFailsClosedWithoutFeed(t *testing.T) {
+	svc := &Service{settings: Settings{Enabled: true, BlockKEV: true}, kev: noKEVFeed{}}
+	if !svc.NeedsKEV() {
+		t.Fatal("enabled triage with block_kev needs a KEV feed")
+	}
+	if _, err := svc.KEVBlocked(context.Background(), "CVE-2024-1234"); err == nil {
+		t.Fatal("without a feed the KEV check must fail, not report unlisted")
+	}
+
+	// The same lookup and decision guard.judge makes for a model verdict.
+	g := svc.guard()
+	hit, kevErr := g.kev.Contains(context.Background(), "CVE-2024-1234")
+	verdict := modelVerdict{Verdict: "not_affected", Confidence: 1, Justification: "vulnerable_code_not_present", Evidence: []modelEvidence{{Repo: "infra", Path: "a", Line: 1}}}
+	decision := decide(svc.settings, Job{CVEID: "CVE-2024-1234"}, verdict, "", hit, kevErr, nil, nil, "t", time.Now())
+	if decision.Action != outcomeReject || !strings.Contains(decision.Reason, "no KEV feed configured") {
+		t.Fatalf("decision = %+v", decision)
+	}
+}
+
+func TestSetKEVUsesSharedFeed(t *testing.T) {
+	svc := &Service{settings: Settings{Enabled: true, BlockKEV: true}, kev: noKEVFeed{}}
+	svc.SetKEV(staticKEV{listed: map[string]bool{"CVE-2024-1234": true}})
+	if hit, err := svc.KEVBlocked(context.Background(), "CVE-2024-1234"); err != nil || !hit {
+		t.Fatalf("hit=%v err=%v", hit, err)
+	}
+	svc.SetKEV(nil)
+	if hit, err := svc.KEVBlocked(context.Background(), "CVE-2024-1234"); err != nil || !hit {
+		t.Fatal("SetKEV(nil) must keep the current feed")
+	}
+	svc.SetKEV(staticKEV{err: errors.New("catalog is stale")})
+	if _, err := svc.KEVBlocked(context.Background(), "CVE-2024-1234"); err == nil {
+		t.Fatal("a feed error must reach the caller")
+	}
+}
+
+func TestNeedsKEVFollowsSettings(t *testing.T) {
+	for _, tc := range []struct {
+		enabled, block, want bool
+	}{{true, true, true}, {true, false, false}, {false, true, false}} {
+		svc := &Service{settings: Settings{Enabled: tc.enabled, BlockKEV: tc.block}}
+		if got := svc.NeedsKEV(); got != tc.want {
+			t.Fatalf("enabled=%v block=%v: NeedsKEV=%v", tc.enabled, tc.block, got)
+		}
+	}
+	var nilService *Service
+	if nilService.NeedsKEV() {
+		t.Fatal("nil service needs no feed")
 	}
 }

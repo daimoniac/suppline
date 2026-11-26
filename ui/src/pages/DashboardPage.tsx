@@ -8,8 +8,9 @@ import { scheduleEffectLoad } from '../lib/scheduleEffectLoad';
 import { LoadingState, ErrorState, StatusBadge, VulnCounts, DigestLinkWithCopy, RepoName } from '../components/ui';
 import { PolicyCompliancePanel } from '../components/PolicyCompliancePanel';
 import { ClusterStateCard } from '../components/ClusterStateCard';
-import type { ClusterInstance, CoverageResponse, PoliciesResponse, Scan, SemverUpdateTasksResponse, VEXExpiryTasksResponse } from '../lib/api';
-import { ShieldAlert, ShieldCheck, Clock, Clock3, ArrowRight, ClipboardList, Sparkles, Trash2, TriangleAlert, Radar, Server, Layers } from 'lucide-react';
+import type { ClusterInstance, CoverageResponse, KEVOverview, PoliciesResponse, Scan, SemverUpdateTasksResponse, VEXExpiryTasksResponse } from '../lib/api';
+import { kevFeedWarning } from '../lib/kev';
+import { ShieldAlert, ShieldCheck, Clock, Clock3, ArrowRight, ClipboardList, Sparkles, Trash2, TriangleAlert, Radar, Server, Layers, Flame } from 'lucide-react';
 
 interface DashboardData {
   recentScans: Scan[];
@@ -69,11 +70,20 @@ export default function DashboardPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [mirrorEnabled, setMirrorEnabled] = useState(false);
+  const [kev, setKev] = useState<KEVOverview | null>(null);
 
   useEffect(() => {
     let cancelled = false;
     apiClient.getHealth()
-      .then(health => { if (!cancelled) setMirrorEnabled(health.mirrorEnabled === true); })
+      .then(health => {
+        if (cancelled) return;
+        setMirrorEnabled(health.mirrorEnabled === true);
+        if (health.kevEnabled !== true) return;
+        // Loaded on its own so a slow KEV count never holds up the dashboard.
+        apiClient.getKEV()
+          .then(overview => { if (!cancelled) setKev(overview.Enabled ? overview : null); })
+          .catch(() => { if (!cancelled) setKev(null); });
+      })
       .catch(() => { if (!cancelled) setMirrorEnabled(false); });
     return () => { cancelled = true; };
   }, [apiClient]);
@@ -161,7 +171,7 @@ export default function DashboardPage() {
         <p className="text-sm text-text-secondary mt-1">Container image security overview</p>
       </div>
 
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+      <div className={`grid grid-cols-1 sm:grid-cols-2 ${kev ? 'lg:grid-cols-5' : 'lg:grid-cols-4'} gap-4`}>
         <SummaryCard
           icon={<ShieldAlert className="w-5 h-5" />}
           value={data.failedCount}
@@ -172,6 +182,16 @@ export default function DashboardPage() {
         />
         <SummaryCard icon={<Clock className="w-5 h-5" />} value={data.pendingCount} label="Held" variant="warning" detail="In cooldown, not attested yet" to={mirrorEnabled ? '/mirror' : undefined} />
         <SummaryCard icon={<ShieldCheck className="w-5 h-5" />} value={data.activeVEXStatements} label="Active VEX Statements" variant="info" to="/triage" />
+        {kev && (
+          <SummaryCard
+            icon={<Flame className="w-5 h-5" />}
+            value={kev.Images}
+            label="Known Exploited (CISA KEV)"
+            detail={kevFeedWarning(kev.Status) ?? `${kev.InUseImages} in use · ${kev.PassingImages} passing policy`}
+            variant={kev.Images > 0 ? 'danger' : 'muted'}
+            to="/vulnerabilities?kev=true"
+          />
+        )}
         <ClusterStateCard instances={data.instances} />
       </div>
 
