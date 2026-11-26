@@ -14,6 +14,7 @@ require (
 	github.com/google/osv-scalibr v0.5.3
 	github.com/jackc/pgx/v5 v5.13.0
 	github.com/joho/godotenv v1.5.1
+	github.com/knqyf263/go-rpmdb v0.1.1
 	github.com/leanovate/gopter v0.2.11
 	github.com/olareg/olareg v0.2.2
 	github.com/opencontainers/go-digest v1.0.0
@@ -142,6 +143,7 @@ require (
 	golang.org/x/sys v0.50.0 // indirect
 	golang.org/x/text v0.44.0 // indirect
 	golang.org/x/tools v0.52.1-0.20261106145633-d407941a339a // indirect
+	golang.org/x/xerrors v0.0.0-20240903120638-7835f813f4da // indirect
 	google.golang.org/genproto/googleapis/api v0.0.0-20261116203732-fd2c7689a808 // indirect
 	google.golang.org/genproto/googleapis/rpc v0.0.0-20261116203732-fd2c7689a808 // indirect
 	google.golang.org/protobuf v1.36.12 // indirect

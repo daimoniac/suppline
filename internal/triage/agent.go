@@ -316,7 +316,7 @@ func toolDefinitions(withRuntime bool) []toolDef {
 			"pattern": map[string]any{"type": "string", "description": "Regular expression matched against the path relative to the image root"},
 			"path":    map[string]any{"type": "string", "description": "Directory to search. Omit for the whole image."},
 		}, "pattern")},
-		{"package_files", "Read the files one installed package owns from the scanned image's apk or dpkg database. Defaults to the package the scanner matched for this CVE. The rows are citable lines of that database.", object(map[string]any{
+		{"package_files", "Read the files one installed package owns from the scanned image's apk, dpkg, or rpm database. Defaults to the package the scanner matched for this CVE. The rows are citable: apk and dpkg rows are lines of the database file; rpm rows are the package's name, version, arch, and installed paths decoded from its header, numbered within the result.", object(map[string]any{
 			"package": map[string]any{"type": "string", "description": "Installed package name. Omit for the matched package."},
 		})},
 		{"image_linked_by", "List which executables and libraries in the scanned image load a shared library, directly or through other libraries, from their ELF dynamic sections. Use it to find out what actually runs a vulnerable native library, for example libbrotlidec, libxml2 or libssl. It also lists files that name the library without linking it (possible dlopen), files that contain symbol without linking it (a static copy, such as a runtime that bundles the code), and files too large to unpack, which it could not check. Rows are citable. An empty result is citable absence only when not_checked is 0.", object(map[string]any{
