@@ -158,6 +158,8 @@ func (t *toolbox) dispatch(ctx context.Context, job Job, call toolCall) string {
 		Ref       string `json:"ref"`
 		Query     string `json:"query"`
 		Package   string `json:"package"`
+		Library   string `json:"library"`
+		Symbol    string `json:"symbol"`
 	}
 	if err := json.Unmarshal([]byte(call.Function.Arguments), &args); err != nil {
 		return "invalid arguments: " + err.Error()
@@ -185,6 +187,8 @@ func (t *toolbox) dispatch(ctx context.Context, job Job, call toolCall) string {
 			name = job.PackageName
 		}
 		out, err = packageFiles(ctx, roots, pub, job, name)
+	case "image_linked_by":
+		out, err = linkedBy(ctx, roots, pub, job, args.Library, args.Symbol)
 	case "recheck_evidence":
 		out, err = recheckEvidence(ctx, t, job)
 	case "cluster_runtime":
@@ -315,6 +319,10 @@ func toolDefinitions(withRuntime bool) []toolDef {
 		{"package_files", "Read the files one installed package owns from the scanned image's apk or dpkg database. Defaults to the package the scanner matched for this CVE. The rows are citable lines of that database.", object(map[string]any{
 			"package": map[string]any{"type": "string", "description": "Installed package name. Omit for the matched package."},
 		})},
+		{"image_linked_by", "List which executables and libraries in the scanned image load a shared library, directly or through other libraries, from their ELF dynamic sections. Use it to find out what actually runs a vulnerable native library, for example libbrotlidec, libxml2 or libssl. It also lists files that name the library without linking it (possible dlopen), files that contain symbol without linking it (a static copy, such as a runtime that bundles the code), and files too large to unpack, which it could not check. Rows are citable. An empty result is citable absence only when not_checked is 0.", object(map[string]any{
+			"library": map[string]any{"type": "string", "description": "Shared library name or soname prefix, such as libbrotlidec or libcurl.so.4"},
+			"symbol":  map[string]any{"type": "string", "description": "Optional exported function of the library, such as BrotliDecoderDecompress, to find static copies"},
+		}, "library")},
 		{"recheck_evidence", "Replay the citations of the existing auto statement for this CVE against the current image and checkouts. Each replayed search gets a new grep_id you may cite. Fails when the CVE has no existing auto statement.", object(map[string]any{})},
 		{"read_file", "Read a line range of one file. Lines are numbered and redacted. At most 200 lines.", object(map[string]any{
 			"repo": repo, "path": pathProp,
