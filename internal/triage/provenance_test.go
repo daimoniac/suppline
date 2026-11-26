@@ -40,6 +40,15 @@ func TestProvenanceRevision(t *testing.T) {
 	if owner != "supabase" || repo != "supabase" || sha != studioSHA {
 		t.Fatalf("revision %s/%s@%s", owner, repo, sha)
 	}
+	// A single-image sync entry names its tag in the source.
+	if _, _, sha, err := readProvenance(context.Background(), manifests, Job{
+		Upstream: "docker.io/supabase/studio:2026.09.07-sha-7996410",
+		Tag:      "2026.09.07-sha-7996410",
+		Digest:   amd,
+		Platform: "linux/amd64",
+	}); err != nil || sha != studioSHA {
+		t.Fatalf("tagged upstream: sha=%s err=%v", sha, err)
+	}
 	out, err := explainImageSource(context.Background(), labelStub{labels: map[string]string{}}, nil, manifests, Job{
 		Repository: "hostingmaloonde/supabase_studio",
 		Digest:     amd,
@@ -146,3 +155,18 @@ func (failingManifests) Blob(context.Context, string, string) ([]byte, error) {
 type errNotFound string
 
 func (e errNotFound) Error() string { return "not found: " + string(e) }
+
+func TestUpstreamRepository(t *testing.T) {
+	for in, want := range map[string]string{
+		"docker.io/supabase/studio": "docker.io/supabase/studio",
+		"registry.developers.crunchydata.com/crunchydata/crunchy-postgres:ubi9-16.10-2542": "registry.developers.crunchydata.com/crunchydata/crunchy-postgres",
+		"quay.io/argoproj/argocd@sha256:abc":                                               "quay.io/argoproj/argocd",
+		"localhost:5000/team/app:1.2":                                                      "localhost:5000/team/app",
+		"localhost:5000/team/app":                                                          "localhost:5000/team/app",
+		" nginx:1.27 ":                                                                     "nginx",
+	} {
+		if got := upstreamRepository(in); got != want {
+			t.Errorf("upstreamRepository(%q) = %q, want %q", in, got, want)
+		}
+	}
+}

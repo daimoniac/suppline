@@ -121,6 +121,11 @@ func (t *toolbox) replay(ctx context.Context, files checkouts, job Job, item mod
 			fmt.Fprintf(b, "file search %q in %s of the current image\n", name, cleanRel(item.Path))
 			return imageFiles(ctx, t.roots, t.pub, job, name, item.Path)
 		}
+		if spec, ok := strings.CutPrefix(pattern, linkedPrefix); ok {
+			library, symbol, _ := strings.Cut(spec, "|")
+			fmt.Fprintf(b, "linkage of %s in the current image\n", library)
+			return linkedBy(ctx, t.roots, t.pub, job, library, symbol)
+		}
 		if name, ok := strings.CutPrefix(pattern, packagePrefix); ok {
 			fmt.Fprintf(b, "package files of %s in the current image\n", name)
 			return packageFiles(ctx, t.roots, t.pub, job, name)
