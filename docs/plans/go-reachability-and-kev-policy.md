@@ -133,7 +133,10 @@ Done as planned, with one simplification: whether a repository's policy reads KE
 - Skip this when no active policy references `kev`, `kevCount`, `kevRansomware` or `kevDateAdded` (check the compiled AST once per engine).
 - This matters because the same day a CVE goes on the list, an image that passed policy should fail, not on its next rescan interval.
 
-### PR B4: KEV in the UI (depends only on B1)
+### PR B4: KEV in the UI (implemented)
+
+Done as planned. Differences: the dashboard numbers come from a new `GET /api/v1/kev` (the dashboard has no single endpoint), `/health` also carries `kevStatus` so the Vulnerabilities view can warn without the heavier overview call, and the card also shows how many affected images passed policy.
+
 
 KEV gets no page of its own, unlike malicious packages. A malicious finding is removed rather than triaged and has its own exemption rule, so it needs its own page. A KEV finding is an ordinary vulnerability with one extra fact, triaged with the normal VEX flow, so it belongs in the existing views. B4 can ship before B2: it shows exposure before anyone changes a policy. On internal-1 that's 131 passing scans today.
 

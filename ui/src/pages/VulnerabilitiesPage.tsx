@@ -2,16 +2,17 @@ import { useEffect, useState, useCallback } from 'react';
 import { Link, useSearchParams } from 'react-router';
 import { useAuth } from '../lib/auth';
 import { formatRelativeTime, truncateDigest } from '../lib/utils';
-import { LoadingState, ErrorState, PageHeader, SeverityBadge, Pagination, PageFiltersBar, FilterActionButton, RepoName } from '../components/ui';
-import type { VulnerabilityGroup } from '../lib/api';
-import { ChevronDown, ChevronRight, ExternalLink, ArrowUpDown, ArrowUp, ArrowDown } from 'lucide-react';
+import { LoadingState, ErrorState, PageHeader, SeverityBadge, Pagination, PageFiltersBar, FilterActionButton, RepoName, KEVBadge } from '../components/ui';
+import type { KEVStatus, VulnerabilityGroup } from '../lib/api';
+import { kevFeedWarning } from '../lib/kev';
+import { ChevronDown, ChevronRight, ExternalLink, ArrowUpDown, ArrowUp, ArrowDown, TriangleAlert } from 'lucide-react';
 import { useSortablePaginationState } from '../lib/useSortablePaginationState';
 import { usePageSizePreference } from '../lib/pageSizePreference';
 import { scheduleEffectLoad } from '../lib/scheduleEffectLoad';
 
 export default function VulnerabilitiesPage() {
   const { apiClient } = useAuth();
-  const [searchParams] = useSearchParams();
+  const [searchParams, setSearchParams] = useSearchParams();
   const { pageSize, setPageSize, options: pageSizeOptions } = usePageSizePreference();
   const [groups, setGroups] = useState<VulnerabilityGroup[]>([]);
   const [total, setTotal] = useState(0);
@@ -19,6 +20,9 @@ export default function VulnerabilitiesPage() {
   const [error, setError] = useState('');
   const [cveId, setCveId] = useState(searchParams.get('cve_id') || '');
   const [severity, setSeverity] = useState(searchParams.get('severity') || 'all');
+  // kev=true in the URL so the dashboard's Known Exploited card can link here.
+  const [onlyKEV, setOnlyKEV] = useState(searchParams.get('kev') === 'true');
+  const [kevFeed, setKevFeed] = useState<{ loaded: boolean; enabled: boolean; status?: KEVStatus }>({ loaded: false, enabled: false });
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
   const [detailsByCVE, setDetailsByCVE] = useState<Record<string, VulnerabilityGroup>>({});
   const [loadingDetails, setLoadingDetails] = useState<Set<string>>(new Set());
@@ -49,6 +53,7 @@ export default function VulnerabilitiesPage() {
       };
       if (cveId) filters.cve_id = cveId;
       if (severity !== 'all') filters.severity = severity.toUpperCase();
+      if (onlyKEV) filters.kev = true;
       const resp = await apiClient.queryVulnerabilities(filters);
       setGroups(resp.vulnerabilities);
       setTotal(resp.total);
@@ -59,9 +64,25 @@ export default function VulnerabilitiesPage() {
     } finally {
       setLoading(false);
     }
-  }, [apiClient, cveId, offset, severity, sortBy, sortDir, pageSize]);
+  }, [apiClient, cveId, offset, severity, onlyKEV, sortBy, sortDir, pageSize]);
 
   useEffect(() => { scheduleEffectLoad(load); }, [load]);
+
+  useEffect(() => {
+    let cancelled = false;
+    apiClient.getHealth()
+      .then(health => { if (!cancelled) setKevFeed({ loaded: true, enabled: health.kevEnabled === true, status: health.kevStatus }); })
+      .catch(() => { if (!cancelled) setKevFeed({ loaded: false, enabled: false }); });
+    return () => { cancelled = true; };
+  }, [apiClient]);
+
+  const setKEVFilter = (value: boolean) => {
+    setOnlyKEV(value);
+    setPage(1);
+    const next = new URLSearchParams(searchParams);
+    if (value) next.set('kev', 'true'); else next.delete('kev');
+    setSearchParams(next, { replace: true });
+  };
 
   const loadDetails = useCallback(async (id: string) => {
     setLoadingDetails(prev => {
@@ -97,6 +118,15 @@ export default function VulnerabilitiesPage() {
     }
   };
 
+  // An empty filtered list must not read as "nothing is exploited" when the
+  // catalog is missing, old, or switched off.
+  let kevWarning: string | null = null;
+  if (onlyKEV && kevFeed.loaded) {
+    kevWarning = kevFeed.enabled
+      ? kevFeedWarning(kevFeed.status)
+      : 'The CISA KEV feed is turned off (kev.enabled: false), so no finding is marked as known exploited.';
+  }
+
   if (loading && groups.length === 0) return <LoadingState />;
   if (error) return <ErrorState message={error} onRetry={load} />;
 
@@ -118,9 +148,22 @@ export default function VulnerabilitiesPage() {
           <option value="medium">Medium</option>
           <option value="low">Low</option>
         </select>
+        {(kevFeed.enabled || onlyKEV) && (
+          <label className="flex items-center gap-2 px-3 py-2 text-sm text-text-secondary cursor-pointer select-none">
+            <input type="checkbox" checked={onlyKEV} onChange={e => setKEVFilter(e.target.checked)} className="accent-accent" />
+            Known exploited only
+          </label>
+        )}
         <FilterActionButton onClick={() => { setPage(1); load(); }}>Search</FilterActionButton>
-        <FilterActionButton variant="secondary" onClick={() => { setCveId(''); setSeverity('all'); setPage(1); load(); }}>Clear</FilterActionButton>
+        <FilterActionButton variant="secondary" onClick={() => { setCveId(''); setSeverity('all'); setKEVFilter(false); load(); }}>Clear</FilterActionButton>
       </PageFiltersBar>
+
+      {kevWarning && (
+        <div className="mb-4 flex items-start gap-2 rounded-lg border border-warning/30 bg-warning-bg px-3 py-2 text-xs text-warning">
+          <TriangleAlert className="w-4 h-4 flex-shrink-0" />
+          <span>{kevWarning}</span>
+        </div>
+      )}
 
       <div className="bg-bg-primary border border-border rounded-xl overflow-hidden">
         {/* Sort bar */}
@@ -150,6 +193,7 @@ export default function VulnerabilitiesPage() {
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center gap-2">
                       <span className="text-sm font-mono font-medium">{g.CVEID}</span>
+                      <KEVBadge info={g.KEV} />
                       {g.PrimaryURL && (
                         <a href={g.PrimaryURL} target="_blank" rel="noopener noreferrer" className="text-text-muted hover:text-accent" onClick={e => e.stopPropagation()}>
                           <ExternalLink className="w-3 h-3" />

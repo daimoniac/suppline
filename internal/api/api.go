@@ -71,6 +71,7 @@ type APIServer struct {
 	mirrorEnabled     bool
 	mirrorActivity    *mirror.Activity
 	malicious         MaliciousFeed
+	kev               KEVFeed
 	maliciousInfo     MaliciousSettings
 	heldDigests       HeldDigestLister
 	digestResolver    DigestResolver
@@ -266,6 +267,7 @@ func (s *APIServer) setupRoutes() {
 	s.router.HandleFunc("/api/v1/mirror/held/release", s.authMiddleware(s.handleReleaseCooldown, true))
 	s.router.HandleFunc("/api/v1/mirror/", s.authMiddleware(s.handleMirrorSub, false))
 	s.router.HandleFunc("/api/v1/malicious", s.authMiddleware(s.handleGetMalicious, false))
+	s.router.HandleFunc("/api/v1/kev", s.authMiddleware(s.handleGetKEV, false))
 
 	s.router.HandleFunc("/api/v1/integration/publickey", s.handleGetPublicKey)
 	s.router.HandleFunc("/api/v1/integration/kyverno/policy", s.handleGenerateKyvernoPolicy)

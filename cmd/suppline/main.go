@@ -375,6 +375,9 @@ func run() error {
 			Ref:     regsyncCfg.MaliciousPackages.RepoRef(),
 		})
 	}
+	if kevService != nil {
+		apiServer.SetKEV(kevService)
+	}
 	logger.Debug("API server initialized")
 	mirrorActivity := mirror.NewActivity()
 	apiServer.SetMirror(cfg.MirrorEnabled, mirrorActivity)
