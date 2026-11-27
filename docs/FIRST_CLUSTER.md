@@ -123,6 +123,15 @@ A pod passes when its image has a SCAI attestation signed by your key with `scan
 
 When the reports are clean, edit `validationActions` to `[Deny]` and apply the policy again. Enforce in the namespaces you have already migrated before the whole cluster: the generated policy skips `kube-system`, `kyverno` and `suppline`, and you can narrow it further with a `namespaceSelector`.
 
+To read one attestation by hand:
+
+```bash
+cosign verify-attestation \
+  --type https://in-toto.io/attestation/scai/attribute-report/v0.3 \
+  --key cosign.pub --insecure-ignore-tlog \
+  myregistry.com/nginx:1.27 | jq -r .payload | base64 -d | jq
+```
+
 ## 6. Pull from the mirror
 
 An attestation proves an image is fine. It does not make the pod pull from your registry; for that, rewrite the image names. Generate the policy once the images are synced:

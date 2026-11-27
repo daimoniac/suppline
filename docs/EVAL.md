@@ -10,7 +10,7 @@ description: Zero-credential Docker Compose eval for suppline — mirror, scan, 
 
 This path is throwaway: start Compose, watch one image **pass** (with attestations) and one **fail**. No registry credentials, no cosign setup, no editing config, and no clone or build.
 
-Production installs should **bring your own registry** (Helm). See [Private registry setup](REGISTRY.md) and the main [README](https://github.com/daimoniac/suppline#deploy).
+Production installs should **bring your own registry** (Helm). See [Private registry setup](REGISTRY.md) and [First cluster](FIRST_CLUSTER.md).
 
 ## Used in production
 

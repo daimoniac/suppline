@@ -624,6 +624,16 @@ SUPPLINE_API_KEY=dev-secret-key
 POSTGRES_URL=postgres://suppline:suppline@localhost:5432/suppline?sslmode=disable
 ```
 
+Build and run the binary (Go and Node; the UI is embedded at build time). `scanner.server` defaults to `localhost:4954`:
+
+```bash
+make build
+trivy server --listen localhost:4954 &
+export SUPPLINE_CONFIG=suppline.yml
+set -a && source .env && set +a
+./suppline
+```
+
 ### Production (Helm)
 
 ```yaml

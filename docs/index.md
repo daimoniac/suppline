@@ -76,6 +76,7 @@ Open `http://localhost:8080` and log in with API key `demo`. Full checklist: [Ev
 - [Policy guide](POLICY.md) — CEL reference, policy recipes, VEX semantics
 - [State machine](STATE_MACHINE.md) — image lifecycle, rescan triggers, error handling
 - [Private registry setup](REGISTRY.md) — Helm BYO registry (default) and optional bundled lab registry
+- [Observability](OBSERVABILITY.md) — health endpoints and Prometheus metrics
 - [Discoverability backlog](DISCOVERABILITY.md) — Artifact Hub / awesome-lists (later)
 - [GitHub repository](https://github.com/daimoniac/suppline) — source, Helm chart, issues
 
