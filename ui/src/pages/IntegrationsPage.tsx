@@ -5,7 +5,7 @@ import { copyToClipboard, formatDate, formatRelativeTime } from '../lib/utils';
 import { scheduleEffectLoad } from '../lib/scheduleEffectLoad';
 import { LoadingState, ErrorState, PageHeader, RepoName } from '../components/ui';
 import type { GitopsRepository, KubernetesClusterImageSummary, KubernetesClusterSummary } from '../lib/api';
-import { Boxes, ChevronDown, ChevronRight, Copy, Download, GitBranch, Key, Shield, Trash2 } from 'lucide-react';
+import { ArrowRightLeft, Boxes, ChevronDown, ChevronRight, Copy, Download, GitBranch, Key, Shield, Trash2 } from 'lucide-react';
 
 export default function IntegrationsPage() {
   const { apiClient } = useAuth();
@@ -19,6 +19,13 @@ export default function IntegrationsPage() {
   const [clusterImagesLoading, setClusterImagesLoading] = useState<Record<string, boolean>>({});
   const [clusterImagesError, setClusterImagesError] = useState<Record<string, string>>({});
   const [deletingCluster, setDeletingCluster] = useState<string | null>(null);
+  const [planningCluster, setPlanningCluster] = useState<string | null>(null);
+  const [rewriteMirror, setRewriteMirror] = useState('');
+  const [rewriteRegistries, setRewriteRegistries] = useState('docker.io');
+  const [rewriteScope, setRewriteScope] = useState<'labeled' | 'all'>('labeled');
+  const [rewritePolicy, setRewritePolicy] = useState('');
+  const [rewriteError, setRewriteError] = useState('');
+  const [rewriteLoading, setRewriteLoading] = useState(false);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
 
@@ -82,6 +89,40 @@ export default function IntegrationsPage() {
     a.click();
     URL.revokeObjectURL(url);
     toast(`Downloaded ${filename}`, 'success');
+  };
+
+  const errorText = (e: unknown, fallback: string) => {
+    if (e && typeof e === 'object' && 'details' in e && typeof e.details === 'string' && e.details) return e.details;
+    return e instanceof Error ? e.message : fallback;
+  };
+
+  const handleMigrationPlan = async (clusterName: string) => {
+    setPlanningCluster(clusterName);
+    try {
+      const plan = await apiClient.getKubernetesClusterMigration(clusterName);
+      handleDownload(plan, `suppline-migration-${clusterName}.yaml`);
+    } catch (e: unknown) {
+      toast(errorText(e, 'Failed to build the migration plan'), 'error');
+    } finally {
+      setPlanningCluster(null);
+    }
+  };
+
+  const handleGenerateRewrite = async () => {
+    setRewriteLoading(true);
+    setRewriteError('');
+    try {
+      setRewritePolicy(await apiClient.getMirrorRewritePolicy({
+        mirror: rewriteMirror.trim(),
+        registries: rewriteRegistries.trim(),
+        scope: rewriteScope,
+      }));
+    } catch (e: unknown) {
+      setRewritePolicy('');
+      setRewriteError(errorText(e, 'Failed to generate the policy'));
+    } finally {
+      setRewriteLoading(false);
+    }
   };
 
   const handleDeleteCluster = async (clusterName: string) => {
@@ -221,7 +262,16 @@ export default function IntegrationsPage() {
                           {cluster.LastReported ? formatRelativeTime(cluster.LastReported) : 'Never'}
                         </td>
                         <td className="px-3 py-3 text-text-secondary">{cluster.ImageCount}</td>
-                        <td className="px-3 py-3 text-right">
+                        <td className="px-3 py-3 text-right whitespace-nowrap">
+                          <button
+                            onClick={() => handleMigrationPlan(cluster.Name)}
+                            disabled={planningCluster === cluster.Name}
+                            title="Download sync entries that put this cluster's running images on the mirror"
+                            className="mr-2 px-2.5 py-1.5 text-xs rounded-lg border border-border text-text-secondary hover:bg-bg-tertiary disabled:opacity-50 inline-flex items-center gap-1 transition-colors"
+                          >
+                            <ArrowRightLeft className="w-3 h-3" />
+                            {planningCluster === cluster.Name ? 'Planning...' : 'Migration plan'}
+                          </button>
                           <button
                             onClick={() => handleDeleteCluster(cluster.Name)}
                             disabled={deletingCluster === cluster.Name}
@@ -271,6 +321,59 @@ export default function IntegrationsPage() {
             </div>
           ) : (
             <p className="text-sm text-text-muted">not integrated</p>
+          )}
+        </div>
+      </div>
+
+      {/* Mirror rewrite policy */}
+      <div className="bg-bg-primary border border-border rounded-xl overflow-hidden">
+        <div className="flex items-center justify-between px-5 py-4 border-b border-border">
+          <div className="flex items-center gap-2">
+            <ArrowRightLeft className="w-4 h-4 text-accent" />
+            <h2 className="text-sm font-semibold">Kyverno Mirror Rewrite Policy</h2>
+          </div>
+          <div className="flex gap-2">
+            <button onClick={() => handleCopy(rewritePolicy, 'Policy')} disabled={!rewritePolicy}
+              className="px-3 py-1.5 text-xs rounded-lg border border-border text-text-secondary hover:bg-bg-tertiary disabled:opacity-30 flex items-center gap-1 transition-colors">
+              <Copy className="w-3 h-3" /> Copy
+            </button>
+            <button onClick={() => handleDownload(rewritePolicy, 'kyverno-mirror-rewrite.yaml')} disabled={!rewritePolicy}
+              className="px-3 py-1.5 text-xs rounded-lg border border-border text-text-secondary hover:bg-bg-tertiary disabled:opacity-30 flex items-center gap-1 transition-colors">
+              <Download className="w-3 h-3" /> Download
+            </button>
+          </div>
+        </div>
+        <div className="p-4 space-y-4">
+          <p className="text-sm text-text-muted">
+            Points pods at the mirror instead of the upstream registry. Apply it after the images are synced; start with one labeled namespace.
+          </p>
+          <div className="grid gap-3 md:grid-cols-3">
+            <label className="text-xs text-text-muted">
+              Mirror
+              <input value={rewriteMirror} onChange={e => setRewriteMirror(e.target.value)} placeholder="default: SUPPLINE_REGISTRY_URL"
+                className="mt-1 w-full px-3 py-2 text-sm rounded-lg border border-border bg-bg-secondary text-text-primary" />
+            </label>
+            <label className="text-xs text-text-muted">
+              Registries to redirect
+              <input value={rewriteRegistries} onChange={e => setRewriteRegistries(e.target.value)} placeholder="docker.io,ghcr.io"
+                className="mt-1 w-full px-3 py-2 text-sm rounded-lg border border-border bg-bg-secondary text-text-primary" />
+            </label>
+            <label className="text-xs text-text-muted">
+              Scope
+              <select value={rewriteScope} onChange={e => setRewriteScope(e.target.value as 'labeled' | 'all')}
+                className="mt-1 w-full px-3 py-2 text-sm rounded-lg border border-border bg-bg-secondary text-text-primary">
+                <option value="labeled">Namespaces labeled suppline.cloud/mirror=true</option>
+                <option value="all">All namespaces except system ones</option>
+              </select>
+            </label>
+          </div>
+          <button onClick={handleGenerateRewrite} disabled={rewriteLoading}
+            className="px-3 py-1.5 text-xs rounded-lg bg-accent text-bg-primary font-medium hover:bg-accent-hover disabled:opacity-50 transition-colors">
+            {rewriteLoading ? 'Generating...' : 'Generate policy'}
+          </button>
+          {rewriteError && <p className="text-sm text-danger">{rewriteError}</p>}
+          {rewritePolicy && (
+            <pre className="text-xs font-mono text-text-secondary bg-bg-secondary p-4 rounded-lg overflow-x-auto whitespace-pre max-h-96">{rewritePolicy}</pre>
           )}
         </div>
       </div>

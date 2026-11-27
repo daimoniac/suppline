@@ -495,16 +495,16 @@ kubectl apply -f suppline-policy.yaml</code></pre>
             <div class="container">
                 <h2>Try it in one afternoon</h2>
                 <p class="section-lead">
-                    No credentials required. Bundled throwaway registry, demo pass + fail policies, and auto-generated
-                    cosign keys. Watch one image pass (with attestations) and one fail.
+                    No credentials, no clone, no build. Bundled throwaway registry, demo pass + fail policies, and
+                    auto-generated cosign keys. Watch one image pass (with attestations) and one fail.
                 </p>
                 <div class="getting-started-content">
                     <ol class="steps" role="list">
                         <li role="listitem">
-                            <h3>Clone and start</h3>
+                            <h3>Download and start</h3>
                             <p>First boot pulls images and Trivy’s DB — give it a few minutes.</p>
-                            <pre><code>git clone https://github.com/daimoniac/suppline.git &amp;&amp; cd suppline
-docker compose up --build -d</code></pre>
+                            <pre><code>curl -fsSLO https://github.com/daimoniac/suppline/releases/latest/download/docker-compose.eval.yml
+docker compose -f docker-compose.eval.yml up -d</code></pre>
                         </li>
                         <li role="listitem">
                             <h3>Open the UI</h3>

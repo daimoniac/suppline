@@ -153,6 +153,11 @@ func (m *runner) cleanupTags(ctx context.Context, tgt string) error {
 		return err
 	}
 	tTags, err := m.rc.TagList(ctx, tgtRef)
+	if errors.Is(err, errs.ErrNotFound) {
+		// Nothing was copied to this target yet, so there is nothing to clean.
+		m.log.Debug("cleanup skipped: target repository does not exist yet", "target", tgt)
+		return nil
+	}
 	if err != nil {
 		return err
 	}

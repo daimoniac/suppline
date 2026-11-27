@@ -8,7 +8,8 @@ suppline uses CEL (Common Expression Language) for flexible, powerful security p
 
 | Policy | Expression |
 |--------|-----------|
-| Block critical only (default) | `criticalCount == 0` |
+| Built-in default (no `policy` set) | see [Default policy](#default-policy) |
+| Block critical only | `criticalCount == 0` |
 | Block critical + high | `criticalCount == 0 && highCount == 0` |
 | Block medium+ | `criticalCount == 0 && highCount == 0 && mediumCount == 0` |
 | Allow up to 2 high | `criticalCount == 0 && highCount <= 2` |
@@ -17,9 +18,24 @@ suppline uses CEL (Common Expression Language) for flexible, powerful security p
 
 ## Configuration
 
-### Default Policy
+### Default policy
 
-Set a default policy for all repositories:
+Without a `policy`, a repository gets the built-in default. It fails an image on any critical vulnerability, and on any high one that is in the [CISA Known Exploited Vulnerabilities](#known-exploited-vulnerabilities-cisa-kev) catalog. Findings a VEX statement exempts never count, and neither do kernel CVEs reported against header-only packages (`linux-libc-dev` and friends): they ship no kernel code and a container runs the node's kernel, so they are a host patching concern, not an image one. The UI describes it as "No critical or known-exploited high vulnerabilities (kernel header packages ignored)".
+
+```
+!vulnerabilities.exists(v, !v.exempted && !v.kernelHeaderPackage && (
+  v.severity == "CRITICAL" ||
+  (v.severity == "HIGH" && v.kev)
+))
+```
+
+Failure message: `critical, or known-exploited high, vulnerabilities found`.
+
+It is a gate you can turn on the first week: most images carry highs, few carry a critical, and fewer still a known-exploited high, so it fails the findings that matter without failing everything. Tighten it later with [`/api/v1/policies/preview`](#preview-a-stricter-policy) first, to see what the stricter policy would block.
+
+KEV is read from the feed ([CONFIGURATION.md](CONFIGURATION.md#known-exploited-vulnerabilities-kev)). While the feed is unavailable no finding counts as known-exploited, so only criticals fail; add `kevStatus in ["ok", "stale"]` to a policy of your own to fail closed instead. A known-malicious package fails an image whatever the policy says.
+
+Set a default policy for all repositories to replace the built-in one:
 
 ```yaml
 defaults:
@@ -41,6 +57,18 @@ sync:
       expression: "criticalCount == 0 && highCount == 0"
       failureMessage: "critical or high vulnerabilities found"
 ```
+
+### Preview a stricter policy
+
+Before you tighten a policy, ask what it would do. `POST /api/v1/policies/preview` replays the latest scan of every image against a candidate expression, with each repository's VEX statements applied, and lists the images it would fail that the policies in force admit. Nothing is stored and no scan is queued.
+
+```bash
+curl -s -X POST -H "Authorization: Bearer $SUPPLINE_API_KEY" -H "Content-Type: application/json" \
+  -d '{"expression": "criticalCount == 0 && highCount == 0"}' \
+  https://suppline.example.com/api/v1/policies/preview | jq '{NewlyBlocked, WouldFail, CurrentlyFailing, Images}'
+```
+
+By default only images running in a cluster count (`"in_use_only": false` replays every image). An empty expression previews the built-in default. A malicious-package finding fails an image whatever the expression says, so it is not part of the comparison.
 
 ## Available Variables
 

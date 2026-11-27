@@ -438,6 +438,8 @@ Policies use CEL (Common Expression Language) to evaluate security posture.
 - `vulnerabilities` - List of all vulnerabilities with details
 - `imageRef` - Image reference being evaluated
 
+Without a `policy`, a repository gets the built-in default: no critical and no known-exploited (CISA KEV) high vulnerabilities, kernel header packages ignored. See [Default policy](POLICY.md#default-policy). A `policy` with a `failureMessage` but no `expression` keeps the built-in expression and uses your message.
+
 **Examples:**
 
 ```yaml
@@ -622,6 +624,16 @@ SUPPLINE_API_KEY=dev-secret-key
 POSTGRES_URL=postgres://suppline:suppline@localhost:5432/suppline?sslmode=disable
 ```
 
+Build and run the binary (Go and Node; the UI is embedded at build time). `scanner.server` defaults to `localhost:4954`:
+
+```bash
+make build
+trivy server --listen localhost:4954 &
+export SUPPLINE_CONFIG=suppline.yml
+set -a && source .env && set +a
+./suppline
+```
+
 ### Production (Helm)
 
 ```yaml
@@ -751,7 +763,7 @@ How it behaves:
 
 - **Every instance fetches the feed,** leader and standby, so the API answers the same on both. It is one HTTP GET per `sync_interval`, nothing is written to the database.
 - **Fallback:** `cisa.gov` is behind Akamai, which rejects many cloud egress addresses with 403. When `feed_url` fails, `fallback_url` (CISA's own GitHub copy) is tried. For an air-gapped install, point `feed_url` at an internal mirror of the JSON file and set `fallback_url` to the same URL.
-- **New listings reach stored images within one sync.** After a sync that adds CVEs to the catalog, the leader finds current images with those CVEs and queues an urgent rescan for each, but only for repositories whose policy reads a KEV field (`kev`, `kevCount`, `kevStatus`, `kevDateAdded`, `kevRansomware`). With the default policy nothing is rescanned. The first load after startup is not an addition.
+- **New listings reach stored images within one sync.** After a sync that adds CVEs to the catalog, the leader finds current images with those CVEs and queues an urgent rescan for each, but only for repositories whose policy reads a KEV field (`kev`, `kevCount`, `kevStatus`, `kevDateAdded`, `kevRansomware`). The built-in default policy reads `kev`, so it is rescanned; a policy that is only counts of severities is not. The first load after startup is not an addition.
 - **A failed sync keeps the last catalog.** A feed with no entries, or one that is not JSON, counts as a failed sync.
 - **Unknown is not "not listed".** Before the first sync, and once no sync has succeeded for `stale_after`, a KEV check fails rather than answering "not listed". Triage then writes no new exemption and retries the run.
 - **Older keys:** without a `kev` block, `triage.kev_feed_url` sets `feed_url` and `triage.kev_cache_ttl` sets `sync_interval`. A `kev` block replaces both. Startup logs which one is in use.

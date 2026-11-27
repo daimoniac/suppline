@@ -52,9 +52,9 @@ defaults:
   worker-retry-backoff: 10s
   queue-buffer-size: 1000
   scaiValidityExtension: 7d
-  policy:                   # Default policy for all sync entries (optional)
-    expression: "criticalCount == 0"
-    failureMessage: "critical vulnerabilities found"
+  # policy:                 # Default policy for all sync entries (optional). Unset, the built-in
+  #   expression: "criticalCount == 0 && highCount <= 5"   # default applies: no critical and no
+  #   failureMessage: "too many critical or high vulnerabilities"  # known-exploited high vulnerabilities
   cooldown: 7d              # Hold new digests until 7 days after suppline first saw them upstream (optional, off when unset)
   vex-repo: true            # Apply Aqua VEX Hub to all scans by default (optional)
 

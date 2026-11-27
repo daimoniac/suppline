@@ -14,20 +14,20 @@ To learn more about the release, try:
   http{{ if $.Values.ingress.tls }}s{{ end }}://{{ . }}{{ trimSuffix "/" (include "suppline.basePath" $) }}/
 {{- end }}
 {{- else }}
-  kubectl --namespace {{ .Release.Namespace }} port-forward svc/{{ include "suppline.fullname" . }} 8080:{{ .Values.backend.service.port }}
+  kubectl --namespace {{ .Release.Namespace }} port-forward $(kubectl get pods --namespace {{ .Release.Namespace }} -l "app.kubernetes.io/name={{ include "suppline.name" . }},app.kubernetes.io/instance={{ .Release.Name }},!app.kubernetes.io/component" -o name) 8080:{{ .Values.backend.service.port }}
 
   Then visit http://127.0.0.1:8080{{ trimSuffix "/" (include "suppline.basePath" .) }}/
   (Set ingress.enabled=true and ingress.hosts to expose it.)
 {{- end }}
 
 2. Check the backend API status:
-  export POD_NAME=$(kubectl get pods --namespace {{ .Release.Namespace }} -l "app.kubernetes.io/name={{ include "suppline.name" . }},app.kubernetes.io/instance={{ .Release.Name }}" -o jsonpath="{.items[0].metadata.name}")
+  export POD_NAME=$(kubectl get pods --namespace {{ .Release.Namespace }} -l "app.kubernetes.io/name={{ include "suppline.name" . }},app.kubernetes.io/instance={{ .Release.Name }},!app.kubernetes.io/component" -o jsonpath="{.items[0].metadata.name}")
   kubectl --namespace {{ .Release.Namespace }} port-forward $POD_NAME 8080:{{ .Values.backend.service.port }}
   
   Then visit http://127.0.0.1:8080{{ trimSuffix "/" (include "suppline.basePath" .) }}/health
 
 3. View logs:
-  kubectl logs --namespace {{ .Release.Namespace }} -l "app.kubernetes.io/name={{ include "suppline.name" . }},app.kubernetes.io/instance={{ .Release.Name }}" -c suppline
+  kubectl logs --namespace {{ .Release.Namespace }} -l "app.kubernetes.io/name={{ include "suppline.name" . }},app.kubernetes.io/instance={{ .Release.Name }},!app.kubernetes.io/component" -c suppline
 
 4. View metrics:
   kubectl --namespace {{ .Release.Namespace }} port-forward $POD_NAME 9090:{{ include "suppline.opsPort" . }}

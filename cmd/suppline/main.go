@@ -203,9 +203,7 @@ func run() error {
 		kevSource = kevService
 		go kevService.Run(runCtx)
 	}
-	policyEngine, err := policy.NewEngine(logger, policy.PolicyConfig{
-		Expression: "criticalCount == 0",
-	}, policy.WithMaliciousGate(maliciousGate), policy.WithKEV(kevSource))
+	policyEngine, err := policy.NewEngine(logger, policy.DefaultConfig(), policy.WithMaliciousGate(maliciousGate), policy.WithKEV(kevSource))
 	if err != nil {
 		return fmt.Errorf("failed to initialize policy engine: %w", err)
 	}
@@ -339,7 +337,7 @@ func run() error {
 	quiet := slog.New(slog.DiscardHandler)
 	vexAudit := vexaudit.New(logger, repositoryPolicies, scanReads, func(cfg policy.PolicyConfig) (policy.PolicyEngine, error) {
 		if cfg.Expression == "" {
-			return policy.NewEngine(quiet, policy.PolicyConfig{Expression: "criticalCount == 0"}, policy.WithMaliciousGate(maliciousGate), policy.WithKEV(kevSource))
+			return policy.NewEngine(quiet, policy.DefaultConfig(), policy.WithMaliciousGate(maliciousGate), policy.WithKEV(kevSource))
 		}
 		return policy.NewEngine(quiet, cfg, policy.WithMaliciousGate(maliciousGate), policy.WithKEV(kevSource))
 	})

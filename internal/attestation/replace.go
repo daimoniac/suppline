@@ -154,9 +154,14 @@ func (a *SigstoreAttestor) attestReplacingSameKind(ctx context.Context, operatio
 	predicate := canonicalPredicate(cosignType)
 	digest, digestErr := a.parseImageDigest(imageRef)
 
+	// The pipeline attests SBOM, vulnerabilities and SCAI of one image side by side. Without
+	// the lock, a registry that keeps referrers in a fallback tag drops all but one of them.
+	unlock := a.writes.lock(writeKey(digest, digestErr, imageRef))
 	started := time.Now()
-	if _, err := a.runCosignAttest(ctx, operation, a.attestArgs(cosignType, predicatePath, imageRef)...); err != nil {
-		return err
+	_, attestErr := a.runCosignAttest(ctx, operation, a.attestArgs(cosignType, predicatePath, imageRef)...)
+	unlock()
+	if attestErr != nil {
+		return attestErr
 	}
 	if digestErr != nil {
 		a.logger.Debug("skipping attestation cleanup; image ref has no digest", "image_ref", imageRef)
@@ -249,6 +254,14 @@ func (a *SigstoreAttestor) collapseLater(ctx context.Context, digest name.Digest
 				"error", err)
 		}
 	}()
+}
+
+// writeKey names what writes are serialized on: the image digest, or the whole ref when it has none.
+func writeKey(digest name.Digest, digestErr error, imageRef string) string {
+	if digestErr != nil {
+		return imageRef
+	}
+	return digest.String()
 }
 
 func (a *SigstoreAttestor) parseImageDigest(imageRef string) (name.Digest, error) {
@@ -393,7 +406,10 @@ func collapseReferrers(ctx context.Context, a *SigstoreAttestor, digest name.Dig
 			break
 		}
 		seen = key
-		if err := removeReferrers(ctx, a, digest, predicate, stale); err != nil {
+		unlock := a.writes.lock(digest.String())
+		err = removeReferrers(ctx, a, digest, predicate, stale)
+		unlock()
+		if err != nil {
 			errs = append(errs, err)
 			break
 		}
@@ -403,7 +419,10 @@ func collapseReferrers(ctx context.Context, a *SigstoreAttestor, digest name.Dig
 	// with --replace, and stripping it would delete the attestation we just wrote.
 	// Signature referrers are not stored in that tag.
 	if a.newBundleFormat && predicate != predicateCosignSign {
-		if err := stripClassicAttestation(ctx, digest, predicate); err != nil {
+		unlock := a.writes.lock(digest.String())
+		err := stripClassicAttestation(ctx, digest, predicate)
+		unlock()
+		if err != nil {
 			errs = append(errs, err)
 		}
 	}

@@ -50,9 +50,9 @@ defaults:
   createVulnerabilityAttestation: false
   createSBOMAttestation: false
   vex-repo: false
-  policy:
-    expression: "criticalCount == 0"
-    failureMessage: "critical vulnerabilities found"
+  # No `policy:` here, so every repository gets the built-in default: no
+  # critical and no known-exploited (CISA KEV) high vulnerabilities. Set
+  # `policy.expression` to replace it; see docs/POLICY.md.
 
 sync:
   # Point targets at YOUR registry (Harbor/ECR/ACR/… or the chart’s bundled registry URL).

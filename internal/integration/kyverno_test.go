@@ -88,6 +88,38 @@ MFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAE
 	}
 }
 
+// Pod-level rewrites (the mirror rewrite policy) only change pods. A policy that
+// also validates Deployments would see the upstream image and reject them, so
+// PodsOnly turns Kyverno's controller autogen off.
+func TestGenerateKyvernoPolicyPodsOnly(t *testing.T) {
+	const publicKey = "-----BEGIN PUBLIC KEY-----\nMFkw\n-----END PUBLIC KEY-----"
+
+	def, err := GenerateKyvernoPolicy(publicKey)
+	if err != nil {
+		t.Fatalf("generate default policy: %v", err)
+	}
+	if strings.Contains(def, "autogen") {
+		t.Fatalf("default policy must keep Kyverno's controller autogen:\n%s", def)
+	}
+
+	raw, err := GenerateKyvernoPolicyWithOptions(publicKey, KyvernoPolicyOptions{PodsOnly: true})
+	if err != nil {
+		t.Fatalf("generate pods-only policy: %v", err)
+	}
+	var doc map[string]any
+	if err := yaml.Unmarshal([]byte(raw), &doc); err != nil {
+		t.Fatalf("policy is not valid YAML: %v\n%s", err, raw)
+	}
+	spec := asMap(t, doc["spec"])
+	controllers, ok := asMap(t, asMap(t, spec["autogen"])["podControllers"])["controllers"].([]any)
+	if !ok || len(controllers) != 0 {
+		t.Fatalf("autogen.podControllers.controllers = %#v, want empty list", controllers)
+	}
+	if spec["failurePolicy"] != "Fail" || len(asSlice(t, spec["attestors"])) != 1 {
+		t.Fatalf("pods-only policy lost its other settings: %#v", spec)
+	}
+}
+
 func asMap(t *testing.T, v any) map[string]any {
 	t.Helper()
 	m, ok := v.(map[string]any)

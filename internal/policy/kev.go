@@ -44,7 +44,8 @@ var kevIdentRE = regexp.MustCompile(`\bkev(Count|Status|DateAdded|Ransomware)?\b
 
 // UsesKEV reports whether a policy expression reads any KEV variable or
 // field, so a change to the catalog can change its result. An empty
-// expression is the default policy, which does not.
+// expression reads none, but callers resolve it to DefaultExpression, which
+// does read kev, before asking.
 func UsesKEV(expression string) bool {
 	return kevIdentRE.MatchString(expression)
 }

@@ -110,8 +110,8 @@ func NewEngine(logger *slog.Logger, config PolicyConfig, opts ...Option) (*Engin
 	}
 
 	if config.Expression == "" {
-		config.Expression = `criticalCount == 0`
-		config.FailureMessage = "critical vulnerabilities found"
+		config.Expression = DefaultExpression
+		config.FailureMessage = DefaultFailureMessage
 	}
 
 	env, err := cel.NewEnv(

@@ -14,15 +14,15 @@ type PolicyInfo struct {
 
 // PoliciesResponse is the payload for GET /api/v1/policies.
 type PoliciesResponse struct {
-	// Default is set only when defaults.policy is configured.
+	// Default is defaults.policy, or the built-in default policy when none is configured.
 	Default *PolicyInfo `json:"Default,omitempty"`
 	// Repositories maps sync targets that have their own policy override.
 	Repositories map[string]PolicyInfo `json:"Repositories,omitempty"`
 }
 
-// handleListPolicies returns configured CEL policies (default + per-target overrides).
+// handleListPolicies returns the default CEL policy (configured or built-in) and per-target overrides.
 // @Summary List configured policies
-// @Description Return the default policy (if set) and per-repository policy overrides from suppline.yml
+// @Description Return the default policy and per-repository policy overrides from suppline.yml. Without defaults.policy the default is the built-in policy (no critical, and no known-exploited high, vulnerabilities).
 // @Tags Policies
 // @Produce json
 // @Success 200 {object} PoliciesResponse

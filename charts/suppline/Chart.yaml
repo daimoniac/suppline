@@ -18,3 +18,17 @@ sources:
 maintainers:
   - name: daimoniac
     url: https://github.com/daimoniac
+annotations:
+  artifacthub.io/category: security
+  artifacthub.io/license: Apache-2.0
+  artifacthub.io/recommendations: |
+    - url: https://artifacthub.io/packages/helm/kyverno/kyverno
+  artifacthub.io/links: |
+    - name: Documentation
+      url: https://suppline.cloud
+    - name: Try it in two minutes (Docker Compose)
+      url: https://suppline.cloud/EVAL.html
+    - name: First cluster
+      url: https://suppline.cloud/FIRST_CLUSTER.html
+    - name: How it compares
+      url: https://suppline.cloud/COMPARISON.html
