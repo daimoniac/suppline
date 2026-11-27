@@ -21,5 +21,8 @@ func ToVulnerabilityRecord(
 		Tag:              tag,
 		Digest:           digest,
 		ScannedAt:        scannedAt,
+		VendorStatus:     vuln.VendorStatus,
+		VendorSeverity:   vuln.VendorSeverity,
+		AttackVector:     vuln.AttackVector,
 	}
 }

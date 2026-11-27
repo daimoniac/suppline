@@ -535,6 +535,7 @@ func scanResult(scan *statestore.ScanRecord) scanner.ScanResult {
 	result := scanner.ScanResult{
 		ImageRef:        scan.Digest,
 		ScannedAt:       time.Unix(scan.CreatedAt, 0).UTC(),
+		OSEndOfLife:     scan.OSEndOfLife,
 		Vulnerabilities: make([]types.Vulnerability, 0, len(scan.Vulnerabilities)),
 	}
 	if scan.ImageCreatedAt > 0 {
@@ -543,14 +544,17 @@ func scanResult(scan *statestore.ScanRecord) scanner.ScanResult {
 	}
 	for _, vuln := range scan.Vulnerabilities {
 		result.Vulnerabilities = append(result.Vulnerabilities, types.Vulnerability{
-			ID:           vuln.CVEID,
-			Severity:     vuln.Severity,
-			PackageName:  vuln.PackageName,
-			Version:      vuln.InstalledVersion,
-			FixedVersion: vuln.FixedVersion,
-			Title:        vuln.Title,
-			Description:  vuln.Description,
-			PrimaryURL:   vuln.PrimaryURL,
+			ID:             vuln.CVEID,
+			Severity:       vuln.Severity,
+			PackageName:    vuln.PackageName,
+			Version:        vuln.InstalledVersion,
+			FixedVersion:   vuln.FixedVersion,
+			Title:          vuln.Title,
+			Description:    vuln.Description,
+			PrimaryURL:     vuln.PrimaryURL,
+			VendorStatus:   vuln.VendorStatus,
+			VendorSeverity: vuln.VendorSeverity,
+			AttackVector:   vuln.AttackVector,
 		})
 	}
 	return result

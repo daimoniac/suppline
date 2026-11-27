@@ -13,8 +13,6 @@ import (
 
 	"github.com/daimoniac/suppline/internal/config"
 	"github.com/daimoniac/suppline/internal/errors"
-	"github.com/daimoniac/suppline/internal/types"
-	"github.com/daimoniac/suppline/internal/vulnurl"
 )
 
 // TrivyScanner implements Scanner using Trivy CLI in client-server mode
@@ -157,7 +155,14 @@ func (s *TrivyScanner) GenerateSBOM(ctx context.Context, imageRef string) (*SBOM
 
 // trivyScanResponse represents the JSON output from trivy
 type trivyScanResponse struct {
-	Results []trivyResult `json:"Results"`
+	Results  []trivyResult `json:"Results"`
+	Metadata struct {
+		OS struct {
+			Family string `json:"Family"`
+			Name   string `json:"Name"`
+			EOSL   bool   `json:"EOSL"`
+		} `json:"OS"`
+	} `json:"Metadata"`
 }
 
 type trivyResult struct {
@@ -166,15 +171,18 @@ type trivyResult struct {
 }
 
 type trivyVulnerability struct {
-	VulnerabilityID  string   `json:"VulnerabilityID"`
-	PkgName          string   `json:"PkgName"`
-	InstalledVersion string   `json:"InstalledVersion"`
-	FixedVersion     string   `json:"FixedVersion"`
-	Severity         string   `json:"Severity"`
-	Title            string   `json:"Title"`
-	Description      string   `json:"Description"`
-	References       []string `json:"References"`
-	PrimaryURL       string   `json:"PrimaryURL"`
+	VulnerabilityID  string                   `json:"VulnerabilityID"`
+	PkgName          string                   `json:"PkgName"`
+	InstalledVersion string                   `json:"InstalledVersion"`
+	FixedVersion     string                   `json:"FixedVersion"`
+	Severity         string                   `json:"Severity"`
+	Title            string                   `json:"Title"`
+	Description      string                   `json:"Description"`
+	References       []string                 `json:"References"`
+	PrimaryURL       string                   `json:"PrimaryURL"`
+	Status           string                   `json:"Status"`
+	VendorSeverity   trivyVendorSeverity      `json:"VendorSeverity"`
+	CVSS             map[string]trivyCVSSInfo `json:"CVSS"`
 }
 
 // ScanVulnerabilities performs vulnerability analysis via Trivy
@@ -254,28 +262,7 @@ func (s *TrivyScanner) ScanVulnerabilities(ctx context.Context, imageRef string,
 		return nil, errors.NewPermanentf("failed to parse trivy output: %w", err)
 	}
 
-	// Extract vulnerabilities
-	var vulnerabilities []types.Vulnerability
-	for _, result := range response.Results {
-		for _, vuln := range result.Vulnerabilities {
-			primaryURL := vuln.PrimaryURL
-			if primaryURL == "" && len(vuln.References) > 0 {
-				primaryURL = vuln.References[0]
-			}
-			primaryURL = vulnurl.NormalizeRefURL(primaryURL)
-
-			vulnerabilities = append(vulnerabilities, types.Vulnerability{
-				ID:           vuln.VulnerabilityID,
-				Severity:     vuln.Severity,
-				PackageName:  vuln.PkgName,
-				Version:      vuln.InstalledVersion,
-				FixedVersion: vuln.FixedVersion,
-				Title:        vuln.Title,
-				Description:  vuln.Description,
-				PrimaryURL:   primaryURL,
-			})
-		}
-	}
+	vulnerabilities, osEndOfLife := findingsFromTrivy(response)
 
 	// Now generate cosign-vuln format (reuses cached scan data from Trivy)
 	trivyArgs := []string{
@@ -328,6 +315,7 @@ func (s *TrivyScanner) ScanVulnerabilities(ctx context.Context, imageRef string,
 		Vulnerabilities: vulnerabilities,
 		ScannedAt:       time.Now(),
 		CosignVulnData:  cosignVulnData,
+		OSEndOfLife:     osEndOfLife,
 	}, nil
 }
 
@@ -386,26 +374,7 @@ func (s *TrivyScanner) scanVulnerabilitiesLocal(ctx context.Context, imageRef st
 		return nil, errors.NewPermanentf("failed to parse local fallback trivy output: %w", err)
 	}
 
-	var vulnerabilities []types.Vulnerability
-	for _, result := range response.Results {
-		for _, vuln := range result.Vulnerabilities {
-			primaryURL := vuln.PrimaryURL
-			if primaryURL == "" && len(vuln.References) > 0 {
-				primaryURL = vuln.References[0]
-			}
-			primaryURL = vulnurl.NormalizeRefURL(primaryURL)
-			vulnerabilities = append(vulnerabilities, types.Vulnerability{
-				ID:           vuln.VulnerabilityID,
-				Severity:     vuln.Severity,
-				PackageName:  vuln.PkgName,
-				Version:      vuln.InstalledVersion,
-				FixedVersion: vuln.FixedVersion,
-				Title:        vuln.Title,
-				Description:  vuln.Description,
-				PrimaryURL:   primaryURL,
-			})
-		}
-	}
+	vulnerabilities, osEndOfLife := findingsFromTrivy(response)
 
 	// cosign-vuln format (best-effort)
 	cosignArgs := []string{
@@ -441,5 +410,6 @@ func (s *TrivyScanner) scanVulnerabilitiesLocal(ctx context.Context, imageRef st
 		Vulnerabilities: vulnerabilities,
 		ScannedAt:       time.Now(),
 		CosignVulnData:  cosignVulnData,
+		OSEndOfLife:     osEndOfLife,
 	}, nil
 }

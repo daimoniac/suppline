@@ -448,7 +448,10 @@ type ScanRecord struct {
 	PolicyFailureFindings []types.PolicyFailureFinding
 	// Malicious is the malicious-package check; nil when the check is disabled
 	// or the scan predates it.
-	Malicious   *types.MaliciousCheck
+	Malicious *types.MaliciousCheck
+	// OSEndOfLife is true when the scanner reports the image OS as end of life.
+	// Scans recorded before this column, and images with no OS metadata, are false.
+	OSEndOfLife bool `json:"OSEndOfLife,omitempty"`
 	VEXAttested bool
 	RuntimeUsed bool
 	Runtime     RuntimeInventory

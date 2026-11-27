@@ -58,7 +58,7 @@ func (s *Store) getLastScan(ctx context.Context, digest, repository string, with
 			sr.sbom_attested, sr.vuln_attested, sr.scai_attested, COALESCE(sr.vex_attested, FALSE), sr.error_message, sr.created_at,
 			COALESCE(a.image_created_at, 0) as image_created_at,
 			a.digest, a.tag, r.name,
-			sr.vex_statements_json, sr.malicious_check_json
+			sr.vex_statements_json, sr.malicious_check_json, sr.os_eosl
 		FROM scan_records sr
 		JOIN artifacts a ON sr.artifact_id = a.id
 		JOIN repositories r ON a.repository_id = r.id
@@ -79,7 +79,7 @@ func (s *Store) getLastScan(ctx context.Context, digest, repository string, with
 		&record.SBOMAttested, &record.VulnAttested, &record.SCAIAttested, &record.VEXAttested, &record.ErrorMessage, &record.CreatedAt,
 		&record.ImageCreatedAt,
 		&record.Digest, &record.Tag, &record.Repository,
-		&vexJSON, &maliciousJSON,
+		&vexJSON, &maliciousJSON, &record.OSEndOfLife,
 	)
 	if err == sql.ErrNoRows {
 		return nil, ErrScanNotFound
@@ -452,7 +452,7 @@ func (s *Store) GetScanHistory(ctx context.Context, digest string, limit int) ([
 			sr.sbom_attested, sr.vuln_attested, sr.scai_attested, COALESCE(sr.vex_attested, FALSE), sr.error_message, sr.created_at,
 			COALESCE(a.image_created_at, 0) as image_created_at,
 			a.digest, a.tag, r.name,
-			sr.vex_statements_json
+			sr.vex_statements_json, sr.os_eosl
 		FROM scan_records sr
 		JOIN artifacts a ON sr.artifact_id = a.id
 		JOIN repositories r ON a.repository_id = r.id
@@ -482,7 +482,7 @@ func (s *Store) GetScanHistory(ctx context.Context, digest string, limit int) ([
 			&record.SBOMAttested, &record.VulnAttested, &record.SCAIAttested, &record.VEXAttested, &record.ErrorMessage, &record.CreatedAt,
 			&record.ImageCreatedAt,
 			&record.Digest, &record.Tag, &record.Repository,
-			&vexJSON,
+			&vexJSON, &record.OSEndOfLife,
 		)
 		if err != nil {
 			return nil, errors.NewTransientf("failed to scan row: %w", err)
@@ -574,7 +574,8 @@ func (s *Store) loadVulnerabilityChunk(ctx context.Context, scanIDs []int64, out
 	// finding. The catalog row is shared by every image and later scans
 	// overwrite it, so it cannot stand in for the severity policy saw.
 	rows, err := s.db.QueryContext(ctx, `
-		SELECT f.scan_record_id, f.cve_id, COALESCE(f.severity, ''), f.package_name, f.installed_version, f.fixed_version
+		SELECT f.scan_record_id, f.cve_id, COALESCE(f.severity, ''), f.package_name, f.installed_version, f.fixed_version,
+			f.vendor_status, f.vendor_severity, f.attack_vector
 		FROM scan_findings f
 		WHERE f.scan_record_id IN (`+strings.Join(placeholders, ",")+`)
 		ORDER BY f.scan_record_id, f.severity, f.cve_id
@@ -589,6 +590,7 @@ func (s *Store) loadVulnerabilityChunk(ctx context.Context, scanIDs []int64, out
 		var vuln types.VulnerabilityRecord
 		err := rows.Scan(
 			&scanID, &vuln.CVEID, &vuln.Severity, &vuln.PackageName, &vuln.InstalledVersion, &vuln.FixedVersion,
+			&vuln.VendorStatus, &vuln.VendorSeverity, &vuln.AttackVector,
 		)
 		if err != nil {
 			return errors.NewTransientf("failed to scan vulnerability: %w", err)
@@ -604,7 +606,8 @@ func (s *Store) loadVulnerabilityChunk(ctx context.Context, scanIDs []int64, out
 func (s *Store) loadVulnerabilitiesByScan(ctx context.Context, scanRecordID int64) ([]types.VulnerabilityRecord, error) {
 	rows, err := s.db.QueryContext(ctx, `
 		SELECT f.cve_id, COALESCE(NULLIF(f.severity, ''), c.severity), f.package_name, f.installed_version, f.fixed_version,
-			c.title, c.description, c.primary_url
+			c.title, c.description, c.primary_url,
+			f.vendor_status, f.vendor_severity, f.attack_vector
 		FROM scan_findings f
 		JOIN cve_catalog c ON c.cve_id = f.cve_id
 		WHERE f.scan_record_id = ?
@@ -621,6 +624,7 @@ func (s *Store) loadVulnerabilitiesByScan(ctx context.Context, scanRecordID int6
 		err := rows.Scan(
 			&vuln.CVEID, &vuln.Severity, &vuln.PackageName, &vuln.InstalledVersion, &vuln.FixedVersion,
 			&vuln.Title, &vuln.Description, &vuln.PrimaryURL,
+			&vuln.VendorStatus, &vuln.VendorSeverity, &vuln.AttackVector,
 		)
 		if err != nil {
 			return nil, errors.NewTransientf("failed to scan vulnerability: %w", err)
@@ -834,7 +838,7 @@ func (s *Store) queryScanRecords(ctx context.Context, filter ScanFilter) ([]*Sca
 			sr.policy_passed, sr.policy_status, sr.policy_reason, sr.policy_failure_findings_json, sr.release_age_seconds, sr.minimum_release_age_seconds, sr.release_age_source,
 			sr.sbom_attested, sr.vuln_attested, sr.scai_attested, sr.error_message, sr.created_at,
 			COALESCE(a.image_created_at, 0) as image_created_at,
-			a.digest, a.tag, r.name, sr.malicious_check_json` + exemptionColumn + `
+			a.digest, a.tag, r.name, sr.malicious_check_json, sr.os_eosl` + exemptionColumn + `
 		FROM artifacts a
 		JOIN repositories r ON a.repository_id = r.id
 		JOIN scan_records sr ON a.last_scan_id = sr.id
@@ -900,7 +904,7 @@ func (s *Store) queryScanRecords(ctx context.Context, filter ScanFilter) ([]*Sca
 			&record.PolicyPassed, &record.PolicyStatus, &record.PolicyReason, &failureFindingsJSON, &record.ReleaseAgeSeconds, &record.MinimumReleaseAgeSeconds, &record.ReleaseAgeSource,
 			&record.SBOMAttested, &record.VulnAttested, &record.SCAIAttested, &record.ErrorMessage, &record.CreatedAt,
 			&record.ImageCreatedAt,
-			&record.Digest, &record.Tag, &record.Repository, &maliciousJSON,
+			&record.Digest, &record.Tag, &record.Repository, &maliciousJSON, &record.OSEndOfLife,
 		}
 		if filter.IncludeExemptions {
 			dest = append(dest, &vexJSON)

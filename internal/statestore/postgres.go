@@ -362,6 +362,26 @@ func (s *Store) initPostgresSchema() error {
 	`); err != nil {
 		return fmt.Errorf("add scan_records.malicious_check_json: %w", err)
 	}
+	if _, err := s.db.Exec(`
+		ALTER TABLE scan_findings ADD COLUMN IF NOT EXISTS vendor_status TEXT NOT NULL DEFAULT ''
+	`); err != nil {
+		return fmt.Errorf("add scan_findings.vendor_status: %w", err)
+	}
+	if _, err := s.db.Exec(`
+		ALTER TABLE scan_findings ADD COLUMN IF NOT EXISTS vendor_severity TEXT NOT NULL DEFAULT ''
+	`); err != nil {
+		return fmt.Errorf("add scan_findings.vendor_severity: %w", err)
+	}
+	if _, err := s.db.Exec(`
+		ALTER TABLE scan_findings ADD COLUMN IF NOT EXISTS attack_vector TEXT NOT NULL DEFAULT ''
+	`); err != nil {
+		return fmt.Errorf("add scan_findings.attack_vector: %w", err)
+	}
+	if _, err := s.db.Exec(`
+		ALTER TABLE scan_records ADD COLUMN IF NOT EXISTS os_eosl BOOLEAN NOT NULL DEFAULT FALSE
+	`); err != nil {
+		return fmt.Errorf("add scan_records.os_eosl: %w", err)
+	}
 
 	return nil
 }

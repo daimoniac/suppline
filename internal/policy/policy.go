@@ -25,8 +25,10 @@ type PolicyConfig struct {
 	// Expression is the CEL expression that must evaluate to true for the policy to pass
 	// Available variables:
 	//   - vulnerabilities: list of enriched vulnerabilities with fields:
-	//       id, severity, packageName, version, fixedVersion, description, exempted, vexState, vexJustification, vexDetail
+	//       id, severity, packageName, version, fixedVersion, description, exempted, vexState, vexJustification, vexDetail,
+	//       vendorStatus, vendorSeverity, attackVector
 	//   - imageRef: string reference to the image
+	//   - osEndOfLife: true when the scanner reports the image OS as end of life
 	//   - criticalCount: number of critical vulnerabilities (not exempted)
 	//   - highCount: number of high vulnerabilities (not exempted)
 	//   - mediumCount: number of medium vulnerabilities (not exempted)
@@ -124,6 +126,7 @@ func NewEngine(logger *slog.Logger, config PolicyConfig, opts ...Option) (*Engin
 		cel.Variable("maliciousCount", cel.IntType),
 		cel.Variable("kevCount", cel.IntType),
 		cel.Variable("kevStatus", cel.StringType),
+		cel.Variable("osEndOfLife", cel.BoolType),
 	)
 	if err != nil {
 		return nil, errors.NewPermanentf("failed to create CEL environment: %w", err)
@@ -238,13 +241,16 @@ func (e *Engine) Evaluate(ctx context.Context, imageRef string, result *scanner.
 		stmt, isExempted := activeVEX[vuln.ID]
 
 		enriched := map[string]interface{}{
-			"id":           vuln.ID,
-			"severity":     vuln.Severity,
-			"packageName":  vuln.PackageName,
-			"version":      vuln.Version,
-			"fixedVersion": vuln.FixedVersion,
-			"description":  vuln.Description,
-			"exempted":     isExempted,
+			"id":             vuln.ID,
+			"severity":       vuln.Severity,
+			"packageName":    vuln.PackageName,
+			"version":        vuln.Version,
+			"fixedVersion":   vuln.FixedVersion,
+			"description":    vuln.Description,
+			"exempted":       isExempted,
+			"vendorStatus":   vuln.VendorStatus,
+			"vendorSeverity": vuln.VendorSeverity,
+			"attackVector":   vuln.AttackVector,
 		}
 		listed := addKEVFields(enriched, vuln, kevSnapshot.Catalog)
 
@@ -309,6 +315,7 @@ func (e *Engine) Evaluate(ctx context.Context, imageRef string, result *scanner.
 		"maliciousCount":  len(maliciousFindings),
 		"kevCount":        kevCount,
 		"kevStatus":       kevStatus,
+		"osEndOfLife":     result.OSEndOfLife,
 	}
 
 	out, _, err := e.celProgram.Eval(celInput)
@@ -326,7 +333,7 @@ func (e *Engine) Evaluate(ctx context.Context, imageRef string, result *scanner.
 		decision.Status = PolicyStatusPassed
 	} else {
 		decision.Status = PolicyStatusFailed
-		decision.PolicyFailureFindings = e.findPolicyFailureFindings(imageRef, enrichedVulns, maliciousInput, kevStatus, nonExemptedIndexes, nonExemptedVulns)
+		decision.PolicyFailureFindings = e.findPolicyFailureFindings(imageRef, enrichedVulns, maliciousInput, kevStatus, result.OSEndOfLife, nonExemptedIndexes, nonExemptedVulns)
 		if !e.maliciousGate && len(maliciousFindings) > 0 && e.passesWithoutMalicious(celInput) {
 			// The expression itself fails on the malicious findings.
 			decision.PolicyFailureFindings = append(decision.PolicyFailureFindings, maliciousFailureFindings(maliciousFindings)...)
@@ -421,7 +428,7 @@ func (e *Engine) applyCooldown(imageRef string, decision *PolicyDecision, result
 		"image", imageRef, "cooldown", e.config.Cooldown.String(), "remaining", remaining.Truncate(time.Second).String())
 }
 
-func (e *Engine) findPolicyFailureFindings(imageRef string, enrichedVulns []map[string]interface{}, malicious []map[string]interface{}, kevStatus string, candidateIndexes []int, candidateVulns []types.Vulnerability) []types.PolicyFailureFinding {
+func (e *Engine) findPolicyFailureFindings(imageRef string, enrichedVulns []map[string]interface{}, malicious []map[string]interface{}, kevStatus string, osEndOfLife bool, candidateIndexes []int, candidateVulns []types.Vulnerability) []types.PolicyFailureFinding {
 	if len(enrichedVulns) == 0 || len(candidateIndexes) == 0 || len(candidateVulns) == 0 {
 		return nil
 	}
@@ -432,7 +439,7 @@ func (e *Engine) findPolicyFailureFindings(imageRef string, enrichedVulns []map[
 	}
 
 	evaluate := func(included []bool) (bool, error) {
-		return e.evaluateSubset(imageRef, enrichedVulns, malicious, kevStatus, candidatePosByIndex, included)
+		return e.evaluateSubset(imageRef, enrichedVulns, malicious, kevStatus, osEndOfLife, candidatePosByIndex, included)
 	}
 
 	// If the fixed baseline (for example exempted vulnerabilities and imageRef)
@@ -573,7 +580,7 @@ func (e *Engine) findPolicyFailureFindings(imageRef string, enrichedVulns []map[
 	return findings
 }
 
-func (e *Engine) evaluateSubset(imageRef string, enrichedVulns []map[string]interface{}, malicious []map[string]interface{}, kevStatus string, candidatePosByIndex map[int]int, included []bool) (bool, error) {
+func (e *Engine) evaluateSubset(imageRef string, enrichedVulns []map[string]interface{}, malicious []map[string]interface{}, kevStatus string, osEndOfLife bool, candidatePosByIndex map[int]int, included []bool) (bool, error) {
 	counterfactual := make([]map[string]interface{}, 0, len(enrichedVulns))
 	for idx, vuln := range enrichedVulns {
 		pos, isCandidate := candidatePosByIndex[idx]
@@ -625,6 +632,7 @@ func (e *Engine) evaluateSubset(imageRef string, enrichedVulns []map[string]inte
 		"maliciousCount":  activeMaliciousCount(malicious),
 		"kevCount":        kevCount,
 		"kevStatus":       kevStatus,
+		"osEndOfLife":     osEndOfLife,
 	}
 
 	out, _, err := e.celProgram.Eval(celInput)

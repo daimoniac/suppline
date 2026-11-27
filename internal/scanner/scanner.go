@@ -40,4 +40,7 @@ type ScanResult struct {
 	FirstSeenAt     *time.Time
 	// Malicious is the malicious-package check; nil when the check is disabled.
 	Malicious *types.MaliciousCheck
+	// OSEndOfLife is true when Trivy reports the image operating system as
+	// end of life. Images with no OS metadata are false.
+	OSEndOfLife bool
 }

@@ -128,14 +128,14 @@ func (s *Store) RecordScan(ctx context.Context, record *ScanRecord) error {
 			critical_vuln_count, high_vuln_count, medium_vuln_count, low_vuln_count,
 			policy_passed, policy_status, policy_reason, policy_failure_findings_json, release_age_seconds, minimum_release_age_seconds, release_age_source,
 			sbom_attested, vuln_attested, scai_attested, vex_attested, error_message,
-			vex_statements_json, malicious_status, malicious_check_json
-		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+			vex_statements_json, malicious_status, malicious_check_json, os_eosl
+		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 	`,
 		artifactID, record.ScanDurationMs,
 		record.CriticalVulnCount, record.HighVulnCount, record.MediumVulnCount, record.LowVulnCount,
 		record.PolicyPassed, record.PolicyStatus, record.PolicyReason, failureFindingsJSON, record.ReleaseAgeSeconds, record.MinimumReleaseAgeSeconds, record.ReleaseAgeSource,
 		record.SBOMAttested, record.VulnAttested, record.SCAIAttested, record.VEXAttested, record.ErrorMessage,
-		vexJSON, maliciousStatus, maliciousJSON,
+		vexJSON, maliciousStatus, maliciousJSON, record.OSEndOfLife,
 	)
 	if err != nil {
 		return errors.NewTransientf("failed to insert scan record: %w", err)
@@ -173,8 +173,9 @@ func (s *Store) RecordScan(ctx context.Context, record *ScanRecord) error {
 
 		findingStmt, err := tx.PrepareContext(ctx, `
 			INSERT INTO scan_findings (
-				scan_record_id, cve_id, package_name, installed_version, fixed_version, severity
-			) VALUES (?, ?, ?, ?, ?, ?)
+				scan_record_id, cve_id, package_name, installed_version, fixed_version, severity,
+				vendor_status, vendor_severity, attack_vector
+			) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
 		`)
 		if err != nil {
 			return errors.NewTransientf("failed to prepare scan finding statement: %w", err)
@@ -199,6 +200,7 @@ func (s *Store) RecordScan(ctx context.Context, record *ScanRecord) error {
 			}
 			if _, err := findingStmt.ExecContext(ctx,
 				scanRecordID, vuln.CVEID, vuln.PackageName, vuln.InstalledVersion, vuln.FixedVersion, vuln.Severity,
+				vuln.VendorStatus, vuln.VendorSeverity, vuln.AttackVector,
 			); err != nil {
 				return errors.NewTransientf("failed to insert scan finding: %w", err)
 			}

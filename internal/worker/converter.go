@@ -99,6 +99,7 @@ func buildScanRecord(
 		VulnAttested:             vulnAttested,
 		SCAIAttested:             scaiAttested,
 		VEXAttested:              vexAttested,
+		OSEndOfLife:              scanResult.OSEndOfLife,
 		Vulnerabilities:          vulnerabilityRecords,
 		AppliedVEXStatements:     appliedVEX,
 		PolicyFailureFindings:    policyDecision.PolicyFailureFindings,

@@ -57,6 +57,7 @@ sync:
 
 - `vulnerabilities` - List of all vulnerabilities with details
 - `imageRef` - Image reference being evaluated (string)
+- `osEndOfLife` - Whether the scanner reports the image operating system as end of life (bool). Images with no OS metadata, and scans recorded before this field existed, are `false`.
 - `malicious` - List of known-malicious packages found in the image (see below)
 - `maliciousCount` - Number of known-malicious packages found (int)
 - `kevStatus` - State of the CISA KEV catalog: `ok`, `stale`, `unavailable` or `disabled` (see below)
@@ -138,6 +139,38 @@ Each item in the `vulnerabilities` list has:
 - `kevDateAdded` - When CISA added it, `YYYY-MM-DD` (string, empty if not listed)
 - `kevRansomware` - Whether CISA lists it as known to be used in ransomware campaigns (bool)
 - `kernelHeaderPackage` - Whether the package is a kernel header package such as `linux-libc-dev` (bool)
+- `vendorStatus` - Distro status as the scanner reports it (string): `affected`, `fixed`, `will_not_fix`, `fix_deferred`, `end_of_life`, `not_affected`, or empty
+- `vendorSeverity` - Distro severity for the image OS (string: `CRITICAL`, `HIGH`, `MEDIUM`, `LOW`, `UNKNOWN`, or empty). Empty when the distro published no rating. The NVD rating is not copied here; it restates the scanner severity already in `severity`
+- `attackVector` - CVSS attack vector (string: `NETWORK`, `ADJACENT`, `LOCAL`, `PHYSICAL`, or empty). Taken from the distro CVSS vector when that source published one, otherwise from NVD
+
+## Distro status, vendor severity, attack vector, and OS end of life
+
+These fields are facts. The default expression does not read them, so a repository keeps failing on `criticalCount` until its own expression opts in. An empty string means the scanner had no value. Expressions that should stay closed when the value is missing treat empty as still failing.
+
+A repository that still fails criticals, but accepts a critical the distro rated below CRITICAL:
+
+```yaml
+expression: |
+  !vulnerabilities.exists(v, !v.exempted && v.severity == "CRITICAL" &&
+    (v.vendorSeverity == "" || v.vendorSeverity == "CRITICAL" || v.vendorSeverity == "UNKNOWN"))
+```
+
+A repository that fails criticals the scanner could not place, or that are reachable over the network, and lets a local or physical vector pass:
+
+```yaml
+expression: |
+  !vulnerabilities.exists(v, !v.exempted && v.severity == "CRITICAL" &&
+    (v.attackVector == "" || v.attackVector == "NETWORK"))
+```
+
+A repository that also fails an image whose operating system is end of life:
+
+```yaml
+expression: |
+  criticalCount == 0 && !osEndOfLife
+```
+
+`vendorStatus` is the distro's own word for the finding (`will_not_fix`, `not_affected`, `end_of_life`). `fixed` overlaps `fixedVersion`: a fix exists, and the installed package does not have it yet.
 
 ## CEL Operators
 
