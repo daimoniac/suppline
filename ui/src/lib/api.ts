@@ -113,7 +113,16 @@ export class APIClient {
       this.notifyUnauthorized();
       throw new APIError('Unauthorized', 401, 'Authentication required');
     }
-    if (!response.ok) throw new APIError('Request failed', response.status, response.statusText);
+    if (!response.ok) {
+      let details = response.statusText;
+      try {
+        const body = JSON.parse(await response.text()) as { error?: unknown };
+        if (typeof body.error === 'string' && body.error) details = body.error;
+      } catch {
+        // not a JSON error body: keep the status text
+      }
+      throw new APIError('Request failed', response.status, details);
+    }
     return response.text();
   }
 
@@ -244,6 +253,12 @@ export class APIClient {
   }
   async getPublicKey() { return this.requestText('/api/v1/integration/publickey'); }
   async getKyvernoPolicy() { return this.requestText('/api/v1/integration/kyverno/policy'); }
+  async getMirrorRewritePolicy(opts: { mirror?: string; registries?: string; scope?: 'labeled' | 'all' } = {}) {
+    return this.requestText(`/api/v1/integration/kyverno/mirror-rewrite${this.qs({ ...opts })}`);
+  }
+  async getKubernetesClusterMigration(name: string, opts: { mirror?: string; exclude?: string } = {}) {
+    return this.requestText(`/api/v1/integration/kubernetes/clusters/${encodeURIComponent(name)}/migration${this.qs({ ...opts })}`);
+  }
 
   // Tasks
   async getConfigEdits(): Promise<ConfigEditStatus> {

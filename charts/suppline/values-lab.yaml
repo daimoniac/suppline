@@ -1,0 +1,40 @@
+# Lab values: the bundled registry, no volumes, a small footprint.
+# For a kind or minikube cluster you will throw away. Not for production: use
+# your own registry and keep the volumes (docs/FIRST_CLUSTER.md, docs/REGISTRY.md).
+#
+#   helm upgrade --install suppline charts/suppline -n suppline --create-namespace \
+#     -f charts/suppline/values-lab.yaml \
+#     --set backend.secrets.SUPPLINE_API_KEY=demo \
+#     --set backend.secrets.ATTESTATION_KEY="$(base64 -w0 cosign.key)" \
+#     --set backend.secrets.ATTESTATION_KEY_PASSWORD=demo
+
+registry:
+  enabled: true
+  persistence:
+    enabled: false
+
+postgres:
+  persistence:
+    enabled: false
+
+persistence:
+  trivyCache:
+    enabled: false
+
+backend:
+  resources:
+    requests:
+      memory: "512Mi"
+      cpu: "100m"
+    limits:
+      memory: "3Gi"
+      cpu: "1000m"
+
+trivy:
+  resources:
+    requests:
+      memory: "256Mi"
+      cpu: "100m"
+    limits:
+      memory: "2Gi"
+      cpu: "1000m"

@@ -2,7 +2,9 @@
 
 Production install path for [suppline](https://suppline.cloud) — self-hosted image intake gateway (mirror → scan → gate → attest).
 
-**Try before you install:** zero-cred Compose eval — see [docs/EVAL.md](../../docs/EVAL.md).
+**Try before you install:** zero-cred Compose eval — see [docs/EVAL.md](../../docs/EVAL.md). **First install on a real cluster:** [docs/FIRST_CLUSTER.md](../../docs/FIRST_CLUSTER.md). **Throwaway cluster (kind, minikube):** `-f values-lab.yaml` uses the bundled registry and no volumes.
+
+With no `policy:` in `suppline.yml`, every image gets the built-in default: no critical and no known-exploited (CISA KEV) high vulnerabilities. See [docs/POLICY.md](../../docs/POLICY.md#default-policy).
 
 ## Packaging choice
 

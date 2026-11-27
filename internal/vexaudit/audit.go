@@ -1,6 +1,8 @@
 // Package vexaudit finds sync-entry VEX statements that no current policy
 // decision depends on. The audit runs in the background and the Tasks API only
-// reads its last result, so requests never evaluate policy themselves.
+// reads its last result, so requests never evaluate policy themselves. Preview
+// is the one exception: it replays the latest scans against a candidate policy
+// on request.
 package vexaudit
 
 import (

@@ -271,7 +271,24 @@ func effectiveIn(cfg *config.RegsyncConfig, repository string) (*config.PolicyCo
 		return nil
 	})
 
-	return configured, evidence
+	return withImplicitPolicy(configured), evidence
+}
+
+// withImplicitPolicy fills in policy.DefaultExpression when the configured
+// policy has no expression, so a repository never runs without a gate and
+// every caller sees the same expression. A configured failure message is kept.
+func withImplicitPolicy(configured *config.PolicyConfig) *config.PolicyConfig {
+	if configured != nil && configured.Expression != "" {
+		return configured
+	}
+	implicit := &config.PolicyConfig{
+		Expression:     policy.DefaultExpression,
+		FailureMessage: policy.DefaultFailureMessage,
+	}
+	if configured != nil && configured.FailureMessage != "" {
+		implicit.FailureMessage = configured.FailureMessage
+	}
+	return implicit
 }
 
 // ReplaceAutoVEX replaces vex-auto on every sync entry for repository.
@@ -388,12 +405,12 @@ func (c *ConfigCatalog) ListPolicies() PolicyListing {
 	c.mu.RLock()
 	defer c.mu.RUnlock()
 
-	if cfg := c.config.Defaults.Policy; cfg != nil && cfg.Expression != "" {
-		defaultPolicy := policy.PolicyConfig{
-			Expression:     cfg.Expression,
-			FailureMessage: cfg.FailureMessage,
-		}
-		listing.Default = &defaultPolicy
+	// Without defaults.policy the implicit default applies, and is listed as
+	// the default policy.
+	cfg := withImplicitPolicy(c.config.Defaults.Policy)
+	listing.Default = &policy.PolicyConfig{
+		Expression:     cfg.Expression,
+		FailureMessage: cfg.FailureMessage,
 	}
 
 	_ = c.config.ForEachActive(func(i int) error {

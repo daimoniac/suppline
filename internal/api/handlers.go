@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"net/url"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 
@@ -846,6 +847,10 @@ func (s *APIServer) handleListKubernetesClusters(w http.ResponseWriter, r *http.
 // handleKubernetesClustersRouter routes Kubernetes integration requests by method and path.
 func (s *APIServer) handleKubernetesClustersRouter(w http.ResponseWriter, r *http.Request) {
 	if r.Method == http.MethodGet {
+		if strings.HasSuffix(strings.TrimSuffix(r.URL.Path, "/"), "/migration") {
+			s.handleGetClusterMigration(w, r)
+			return
+		}
 		s.handleGetKubernetesClusterImages(w, r)
 		return
 	}
@@ -998,13 +1003,25 @@ func (s *APIServer) handleGetPublicKey(w http.ResponseWriter, r *http.Request) {
 // @Description Generate a Kyverno ImageValidatingPolicy YAML for verifying SCAI attestations with the configured public key
 // @Tags Integration
 // @Produce plain
+// @Param pods_only query bool false "Validate pods only (no Deployment/StatefulSet autogen). Set this when you also apply the mirror rewrite policy, which changes pods only." default(false)
 // @Success 200 {string} string "Kyverno ImageValidatingPolicy YAML"
+// @Failure 400 {object} map[string]string "Invalid pods_only value"
 // @Failure 500 {object} map[string]string "Internal server error"
 // @Router /integration/kyverno/policy [get]
 func (s *APIServer) handleGenerateKyvernoPolicy(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {
 		s.respondError(w, http.StatusMethodNotAllowed, "Method not allowed")
 		return
+	}
+
+	podsOnly := false
+	if raw := r.URL.Query().Get("pods_only"); raw != "" {
+		parsed, err := strconv.ParseBool(raw)
+		if err != nil {
+			s.respondError(w, http.StatusBadRequest, "pods_only must be true or false")
+			return
+		}
+		podsOnly = parsed
 	}
 
 	// Get public key
@@ -1015,7 +1032,7 @@ func (s *APIServer) handleGenerateKyvernoPolicy(w http.ResponseWriter, r *http.R
 	}
 
 	// Generate policy
-	policy, err := integration.GenerateKyvernoPolicy(publicKey)
+	policy, err := integration.GenerateKyvernoPolicyWithOptions(publicKey, integration.KyvernoPolicyOptions{PodsOnly: podsOnly})
 	if err != nil {
 		s.respondStoreError(w, err, "Failed to generate policy")
 		return

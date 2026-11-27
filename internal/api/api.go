@@ -234,6 +234,8 @@ func (s *APIServer) setupRoutes() {
 	s.router.HandleFunc("/api/v1/images/failed", s.authMiddleware(s.handleListFailedImages, false))
 	s.router.HandleFunc("/api/v1/images/running-failures", s.authMiddleware(s.handleListRunningPolicyFailures, false))
 	s.router.HandleFunc("/api/v1/policies", s.authMiddleware(s.handleListPolicies, false))
+	// Preview stores nothing, so it stays available in read-only mode.
+	s.router.HandleFunc("/api/v1/policies/preview", s.authMiddleware(s.handlePolicyPreview, false))
 	s.router.HandleFunc("/api/v1/repositories", s.authMiddleware(s.handleListRepositories, false))
 	s.router.HandleFunc("/api/v1/repositories/", s.authMiddleware(s.handleRepositoriesRouter, false))
 
@@ -271,6 +273,7 @@ func (s *APIServer) setupRoutes() {
 
 	s.router.HandleFunc("/api/v1/integration/publickey", s.handleGetPublicKey)
 	s.router.HandleFunc("/api/v1/integration/kyverno/policy", s.handleGenerateKyvernoPolicy)
+	s.router.HandleFunc("/api/v1/integration/kyverno/mirror-rewrite", s.authMiddleware(s.handleGenerateMirrorRewritePolicy, false))
 
 	// Swagger documentation
 	s.router.HandleFunc("/swagger/", httpSwagger.WrapHandler)

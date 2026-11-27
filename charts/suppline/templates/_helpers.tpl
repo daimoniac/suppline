@@ -126,13 +126,20 @@ Generate or use registry username
 {{- end }}
 
 {{/*
-Generate or use registry password
+Use the configured registry password, else the one the release already has, else generate one
 */}}
 {{- define "suppline.registryPassword" -}}
 {{- if and .Values.registry.credentials .Values.registry.credentials.password }}
 {{- .Values.registry.credentials.password }}
 {{- else }}
+{{- /* Keep the password a release already has. The registry pod writes its htpasswd once at start,
+       so a password that changed on upgrade would lock suppline out of its own mirror. */}}
+{{- $existing := lookup "v1" "Secret" .Release.Namespace (printf "%s-secrets" (include "suppline.fullname" .)) }}
+{{- if and $existing $existing.data (index $existing.data "SUPPLINE_REGISTRY_PASSWORD") }}
+{{- index $existing.data "SUPPLINE_REGISTRY_PASSWORD" | b64dec }}
+{{- else }}
 {{- randAlphaNum 32 }}
+{{- end }}
 {{- end }}
 {{- end }}
 

@@ -8,7 +8,7 @@ description: Zero-credential Docker Compose eval for suppline — mirror, scan, 
 
 **Stop maintaining supply-chain glue** — mirror, scan, policy, and cosign attestations in one system, and admit only what passed.
 
-This path is throwaway: checkout the repo, start Compose, watch one image **pass** (with attestations) and one **fail**. No registry credentials, no cosign setup, no editing config.
+This path is throwaway: start Compose, watch one image **pass** (with attestations) and one **fail**. No registry credentials, no cosign setup, no editing config, and no clone or build.
 
 Production installs should **bring your own registry** (Helm). See [Private registry setup](REGISTRY.md) and the main [README](https://github.com/daimoniac/suppline#deploy).
 
@@ -18,12 +18,26 @@ Production installs should **bring your own registry** (Helm). See [Private regi
 
 ## Run it
 
+Download one file and start it. Compose 2.23.1 or newer reads the config from inside it:
+
+```bash
+curl -fsSLO https://github.com/daimoniac/suppline/releases/latest/download/docker-compose.eval.yml
+docker compose -f docker-compose.eval.yml up -d
+```
+
+It pulls the released images, so there is nothing to build. First boot starts Postgres, pulls images, and downloads Trivy’s DB — give it a few minutes. To use other host ports, set `SUPPLINE_UI_PORT`, `SUPPLINE_METRICS_PORT` or `SUPPLINE_REGISTRY_PORT`.
+
+<details>
+<summary>Working on suppline itself? Build from a checkout instead</summary>
+
 ```bash
 git clone https://github.com/daimoniac/suppline.git && cd suppline
 docker compose up --build -d
 ```
 
-`--build` picks up the current tree (needed for HTTP demo-registry support). First boot starts Postgres, pulls images, and downloads Trivy’s DB — give it a few minutes.
+`--build` picks up the current tree. The commands below work the same; use `docker compose` without `-f`.
+
+</details>
 
 Then:
 
@@ -50,10 +64,11 @@ curl -s -H "Authorization: Bearer demo" http://localhost:8080/api/v1/scans | hea
 
 | Piece | Behavior |
 |-------|----------|
-| Registry | Bundled `registry:2` over HTTP — **not** for production |
+| Registry | Bundled `registry:3` over HTTP — **not** for production |
 | Sources | `public.ecr.aws` (no auth). Docker Hub is optional via `.env` |
-| Signing | Cosign keypair auto-generated into `./keys/demo` on first start (does not touch existing `./keys/cosign.*`) |
+| Signing | Cosign keypair auto-generated on first start (into `./keys/demo` from a checkout, into a `keys` volume with the downloaded file) |
 | `demo-pass` / `demo-fail` | Intentional CEL `true` / `false` so pass+fail always show for the gate |
+| `demo-default` | No `policy:` at all, so the [built-in default](POLICY.md#default-policy) judges it. The UI shows that policy in words |
 | `demo-semver` | Repository sync with `semverRange: ">=3.20.0 <3.20.3"` + allow `^3\.20\.[0-2]$` → tags `3.20.0`, `3.20.1`, `3.20.2` |
 | `demo-vex` | Blocks `CVE-2023-5363` unless VEX-exempted; ships a `not_affected` exception so the image **passes** |
 | API key | Fixed `demo` — local eval only |
@@ -65,19 +80,20 @@ Config lives in [`suppline.demo.yml`](https://github.com/daimoniac/suppline/blob
 - [ ] UI loads with key `demo`
 - [ ] `demo-pass` shows **passed** and attestations on the digest
 - [ ] `demo-fail` shows **failed** with the demo failure message
+- [ ] `demo-default` shows **passed**, with the default policy described in words rather than as a custom policy
 - [ ] `demo-semver` shows **three** tags (`3.20.0`, `3.20.1`, `3.20.2`)
 - [ ] `demo-vex` shows **passed** with `CVE-2023-5363` exempted (tag `3.18.3`; VEX Statements / scan detail)
 - [ ] Attestation gate POC admits pass / denies fail:
 
 ```bash
-docker compose --profile eval-gate run --rm eval-gate
-# or on the host (needs cosign + jq):
+docker compose -f docker-compose.eval.yml --profile eval-gate run --rm eval-gate
+# from a checkout, on the host (needs cosign + jq):
 ./scripts/eval-attestation-gate.sh
 ```
 
 - [ ] (Optional) Kyverno ImageValidatingPolicy YAML: `curl -s -H "Authorization: Bearer demo" http://localhost:8080/api/v1/integration/kyverno/policy`
 
-The gate POC verifies the SCAI signature with `./keys/demo/cosign.pub`, checks `validUntil`, and applies the same `scanStatus` allow-list as Kyverno (`passed` / `passed-with-exceptions`). It does **not** spin up a cluster — that is the lightweight proof that admission would accept `demo-pass` and reject `demo-fail`.
+The gate POC verifies the SCAI signature with the demo public key, checks `validUntil`, and applies the same `scanStatus` allow-list as Kyverno (`passed` / `passed-with-exceptions`). It does **not** spin up a cluster — that is the lightweight proof that admission would accept `demo-pass` and reject `demo-fail`.
 
 ## Optional: Docker Hub sources
 
@@ -92,13 +108,11 @@ Then add Hub `creds` + `sync` entries (see `suppline.yml.example`). Compose load
 
 **Note:** If your `.env` already sets `ATTESTATION_KEY` for a production install, the eval entrypoint still uses `./keys/demo` with password `demo` — it will not reuse that production key.
 
-## Next: real clusters
+## Next: your own cluster
 
-1. Point `target:` at **your** registry (Harbor, ECR, ACR, …)
-2. Replace demo policies with real CEL + VEX — [Policy guide](POLICY.md)
-3. Deploy with Helm (`registry.enabled: false` by default — BYO registry) — [REGISTRY.md](REGISTRY.md)
-4. Apply the generated Kyverno/OPA admission policy
-5. Generate your own cosign keys — never reuse `./keys/demo` from this eval
+[First cluster](FIRST_CLUSTER.md) takes you from here to a real cluster without a big-bang cutover: install the agent, mirror what already runs, start with the built-in default policy, and apply admission in `Audit` before `Deny`. [How suppline compares](COMPARISON.md) covers what it adds next to Trivy Operator, Harbor and Kyverno alone.
+
+Whatever you do next, generate your own cosign keys — never reuse the demo key from this eval.
 
 ## Discoverability (later)
 

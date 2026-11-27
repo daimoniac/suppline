@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/daimoniac/suppline/internal/config"
+	"github.com/daimoniac/suppline/internal/policy"
 	"github.com/daimoniac/suppline/internal/types"
 )
 
@@ -352,5 +353,56 @@ func TestDecisionChangesLeavesOutRemovedRepositories(t *testing.T) {
 	cat := NewConfigCatalog(prev)
 	if got := cat.Replace(next); len(got) != 1 || got[0] != "registry.example/added" {
 		t.Fatalf("Replace = %v, want only the added repository", got)
+	}
+}
+
+func TestConfigCatalogImplicitDefaultPolicy(t *testing.T) {
+	cfg := &config.RegsyncConfig{
+		Sync: []config.SyncEntry{
+			{Target: "registry.example/team/app", Type: "repository"},
+			{
+				Target: "registry.example/team/strict",
+				Type:   "repository",
+				Policy: &config.PolicyConfig{Expression: "highCount == 0", FailureMessage: "strict"},
+			},
+			{
+				Target: "registry.example/team/worded",
+				Type:   "repository",
+				Policy: &config.PolicyConfig{FailureMessage: "own words"},
+			},
+		},
+	}
+	subject := NewConfigCatalog(cfg)
+
+	resolved, err := subject.ResolvePolicy("registry.example/team/app")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if resolved.Expression != policy.DefaultExpression || resolved.FailureMessage != policy.DefaultFailureMessage {
+		t.Errorf("no policy resolves to %+v, want the implicit default", resolved)
+	}
+	if got := subject.ResolveExpression("registry.example/team/app"); got != policy.DefaultExpression {
+		t.Errorf("ResolveExpression() = %q, want the implicit default", got)
+	}
+	if got := subject.ResolveExpression("registry.example/unknown"); got != policy.DefaultExpression {
+		t.Errorf("unknown repository resolves to %q, want the implicit default", got)
+	}
+	if got := subject.ResolveExpression("registry.example/team/strict"); got != "highCount == 0" {
+		t.Errorf("an own policy must win, got %q", got)
+	}
+	worded, err := subject.ResolvePolicy("registry.example/team/worded")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if worded.Expression != policy.DefaultExpression || worded.FailureMessage != "own words" {
+		t.Errorf("a policy without an expression resolves to %+v, want the default expression with its own message", worded)
+	}
+
+	listing := subject.ListPolicies()
+	if listing.Default == nil || listing.Default.Expression != policy.DefaultExpression {
+		t.Errorf("default listing = %+v, want the implicit default", listing.Default)
+	}
+	if len(listing.Overrides) != 1 || listing.Overrides["registry.example/team/strict"].Expression != "highCount == 0" {
+		t.Errorf("override listing = %+v, want only the strict repository", listing.Overrides)
 	}
 }

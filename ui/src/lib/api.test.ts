@@ -40,3 +40,33 @@ describe('APIClient during a database failover', () => {
     expect(fetchMock).toHaveBeenCalledTimes(1);
   });
 });
+
+describe('APIClient text endpoints', () => {
+  afterEach(() => vi.unstubAllGlobals());
+
+  it('builds the mirror rewrite query and skips empty options', async () => {
+    const fetchMock = vi.fn<(url: string) => Promise<Response>>(async () => new Response('kind: MutatingPolicy', { status: 200 }));
+    vi.stubGlobal('fetch', fetchMock);
+    const client = new APIClient('', async () => {});
+
+    await expect(client.getMirrorRewritePolicy({ mirror: '', registries: 'docker.io,ghcr.io', scope: 'all' })).resolves.toBe('kind: MutatingPolicy');
+    expect(fetchMock.mock.calls[0]?.[0]).toBe('/api/v1/integration/kyverno/mirror-rewrite?registries=docker.io%2Cghcr.io&scope=all');
+  });
+
+  it('puts the server message from a JSON error body into details', async () => {
+    vi.stubGlobal('fetch', vi.fn(async () => reply(400, { error: 'mirror is required: pass ?mirror= or set SUPPLINE_REGISTRY_URL' })));
+    const client = new APIClient('', async () => {});
+
+    await expect(client.getMirrorRewritePolicy()).rejects.toMatchObject({
+      status: 400,
+      details: 'mirror is required: pass ?mirror= or set SUPPLINE_REGISTRY_URL',
+    });
+  });
+
+  it('keeps the status text when the error body is not JSON', async () => {
+    vi.stubGlobal('fetch', vi.fn(async () => new Response('nope', { status: 500, statusText: 'Internal Server Error' })));
+    const client = new APIClient('', async () => {});
+
+    await expect(client.getKubernetesClusterMigration('prod a')).rejects.toMatchObject({ status: 500, details: 'Internal Server Error' });
+  });
+});

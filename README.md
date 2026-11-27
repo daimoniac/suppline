@@ -58,12 +58,14 @@ See [docs/STATE_MACHINE.md](docs/STATE_MACHINE.md) for the exact lifecycle, incl
 
 ## Quick start
 
-Zero credentials. Compose brings up a throwaway registry, Trivy, suppline (with the in-process mirror), and the UI. One demo image **passes** (with attestations); one **fails**.
+Zero credentials, no clone, no build. One file brings up a throwaway registry, Trivy, suppline (with the in-process mirror), and the UI. One demo image **passes** (with attestations); one **fails**.
 
 ```bash
-git clone https://github.com/daimoniac/suppline.git && cd suppline
-docker compose up --build -d
+curl -fsSLO https://github.com/daimoniac/suppline/releases/latest/download/docker-compose.eval.yml
+docker compose -f docker-compose.eval.yml up -d
 ```
+
+(Compose 2.23.1 or newer. Working on suppline itself? `git clone` and `docker compose up --build -d` builds from your tree instead.)
 
 Open **http://localhost:8080** and log in with API key **`demo`**. First boot needs a few minutes for image pulls and Trivy’s DB.
 
@@ -77,7 +79,7 @@ Full checklist, Hub escape hatch, attestation gate POC, and “you’re done whe
 After scans finish, prove the admit/deny gate without a cluster:
 
 ```bash
-docker compose --profile eval-gate run --rm eval-gate
+docker compose -f docker-compose.eval.yml --profile eval-gate run --rm eval-gate
 ```
 
 | Port | Service |
@@ -87,7 +89,7 @@ docker compose --profile eval-gate run --rm eval-gate
 | 9090 | Prometheus metrics and health |
 | 4954 | Trivy server |
 
-For a production-shaped Compose/Helm install (BYO registry, your keys, real policy), see [Deploy](#deploy) and `suppline.yml.example` / `env.example`.
+Ready for a real cluster? **[docs/FIRST_CLUSTER.md](docs/FIRST_CLUSTER.md)** starts from the images the cluster already runs, so you do not write the `sync:` list by hand, and keeps admission in `Audit` until you choose to enforce. For a production-shaped Helm install see [Deploy](#deploy) and `suppline.yml.example` / `env.example`.
 
 ## Configuration
 
@@ -131,6 +133,8 @@ Everything else is in `suppline.yml` too: the `server`, `observability`, `scanne
 
 Policies are [CEL](https://github.com/google/cel-spec) expressions evaluated against the scan result. Counts exclude VEX-exempted CVEs.
 
+With no `policy:` configured, every image gets the built-in default: **no critical, and no known-exploited (CISA KEV) high, vulnerabilities**. It blocks what is both severe and being exploited, so it is a policy you can turn on in the first week. Before you tighten it, `POST /api/v1/policies/preview` replays your existing scans through a stricter expression and tells you what it would newly block ([docs/POLICY.md](docs/POLICY.md#preview-a-stricter-policy)).
+
 ```yaml
 # each line is an alternative for policy.expression
 expression: "criticalCount == 0"                        # block criticals
@@ -167,7 +171,7 @@ kubectl delete clusterpolicy suppline-policy --ignore-not-found
 kubectl apply -f suppline-policy.yaml
 ```
 
-The generated `ImageValidatingPolicy` (`policies.kyverno.io/v1`) verifies the SCAI attestation on every pod image and admits it only when `scanStatus` is `passed` (or passed with exceptions) **and** the attestation has not expired — so a stale verdict fails closed. It starts in `Audit` mode; switch `validationActions` to `Deny` when you're ready. Delete any previously applied `ClusterPolicy` of the same name — `kyverno.io/v1` ClusterPolicy is deprecated.
+The generated `ImageValidatingPolicy` (`policies.kyverno.io/v1`) verifies the SCAI attestation on every pod image and admits it only when `scanStatus` is `passed` (or passed with exceptions) **and** the attestation has not expired — so a stale verdict fails closed. It starts in `Audit` mode; switch `validationActions` to `Deny` when you're ready. Delete any previously applied `ClusterPolicy` of the same name — `kyverno.io/v1` ClusterPolicy is deprecated. If you also [rewrite pod images to the mirror](docs/FIRST_CLUSTER.md#6-pull-from-the-mirror), fetch the policy with `?pods_only=true` so Deployments, which still name the upstream image, are not rejected.
 
 Verify any attestation by hand:
 
@@ -207,12 +211,14 @@ helm install clusterstate-agent ./clusterstate-agent/chart \
   --set suppline.url=http://suppline.suppline.svc.cluster.local:8080
 ```
 
+The inventory also tells suppline what to mirror. `GET /api/v1/integration/kubernetes/clusters/{name}/migration` turns the running images into `sync:` entries, and `GET /api/v1/integration/kyverno/mirror-rewrite` generates the Kyverno policy that points pods at the mirror, namespace by namespace. [docs/FIRST_CLUSTER.md](docs/FIRST_CLUSTER.md) walks through it.
+
 ## Deploy
 
 **Docker Compose (eval)** — throwaway registry, zero credentials (see [docs/EVAL.md](docs/EVAL.md)):
 
 ```bash
-docker compose up --build -d && docker compose logs -f suppline
+docker compose -f docker-compose.eval.yml up -d && docker compose -f docker-compose.eval.yml logs -f suppline
 ```
 
 **Kubernetes (production)** — Helm chart; **bring-your-own registry** by default (see [docs/REGISTRY.md](docs/REGISTRY.md)):
@@ -308,7 +314,9 @@ Contributor notes are in [AGENTS.md](AGENTS.md) and [ui/AGENTS.md](ui/AGENTS.md)
 
 | Doc | Contents |
 |-----|----------|
-| [docs/EVAL.md](docs/EVAL.md) | Zero-cred Compose eval (pass + fail + attest) |
+| [docs/EVAL.md](docs/EVAL.md) | Zero-cred, pull-only Compose eval (pass + fail + attest) |
+| [docs/FIRST_CLUSTER.md](docs/FIRST_CLUSTER.md) | From the images a cluster runs to gated admission, without a big-bang cutover |
+| [docs/COMPARISON.md](docs/COMPARISON.md) | suppline next to Trivy Operator, Harbor, Kyverno alone, and regsync glue |
 | [docs/RELEASE.md](docs/RELEASE.md) | Semver release: tag → GHCR images + OCI chart |
 | [docs/CONFIGURATION.md](docs/CONFIGURATION.md) | Every environment variable and `suppline.yml` field |
 | [docs/POLICY.md](docs/POLICY.md) | CEL reference, policy recipes, VEX semantics |

@@ -29,7 +29,8 @@ type PolicyListing struct {
 // to scan enqueueing, discovery, the API, and metrics.
 type Catalog interface {
 	// ResolvePolicy returns the effective CEL policy configuration for building
-	// a policy engine. It fails only when the effective cooldown for
+	// a policy engine. A repository without a configured expression gets
+	// policy.DefaultExpression. It fails only when the effective cooldown for
 	// the repository cannot be parsed.
 	ResolvePolicy(repository string) (policy.PolicyConfig, error)
 
@@ -44,8 +45,8 @@ type Catalog interface {
 	// Repositories lists every configured repository.
 	Repositories() []string
 
-	// ListPolicies reports the configured default policy and the repositories
-	// that explicitly override it.
+	// ListPolicies reports the default policy, which is policy.DefaultConfig
+	// when none is configured, and the repositories that explicitly override it.
 	ListPolicies() PolicyListing
 
 	// IsExempted reports whether a statement exempts a finding at a given time.

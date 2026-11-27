@@ -967,9 +967,12 @@ func (p *Pipeline) getPolicyEngineForRepository(repository string) (policy.Polic
 		return nil, errors.NewPermanentf("failed to resolve policy for %s: %w", repository, err)
 	}
 
-	// If neither a custom expression nor a cooldown is configured, use default from worker.
-	// The default engine is built with the same malicious-package gate setting.
-	if policyConfig.Expression == "" && policyConfig.Cooldown <= 0 {
+	// If the policy is the implicit default and no cooldown is configured, use
+	// the worker's engine, which is built from the default policy with the same
+	// malicious-package gate setting. A catalog that resolves an empty
+	// expression (as a test one does) lands here too.
+	usesDefault := policyConfig.Expression == "" || (policy.IsDefaultExpression(policyConfig.Expression) && policyConfig.FailureMessage == policy.DefaultFailureMessage)
+	if usesDefault && policyConfig.Cooldown <= 0 {
 		return p.worker.policy, nil
 	}
 

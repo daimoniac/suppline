@@ -40,6 +40,8 @@ type SigstoreAttestor struct {
 	cleanups sync.Map
 	// inlineCleanup runs cleanup before the attest call returns. Tests set it.
 	inlineCleanup bool
+	// writes serializes the registry writes for one image, see keyedLock.
+	writes keyedLock
 }
 
 // SetSharedRepositories tells the attestor which repositories it shares with

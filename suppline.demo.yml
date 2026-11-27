@@ -62,6 +62,13 @@ sync:
       expression: "false"
       failureMessage: "demo-fail is intentionally blocked"
 
+  # No policy block: judged by the built-in default (no critical, no known-exploited high).
+  # The UI shows that policy in words; see docs/POLICY.md#default-policy.
+  - source: public.ecr.aws/docker/library/busybox:1.37.0
+    target: registry:5000/demo-default:1.37.0
+    type: image
+    platform: linux/amd64
+
   # Semver-style filter locked to three patch tags (no libc variants).
   - source: public.ecr.aws/docker/library/alpine
     target: registry:5000/demo-semver

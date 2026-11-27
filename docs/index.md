@@ -18,7 +18,7 @@ suppline is the gate in front of that. It continuously mirrors upstream images i
 
 One Go binary. PostgreSQL state. No SaaS, no phone-home, air-gap compatible by design.
 
-**[Try the zero-cred eval →](EVAL.md)** · [GitHub](https://github.com/daimoniac/suppline)
+**[Try the zero-cred eval →](EVAL.md)** · [First cluster](FIRST_CLUSTER.md) · [How it compares](COMPARISON.md) · [GitHub](https://github.com/daimoniac/suppline)
 
 ## Used in production
 
@@ -46,11 +46,11 @@ The full lifecycle, including rescan triggers and error paths, is documented in 
 
 ## Quick start (eval)
 
-No credentials required. Bundled throwaway registry; demo pass + fail policies.
+No credentials, no clone, no build. Bundled throwaway registry; demo pass + fail policies.
 
 ```bash
-git clone https://github.com/daimoniac/suppline.git && cd suppline
-docker compose up --build -d
+curl -fsSLO https://github.com/daimoniac/suppline/releases/latest/download/docker-compose.eval.yml
+docker compose -f docker-compose.eval.yml up -d
 ```
 
 Open `http://localhost:8080` and log in with API key `demo`. Full checklist: [Eval quick start](EVAL.md).
@@ -68,7 +68,9 @@ Open `http://localhost:8080` and log in with API key `demo`. Full checklist: [Ev
 
 ## Documentation
 
-- [Eval quick start](EVAL.md) — zero-cred Compose afternoon path
+- [Eval quick start](EVAL.md) — zero-cred, pull-only Compose path
+- [First cluster](FIRST_CLUSTER.md) — start from the images a cluster already runs; report first, enforce later
+- [How suppline compares](COMPARISON.md) — next to Trivy Operator, Harbor, Kyverno alone, and regsync glue
 - [Release process](RELEASE.md) — semver tags → GHCR images + OCI Helm chart
 - [Configuration reference](CONFIGURATION.md) — every environment variable and `suppline.yml` field
 - [Policy guide](POLICY.md) — CEL reference, policy recipes, VEX semantics

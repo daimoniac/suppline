@@ -53,6 +53,10 @@ func DescribeExpression(expr string) string {
 		return customPolicyDescription
 	}
 
+	if IsDefaultExpression(normalized) {
+		return defaultDescription
+	}
+
 	if desc, ok := describeBooleanExpr(normalized); ok {
 		return desc
 	}
